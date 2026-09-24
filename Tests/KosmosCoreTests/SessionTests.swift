@@ -202,3 +202,21 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.hide == [1])
     #expect(plan.focus == .window(7))
 }
+
+@Test func movedFloatingWindowKeepsFloating() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    _ = s.perform(.layout(.toggleFloating))
+    _ = s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false))
+    #expect(s.workspaces["2"]!.floating == [2])
+    #expect(s.frames(of: "2").isEmpty)   // floating windows get no tile
+}
+
+@Test func minimizedWindowCannotBeMovedIntoATile() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    _ = s.park(2)
+    #expect(s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 2)) == nil)
+    #expect(s.workspace(of: 2) == "1")
+}

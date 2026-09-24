@@ -130,7 +130,9 @@ public struct Session: Sendable {
             guard let previous, previous != visible else { return nil }
             return show(previous)
         case .moveNodeToWorkspace(let target, let follow, let chosen):
+            // A minimized or hidden window stays where it will return to.
             guard let window = chosen ?? focused, let source = home[window],
+                  !workspaces[source]!.parked.contains(where: { $0.window == window }),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
         case .reloadConfig:
@@ -203,8 +205,10 @@ public struct Session: Sendable {
 
     private mutating func move(_ window: WindowID, from source: String, to name: String, follow: Bool) -> Plan {
         let wasFocused = source == visible && focused == window
+        let floating = workspaces[source]!.floating.contains(window)
         _ = workspaces[source]!.remove(window)
         workspaces[name]!.insert(window)
+        if floating { _ = workspaces[name]!.float(window) }   // it floats there too
         workspaces[name]!.focus(window)
         home[window] = name
         if follow, name != visible {

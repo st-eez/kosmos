@@ -109,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let displays = ConfigFile.displays()
         let setup = config.setup(for: displays)
         controller.reconfigure(gaps: displays.first.map { ConfigFile.gaps(config, on: $0) } ?? Gaps(), rules: setup.rules)
+        controller.mouseFollowsFocus = config.mouseFollowsFocus
         if setup.workspaces != controller.workspaceNames {
             log.notice("the workspace list changed; it takes effect when Kosmos restarts")
         }

@@ -1,5 +1,6 @@
 import AppKit
 import KosmosCore
+import KosmosSkyLight
 import os
 
 private let controllerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "controller")
@@ -31,6 +32,8 @@ final class Controller {
     let managing: Bool
     /// Window rules, first match wins.
     var rules: [WindowRule] = []
+    /// Move the pointer into a window that a command focused.
+    var mouseFollowsFocus = false
     var publish: (@MainActor (Data) -> Void)?
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
@@ -76,7 +79,7 @@ final class Controller {
             return (1, "observing only while another window manager runs")
         case .success(let command):
             reports.commandExecuted(receivedAt: received)
-            if let plan = session.perform(command) { execute(plan, since: received) }
+            if let plan = session.perform(command) { execute(plan, since: received, fromCommand: true) }
             return (0, "")
         }
     }
@@ -154,7 +157,7 @@ final class Controller {
     private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
 
     /// `since` is when the command arrived, for the switch timing log.
-    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now) {
+    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
         guard managing, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
         var show = plan.show, hide = plan.hide
@@ -163,8 +166,9 @@ final class Controller {
             hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
             needsResync = false
         }
+        let movePointer = fromCommand && mouseFollowsFocus
         if show.isEmpty && hide.isEmpty {
-            if plan.focus != nil { requestFocus(intent) }
+            if plan.focus != nil { requestFocus(intent, movePointer: movePointer) }
         } else {
             switchGeneration += 1
             let generation = switchGeneration
@@ -191,7 +195,7 @@ final class Controller {
                 }
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
                 guard generation == self.switchGeneration else { return }
-                self.requestFocus(self.intent)
+                self.requestFocus(self.intent, movePointer: movePointer)
             }
         }
         publishState()
@@ -223,7 +227,8 @@ final class Controller {
         return kinds
     }
 
-    private func requestFocus(_ target: KeyWindow) {
+    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false) {
+        if movePointer, case .window(let id) = target { centerPointer(on: id) }
         guard target != key else { return }   // already key: activating again costs the system work
         let pid: pid_t?
         switch target {
@@ -239,6 +244,14 @@ final class Controller {
         focusQueue.request(target, pid: pid, generation: focusQueue.newGeneration()) { [weak self] in
             self?.reports.requestDropped(target, at: stamp)
         }
+    }
+
+    /// Moves the pointer to the window's center unless it is already inside the window,
+    /// as AeroSpace's `move-mouse window-lazy-center` does.
+    private func centerPointer(on window: WindowID) {
+        guard let frame = SkyLight.rows([window]).first?.frame, !frame.isEmpty,
+              let pointer = CGEvent(source: nil)?.location, !frame.contains(pointer) else { return }
+        CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     private func touch(_ window: WindowID) {
