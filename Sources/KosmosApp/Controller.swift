@@ -209,6 +209,7 @@ final class Controller {
             hiddenApps[pid]?.removeAll { $0 == id }
             fullscreenParked.remove(id)
             ledger.forget(id)
+            hiding.forget(id)
             execute(session.remove(id))
         }
     }
@@ -330,7 +331,8 @@ final class Controller {
             misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: echo)
             if !echo { reports.publicRequestsAnswered(by: report.pid, receivedAt: report.received) }
             decide(KeyReport(key: reported, received: report.received, previous: previous,
-                             concealed: id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
+                             concealed: id.map { hiding.wasConcealed($0, at: report.received) } ?? false, miss: miss),
+                   keyLeft: keyLeft)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -363,7 +365,7 @@ final class Controller {
         let received: ContinuousClock.Instant
         /// The window key before it, when that was another window.
         let previous: WindowID?
-        /// The reported window was concealed when it became key.
+        /// The reported window was concealed at the report's stamp.
         let concealed: Bool
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss

@@ -223,10 +223,13 @@ off the main thread).
     again, in case an older request of Kosmos's landed after the user's change.
   - Only the user reaches a window that was hidden when it became key: with Command-Tab,
     or by opening that window, as `open` on a document, an app's Window menu or the
-    Dock's window list do. Kosmos follows it to its workspace. That excludes the report
-    right after the key window left, when it closed or minimized or its app hid. macOS then keys another window
-    itself, sometimes a concealed one, and Kosmos keeps its workspace and focuses it
-    again. The window key before the report left the screen within the last second if
+    Dock's window list do. Kosmos follows it to its workspace. Whether the window was
+    hidden is judged at the report's stamp: the bridge queue notes when it sends each
+    window's conceal and reveal, because a switch can reveal or conceal the window before
+    the report is classified (tla/README.md, change 12). That excludes the report right
+    after the key window left, when it closed or minimized or its app hid. macOS then keys
+    another window itself, sometimes a concealed one, and Kosmos keeps its workspace and
+    focuses it again. The window key before the report left the screen within the last second if
     WindowServer ordered it out or destroyed it, Accessibility reported it minimized, or
     NSWorkspace reported its app hidden.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
