@@ -155,12 +155,22 @@ off the main thread).
   - A window on Kosmos's current workspace becomes the focus intent and is requested
     again, in case an older request of Kosmos's landed after the user's change.
   - A window that was hidden when it became key was reached with Command-Tab, and Kosmos
-    follows it to its workspace.
+    follows it to its workspace. That excludes the report right after the key window
+    left, when it closed or minimized or its app hid. macOS then keys another window
+    itself, sometimes a concealed one. Kosmos reads from WindowServer that the window key
+    before the report left the screen within the last second. It keeps its workspace
+    and focuses it again, and does the same when macOS keys no window. A Command-Tab
+    after that report follows as usual.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again.
 - Skip activation when the target is already key. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
+- Never front a window that just left the screen, before Kosmos heard of it: that would
+  unminimize it or unhide its app. The window's departure then focuses its workspace's
+  next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
+  replaced only in that case, because focusing earlier could put Kosmos's echo between
+  the departure and the report of the window macOS keys next.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 
