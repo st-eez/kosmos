@@ -135,9 +135,9 @@ off the main thread).
 - While locked, the inventory admits and removes no window and runs no sweep, and Kosmos
   writes no frames, runs no hides, requests no focus, ignores focus reports and refuses
   commands. After an unlock, and after a wake while unlocked, the inventory sweeps, and
-  Kosmos reads the main display again, writes every tiled window of the shown workspace to
-  its frame on that area whatever the frame ledger holds, conceals and reveals every window
-  again, requests the focus intent and publishes the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
+  Kosmos reads the displays again (section 5.13), writes every tiled window of the shown
+  workspaces to its frame on their areas whatever the frame ledger holds, conceals and
+  reveals every window again, requests the focus intent and publishes the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
   wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. A wake
   gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
   locks its screen first.
@@ -196,10 +196,11 @@ off the main thread).
   window's Space list names fullscreen Spaces. A window whose add did not land stays in
   the holding Space, so the batch fails its confirmation and recovery adds it again.
 - The barrier at the end confirms that each revealed window left the holding Space.
-- A window with no ordinary Space goes to the main display's current Space, else to the
-  Space it had before its first hide if that still exists, else to the main display's
-  first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
-  one is on screen.
+- A window with no ordinary Space goes to the current Space of the display that shows its
+  workspace, else to the Space it had before its first hide if that display still has it,
+  else to that display's first ordinary Space. A display missing from WindowServer's Space
+  list gives way to the main display. A native fullscreen Space is never chosen, so a
+  switch works while one is on screen.
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
 - Recovery adds each window without an ordinary Space to the current Space of the display
@@ -222,8 +223,9 @@ off the main thread).
     app alone would take a Command-Tab to another window of that app for an echo.
   - A click or Command-Tab received before the latest command is stale. The command wins,
     and its focus is requested again.
-  - A window on Kosmos's current workspace becomes the focus intent and is requested
-    again, in case an older request of Kosmos's landed after the user's change.
+  - A window on a workspace that a display shows becomes the focus intent, and its
+    display becomes the focused one (section 5.13). It is requested again, in case an
+    older request of Kosmos's landed after the user's change.
   - Only the user reaches a window that was hidden when it became key: with Command-Tab,
     or by opening that window, as `open` on a document, an app's Window menu or the
     Dock's window list do. Kosmos follows it to its workspace. That excludes the report
@@ -246,8 +248,8 @@ off the main thread).
     misses too, it leaves the key window where macOS put it. This happened live: Kosmos
     fronted Ghostty for a window of workspace 1, Ghostty reported the window a switch
     had just concealed on workspace 3, and Kosmos followed it there.
-  - A visible window of another workspace is key only during a switch: macOS re-keyed
-    after a hide, or the user clicked or Command-Tabbed to a window about to be
+  - A visible window of a workspace that no display shows is key only during a switch:
+    macOS re-keyed after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,
     recovery shows every workspace's windows until a switch conceals them again. A
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
@@ -520,8 +522,9 @@ off the main thread).
 
 - A reload parses and validates the whole file, then applies it in one step. Any error
   keeps the running config, and a bad file at login falls back to the last good config.
-- Display profiles are built in and matched by monitor name or serial. Runtime toggles are
-  commands and never rewrite the file.
+- Display profiles are built in and matched by monitor name or serial. The first profile
+  whose monitors are all connected applies, and Kosmos resolves it again when the displays
+  change (section 5.13). Runtime toggles are commands and never rewrite the file.
 - A serial is the EDID alphanumeric serial number, which the display controller publishes
   on the framebuffer that drives the display. CoreDisplay names each display's framebuffer,
   so identical monitors, whose vendor, model and numeric serial are the same, should get
@@ -595,9 +598,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - **Status bar (SketchyBar).** Kosmos sends one `kosmos_state` event per change, holding
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
-  active profile; and the display Kosmos tiles, numbered as SketchyBar numbers it, from the
-  same WindowServer display list. Every connected display joins the event with
-  multi-monitor support. The bar runs no command on a switch. A bar that starts
+  active profile; and every connected display, numbered as SketchyBar numbers it, from the
+  same WindowServer display list. A workspace's display is the one section 5.13 lays it
+  out on. The bar runs no command on a switch. A bar that starts
   after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
   runs `kosmos workspace <name>`.
 - **Borders (JankyBorders).** They work unchanged while inactive borders are transparent.
@@ -605,8 +608,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   its window, as the AeroSpace fork did. Borders drawn by Kosmos itself are on the later
   list (section 7).
 - **Display profile scripts.** Scripts that rewrite another window manager's config when
-  displays change give way to Kosmos's profiles, once Kosmos matches displays by serial,
-  switches profile when displays change, and puts the profile name in the bar event.
+  displays change give way to Kosmos's profiles: Kosmos matches displays by serial,
+  switches profile when displays change, and puts the profile name in the bar event
+  (section 5.13). A binding runs `profile <name>` where one ran `set-profile.sh`.
 - **Launchers and cheat sheets.** `kosmos list-bindings` prints the loaded bindings as JSON,
   so a launcher's keybinding list reads them instead of keeping its own copy.
 - **Switching from another window manager.** Install Kosmos.app to /Applications and the CLI
@@ -615,6 +619,85 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   watchers at the switch; AutoRaise once focus follows mouse lands). Rolling back reverses
   those steps, so the other manager's config and the bar's code for it stay until the
   switch is final.
+
+### 5.13 Displays
+
+- Each connected display shows one workspace. One display is focused, and its workspace
+  holds Kosmos's focus. Displays are ordered left to right, then top to bottom, as
+  AeroSpace orders monitors, and monitor numbers follow that order.
+- The active profile assigns workspaces to displays, as AeroSpace's
+  `workspace-to-monitor-force-assignment` does: an assigned workspace shows only on the
+  first connected display that its monitor list matches. A workspace whose list matches
+  no connected display is free.
+- A workspace's display is the one that shows it, else its assigned display, else the
+  focused display. Kosmos lays a hidden workspace out on that display's area with that
+  display's gaps, so a switch writes no frames. A free workspace shown on a display other
+  than the one it was laid out for is laid out as it is shown.
+- A new window joins the workspace a rule names, else the workspace shown on the display
+  under the window's center. At launch that keeps each window on its display.
+- Commands use AeroSpace's names.
+  - `workspace <name>`, for a workspace another display shows, moves the focus to that
+    display with no conceal or reveal. A hidden workspace is shown on its display, which
+    becomes focused, and the workspace that display showed is concealed.
+  - `workspace next` and `prev` walk the workspaces of the focused display, as AeroSpace's
+    do. `workspace-back-and-forth` returns to the workspace focused before.
+  - `focus-monitor`, `move-node-to-monitor` and `move-workspace-to-monitor` take a
+    direction, `next`, `prev`, a monitor number or a name from `[monitors]`, and
+    `--wrap-around`. `move-node-to-monitor` moves the window to the workspace the target
+    display shows, at the edge it enters by when the target is a direction, and
+    `--focus-follows-window` follows it. `move-workspace-to-monitor` shows the focused
+    workspace on the target display, concealing the workspace there, and the display it
+    left shows another workspace. It refuses an assigned workspace, as AeroSpace does.
+  - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
+    display in the direction at the edge of the workspace. `focus` then focuses that
+    display's workspace; `move` moves a tiled window there and follows it.
+  - `profile <name>` applies a profile until the displays change or the config reloads,
+    as `set-profile.sh` did.
+- A key window report of a window on the workspace of any display names a window on
+  screen, the user's or macOS's choice. Kosmos adopts it and focuses its display (section
+  5.4). After the key window leaves, macOS can key a window on another display; Kosmos
+  adopts that too, as AeroSpace does, and every display keeps its workspace. Holding such
+  reports for the departure grace would delay every click on another display by 100 ms.
+- Display changes arrive as `NSApplication.didChangeScreenParametersNotification`.
+  AppKit posts it on the main thread once it has rebuilt `NSScreen.screens`, where Kosmos
+  reads each display's visible area and name, and it also covers changes to the visible
+  area, such as the Dock's. `CGDisplayRegisterReconfigurationCallback`, which yabai,
+  SketchyBar and paneru use, runs once per display and phase before AppKit updates, so
+  NSScreen could still hold the old displays. Amethyst, alt-tab, FlashSpace, Rectangle and
+  glide use the notification, and the AeroSpace fork keeps its monitor snapshot until it
+  (commit 1d8c379b).
+- A burst of changes gets one response, 0.5 s after the last, as a wake does (section
+  5.1). Kosmos reads the displays, resolves the profile again, which ends a forced one, and
+  arranges the workspaces:
+  - the focused workspace keeps the focus, on its display;
+  - every other display keeps its workspace if it may still show it, else shows the first
+    workspace assigned to it, else the first free hidden workspace;
+  - a display that no workspace can go to shows none, and the log names it.
+
+  Then it resyncs as after an unlock, and writes each window's frame again when its
+  workspace is next shown, since macOS moves the windows of a display that leaves. While
+  the session is locked or the displays sleep nothing happens, and the resync after the
+  unlock or wake reads the displays. A Mac whose displays sleep can report them gone, and
+  the laptop profile would then merge workspaces 6 to 0 into 1 to 5.
+- A profile that leaves out workspaces moves their windows to the end of the workspaces
+  its `merge-workspaces` names, else of its first workspace. They go back when a profile
+  lists their workspace again, unless the user moved them meanwhile: displays that wake
+  late, as the AeroSpace profile watcher logged, would otherwise merge them for good.
+- A floating window has no frame from the layout. One that moves to another display with
+  `move-node-to-monitor`, `move-node-to-workspace` or `move-workspace-to-monitor` goes to
+  the same place relative to the new display's area. A free workspace shown on another
+  display, and a display change, leave floating windows where they are; macOS moves those
+  of a display that leaves.
+- An app keeps ordinary Space membership for a concealed window only while no display
+  shows a window of it, since macOS prefers an eligible window on the current display over
+  the app's key window on another display (the AeroSpace fork's NativeWindowStash).
+- Open until the desk:
+  - whether the twin panels read their own serials, and whether macOS gives them one
+    display UUID, which would merge them in Kosmos's Space lookup and the bar numbering
+    (section 5.8);
+  - whether a concealed window kept in another display's ordinary Space moves with its
+    frame when revealed there;
+  - how many notifications a hotplug posts, and whether the holding Space survives one.
 
 ## 6. Verification
 
