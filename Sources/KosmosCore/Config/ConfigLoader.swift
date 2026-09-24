@@ -146,9 +146,7 @@ private struct ConfigDecoder {
         var assignment: [String: [String]] = [:]
         for entry in table.entries {
             let entryPath = path.key(entry.key)
-            if !workspaces.contains(entry.key) {
-                fail("workspace '\(entry.key)' is not in \(scope)", at: entry.keyPosition, entryPath)
-            }
+            checkWorkspace((entry.key, entry.keyPosition, entryPath), in: workspaces, scope: scope)
             guard let names = stringOrList(entry.value, entryPath) else { continue }
             for name in names { checkMonitor(name) }
             assignment[entry.key] = names.map(\.value)
@@ -274,9 +272,7 @@ private struct ConfigDecoder {
             if let entry = fields["float"] { rule.float = boolean(entry.value, rulePath.key(entry.key)) }
             if let entry = fields["workspace"], let name = string(entry.value, rulePath.key(entry.key)) {
                 rule.workspace = name
-                if !workspaces.contains(name) {
-                    fail("workspace '\(name)' is not in \(scope)", at: entry.value.position, rulePath.key(entry.key))
-                }
+                checkWorkspace((name, entry.value.position, rulePath.key(entry.key)), in: workspaces, scope: scope)
             }
             guard fields["app-id"] != nil || fields["app-name"] != nil else {
                 fail("a rule needs app-id or app-name", at: item.position, rulePath)
@@ -343,13 +339,11 @@ private struct ConfigDecoder {
                     let mergePath = profilePath.key(entry.key).key(merge.key)
                     if workspaces.contains(merge.key) {
                         fail("workspace '\(merge.key)' is in \(scope), so there is nothing to merge", at: merge.keyPosition, mergePath)
-                    } else if let problem = workspaceNameProblem(merge.key) {
-                        fail(problem, at: merge.keyPosition, mergePath)
+                    } else {
+                        checkWorkspace((merge.key, merge.keyPosition, mergePath), in: base.workspaces, scope: "workspaces")
                     }
                     guard let target = string(merge.value, mergePath) else { continue }
-                    if !workspaces.contains(target) {
-                        fail("workspace '\(target)' is not in \(scope)", at: merge.value.position, mergePath)
-                    }
+                    checkWorkspace((target, merge.value.position, mergePath), in: workspaces, scope: scope)
                     profile.mergeWorkspaces[merge.key] = target
                 }
             }
@@ -383,6 +377,14 @@ private struct ConfigDecoder {
 
     private mutating func warn(_ message: String, at position: SourcePosition, _ path: ValuePath) {
         diagnostics.append(Diagnostic(.warning, at: position, path: path.description, message))
+    }
+
+    /// `scope` names the workspace list `name` must be in, for the message.
+    private mutating func checkWorkspace(_ name: Located, in workspaces: [String], scope: String) {
+        if !workspaces.contains(name.value) {
+            fail("workspace '\(name.value)' is not in \(scope)" + suggestion(for: name.value, from: workspaces),
+                 at: name.position, name.path)
+        }
     }
 
     private mutating func checkMonitor(_ name: Located) {

@@ -395,6 +395,21 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         ])
     }
 
+    @Test func mergedWorkspacesMustBeWorkspaces() {
+        let text = """
+        config-version = 1
+        workspaces = ['web', 'code', 'chat']
+        [[profile]]
+        name = 'small'
+        workspaces = ['web']
+        merge-workspaces = { code = 'web', caht = 'web', o = 'web' }
+        """
+        #expect(Config.load(text).diagnostics.map(\.description) == [
+            "6:36: error: profile[0].merge-workspaces.caht: workspace 'caht' is not in workspaces; did you mean 'chat'?",
+            "6:50: error: profile[0].merge-workspaces.o: workspace 'o' is not in workspaces",
+        ])
+    }
+
     @Test func baseRuleForAMissingWorkspaceIsAWarning() {
         let body = """
         [[rule]]
