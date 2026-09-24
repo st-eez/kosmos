@@ -10,6 +10,11 @@
 /// - `WorkerRead`: `workerRead`, after the app's focused window is read when it was front.
 /// - `WorkerRaise`: `workerRaises`, just before AXRaise.
 /// - `FocusDecide`: `queueDecides`, once the job finished or 30 ms passed.
+///
+/// This is the model's RaiseKeys case, where AXRaise alone keys the target inside the front
+/// app. The model's `WorkerKey` step, which records and posts the key record after the raise
+/// when the raise does not key, is left out until `kosmos-probe keying` shows it is needed
+/// (tla/README.md, change 11).
 public struct KeyRequest<Stamp: Sendable>: Sendable {
     public enum Phase: Equatable, Sendable {
         case pending

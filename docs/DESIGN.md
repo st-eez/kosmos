@@ -243,10 +243,12 @@ off the main thread).
     finds it sent raises nothing.
   - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
     serves only a call that fails.
-  - TLC passes every split config with RaiseReports true and false, the 30 ms timeout
-    nondeterministic for a busy app. tla/README.md lists the six counterexamples that shaped
-    it. The protocol rests on AXRaise alone keying the target inside the front app, a model
-    constant that `kosmos-probe keying`'s "AXRaise alone" order checks.
+  - TLC passes every split config (tla/README.md, change 11): RaiseKeys and RaiseReports
+    both ways, either app busy with the 30 ms timeout nondeterministic, background apps
+    opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
+    keys the target inside the front app. Where it does not, the model's WorkerKey step has
+    the worker record and post the key record after the raise while the request is still
+    current. `kosmos-probe keying`'s "AXRaise alone" order settles which case holds.
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
