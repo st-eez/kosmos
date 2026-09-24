@@ -284,6 +284,12 @@ final class Controller {
 
     private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
 
+    /// macOS shows a native fullscreen window's Space, where that window is key.
+    private var inFullscreenSpace: Bool {
+        guard case .window(let id)? = key else { return false }
+        return fullscreenParked.contains(id)
+    }
+
     /// `since` is when the command arrived, for the switch timing log.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
         guard managing, !plan.isEmpty else { return publishState() }
@@ -296,7 +302,9 @@ final class Controller {
         }
         let movePointer = fromCommand && mouseFollowsFocus
         if show.isEmpty && hide.isEmpty {
-            if plan.focus != nil { requestFocus(intent, movePointer: movePointer) }
+            // Focusing a desktop window takes the user out of a fullscreen Space: only a
+            // command does that, not a window closing behind it.
+            if plan.focus != nil, fromCommand || !inFullscreenSpace { requestFocus(intent, movePointer: movePointer) }
         } else {
             switchGeneration += 1
             let generation = switchGeneration

@@ -166,6 +166,9 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again.
 - Skip activation when the target is already key. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
+- While macOS shows a native fullscreen window's Space, only a command requests focus.
+  Parking the fullscreen window moved Kosmos's focus to a desktop window, and when that
+  window closes, focusing the next one would take the user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
   next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
