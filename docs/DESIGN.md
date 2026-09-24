@@ -223,12 +223,20 @@ off the main thread).
   macOS keying w3 while Kosmos focused w1 (kosmos-hover's TLC counterexample; tla/Kosmos.tla,
   ExecFocus). The front process lookup takes 1.6 us, and only a request for the front app
   pays an AX read.
-- The focus queue records the echo it expects just before its calls, through the main
-  queue, which runs the record before any report of the change. A stale or skipped
-  request records nothing, and a failed call forgets its record. Recording when the
-  request was made failed TLC's `user` config. The user clicked w2, and Kosmos requested
-  w2 again. Before the queue ran that request, the user clicked w1 and then w2, the second
-  click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.
+- The echo a request expects is recorded before its first call that can change the key
+  window, through the main queue, which runs the record before any report of that change.
+  On the private path the app's worker does the read and the raise as one job the focus
+  queue waits on at most 30 ms, and records between them, as the raise can itself report
+  the window key. When the job does not answer in time, the queue records and posts the
+  key record anyway. A stale or skipped request records nothing, and a failed call forgets
+  its record. Once recorded, a private request finishes even if a newer one arrived: the
+  newer one follows in the queue and wins, and dropping the older one would leave its
+  raise's report unmatched and adopted, with Kosmos and macOS apart at rest. Recording when
+  the request was made failed TLC's `user` config. The user clicked w2, and Kosmos
+  requested w2 again. Before the queue ran that request, the user clicked w1 and then w2,
+  the second click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.
+  One ceiling: when the job answers late and then finds the target key already, the key
+  record changes nothing and the expectation waits for a later echo to clear it.
 - When a newer command for another workspace is already queued, the older one lays out but
   doesn't focus.
 - The private path has a kill switch with two triggers. Once off, it stays off across
@@ -254,9 +262,8 @@ off the main thread).
   is already frontmost, for stacked and side by side windows alike, while AXRaise and then
   the record keyed the right window in every case, same app or not (`kosmos-probe raise` on
   the hover branch). yabai and alt-tab raise after the record, an order no probe has
-  checked on macOS 27. The focus queue waits for the raise at most 30 ms, as the main
-  actor waits on a worker, so a slow app's raise lands after the record and a hung app
-  holds only its own worker. `kosmos-probe keying` compares the three orders.
+  checked on macOS 27. A slow app's raise lands after the key record, and a hung app holds
+  only its own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the public
   path on the app's worker: make the window the app's main window, raise it, then activate
   the app, or activate Finder alone for an empty workspace. The app picks its key window, so
@@ -264,9 +271,9 @@ off the main thread).
   window is adopted like the user's choice. A public request's expectation ends at the
   first report from its app that is no echo, so a click on the requested window afterwards
   is the user's. Private requests keep theirs until matched (tla/README.md, change 6). The
-  spec does not model the public path; if the app keys the requested window late, after
-  the user chose another of its windows, that late report reads as the user's and pulls
-  focus back, change 6's bounce in the fallback alone.
+  spec models exact keying only, so its TLC passes do not cover the public path. If the app
+  keys the requested window late, after the user chose another of its windows, that late
+  report reads as the user's and pulls focus back, change 6's bounce in the fallback alone.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space

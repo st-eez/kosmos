@@ -144,12 +144,6 @@ actor AppWorker {
         }
     }
 
-    /// Reads the app's focused window for the focus queue, which waits for it at most 30 ms
-    /// (FocusQueue.swift). `done` gets nil when the app did not answer.
-    nonisolated func readFocusedWindow(_ done: @escaping @Sendable (UInt32??) -> Void) {
-        executor.perform { self.assumeIsolated { done($0.focusedWindow()) } }
-    }
-
     /// Starts asking the app every 0.5 s, for an app that did not answer during its launch
     /// retries.
     func askLater() {
@@ -163,36 +157,63 @@ actor AppWorker {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
-    /// The public focus path, for when the private one is off (DESIGN.md, section 5.4): makes
-    /// the window its app's main window and raises it, then activates the app. The app keys a
-    /// window of its own choosing, on this Mac often another one (wm-research focus note,
-    /// section 4). `dropped` runs instead when a newer focus intent exists.
-    nonisolated func focusPublicly(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool,
-                                   dropped: @escaping @Sendable () -> Void) {
-        executor.perform { self.assumeIsolated { $0.raiseAndActivate(id, isCurrent: isCurrent, dropped: dropped) } }
+    /// What the worker's part of a private focus request found (FocusQueue.swift).
+    enum Preparation: Sendable {
+        /// A newer focus intent exists, and nothing was done.
+        case stale
+        /// The target is key already, and nothing was done.
+        case alreadyKey
+        /// The echo is recorded and a window target raised: the key record goes ahead.
+        case ready
     }
 
-    /// Each step can wait up to the timeout on a slow app, so each checks that no newer
-    /// focus intent exists first; an older request must not activate over a newer one.
-    private func raiseAndActivate(_ id: UInt32, isCurrent: () -> Bool, dropped: () -> Void) {
-        guard isCurrent() else { return dropped() }
-        if let element = elements[id] {
-            _ = ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
-        }
-        guard isCurrent() else { return dropped() }
-        raiseWindow(id)
-        guard isCurrent() else { return dropped() }
-        NSRunningApplication(processIdentifier: pid)?.activate(options: [])
-    }
-
-    /// Raises the window within its app for the private focus path, then runs `done`. The
-    /// focus queue posts the key record once `done` runs or its deadline passes
-    /// (FocusQueue.swift).
-    nonisolated func raise(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool, done: @escaping @Sendable () -> Void) {
+    /// The worker's part of a private focus request, as one job the focus queue waits on at
+    /// most 30 ms. It reads the app's focused window when `readFocus`, as the app is the
+    /// front process, and unless the target is key already, runs `goAhead`, which records
+    /// the echo, then raises a window target. The record comes before the raise, whose own
+    /// focus report must find it.
+    nonisolated func prepareKey(_ key: KeyWindow, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
+                                goAhead: @escaping @Sendable () -> Void, done: @escaping @Sendable (Preparation) -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
-                if isCurrent() { worker.raiseWindow(id) }
-                done()
+                guard isCurrent() else { return done(.stale) }
+                let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
+                guard !key.isAlreadyKey(appIsFront: readFocus, focused: focused) else { return done(.alreadyKey) }
+                goAhead()
+                if case .window(let id) = key { worker.raiseWindow(id) }
+                done(.ready)
+            }
+        }
+    }
+
+    /// The public focus path, for when the private one is off or its call fails (DESIGN.md,
+    /// section 5.4), as one job: skips a target that is key already, as `prepareKey` does,
+    /// records the echo through `performing`, makes a window target its app's main window and
+    /// raises it, then activates the app. The app keys a window of its own choosing, on this
+    /// Mac often another one (wm-research focus note, section 4). Each step can wait up to the
+    /// timeout on a slow app, so each first checks that no newer focus intent exists: a
+    /// request stale before its record does nothing, and one that turns stale after it stops
+    /// and keeps the record for any report its steps cause. `dropped` gets the record's stamp
+    /// when the activation fails.
+    nonisolated func focusPublicly(_ key: KeyWindow, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
+                                   performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                   dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
+        executor.perform {
+            self.assumeIsolated { worker in
+                guard isCurrent() else { return }
+                let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
+                guard !key.isAlreadyKey(appIsFront: readFocus, focused: focused) else { return }
+                let stamp = ContinuousClock.now
+                performing(stamp)
+                if case .window(let id) = key {
+                    if let element = worker.elements[id] {
+                        _ = worker.ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
+                    }
+                    guard isCurrent() else { return }
+                    worker.raiseWindow(id)
+                    guard isCurrent() else { return }
+                }
+                if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { dropped(stamp) }
             }
         }
     }

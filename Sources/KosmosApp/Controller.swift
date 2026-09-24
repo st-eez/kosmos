@@ -24,7 +24,8 @@ final class Controller {
     private var owner: [WindowID: pid_t] = [:]
     /// Window ids by most recent focus, newest last.
     private var recent: [WindowID] = []
-    /// The key window macOS last reported.
+    /// The key window macOS last reported. Too old to skip a focus request against, which the
+    /// focus queue decides when the request runs.
     private var key: KeyWindow?
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
@@ -324,7 +325,8 @@ final class Controller {
     private func requestFocus(_ target: KeyWindow, movePointer: Bool = false) {
         guard !sessionLocked else { return }
         if movePointer, case .window(let id) = target { centerPointer(on: id) }
-        guard target != key else { return }   // already key: activating again costs the system work
+        // The focus queue skips a target that is key already, checked when the request runs:
+        // the key window last reported here can be older than a request still in flight.
         let pid: pid_t?
         switch target {
         case .window(let id):
