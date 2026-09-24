@@ -59,3 +59,10 @@ import Testing
     #expect(reports.classify(.none, receivedAt: 11, onCurrentWorkspace: false, wasHidden: false) == .echo)
     #expect(reports.classify(.none, receivedAt: 12, onCurrentWorkspace: false, wasHidden: false) == .ignore)
 }
+
+@Test func droppedRequestDoesNotSwallowAUserReport() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), at: 10)
+    reports.requestDropped(.window(1), at: 10)
+    #expect(reports.classify(.window(1), receivedAt: 11, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
+}

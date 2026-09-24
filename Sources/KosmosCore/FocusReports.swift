@@ -31,8 +31,16 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         lastCommand = stamp
     }
 
+    /// Records a request when it is queued, before it can come back.
     public mutating func focusRequested(_ key: KeyWindow, at stamp: Stamp) {
         expected.append((key, stamp))
+    }
+
+    /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
+    public mutating func requestDropped(_ key: KeyWindow, at stamp: Stamp) {
+        if let index = expected.firstIndex(where: { $0.key == key && $0.requested == stamp }) {
+            expected.remove(at: index)
+        }
     }
 
     /// - Parameters:
