@@ -254,12 +254,38 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   annotated session location, for mouse moved events only. A pointer at rest costs nothing,
   and the tap is off while focus follows mouse is. AutoRaise polls 20 times a second.
 - On macOS 27, creating a listen-only tap for mouse moved events alone made macOS ask a
-  process without Input Monitoring for it ("would like to receive keystrokes from any
-  application"), and that tap received nothing, while the same tap under the terminal's
-  grants received about 5,800 movements in the same minutes. Whether Kosmos's
-  Accessibility grant is enough is open until a live test settles it. The tap is created
-  only when focus follows mouse is first turned on, and Kosmos logs whether Input
-  Monitoring is granted and when the first event arrives.
+  process with neither Accessibility nor Input Monitoring for Input Monitoring ("would
+  like to receive keystrokes from any application"), and that tap received nothing, while
+  the same tap under the terminal's grants received about 5,800 movements in the same
+  minutes. Apps with Accessibility alone run listen-only taps: AltTab at the annotated
+  location (`src/events/WindowAttentionEvents.swift`, whose tap creation fails without
+  Accessibility) and Loop for mouse movement (`PassiveEventMonitor.swift`). Whether
+  Kosmos's grant is enough is open until a live test settles it. The tap is created only
+  when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
+  granted and when the first event arrives.
+- Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
+  `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead. AeroSpace's and
+  Amethyst's focus follows mouse and Rectangle's drag snapping use such monitors, and
+  their code asks only for Accessibility. AppKit installs the monitor as a handler on
+  HIToolbox's event monitor target (AppKit's imports and disassembly on macOS 27), which
+  Carbon's documentation of `GetEventMonitorTarget` describes as WindowServer copying
+  user input events sent to other processes into this one's event queue, so it is not an
+  event tap. NSEvent's header requires Accessibility for key events and names nothing for
+  mouse events. Against the tap it gives up two things:
+  - Delivery is on the main thread, so every movement wakes the main actor and queues with
+    hotkey events. The gate still runs first, and only a movement into another window
+    does more.
+  - The event may not name the window under the pointer; whether its `cgEvent` carries
+    the annotated field is for the live test. If not, `NSWindow.windowNumber(at:
+    belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point,
+    including other apps' windows, at one WindowServer call per movement that passes the
+    2 pt check. The monitor's points have a bottom left origin and are flipped first.
+
+  The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
+  and Control still comes from each event's modifier flags. An active tap is the other
+  way out: Rectangle, skhd and yabai create default taps with Accessibility, and it keeps
+  the tap's thread and field, but every pointer event would wait on Kosmos's callback,
+  which section 3 rejects for the keyboard.
 - Each event names the window under the pointer, as WindowServer's own hit test found it
   (`kCGMouseEventWindowUnderMousePointer`, filled in at the annotated location). Kosmos
   takes that window only when its model has it as a tiled or floating window of the shown
