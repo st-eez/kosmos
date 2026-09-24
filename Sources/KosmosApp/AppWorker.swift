@@ -103,6 +103,24 @@ actor AppWorker {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
+    /// The public focus path, for when the private one is off (DESIGN.md, section 5.4): makes
+    /// the window its app's main window and raises it, then activates the app. The app keys a
+    /// window of its own choosing, on this Mac often another one (wm-research focus note,
+    /// section 4). `dropped` runs instead when a newer focus intent exists.
+    nonisolated func focusPublicly(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool,
+                                   dropped: @escaping @Sendable () -> Void) {
+        executor.perform { self.assumeIsolated { $0.raiseAndActivate(id, isCurrent: isCurrent, dropped: dropped) } }
+    }
+
+    private func raiseAndActivate(_ id: UInt32, isCurrent: () -> Bool, dropped: () -> Void) {
+        guard isCurrent() else { return dropped() }
+        if let element = elements[id] {
+            AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        }
+        NSRunningApplication(processIdentifier: pid)?.activate(options: [])
+    }
+
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
     /// gets only its newest target.
     func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {

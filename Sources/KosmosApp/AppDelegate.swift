@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configProblems: [String] = []
     private var hotkeyProblems: [String] = []
     private var hidingProblem: String?
+    private var focusProblem: String?
     private var hiding: Hiding?
     private var secureInput: SecureInput?
 
@@ -103,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case ["reload-config"]:
             guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
             guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+            controller?.turnOnPrivateFocus()
             let (applied, messages) = reloadConfig(atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
         default:
@@ -170,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateProblems() {
-        statusItem?.problems = configProblems + hotkeyProblems + (hidingProblem.map { [$0] } ?? [])
+        statusItem?.problems = configProblems + hotkeyProblems + [hidingProblem, focusProblem].compactMap { $0 }
     }
 
     /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
@@ -223,6 +225,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
+        controller.onFocusProblem = { [weak self] problem in
+            self?.focusProblem = problem
+            self?.updateProblems()
+        }
+        focusProblem = controller.focusProblem
+        updateProblems()
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.

@@ -161,8 +161,24 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again.
 - Skip activation when the target is already key. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
-- The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
-  disable it.
+- The private path has a kill switch with two triggers. Once off, it stays off across
+  restarts until `kosmos reload-config`, and the status item names the cause.
+  - A crash guard. A byte in a file mapped shared is set during each private call and
+    cleared after it, and a byte found set at launch turns the path off. The two stores
+    cost about 1.4 ns and make no system call. A kill that lands inside the call turns the
+    path off too.
+  - Wrong windows. A request misses when its app reports another of its windows key and no
+    echo of any request arrives before Kosmos's next request. Five misses in a row turn the
+    path off. The private path keyed the right window in 60 of 60 trials on this Mac, so its
+    miss rate is at most about 5% at 95% confidence, and five misses in a row at 5% come
+    once in about 3 million runs. The public path chose the wrong window in 9 of 9 trials,
+    so a false trip costs more than a few late wrong windows (wm-research focus note,
+    section 4). A request with no report neither misses nor clears the count.
+- While the path is off, and for a request whose SkyLight call fails, focus takes the public
+  path on the app's worker: make the window the app's main window, raise it, then activate
+  the app, or activate Finder alone for an empty workspace. The app picks its key window, so
+  the spec's assumption that the requested window becomes key no longer holds, and a wrong
+  window is adopted like the user's choice.
 
 ### 5.5 Tree
 

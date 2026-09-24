@@ -14,6 +14,7 @@ final class Controller {
     private var session: Session
     private var ledger = FrameLedger()
     private var reports = FocusReports<ContinuousClock.Instant>()
+    private var misses = FocusMisses<ContinuousClock.Instant>()
     private let inventory: Inventory
     private let hiding: Hiding
     private let focusQueue = FocusQueue()
@@ -40,6 +41,9 @@ final class Controller {
     /// display is.
     private let barDisplay: BarSnapshot.Display
     var publish: (@MainActor (Data) -> Void)?
+    /// Called with a description when the private focus path turns off, and with nil when it
+    /// turns back on.
+    var onFocusProblem: (@MainActor (String?) -> Void)?
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
         self.inventory = inventory
@@ -61,6 +65,24 @@ final class Controller {
         session.gaps = gaps
         guard managing else { return }   // another window manager owns the frames
         writeFrames(session.frames(of: session.visible))
+    }
+
+    /// Why the private focus path is off, for the status item, or nil while it is on.
+    var focusProblem: String? {
+        switch focusQueue.killSwitch.offReason {
+        case .crashed?: "Private focus is off after a crash inside it, until kosmos reload-config"
+        case .wrongWindows?: "Private focus is off after \(FocusMisses<ContinuousClock.Instant>.limit) wrong windows in a row, until kosmos reload-config"
+        case nil: nil
+        }
+    }
+
+    /// A config reload turns the private focus path back on (DESIGN.md, section 5.4).
+    func turnOnPrivateFocus() {
+        guard focusQueue.killSwitch.offReason != nil else { return }
+        focusQueue.killSwitch.turnOn()
+        misses = FocusMisses()
+        controllerLog.notice("private focus is on again")
+        onFocusProblem?(nil)
     }
 
     func run(_ arguments: [String], received: ContinuousClock.Instant) -> (code: Int32, text: String) {
@@ -139,6 +161,7 @@ final class Controller {
                                            onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
                                            wasHidden: id.map(hiding.isConcealed) ?? false)
             controllerLog.debug("focus report \(String(describing: reported), privacy: .public): \(String(describing: verdict), privacy: .public)")
+            misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: verdict == .echo)
             switch verdict {
             case .echo, .ignore:
                 break
@@ -275,8 +298,14 @@ final class Controller {
         guard let pid else { return }
         let stamp = ContinuousClock.now
         reports.focusRequested(target, at: stamp)
-        focusQueue.request(target, pid: pid, generation: focusQueue.newGeneration()) { [weak self] in
+        if focusQueue.killSwitch.isOn, case .window = target, misses.willRequest(pid: pid, at: stamp) {
+            focusQueue.killSwitch.turnOff(.wrongWindows)
+            controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
+            onFocusProblem?(focusProblem)
+        }
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), generation: focusQueue.newGeneration()) { [weak self] in
             self?.reports.requestDropped(target, at: stamp)
+            self?.misses.requestDropped(at: stamp)
         }
     }
 
