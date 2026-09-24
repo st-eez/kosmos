@@ -33,14 +33,18 @@
 //                                   child app that is launching, answering and hung. The
 //                                   child is an accessory app with no window, which a running
 //                                   Kosmos ignores. Needs Accessibility for the terminal.
-//   kosmos-probe keying [rounds]    Keys windows of two stub apps three ways: the key record
-//                                   alone, AXRaise then the record (the order Kosmos uses), and
-//                                   the record then AXRaise (yabai and alt-tab). Covers two
-//                                   stacked windows of one app, two side by side, another app,
-//                                   and back into an app whose other window was key. The stubs
-//                                   are accessory apps with small windows at the bottom right,
-//                                   which a running Kosmos leaves alone. The probe takes
-//                                   keyboard focus while it runs and hands it back at the end.
+//   kosmos-probe keying [rounds]    Keys windows of two stub apps four ways: the key record
+//                                   alone, AXRaise then the record (the order Kosmos uses), the
+//                                   record then AXRaise (yabai and alt-tab), and AXRaise alone.
+//                                   Covers two stacked windows of one app, two side by side,
+//                                   another app, and back into an app whose other window was
+//                                   key, then a key window concealed and revealed, where the
+//                                   focus queue's already key check could skip wrongly. The
+//                                   stubs say which window they hold key, and every
+//                                   AXFocusedWindowChanged is logged against the raise. They are
+//                                   accessory apps with small windows at the bottom right, which
+//                                   a running Kosmos leaves alone. The probe takes keyboard focus
+//                                   while it runs and hands it back at the end.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -465,7 +469,8 @@ func axTimeout() {
 
 /// An accessory app for `keying`, which a running Kosmos leaves alone. Opens a 170 by 90
 /// window for each "left,up" offset from the bottom right corner of the main screen's
-/// visible area, prints the window ids, and exits when its standard input closes.
+/// visible area and prints the window ids. Each "key" line on its standard input prints the
+/// window the app holds key, or 0. It exits when its standard input closes.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -481,39 +486,61 @@ func axTimeout() {
     }
     print(ids.map(String.init).joined(separator: " "))
     Thread.detachNewThread {
-        while !FileHandle.standardInput.availableData.isEmpty {}
+        while let line = readLine() {
+            guard line == "key" else { continue }
+            DispatchQueue.main.async { MainActor.assumeIsolated { print(NSApp.keyWindow?.windowNumber ?? 0) } }
+        }
         exit(0)
     }
     app.run()
     exit(0)
 }
 
-struct KeyStub {
+final class KeyStub {
     let name: String
     let process: Process
     /// Held open for the stub's lifetime; the stub exits when it closes.
     let input: Pipe
-    let windows: [UInt32]
+    let output: Pipe
+    private var buffer = Data()
+    private(set) var windows: [UInt32] = []
     var pid: pid_t { process.processIdentifier }
-    func label(_ window: UInt32) -> String { windows.firstIndex(of: window).map { "\(name)\($0 + 1)" } ?? String(window) }
-}
 
-func launchKeyStub(_ name: String, _ offsets: [String]) -> KeyStub {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    process.arguments = ["key-stub", name] + offsets
-    let input = Pipe(), output = Pipe()
-    process.standardInput = input
-    process.standardOutput = output
-    try! process.run()
-    var line = Data()
-    while !line.contains(UInt8(ascii: "\n")) {
-        let chunk = output.fileHandleForReading.availableData
-        guard !chunk.isEmpty else { print("stub \(name) exited"); exit(1) }
-        line.append(chunk)
+    init(_ name: String, _ offsets: [String]) {
+        self.name = name
+        process = Process()
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        process.arguments = ["key-stub", name] + offsets
+        input = Pipe()
+        output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        try! process.run()
+        windows = line().split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
     }
-    let ids = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
-    return KeyStub(name: name, process: process, input: input, windows: ids)
+
+    func line() -> String {
+        while !buffer.contains(UInt8(ascii: "\n")) {
+            let chunk = output.fileHandleForReading.availableData
+            guard !chunk.isEmpty else { print("stub \(name) exited"); exit(1) }
+            buffer.append(chunk)
+        }
+        let end = buffer.firstIndex(of: UInt8(ascii: "\n"))!
+        let text = String(decoding: buffer[buffer.startIndex..<end], as: UTF8.self)
+        buffer.removeSubrange(buffer.startIndex...end)
+        return text
+    }
+
+    /// The window the app itself holds key, from AppKit, or nil.
+    func appKey() -> UInt32? {
+        input.fileHandleForWriting.write(Data("key\n".utf8))
+        return UInt32(line()).flatMap { $0 == 0 ? nil : $0 }
+    }
+
+    func label(_ window: UInt32?) -> String {
+        guard let window else { return "none" }
+        return windows.firstIndex(of: window).map { "\(name)\($0 + 1)" } ?? String(window)
+    }
 }
 
 /// The window's element in its app, found by window id.
@@ -526,7 +553,7 @@ func windowElement(_ pid: pid_t, _ window: UInt32) -> AXUIElement? {
     }
 }
 
-/// The app's focused window, which is the key window while the app is frontmost.
+/// The app's focused window as Accessibility names it.
 func focusedWindow(of pid: pid_t) -> UInt32? {
     var focused: CFTypeRef?
     var id: UInt32 = 0
@@ -535,16 +562,41 @@ func focusedWindow(of pid: pid_t) -> UInt32? {
     return id
 }
 
+/// Every AXFocusedWindowChanged the stubs post, with when it arrived. Main thread only.
+final class FocusNotes: @unchecked Sendable {
+    var entries: [(pid: pid_t, window: UInt32, at: ContinuousClock.Instant)] = []
+    private var observers: [AXObserver] = []
+
+    func watch(_ pid: pid_t) {
+        var observer: AXObserver?
+        guard AXObserverCreate(pid, { _, element, _, refcon in
+            guard let refcon else { return }
+            var pid: pid_t = 0, window: UInt32 = 0
+            AXUIElementGetPid(element, &pid)
+            _ = _AXUIElementGetWindow(element, &window)
+            Unmanaged<FocusNotes>.fromOpaque(refcon).takeUnretainedValue().entries.append((pid, window, .now))
+        }, &observer) == .success, let observer else { return print("no focus observer for \(pid)") }
+        AXObserverAddNotification(observer, AXUIElementCreateApplication(pid), kAXFocusedWindowChangedNotification as CFString,
+                                  Unmanaged.passUnretained(self).toOpaque())
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        observers.append(observer)
+    }
+}
+
 @MainActor func keying(rounds: Int) {
-    _ = NSApplication.shared
+    let rounds = max(rounds, 1)
+    _ = NSApplication.shared   // the concealed case's bridged operations need an AppKit client
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
     func wait(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
     // Focus goes back to this app and window at the end.
     let before = NSWorkspace.shared.frontmostApplication?.processIdentifier
     let beforeWindow = before.flatMap(focusedWindow(of:))
     // A1 and A2 overlap, A3 sits apart, and B1 covers parts of A1 and A2.
-    let a = launchKeyStub("A", ["0,0", "60,40", "300,0"])
-    let b = launchKeyStub("B", ["30,20"])
+    let a = KeyStub("A", ["0,0", "60,40", "300,0"])
+    let b = KeyStub("B", ["30,20"])
+    let notes = FocusNotes()
+    notes.watch(a.pid)
+    notes.watch(b.pid)
     defer {
         a.process.terminate()
         b.process.terminate()
@@ -556,25 +608,42 @@ func focusedWindow(of pid: pid_t) -> UInt32? {
         case recordOnly = "record only"
         case raiseFirst = "AXRaise, then record"
         case raiseAfter = "record, then AXRaise"
+        case raiseOnly = "AXRaise alone"
     }
-    var raiseTimes: [Double] = []
-    func focus(_ stub: KeyStub, _ window: UInt32, _ order: Order) {
-        func raise() {
+    /// Keys the window as `order` says and waits 0.3 s. Returns when the raise started, and
+    /// how long it took.
+    @discardableResult
+    func focus(_ stub: KeyStub, _ window: UInt32, _ order: Order) -> (raised: ContinuousClock.Instant, ms: Double)? {
+        var raise: (ContinuousClock.Instant, Double)?
+        func raiseWindow() {
             guard let element = windowElement(stub.pid, window) else { return print("  no element for \(stub.label(window))") }
             let start = ContinuousClock.now
             _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-            raiseTimes.append(elapsed(start))
+            raise = (start, elapsed(start))
         }
-        if order == .raiseFirst { raise() }
-        if !kosmos_make_key(stub.pid, window) { print("  kosmos_make_key failed for \(stub.label(window))") }
-        if order == .raiseAfter { raise() }
+        if order == .raiseFirst || order == .raiseOnly { raiseWindow() }
+        if order != .raiseOnly, !kosmos_make_key(stub.pid, window) { print("  kosmos_make_key failed for \(stub.label(window))") }
+        if order == .raiseAfter { raiseWindow() }
         wait(0.3)
+        return raise
     }
+    func front(_ stub: KeyStub) -> Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == stub.pid }
     func onTop(_ window: UInt32, over others: [UInt32]) -> Bool {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let order = list.compactMap { ($0[kCGWindowNumber as String] as? Int).map(UInt32.init) }
         guard let index = order.firstIndex(of: window) else { return false }
         return others.allSatisfy { (order.firstIndex(of: $0) ?? .max) > index }
+    }
+    /// The focus notes since `mark`, as offsets from the raise when there was one.
+    func notesSince(_ mark: Int, raisedAt: ContinuousClock.Instant?) -> String {
+        let stubs = [a, b]
+        let text = notes.entries[mark...].map { note in
+            let stub = stubs.first { $0.pid == note.pid }
+            let offset = raisedAt.map { String(format: " %+.1f ms", Double((note.at - $0).components.attoseconds) / 1e15
+                                                                 + Double((note.at - $0).components.seconds) * 1000) } ?? ""
+            return "\(stub?.label(note.window) ?? String(note.window))\(offset)"
+        }
+        return text.isEmpty ? "none" : text.joined(separator: ", ")
     }
 
     typealias Target = (stub: KeyStub, window: UInt32)
@@ -585,40 +654,94 @@ func focusedWindow(of pid: pid_t) -> UInt32? {
         ("back into A after A2 was key: A2, B1, then A1", [(a, a.windows[1]), (b, b.windows[0])], (a, a.windows[0]),
          [a.windows[1], b.windows[0]]),
     ]
-    var keyed: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
+    var hits: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
+    var raiseTimes: [Double] = []
     for round in 1...rounds {
         for test in cases {
             for order in Order.allCases {
                 // Kosmos's order sets up each case; a case whose setup did not key is skipped.
                 for step in test.setup { focus(step.stub, step.window, .raiseFirst) }
                 let last = test.setup.last!
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == last.stub.pid,
-                      focusedWindow(of: last.stub.pid) == last.window else {
+                guard front(last.stub), last.stub.appKey() == last.window else {
                     print("round \(round), \(test.name), \(order.rawValue): setup did not key \(last.stub.label(last.window)), skipped")
                     continue
                 }
-                raiseTimes.removeAll()
-                focus(test.target.stub, test.target.window, order)
-                let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == test.target.stub.pid
-                let key = focusedWindow(of: test.target.stub.pid)
-                let isKey = front && key == test.target.window
+                let mark = notes.entries.count
+                let raise = focus(test.target.stub, test.target.window, order)
+                if let raise { raiseTimes.append(raise.ms) }
+                let isFront = front(test.target.stub)
+                let appKey = test.target.stub.appKey()
+                let axFocused = focusedWindow(of: test.target.stub.pid)
+                let isKey = isFront && appKey == test.target.window
                 let isOnTop = onTop(test.target.window, over: test.covers)
                 let row = "\(test.name) | \(order.rawValue)"
                 trials[row, default: 0] += 1
-                if isKey { keyed[row, default: 0] += 1 }
+                if isKey { hits[row, default: 0] += 1 }
                 if isOnTop { raised[row, default: 0] += 1 }
-                let raiseTime = raiseTimes.first.map { String(format: ", AXRaise %.2f ms", $0) } ?? ""
-                print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(front ? "yes" : "no"), "
-                      + "focused \(key.map(test.target.stub.label) ?? "none")), \(isOnTop ? "on top" : "not on top")\(raiseTime)")
+                let raiseTime = raise.map { String(format: ", AXRaise %.2f ms", $0.ms) } ?? ""
+                print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(isFront ? "yes" : "no"), "
+                      + "app key \(test.target.stub.label(appKey)), AX focused \(test.target.stub.label(axFocused))), "
+                      + "\(isOnTop ? "on top" : "not on top")\(raiseTime); focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
             }
         }
     }
-    print("\nsummary: a hit keys the target window; a miss leaves another window key")
+
+    // A key window concealed in a holding Space and revealed again, as a switch away and back
+    // does. The focus queue skips a request when the app is front and names the target as
+    // focused; it would skip wrongly if the app named it while holding no key window.
+    var wrongSkips = 0, concealTrials = 0, rekeyed = 0
+    let space = kosmos_holding_create()
+    if let desktop = Displays.current().ordinarySpace(original: nil), space != 0 {
+        var ids = [a.windows[0]]
+        defer {
+            _ = kosmos_remove_windows(space, &ids, 1)
+            _ = kosmos_space_destroy(space)
+        }
+        for round in 1...rounds {
+            focus(a, a.windows[0], .raiseFirst)
+            guard front(a), a.appKey() == a.windows[0] else {
+                print("round \(round), concealed and revealed: setup did not key A1, skipped")
+                continue
+            }
+            kosmos_add_windows(space, &ids, 1, true)
+            _ = kosmos_barrier(space)
+            wait(0.3)
+            print("round \(round), A1 concealed: front \(front(a) ? "yes" : "no"), app key \(a.label(a.appKey())), "
+                  + "AX focused \(a.label(focusedWindow(of: a.pid)))")
+            kosmos_add_windows(desktop, &ids, 1, true)
+            kosmos_remove_windows(space, &ids, 1)
+            _ = kosmos_barrier(space)
+            wait(0.3)
+            let isFront = front(a), appKey = a.appKey(), axFocused = focusedWindow(of: a.pid)
+            let skips = KeyWindow.window(a.windows[0]).isAlreadyKey(appIsFront: isFront, focused: .some(axFocused))
+            let wrong = skips && appKey != a.windows[0]
+            concealTrials += 1
+            if wrong { wrongSkips += 1 }
+            let mark = notes.entries.count
+            let raise = focus(a, a.windows[0], .raiseFirst)
+            let keyedAgain = front(a) && a.appKey() == a.windows[0]
+            if keyedAgain { rekeyed += 1 }
+            print("round \(round), A1 revealed: front \(isFront ? "yes" : "no"), app key \(a.label(appKey)), "
+                  + "AX focused \(a.label(axFocused)); the already key check would \(skips ? "skip" : "go ahead")"
+                  + "\(wrong ? ", WRONGLY" : ""); Kosmos's order then \(keyedAgain ? "keyed A1" : "did NOT key A1"); "
+                  + "focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
+        }
+    } else {
+        if space != 0 { _ = kosmos_space_destroy(space) }
+        print("no holding Space or no ordinary Space; the concealed case did not run")
+    }
+
+    print("\nsummary: a hit keys the target window in the app that holds it; a miss leaves another window key")
     for test in cases {
         for order in Order.allCases {
             let row = "\(test.name) | \(order.rawValue)"
-            let hits = keyed[row] ?? 0, runs = trials[row] ?? 0
-            print("  \(row): \(hits) hits, \(runs - hits) misses, on top \(raised[row] ?? 0) of \(runs)")
+            let hit = hits[row] ?? 0, runs = trials[row] ?? 0
+            print("  \(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs)")
         }
+    }
+    print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
+          + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
+    if !raiseTimes.isEmpty {
+        print(String(format: "  AXRaise: median %.2f ms, max %.2f ms over %d raises", percentile(raiseTimes, 0.5), percentile(raiseTimes, 1), raiseTimes.count))
     }
 }
