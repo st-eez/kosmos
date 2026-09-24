@@ -462,6 +462,21 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.frames(of: "1")[2] == before[3])
 }
 
+@Test func aTabParkedAsClosedBeforeItsSwitchTookEffectGivesTheNewTabItsPlace() {
+    // Tab 2 was parked as closed by its app a second after it was deselected, before tab 7's
+    // admission let the switch take effect. Its place returns for tab 7, which is on screen
+    // (Controller.tabSwitched).
+    var s = session()
+    _ = s.add(1, to: "2"); _ = s.add(2, to: "2")
+    let before = s.frames(of: "2"), order = s.windows(of: "2")
+    _ = s.park([2])
+    _ = s.unpark([2], follow: nil)
+    let plan = s.replace(2, with: 7)!
+    #expect(!s.isParked(7) && s.workspace(of: 7) == "2")
+    #expect(s.windows(of: "2") == order.map { $0 == 2 ? 7 : $0 })
+    #expect(plan.hide == [7] && plan.frames[7] == before[2])
+}
+
 @Test func aTabSwitchInsideANativeFullscreenGroupSwapsTheParkedTab() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
