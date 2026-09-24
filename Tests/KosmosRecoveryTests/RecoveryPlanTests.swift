@@ -26,13 +26,15 @@ import Testing
 }
 
 @Test func recoveryIsCompleteOnlyWhenNothingIsLeftAnywhere() {
-    #expect(RecoveryPlan.isComplete(remainingMembers: 0, withoutSpace: 0))
-    #expect(!RecoveryPlan.isComplete(remainingMembers: 1, withoutSpace: 0))
-    #expect(!RecoveryPlan.isComplete(remainingMembers: 0, withoutSpace: 1))
+    let plan = RecoveryPlan.make(members: [9: [1]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
+    #expect(plan.isComplete(remainingMembers: 0, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: 1, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 1 }))
 }
 
-@Test func stuckWindowsAreAmongThoseChecked() {
-    // A stranded window with no destination must keep the record: it is on no Space.
+@Test func aStuckStrandedWindowKeepsTheRecord() {
+    // A stranded window with no destination is on no Space, so recovery is not complete.
     let plan = RecoveryPlan.make(members: [:], stranded: [3], hasOrdinarySpace: { _ in false }, destination: { _ in nil })
-    #expect(plan.windows == [3])
+    #expect(plan.stuck == [3])
+    #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 3 }))
 }

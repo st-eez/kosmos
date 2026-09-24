@@ -84,22 +84,56 @@ private final class HidingStore: @unchecked Sendable {
     private var state: RecoveryRecord?
     private var space: UInt64 = 0
     private var ledger = ConcealLedger()
+    /// Whether the record on file and the ledger it implies are loaded.
+    private var loaded = false
 
     init(record: RecordFile) { self.record = record }
 
     var concealed: Set<UInt32> { Set(ledger.entries.keys) }
 
+    /// Loads the record on file, and the ledger for the windows its Spaces still hold, as
+    /// after an incomplete recovery. False while a Space cannot be read: nothing may be
+    /// concealed or revealed until its state is known.
+    private func load() -> Bool {
+        if loaded { return true }
+        guard let windowServer = ProcessIdentity.windowServer() else { return false }
+        guard let onFile = record.read(), onFile.windowServer == windowServer else {
+            state = RecoveryRecord(windowServer: windowServer, manager: .current)
+            space = 0
+            ledger = ConcealLedger()
+            loaded = true
+            return true
+        }
+        let members = Dictionary(uniqueKeysWithValues: onFile.spaces.map { ($0, kosmos_space_windows($0) as? [UInt32]) })
+        guard let rebuilt = ConcealLedger.rebuilt(members: members, hasOrdinarySpace: Self.hasOrdinarySpace) else {
+            hidingLog.error("a recorded Space cannot be read; concealing waits for recovery")
+            return false
+        }
+        state = onFile
+        state!.manager = .current
+        // The newest recorded Space is used again rather than adding one per attempt.
+        space = onFile.spaces.last ?? 0
+        ledger = rebuilt
+        loaded = true
+        return true
+    }
+
     func apply(show: [UInt32], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
+        guard load() else { return false }
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space)
+        var moves = batch.moves
         for (from, windows) in batch.removals {
-            var ids = windows
+            // Removing a window with no ordinary Space would leave it on none; move it instead.
+            let (keep, lost) = (windows.filter(Self.hasOrdinarySpace), windows.filter { !Self.hasOrdinarySpace($0) })
+            moves += lost
+            var ids = keep
             kosmos_remove_windows(from, &ids, ids.count)
         }
-        if !batch.moves.isEmpty {
+        if !moves.isEmpty {
             guard let destination = Displays.current().mainCurrentSpace else { return false }
-            var ids = batch.moves
+            var ids = moves
             kosmos_add_windows(destination, &ids, ids.count, true)
         }
         var ids = batch.keep
@@ -126,18 +160,6 @@ private final class HidingStore: @unchecked Sendable {
     /// Records the holding Space before any window enters it, and each window before its
     /// first hide. A change is kept only once it is published.
     private func prepare(_ windows: [UInt32]) -> Bool {
-        if state == nil {
-            guard let windowServer = ProcessIdentity.windowServer() else { return false }
-            // Spaces an incomplete recovery left on file stay recorded, and the newest is
-            // used again rather than adding one per attempt.
-            if let onFile = record.read(), onFile.windowServer == windowServer {
-                state = onFile
-                state!.manager = .current
-                space = onFile.spaces.last ?? 0
-            } else {
-                state = RecoveryRecord(windowServer: windowServer, manager: .current)
-            }
-        }
         var next = state!
         var created: UInt64 = 0
         if space == 0 {
@@ -176,24 +198,23 @@ private final class HidingStore: @unchecked Sendable {
         return false
     }
 
-    /// Runs recovery, then rebuilds the ledger from the windows it could not restore.
+    /// Runs recovery, then loads the ledger again from what the record still names.
     @discardableResult
     func recover() -> Recovery.Outcome {
         let outcome = Recovery.run(file: record)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
-        // Start over from the file: empty after a full recovery, the leftovers otherwise.
-        state = nil
-        space = 0
-        var entries: [UInt32: ConcealLedger.Entry] = [:]
-        for left in record.read()?.spaces ?? [] {
-            for window in kosmos_space_windows(left) as? [UInt32] ?? [] {
-                let ordinary = !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
-                entries[window] = .init(kind: ordinary ? .keepOrdinary : .exclusive, space: left)
-            }
+        loaded = false
+        if !load() {
+            // Unknown: every batch fails at load() and runs recovery again, so this empty
+            // ledger is never used to decide a reveal or a conceal.
+            ledger = ConcealLedger()
         }
-        ledger = ConcealLedger(entries: entries)
         return outcome
     }
 
     func recoverOutcome() -> Recovery.Outcome { recover() }
+
+    private static func hasOrdinarySpace(_ window: UInt32) -> Bool {
+        !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
+    }
 }

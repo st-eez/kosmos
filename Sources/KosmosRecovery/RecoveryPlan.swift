@@ -36,9 +36,9 @@ struct RecoveryPlan: Equatable {
     var windows: [UInt32] { Array(removals.values.joined()) + Array(moves.values.joined()) + stuck }
 
     /// Recovery is complete only when no window is left in a recorded Space and every
-    /// window it handled is on an ordinary Space. Otherwise the record stays for another
-    /// attempt.
-    static func isComplete(remainingMembers: Int, withoutSpace: Int) -> Bool {
-        remainingMembers == 0 && withoutSpace == 0
+    /// window of the plan, including the stuck ones, is on an ordinary Space. Otherwise the
+    /// record stays for another attempt.
+    func isComplete(remainingMembers: Int, isOnNoSpace: (UInt32) -> Bool) -> Bool {
+        remainingMembers == 0 && !windows.contains(where: isOnNoSpace)
     }
 }

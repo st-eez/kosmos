@@ -39,8 +39,16 @@ private let holding: UInt64 = 100
     #expect(ledger.batch(show: [4], hide: [:], into: holding).removals == [old: [4]])
 }
 
-@Test func uncommittedBatchesLeaveTheLedgerAlone() {
-    let ledger = ConcealLedger(entries: [1: .init(kind: .keepOrdinary, space: holding)])
-    _ = ledger.batch(show: [1], hide: [2: .exclusive], into: holding)
-    #expect(ledger.entries == [1: .init(kind: .keepOrdinary, space: holding)])
+@Test func rebuildKeepsEachWindowsRealKind() {
+    let ledger = ConcealLedger.rebuilt(members: [holding: [1, 2], 7: [3]], hasOrdinarySpace: { $0 == 1 })
+    #expect(ledger?.entries == [1: .init(kind: .keepOrdinary, space: holding),
+                                2: .init(kind: .exclusive, space: holding),
+                                3: .init(kind: .exclusive, space: 7)])
+}
+
+/// A failed read is unknown, not empty: an empty ledger would forget concealed windows and
+/// let a later conceal relabel one.
+@Test func rebuildWithAFailedReadIsUnknown() {
+    #expect(ConcealLedger.rebuilt(members: [holding: [1], 7: nil], hasOrdinarySpace: { _ in true }) == nil)
+    #expect(ConcealLedger.rebuilt(members: [:], hasOrdinarySpace: { _ in true }) == ConcealLedger())
 }

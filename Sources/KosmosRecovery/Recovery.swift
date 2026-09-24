@@ -60,8 +60,9 @@ public enum Recovery {
             return .incomplete(remaining: 0)
         }
         let remaining = after.values.reduce(0) { $0 + $1.count }
-        let withoutSpace = plan.windows.filter { !SkyLight.rows([$0]).isEmpty && spaces(of: $0).isEmpty }.count
-        guard RecoveryPlan.isComplete(remainingMembers: remaining, withoutSpace: withoutSpace) else {
+        let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }
+        guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
+            let withoutSpace = plan.windows.filter(onNoSpace).count
             recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
             return .incomplete(remaining: remaining + withoutSpace)
         }
@@ -73,14 +74,15 @@ public enum Recovery {
         return .restored(windows: handled.count, spaces: record.spaces.count)
     }
 
-    /// Members of each Space once two reads 100 ms apart agree, for at most about 1 s. Nil
-    /// when a read fails.
+    /// Members of each Space once two reads 100 ms apart agree, for at most about 1 s. A
+    /// failed read is retried within that time; nil when the reads never succeed twice in a
+    /// row with the same answer, or the last one failed.
     private static func settledMembers(of spaces: [UInt64]) -> [UInt64: [UInt32]]? {
-        guard var previous = currentMembers(of: spaces) else { return nil }
+        var previous = currentMembers(of: spaces)
         for _ in 0..<10 {
             usleep(100_000)
-            guard let current = currentMembers(of: spaces) else { return nil }
-            if current == previous { return current }
+            let current = currentMembers(of: spaces)
+            if let current, current == previous { return current }
             previous = current
         }
         return previous

@@ -42,6 +42,20 @@ public struct ConcealLedger: Equatable, Sendable {
         self.entries = entries
     }
 
+    /// The ledger for windows found in concealing Spaces, as after a recovery that could not
+    /// restore them all. Nil when any Space's members could not be read: the state is then
+    /// unknown, and a guess could strand a window.
+    public static func rebuilt(members: [UInt64: [UInt32]?], hasOrdinarySpace: (UInt32) -> Bool) -> ConcealLedger? {
+        var entries: [UInt32: Entry] = [:]
+        for (space, windows) in members {
+            guard let windows else { return nil }
+            for window in windows {
+                entries[window] = Entry(kind: hasOrdinarySpace(window) ? .keepOrdinary : .exclusive, space: space)
+            }
+        }
+        return ConcealLedger(entries: entries)
+    }
+
     /// The operations that reveal `show` and conceal `hide` in `space`. A window that is
     /// already concealed keeps its kind and its Space, whatever kind `hide` asks for.
     public func batch(show: [UInt32], hide: [UInt32: Kind], into space: UInt64) -> Batch {
