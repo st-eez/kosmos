@@ -101,11 +101,31 @@ final class Inventory {
     /// `lateBound` is logged, as it may be the event for the change the sweep read, late.
     private var countedMissed: [UInt32: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)
+    /// Whether each app is regular. LaunchServices answers each read with a synchronous XPC
+    /// call, which a sample of workspace switches caught on the main thread at every window
+    /// event and at every row of a sweep (2026-09-24), so each app is read once: from the
+    /// running apps at start, as it launches, or at its first window. Its exit drops it, so a
+    /// reused pid is read again.
+    ///
+    /// Ceiling: an app that changes its activation policy while it runs keeps the policy read
+    /// first, as it keeps the Accessibility worker Apps gave it by its policy at launch.
+    /// Observing each app's activationPolicy with key-value observing would follow a change.
+    private var regularApps: [pid_t: Bool] = [:]
 
     /// WindowServer tracking needs no permission and starts at once.
     func start() {
         SkyLight.subscribe { [weak self] event in self?.handle(event) }
+        // NSRunningApplication(processIdentifier:) returned nil for a running app at startup
+        // (Apps), so the running apps come from their list.
+        for app in NSWorkspace.shared.runningApplications {
+            regularApps[app.processIdentifier] = app.activationPolicy == .regular
+        }
         let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            let pid = app.processIdentifier, regular = app.activationPolicy == .regular
+            MainActor.assumeIsolated { self?.regularApps[pid] = regular }
+        }
         center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
@@ -397,10 +417,14 @@ final class Inventory {
 
     private func appExited(_ pid: pid_t) {
         for (id, row) in windows where row.pid == pid { remove(id, reason: "app exited") }
+        regularApps[pid] = nil
     }
 
     private func ownedByRegularApp(_ row: WindowRow) -> Bool {
-        NSRunningApplication(processIdentifier: row.pid)?.activationPolicy == .regular
+        if let regular = regularApps[row.pid] { return regular }
+        let regular = NSRunningApplication(processIdentifier: row.pid)?.activationPolicy == .regular
+        regularApps[row.pid] = regular
+        return regular
     }
 
     /// Parentless level 0 windows. Accessibility role checks come with the per-app workers.
@@ -456,7 +480,7 @@ final class Inventory {
         let seen = Set(rows.map(\.id))
         countedMissed = countedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
         // Windows the lock held back were reported, so the unlock sweep does not count them.
-        for row in rows where ownedByRegularApp(row) && windows[row.id] == nil {
+        for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
             if swept, arrivedWhileLocked[row.id] == nil {
                 countMissed(row.id)
                 inventoryLog.notice("sweep found \(row.id), missed by events")
