@@ -93,6 +93,10 @@ final class Inventory {
     private var sweepAgain = false
     private var swept = false
     private(set) var missedByEvents = 0
+    /// When a sweep last counted each window as missed by events. An event for one within
+    /// `lateBound` is logged, as it may be the event for the change the sweep read, late.
+    private var countedMissed: [UInt32: ContinuousClock.Instant] = [:]
+    private static let lateBound: Duration = .seconds(1)
 
     /// WindowServer tracking needs no permission and starts at once.
     func start() {
@@ -279,6 +283,16 @@ final class Inventory {
 
     private func handle(_ event: WindowServerEvent) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
+        if let id = event.window, let counted = countedMissed.removeValue(forKey: id) {
+            let after = ContinuousClock.now - counted
+            if after < Self.lateBound {
+                inventoryLog.notice("""
+                    event \(String(describing: event), privacy: .public) came \
+                    \(after.formatted(.units(allowed: [.milliseconds], fractionalPart: .show(length: 1))), privacy: .public) \
+                    after the sweep counted \(id) missed by events: it may have been late
+                    """)
+            }
+        }
         switch event {
         case .created(let id), .changed(let id):
             refresh(id)
@@ -420,8 +434,8 @@ final class Inventory {
     }
 
     /// Ceiling: an event handled after this, for a change the sweep's snapshot already had,
-    /// came late and still counts as missed. Logging an event that arrives soon after the
-    /// sweep counted its window would tell the two apart.
+    /// came late and still counts as missed. Such an event within `lateBound` is logged, so
+    /// the count can be corrected by eye.
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
@@ -429,17 +443,18 @@ final class Inventory {
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
+        countedMissed = countedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
         // Windows the lock held back were reported, so the unlock sweep does not count them.
         for row in rows where ownedByRegularApp(row) && windows[row.id] == nil {
             if swept, arrivedWhileLocked[row.id] == nil {
-                missedByEvents += 1
+                countMissed(row.id)
                 inventoryLog.notice("sweep found \(row.id), missed by events")
             }
             apply(row)
         }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
             if !removedWhileLocked.contains(id) {
-                missedByEvents += 1
+                countMissed(id)
                 inventoryLog.notice("sweep lost \(id), missed by events")
             }
             remove(id, reason: "absent from sweep")
@@ -450,7 +465,7 @@ final class Inventory {
             guard let old = windows[row.id] else { continue }
             apply(row)
             guard let new = windows[row.id], new.orderedIn != old.orderedIn || isCandidate(new) != isCandidate(old) else { continue }
-            missedByEvents += 1
+            countMissed(row.id)
             inventoryLog.notice("""
                 sweep corrected \(row.id), missed by events: \(self.appName(row.pid), privacy: .public) \
                 ordered in \(old.orderedIn) to \(new.orderedIn), level \(old.level) to \(new.level), \
@@ -475,5 +490,10 @@ final class Inventory {
             // now that the switches the lock held have paired.
             for (id, row) in windows where !row.orderedIn && isManaged(id) { checkOrderedOut(id) }
         }
+    }
+
+    private func countMissed(_ id: UInt32) {
+        missedByEvents += 1
+        countedMissed[id] = .now
     }
 }

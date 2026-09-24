@@ -32,6 +32,14 @@ public enum WindowServerEvent: Sendable {
         default: return nil
         }
     }
+
+    /// The window the event names, if any.
+    public var window: UInt32? {
+        switch self {
+        case .created(let id), .destroyed(let id), .changed(let id), .spaceMembership(let id): id
+        case .spacesChanged, .frontAppChanged: nil
+        }
+    }
 }
 
 /// One window as WindowServer describes it.

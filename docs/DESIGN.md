@@ -125,9 +125,13 @@ off the main thread).
   with a sweep that started after the last of them. A window a sweep finds or loses that
   no event reported is logged as "missed by events", and so is a known window whose
   ordered in state or candidate status (level 0, no parent) a sweep corrects, so a gap in
-  macOS's notifications shows in the log. The 3 s sweep this replaced found and lost none
-  on 2026-09-24, over a day of use and live tests. It counted none of its corrections,
-  which it logged only at debug or info level.
+  macOS's notifications shows in the log. The unlock sweep counts none of the windows the
+  lock held back: one that arrived while locked, and one destroyed while locked or whose
+  app exited then. An event handled after a sweep, for a change its snapshot already had,
+  came late and still counts, so an event for a window within 1 s after a sweep counted it
+  is logged too, and the count can be corrected by eye. The 3 s sweep this replaced found
+  and lost none on 2026-09-24, over a day of use and live tests. It counted none of its
+  corrections, which it logged only at debug or info level.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
   other app's window came or went. In three runs while other apps' windows came and went,
