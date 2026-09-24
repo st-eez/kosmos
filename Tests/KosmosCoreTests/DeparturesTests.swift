@@ -66,3 +66,26 @@ private let t0 = ContinuousClock.now
     #expect(DepartureFocus.decide(focusLeft: true, key: KeyWindow.none, departing: [1], left: none) == .now)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
+
+// Native tabs: a switch orders one window of the app in and another out, in either order.
+
+@Test func aTabSwitchPairsTwoWindowsOfOneAppInEitherOrder() {
+    var tabs = TabSwitches()
+    // Measured order: the incoming tab joins the Space before the outgoing leaves it.
+    #expect(tabs.orderedIn(2, app: 100, at: t0) == nil)
+    #expect(tabs.orderedOut(1, app: 100, at: t0 + .milliseconds(3)) == 2)
+    // The other order, as when the selected tab closes first.
+    #expect(tabs.orderedOut(2, app: 100, at: t0 + .seconds(1)) == nil)
+    #expect(tabs.orderedIn(3, app: 100, at: t0 + .seconds(1) + .milliseconds(40)) == 2)
+}
+
+@Test func windowsThatComeAndGoApartAreNotATabSwitch() {
+    var tabs = TabSwitches()
+    #expect(tabs.orderedOut(1, app: 100, at: t0) == nil)
+    #expect(tabs.orderedIn(2, app: 100, at: t0 + .milliseconds(300)) == nil)   // too late
+    #expect(tabs.orderedOut(3, app: 200, at: t0 + .milliseconds(310)) == nil)  // another app
+    #expect(tabs.orderedIn(3, app: 200, at: t0 + .milliseconds(320)) == nil)   // the same window back
+    // Paired once: the next change starts afresh.
+    #expect(tabs.orderedOut(4, app: 100, at: t0 + .milliseconds(330)) == 2)
+    #expect(tabs.orderedIn(5, app: 100, at: t0 + .milliseconds(340)) == nil)
+}

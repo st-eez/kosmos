@@ -260,7 +260,25 @@ off the main thread).
     as a minimized one does, and returns when the app orders it in again. Kosmos takes a
     window still ordered out a second later for none of the other reasons as one. A
     conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
-    fullscreen transition.
+    fullscreen transition. A deselected tab is not one: it has left the session.
+- Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
+  id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
+  window its app ordered out (alt-tab's measurements on macOS 26). A switch orders one
+  window of the app in and another out, or destroys the closed tab, within milliseconds
+  and in either order.
+  - Kosmos pairs the two within 250 ms, as the yabai forks that follow tabs do. The
+    incoming tab takes the outgoing tab's place, share, focus and workspace, with no
+    reflow and no follow, and gets that place's frame. The outgoing tab leaves the
+    session, a hidden member of the place.
+  - A new tab, and a tab selected for the first time, which Accessibility reports created
+    then, join the place the same way, even when Kosmos admitted them first.
+  - Closing the selected tab is a switch. Closing the group's last tab is a close.
+  - A hidden member ordered in with no tab leaving, as when it is dragged out of its
+    group, takes a place of its own after 250 ms.
+  - Kosmos does not read the AXTabGroup of the selected tab: that read costs a round trip
+    to the app on every switch, and the pairing needs none. Two windows of one app, one
+    leaving and one arriving within 250 ms, read as a switch; if that shows up, the
+    AXTabs of the incoming window would tell the cases apart.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first

@@ -36,7 +36,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         let known = workspace.root.windows + workspace.floating + workspace.parked.map(\.window)
         let window = known.randomElement(using: &random) ?? 0
         let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
-        switch Int.random(in: 0..<34, using: &random) {
+        switch Int.random(in: 0..<35, using: &random) {
         case 0..<6:
             if known.count < 12 {
                 workspace.insert(nextWindow)
@@ -80,6 +80,17 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 29: attempt { $0.toggleFullscreen(window) }
         case 30: workspace.balanceSizes()
         case 31: workspace.flattenWorkspaceTree()
+        case 32:
+            // A tab switch: another window takes this one's place, and every frame stays.
+            let before = workspace.frames(in: screen, gaps: gaps)
+            attempt { $0.replace(window, with: nextWindow) }
+            if workspace.contains(nextWindow) {
+                minimums[nextWindow] = minimums.removeValue(forKey: window)
+                var expected = before
+                expected[nextWindow] = expected.removeValue(forKey: window)
+                #expect(workspace.frames(in: screen, gaps: gaps) == expected, "seed \(seed)")
+                nextWindow += 1
+            }
         default:
             // Whatever the history, and with stale hints around, windows that leave and
             // come back in any order change nothing.

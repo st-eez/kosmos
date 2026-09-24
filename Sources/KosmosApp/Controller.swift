@@ -29,6 +29,10 @@ final class Controller {
     private var fullscreenParked: Set<WindowID> = []
     /// Windows parked because their app ordered them out and kept them.
     private var closedByApp: Set<WindowID> = []
+    /// Switches between native tabs, and the deselected tabs: out of the session, each a
+    /// hidden member of the place its group's selected tab holds.
+    private var tabSwitches = TabSwitches()
+    private var tabs: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
     /// A report whose verdict waits for the departure of the window key before it
@@ -64,6 +68,7 @@ final class Controller {
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
         inventory.onOrderedOut = { [weak self] id, out, at in self?.orderedOutChanged(id, out, at: at) }
+        inventory.onOrderChange = { [weak self] id, pid, orderedIn, at in self?.orderChanged(id, pid: pid, orderedIn, at: at) }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
     }
 
@@ -129,6 +134,14 @@ final class Controller {
     private func managedChanged(_ id: WindowID, pid: pid_t, _ managed: Bool) {
         if managed {
             owner[id] = pid
+            // A tab switch placed it before Kosmos admitted it, as when a new tab opens: it
+            // keeps that place, and takes its frame.
+            if let name = session.workspace(of: id) {
+                ledger.forget(id)
+                var plan = Session.Plan()
+                plan.frames = session.frames(of: name)
+                return execute(plan)
+            }
             let app = inventory.appIdentity(pid)
             let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
@@ -153,6 +166,7 @@ final class Controller {
             hiddenApps[pid]?.removeAll { $0 == id }
             fullscreenParked.remove(id)
             closedByApp.remove(id)
+            tabs.remove(id)
             ledger.forget(id)
             execute(session.remove(id))
         }
@@ -170,6 +184,45 @@ final class Controller {
             // macOS restores the frame it had; write the tile's frame again all the same.
             ledger.forget(id)
             returned([id], follow: id, at: since)
+        }
+    }
+
+    /// A candidate window was ordered in or out, or destroyed. A window of an app ordered in
+    /// as another is ordered out or destroyed is a switch between native tabs.
+    private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, at: ContinuousClock.Instant) {
+        if orderedIn {
+            if let old = tabSwitches.orderedIn(id, app: pid, at: at) {
+                tabSwitched(from: old, to: id, pid: pid)
+            } else if tabs.contains(id) {
+                // A deselected tab back on screen with no tab leaving, as when it is dragged
+                // out of its group: a window of its own, unless its partner follows in time.
+                after(TabSwitches.window) { controller in
+                    guard controller.tabs.contains(id), controller.inventory.windows[id]?.orderedIn == true,
+                          controller.session.workspace(of: id) == nil else { return }
+                    controller.tabs.remove(id)
+                    controller.execute(controller.session.add(id))
+                }
+            }
+        } else if let new = tabSwitches.orderedOut(id, app: pid, at: at) {
+            tabSwitched(from: id, to: new, pid: pid)
+        }
+    }
+
+    /// The selected tab changed from `old` to `new`: `new` takes the place of `old`, with no
+    /// reflow and no follow, and `old` waits out of the session as a hidden member
+    /// (DESIGN.md, section 5.5). When `old` holds no place, as after its window was
+    /// destroyed first, a tab Kosmos knows takes a place of its own.
+    private func tabSwitched(from old: WindowID, to new: WindowID, pid: pid_t) {
+        tabs.remove(new)
+        if session.workspace(of: old) != nil, !session.isParked(old) {
+            controllerLog.info("tab \(new) replaces \(old)")
+            owner[new] = owner[new] ?? pid
+            ledger.forget(new)
+            tabs.insert(old)
+            if key == .window(old) { key = .window(new) }
+            execute(session.replace(old, with: new))
+        } else if session.workspace(of: new) == nil, owner[new] != nil {
+            execute(session.add(new))
         }
     }
 

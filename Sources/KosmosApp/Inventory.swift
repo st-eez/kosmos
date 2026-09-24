@@ -45,6 +45,9 @@ final class Inventory {
     var onOrderedOut: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
     /// Windows reported ordered out by their app.
     private var orderedOut: Set<UInt32> = []
+    /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
+    /// in (false), and when: what a switch between native tabs is made of.
+    var onOrderChange: (@MainActor (UInt32, pid_t, Bool, ContinuousClock.Instant) -> Void)?
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
@@ -250,6 +253,10 @@ final class Inventory {
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
         departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
+        // A new tab can be seen first already ordered in.
+        if old?.orderedIn != row.orderedIn, old != nil || row.orderedIn, isCandidate(row) {
+            onOrderChange?(row.id, row.pid, row.orderedIn, .now)
+        }
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
         if old?.orderedIn == false, row.orderedIn, orderedOut.remove(row.id) != nil { onOrderedOut?(row.id, false, .now) }
         if old.map(isCandidate) != isCandidate(row) {
@@ -271,7 +278,11 @@ final class Inventory {
         fullscreen.remove(id)
         spaceChangedAt[id] = nil
         orderedOut.remove(id)
-        if row.orderedIn { departures.left(id, at: .now) }
+        if row.orderedIn {
+            departures.left(id, at: .now)
+            // Before the removal, so a tab that replaces this one takes its place.
+            if isCandidate(row) { onOrderChange?(id, row.pid, false, .now) }
+        }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()

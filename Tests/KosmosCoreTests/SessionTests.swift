@@ -399,3 +399,54 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.show == [2])
     #expect(plan.hide == [1])
 }
+
+// MARK: Native tabs (DESIGN.md, section 5.5)
+
+@Test func aSelectedTabTakesThePlaceOfTheTabItReplaces() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(3)
+    s.adopt(2)
+    let before = s.frames(of: "1"), order = s.windows(of: "1")
+    let plan = s.replace(2, with: 7)
+    #expect(s.workspace(of: 7) == "1" && s.workspace(of: 2) == nil)
+    #expect(s.windows(of: "1") == order.map { $0 == 2 ? 7 : $0 })
+    #expect(s.focused == 7)
+    #expect(plan.frames[7] == before[2] && plan.frames[1] == before[1] && plan.frames[3] == before[3])
+    #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
+    // Back to the first tab: the same place again.
+    _ = s.replace(7, with: 2)
+    #expect(s.frames(of: "1") == before)
+}
+
+@Test func aNewTabTiledAsAWindowOfItsOwnJoinsItsGroupsPlace() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    let before = s.frames(of: "1")
+    _ = s.add(9)   // admitted before its switch was seen
+    let plan = s.replace(2, with: 9)
+    #expect(s.windows(of: "1") == [1, 9])
+    #expect(plan.frames[9] == before[2] && plan.frames[1] == before[1])
+}
+
+@Test func aTabOnAHiddenWorkspaceStaysConcealed() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, to: "2")
+    #expect(s.replace(2, with: 8).hide == [8])
+    // A parked tab, or one that holds no place, changes nothing.
+    _ = s.park([1])
+    #expect(s.replace(1, with: 5).isEmpty)
+    #expect(s.replace(42, with: 5).isEmpty)
+    #expect(s.replace(8, with: 8).isEmpty)
+}
+
+@Test func aParkedWindowReturnsBesideTheTabThatReplacedItsNeighbour() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(3)
+    let before = s.frames(of: "1"), order = s.windows(of: "1")
+    _ = s.park([3])           // minimized, remembering the windows it stood among
+    _ = s.replace(2, with: 7)  // 2's tab group switched tabs
+    _ = s.unpark([3], follow: nil)
+    #expect(s.windows(of: "1") == order.map { $0 == 2 ? 7 : $0 })
+    #expect(s.frames(of: "1")[3] == before[3])
+}
