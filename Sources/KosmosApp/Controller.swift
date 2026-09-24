@@ -216,6 +216,10 @@ final class Controller {
             case .adopt(let window):
                 session.adopt(window)
                 touch(window)
+                // A new generation, so a request of Kosmos's still queued cannot key its
+                // window after the user's choice; the worker finds this one key already and
+                // records nothing (tla/Kosmos.tla, Adopt).
+                requestFocus(.window(window))
                 publishState()
             case .follow(let window):
                 touch(window)
