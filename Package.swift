@@ -35,7 +35,7 @@ let package = Package(
         ),
         .executableTarget(name: "kosmos-guardian", dependencies: ["KosmosRecovery"]),
         // Measurements of private behaviour that the design depends on (DESIGN.md, section 6).
-        .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosCore", "KosmosRecovery", "KosmosSkyLight"]),
+        .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
         .testTarget(name: "KosmosIPCTests", dependencies: ["KosmosIPC"]),
         .testTarget(name: "KosmosRecoveryTests", dependencies: ["KosmosRecovery"]),

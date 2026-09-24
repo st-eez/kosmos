@@ -21,6 +21,7 @@
 import AppKit
 import CKosmos
 import KosmosCore
+import KosmosIPC
 import KosmosRecovery
 import KosmosSkyLight
 
@@ -229,7 +230,7 @@ func bar() {
         let readTime = elapsed(start)
         let info = CoreDisplay_DisplayCreateInfoDictionary(id)?.takeRetainedValue() as? [String: Any] ?? [:]
         print("display \(id): bar number \(number), SketchyBar says \(sketchyBar.map { $0[id].map(String.init) ?? "none" } ?? "(no answer)")")
-        print("  name '\(screen?.localizedName ?? "no NSScreen")', built-in \(CGDisplayIsBuiltin(id) != 0), tiled \(screen != nil && screen == NSScreen.main), bounds \(CGDisplayBounds(id))")
+        print("  name '\(screen?.localizedName ?? "no NSScreen")', built-in \(CGDisplayIsBuiltin(id) != 0), main now \(screen != nil && screen == NSScreen.main), bounds \(CGDisplayBounds(id))")
         print("  vendor \(CGDisplayVendorNumber(id)), model \(CGDisplayModelNumber(id)), numeric serial \(CGDisplaySerialNumber(id)), uuid \(uuid ?? "none")")
         print(String(format: "  EDID serial %@ (read in %.3f ms)", serial.map { "'\($0)'" } ?? "none", readTime))
         print("  framebuffer \(info["IODisplayLocation"].map { "\($0)" } ?? "none")")
@@ -239,6 +240,10 @@ func bar() {
     let shared = Dictionary(grouping: active) { DisplayIdentity.uuid(of: $0) ?? "none" }.filter { $0.value.count > 1 }
     if shared.isEmpty { print("display UUIDs: \(active.count) distinct") }
     for (uuid, ids) in shared { print("display UUID \(uuid) is shared by displays \(ids): Kosmos would merge them") }
+    // Kosmos fixes the display it tiles at its own launch, which NSScreen.main now may not match.
+    let state = try? IPCClient.send(["state"], socketPath: kosmosSocketPath())
+    let tiled = state.flatMap { try? JSONDecoder().decode(BarSnapshot.self, from: Data($0.stdout.utf8)) }?.displays.first
+    print("Kosmos tiles \(tiled.map { "bar number \($0.id), '\($0.name)'" } ?? "(no answer)") (kosmos state)")
 }
 
 /// SketchyBar's arrangement id for each display, from `--query displays`, or nil when no bar
