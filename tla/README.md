@@ -6,8 +6,10 @@ actor, the bridge queue that reveals and conceals windows through the holding Sp
 the focus queue. macOS sits between them: it keys the requested window and reports every
 key window change to the main actor later. The user issues workspace commands, clicks
 visible windows, uses Command-Tab, and closes, minimizes or hides the key window, then
-brings it back. WindowServer can report a window gone a moment after macOS keyed the next
-one.
+brings it back. Command-Tab lands on an app's window on screen when the app has one, as
+Kosmos's concealment arranges (DESIGN.md, section 5.3). WindowServer can report a window
+gone a moment after macOS keyed the next one, and fronting another window of the key app
+can miss.
 
 [MC.tla](MC.tla) fixes a small topology: workspace 1 holds w1 and w2, workspace 2 holds
 w3, and workspace 3 is empty. App A owns w1 and w3, app B owns w2. Each configuration
@@ -27,21 +29,23 @@ Java 11 or newer is required.
 | Config | Inputs | Checks | Result | States |
 | --- | --- | --- | --- | --- |
 | `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 |
-| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 104,031 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 |
-| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 |
+| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 79,564 |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 79,564 |
+| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 79,124 |
 | `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 7,224 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 68 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 62 |
-| `leave` | all inputs, and the key window leaving and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 1,558,933 |
-| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 1,558,933 |
-| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 291,144 |
-| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 277,596 |
-| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 1,402,253 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 108,187 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 66 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 64 |
+| `leave` | all inputs, and the key window leaving and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 1,264,965 |
+| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 1,264,965 |
+| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 213,291 |
+| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 895,132 |
+| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 1,157,002 |
+| `miss` | commands, clicks, Command-Tab, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 107,322 |
+| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 55,187 |
 
-The first three expected failures record trade-offs, and `leave-follow`, `leave-nograce`
-and `return-stale` record the behaviour this model replaced:
+The first three expected failures record trade-offs, and the others record the behaviour
+this model replaced:
 
 - **`mixed` and `conceal-first`.** Revealing first shows windows of both workspaces for
   one bridged operation. Concealing first shows an empty desktop for the same time. Kosmos
@@ -61,6 +65,9 @@ and `return-stale` record the behaviour this model replaced:
   window that left as gone, as after a hide. Deciding that report at once follows it to a
   concealed window. This happened live after change 8: Command-H on ChatGPT, the only
   window of workspace 2, took Kosmos to workspace 1, where macOS keyed Ghostty.
+- **`miss-follow`.** Kosmos switches to workspace 2 and fronts w3, but app A keeps w1,
+  now concealed on workspace 1, and reports it again. Following that report as a
+  Command-Tab takes Kosmos back to workspace 1. This happened live with Ghostty.
 - **`return-stale`.** A window comes back: it is unminimized, its app unhides, or it
   leaves native fullscreen. If the user runs a workspace command before Kosmos handles
   the return, following the return takes Kosmos away from the workspace the command
@@ -155,3 +162,15 @@ Each change below started as a counterexample from TLC.
     - Kosmos checked departures only for windows it had not concealed. A window that a
       switch conceals can be minimized or hidden in the same moment, and concealing
       leaves it ordered in, so every window key before a report is checked.
+12. **Misses taken for Command-Tab.** Live, Kosmos fronted Ghostty for a window of
+    workspace 1, Ghostty reported the window a switch had just concealed on workspace 3,
+    and Kosmos followed it there (`miss-follow`). The model now lets a focus request miss
+    once, and lets Command-Tab land only where DESIGN 5.3 says it does: on an app's window
+    on screen when there is one. A report that repeats the key window is no key change,
+    so Kosmos requests its focus again. A key change to a hidden window whose app has a
+    window on Kosmos's workspace is macOS's own, and Kosmos focuses that app's window.
+    Two counterexamples ordered the rules: redirecting a repeat to the app's window
+    overrode a newer Command-Tab, so a repeat is checked first, and a repeat of a held
+    report is the same activation and keeps it held. A Command-Tab that lands on a
+    hidden window now counts as honored when Kosmos focuses that window or the app's
+    window on the workspace the user asked for.

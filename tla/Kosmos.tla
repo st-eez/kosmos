@@ -11,10 +11,10 @@
 (*       for an empty workspace. Each request carries its generation and   *)
 (*       is dropped when a newer intent exists.                            *)
 (*                                                                         *)
-(* macOS keys exactly the window it is asked to, and reports every key     *)
-(* window change to the main actor later. Kosmos records the focus it      *)
-(* performs. An echo is a report of a requested window received after the  *)
-(* request; key changes carry a sequence number (`i`) for that.            *)
+(* macOS keys the window it is asked to, and reports every key window      *)
+(* change to the main actor later. Kosmos records the focus it performs.   *)
+(* An echo is a report of a requested window received after the request;   *)
+(* key changes carry a sequence number (`i`) for that.                     *)
 (*                                                                         *)
 (* Any other report is the user's (a click or Command-Tab). A report of a  *)
 (* user activation that happened before the latest command is stale: the   *)
@@ -23,12 +23,20 @@
 (* "happened before"; the implementation stamps hotkeys and observer       *)
 (* callbacks on receipt.                                                   *)
 (*                                                                         *)
+(* Fronting another window of the app that is already key can miss,        *)
+(* leaving that app's key window as it was and reporting it again.         *)
+(*                                                                         *)
 (* A fresh report of a window on the visible workspace becomes the focus.  *)
 (* Only Command-Tab reaches a hidden window, so Kosmos follows a report    *)
 (* into another workspace only if the window was hidden when it became     *)
-(* key. A visible window of another workspace can only be key mid-switch,  *)
-(* from a macOS re-key or a user activation of a window about to be     *)
-(* concealed; the switch wins.                                             *)
+(* key. Command-Tab to an app with a window on the shown workspace lands   *)
+(* on that window, because Kosmos strips that app's concealed windows of   *)
+(* their Space (DESIGN.md, section 5.3). So a report that repeats a hidden *)
+(* key window is a miss, and Kosmos requests its focus again; a report of  *)
+(* a hidden window whose app has a window on Kosmos's workspace is macOS's *)
+(* own choice, and Kosmos focuses the app's window there. A visible window *)
+(* of another workspace can only be key mid-switch, from a macOS re-key or *)
+(* a user activation of a window about to be concealed; the switch wins.   *)
 (*                                                                         *)
 (* The key window can leave: it closes or minimizes, or its app hides.     *)
 (* macOS keys another window at once, possibly a hidden one. That report   *)
@@ -69,15 +77,18 @@ CONSTANTS
     AllowCmdTab,    \* the user may Command-Tab to any other app's window
     AllowFallback,  \* macOS may re-key when the key window is hidden (not observed)
     AllowLeave,     \* the key window may close or minimize, or its app hide
+    AllowMiss,      \* fronting another window of the key app may leave its key window, once
     AllowReturn,    \* a window that left without closing may return
     FollowRekeys,   \* Kosmos follows a re-key onto a hidden window (the behaviour before this rule)
     FollowStale,    \* Kosmos follows a return received before the latest command (the behaviour before this rule)
     Grace,          \* Kosmos holds a report until it knows whether the key window before it left
+    Redirect,       \* Kosmos follows no report of a hidden window that Command-Tab cannot produce
     RevealFirst,    \* a switch reveals the incoming windows before concealing the outgoing
     Coalesce        \* a resumed command does not focus while a newer command is queued
 
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ AllowLeave \in BOOLEAN /\ FollowRekeys \in BOOLEAN
 ASSUME AllowReturn \in BOOLEAN /\ FollowStale \in BOOLEAN /\ Grace \in BOOLEAN
+ASSUME AllowMiss \in BOOLEAN /\ Redirect \in BOOLEAN
 
 NoWin == "none"   \* no key window: Finder fronted without windows
 AppOfX(w) == IF w = NoWin THEN "finder" ELSE AppOf[w]
@@ -113,7 +124,7 @@ Init ==
                ne       |-> 0,        \* key changes so far
                shown    |-> 1,        \* WindowServer: workspace of the last executed reveal
                lastCmdT |-> 0,        \* input position of the latest executed command
-               lastWin  |-> "",       \* ghost: target of the latest input if it was a click or Command-Tab
+               lastWin  |-> {},       \* ghost: the windows the latest input claims if it was a click, Command-Tab or return
                goal     |-> 1,        \* ghost: the workspace the user last asked for
                mq       |-> <<>>,
                bq       |-> <<>>,
@@ -126,6 +137,7 @@ Init ==
                left     |-> {},       \* Kosmos: departures it has handled
                held     |-> <<>>,     \* Kosmos: a report waiting to learn whether the key window before it left
                seenKey  |-> f,        \* Kosmos: the key window macOS last reported
+               missed   |-> FALSE,    \* macOS: a focus request already missed
                refocus  |-> FALSE,    \* Kosmos: a re-assert found its focus gone; its departure focuses
                notices  |-> <<>> ]    \* departures and returns not yet reported: [w, closed, back, t]
     /\ history = <<>>
@@ -204,7 +216,11 @@ KeyLeft(t, ev) == ev.prev # NoWin /\ ev.prev \in Known(t)
 \* leaving: WindowServer can report it on screen after macOS keyed the next
 \* window. Concealing a window leaves it ordered in, so a window Kosmos
 \* concealed can be leaving too.
-Undecided(t, ev) == ev.prev # NoWin /\ ~KeyLeft(t, ev)
+Undecided(t, ev) == ev.prev \notin {NoWin, ev.w} /\ ~KeyLeft(t, ev)
+
+\* The windows of w's app on Kosmos's workspace. Command-Tab to that app lands
+\* on one of them, never on w while w is hidden.
+Siblings(t, w) == {v \in WsWins(t.active) \ t.left : AppOf[v] = AppOf[w]}
 
 \* A user activation is adopted. Within the visible workspace it becomes the
 \* focus intent, and is focused again in case a stale request of ours landed
@@ -223,6 +239,10 @@ Adopt(t, ev, final) ==
        ELSE IF w \in t.left THEN t   \* a window that left is no one's focus
        ELSE IF WsOf[w] = t.active
             THEN RequestFocus([t EXCEPT !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1], w, t.gen + 1)
+       ELSE IF ev.hid /\ Redirect /\ ev.prev = w THEN Reassert(t)   \* a repeat, not a key change
+       ELSE IF ev.hid /\ Redirect /\ Siblings(t, w) # {}
+            THEN LET v == CHOOSE v \in Siblings(t, w) : TRUE
+                 IN RequestFocus([t EXCEPT !.focus = v, !.mru[t.active] = v, !.gen = t.gen + 1], v, t.gen + 1)
        ELSE IF ev.hid /\ FollowRekeys THEN StartSwitch(t, WsOf[w], w)
        ELSE IF ev.hid /\ ~KeyLeft(t, ev) THEN IF wait THEN Hold(t, ev) ELSE StartSwitch(t, WsOf[w], w)
        ELSE Reassert(t)   \* visible mid-switch, or a re-key after the key window left
@@ -233,11 +253,14 @@ Observe(t, evs) ==
     ELSE LET ev == Head(evs)
              ks == {k \in 1..Len(t.expect) : Matches(ev, t.expect[k])}
              t0 == [t EXCEPT !.seenKey = ev.w]
-             \* A newer activation of a window ends a held report.
+             \* A newer activation of a window ends a held report. One that repeats
+             \* the held window, after a miss, is the same activation.
+             again == t.held # <<>> /\ ev.w = t.held[1].w
              newer == ev.w # NoWin /\ ev.w \notin t.left
              t1 == IF ks # {}
                    THEN LET k == CHOOSE k \in ks : \A j \in ks : k <= j
                         IN [t0 EXCEPT !.expect = SubSeq(@, k + 1, Len(@))]
+                   ELSE IF again THEN t0
                    ELSE Adopt(IF newer THEN [t0 EXCEPT !.held = <<>>] ELSE t0, ev, FALSE)
          IN Observe(t1, Tail(evs))
 
@@ -313,9 +336,17 @@ ExecBridge ==
 ExecFocus ==
     LET x == Head(s.fq)
         t == [s EXCEPT !.fq = Tail(@)]
+        skip == x.g # s.gen \/ s.osFocus = x.w \/ (x.w # NoWin /\ (s.hidden[x.w] \/ x.w \in s.gone))
     IN /\ s.fq # <<>>
-       /\ s' = IF x.g # s.gen \/ s.osFocus = x.w \/ (x.w # NoWin /\ (s.hidden[x.w] \/ x.w \in s.gone)) THEN t
-               ELSE KeyChange([t EXCEPT !.expect = Append(@, [w |-> x.w, i |-> t.ne + 1])], x.w, Len(history))
+       /\ \/ s' = IF skip THEN t
+                  ELSE KeyChange([t EXCEPT !.expect = Append(@, [w |-> x.w, i |-> t.ne + 1])], x.w, Len(history))
+          \* A miss: the app stays on its key window and reports it again. The
+          \* request counts as dropped.
+          \/ /\ AllowMiss /\ ~s.missed /\ ~skip
+             /\ s.osFocus # NoWin /\ AppOfX(x.w) = AppOf[s.osFocus]
+             /\ s' = [t EXCEPT !.missed = TRUE,
+                               !.evs = Append(@, [w |-> s.osFocus, act |-> FALSE, t |-> Len(history), i |-> s.ne,
+                                                  hid |-> s.hidden[s.osFocus], prev |-> s.osFocus])]
        /\ UNCHANGED history
 
 PostReports ==
@@ -352,8 +383,12 @@ Fallback ==
     /\ UNCHANGED history
 
 \* A user activation of a window a switch is about to conceal makes no claim.
-Claim(w) == IF WsOf[w] = s.goal \/ s.hidden[w] THEN w ELSE ""
-Goal(w) == IF s.hidden[w] THEN WsOf[w] ELSE s.goal
+Claim(w) == IF WsOf[w] = s.goal \/ s.hidden[w] THEN {w} ELSE {}
+\* Command-Tab asks for an app. Landing on a hidden window, it is satisfied by
+\* that window or by the app's window on the workspace the user asked for.
+AppThere(w) == {v \in WsWins(s.goal) \ s.gone : AppOf[v] = AppOf[w]}
+TabClaim(w) == Claim(w) \cup (IF s.hidden[w] THEN AppThere(w) ELSE {})
+Goal(w) == IF s.hidden[w] /\ AppThere(w) = {} THEN WsOf[w] ELSE s.goal
 
 \* A departure Kosmos has not heard of yet. WindowServer, Accessibility and
 \* NSWorkspace report one within milliseconds (tla/README.md), well before a
@@ -366,7 +401,7 @@ Command ==
     /\ Len(history) < MaxEvents
     /\ \E k \in Workspaces :
          /\ s' = [s EXCEPT !.mq = Append(@, Job("input", k, 0, <<>>, Len(history) + 1)),
-                           !.lastWin = "", !.goal = k]
+                           !.lastWin = {}, !.goal = k]
          /\ history' = Append(history, k)
 
 \* A return Kosmos has not handled yet. The model leaves out clicks and
@@ -388,7 +423,9 @@ CmdTab ==
     /\ Len(history) < MaxEvents
     /\ \E w \in Win \ s.gone :
          /\ AppOf[w] # AppOfX(s.osFocus)
-         /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = Claim(w), !.goal = Goal(w)]
+         \* It lands on the app's window on screen, if it has one (DESIGN.md, 5.3).
+         /\ w \in Visible \/ ~\E v \in Visible : AppOf[v] = AppOf[w]
+         /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = TabClaim(w), !.goal = Goal(w)]
          /\ history' = Append(history, -2)
 
 \* The user closes, minimizes or hides a window after seeing it key, and brings
@@ -417,7 +454,7 @@ Leave ==
                 queued == Returning \/ \E n \in 1..Len(s.mq) : s.mq[n].kind = "input"
             IN /\ s' = KeyChange([s EXCEPT !.gone = @ \cup out, !.lag = @ \cup out,
                                            !.closed = IF closed THEN @ \cup out ELSE @,
-                                           !.notices = @ \o notices, !.lastWin = "",
+                                           !.notices = @ \o notices, !.lastWin = {},
                                            !.goal = IF queued THEN @ ELSE s.active],
                                  v, Len(history) + 1)
                /\ history' = Append(history, -3)
@@ -429,7 +466,7 @@ Return ==
     /\ Len(history) < MaxEvents
     /\ Seen
     /\ \E w \in s.gone \ (s.closed \cup s.lag) :
-         /\ s' = KeyChange([s EXCEPT !.gone = @ \ {w}, !.lastWin = w, !.goal = WsOf[w],
+         /\ s' = KeyChange([s EXCEPT !.gone = @ \ {w}, !.lastWin = {w}, !.goal = WsOf[w],
                                      !.notices = Append(@, [w |-> w, closed |-> FALSE, back |-> TRUE,
                                                             t |-> Len(history) + 1])],
                            w, Len(history) + 1)
@@ -464,7 +501,7 @@ HonorsLastCommand == Quiescent /\ LastCommand(history) # 0 => s.active = LastCom
 
 \* A click, Command-Tab or return after the last command wins, unless it makes
 \* no claim.
-HonorsLastActivation == Quiescent /\ s.lastWin # "" => s.focus = s.lastWin
+HonorsLastActivation == Quiescent /\ s.lastWin # {} => s.focus \in s.lastWin
 
 \* When the key window leaves, Kosmos stays on the workspace the user was on.
 KeepsWorkspaceAfterLeave == Quiescent /\ history # <<>> /\ history[Len(history)] = -3 => s.active = s.goal
