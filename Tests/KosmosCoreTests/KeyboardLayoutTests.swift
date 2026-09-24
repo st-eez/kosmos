@@ -12,7 +12,9 @@ func installedLayout(_ id: String) throws -> [Character: UInt16] {
     let data = try #require(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData))
     let bytes = try #require(CFDataGetBytePtr(Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue()))
     return bytes.withMemoryRebound(to: UCKeyboardLayout.self, capacity: 1) { layout in
-        keyboardLayout(layout, keyboardType: UInt32(LMGetKbdType()))
+        // A fixed ANSI keyboard type, so the expectations hold on any Mac: with a JIS
+        // keyboard (types 42 and 45) the US layout has no bare `=`.
+        keyboardLayout(layout, keyboardType: 40)
     }
 }
 

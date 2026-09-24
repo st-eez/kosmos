@@ -104,8 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func switchMode(to name: String) -> Response {
         guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
+        // The command reports its own problems; the status item keeps the ones a load found,
+        // so its icon never changes during a command.
         let problems = hotkeys.switchMode(to: name)
-        showHotkeyProblems(problems)
+        for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
         return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
     }
 
@@ -114,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and every problem and warning for the CLI.
     private func reloadConfig(atLaunch: Bool) -> (applied: Bool, messages: [String]) {
         let loaded = ConfigFile.load(atLaunch: atLaunch)
+        // A reload without a file changes nothing; saying the defaults apply would be false.
+        if !atLaunch, !FileManager.default.fileExists(atPath: ConfigFile.url.path) {
+            return (false, ["no config at \(ConfigFile.url.path); the running config is kept"])
+        }
         for error in loaded.errors { log.error("config: \(error, privacy: .public)") }
         for warning in loaded.warnings { log.notice("config: \(warning, privacy: .public)") }
         guard let config = loaded.config, let controller else {
@@ -142,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (loaded.errors.isEmpty, messages)
     }
 
-    /// Hotkeys that could not be registered, from a load, a mode switch or a layout change.
+    /// Hotkeys that could not be registered after a load or a layout change.
     private func showHotkeyProblems(_ problems: [Hotkeys.Problem]) {
         for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
         hotkeyProblems = problems.map { "Hotkey \($0.description)" }
