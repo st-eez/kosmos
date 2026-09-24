@@ -87,9 +87,14 @@ final class LockWatch: NSObject {
     }
 
     /// Whether the screen is locked and whether this session has the console. Unlocked, the
-    /// dictionary on this Mac has no lock key at all.
+    /// dictionary on this Mac has no lock key at all, and a missing key reads as unlocked.
+    /// Whether the key is there while locked is open (DESIGN.md, section 5.1): each read logs
+    /// the lock and console keys, so a lock test settles it.
     private static func read() -> LockState.Signal {
         let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
+        let keys = session.filter { $0.key.localizedCaseInsensitiveContains("lock") || $0.key == "kCGSSessionOnConsoleKey" }
+            .map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
+        lockLog.notice("session dictionary: \(keys, privacy: .public)")
         return .read(screenLocked: session["CGSSessionScreenIsLocked"] as? Bool ?? false,
                      onConsole: session["kCGSSessionOnConsoleKey"] as? Bool ?? true)
     }

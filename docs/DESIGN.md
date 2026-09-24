@@ -123,7 +123,11 @@ off the main thread).
   listen for them. Kosmos asks for immediate delivery, because AppKit holds distributed
   notifications for an app that is not active. The session dictionary
   (`CGSessionCopyCurrentDictionary`) gives the state at launch, as alt-tab seeds it, and is
-  read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. loginwindow
+  read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. Open
+  question: unlocked, the dictionary on this Mac has no `CGSSessionScreenIsLocked` key, and
+  a missing key reads as unlocked, so if the key is missing while locked too, each read
+  undoes the lock within 5 s. Every read logs the dictionary's lock and console keys, and a
+  lock test settles it. loginwindow
   coming to the front, which AeroSpace and rift also watch, is no lock signal. It also
   fronts its own dialogs, such as the log out confirmation.
 - While locked, the inventory admits and removes no window and runs no sweep, and Kosmos
