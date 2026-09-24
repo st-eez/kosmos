@@ -372,8 +372,9 @@ private struct ConfigDecoder {
             }
             profiles.append((profile, item.position, profilePath))
         }
-        // A profile with `when` holds whenever an earlier one with fewer monitors does. One
-        // without `when` applies only when none with it does, and the first of those wins.
+        // An earlier profile whose `when` monitors are all among a later one's holds whenever
+        // the later one does, so the later one never applies. One without `when` applies
+        // only when none with it does, and the first of those wins.
         func shadows(_ earlier: Profile, _ later: Profile) -> Bool {
             if earlier.when.isEmpty || later.when.isEmpty { return earlier.when.isEmpty && later.when.isEmpty }
             return Set(earlier.when).isSubset(of: later.when)
