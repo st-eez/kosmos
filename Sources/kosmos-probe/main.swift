@@ -22,12 +22,23 @@
 //                                   window of its own accessory app, with one clock.
 //                                   The window belongs to an accessory app, which Kosmos
 //                                   does not manage.
+//   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
+//                                   out of the holding Space, and where does a window
+//                                   removed from its only Space land? Its window is
+//                                   invisible, off every display, in an app with the
+//                                   prohibited activation policy, so it runs beside a live
+//                                   session: the panel's regular app, and an accessory one,
+//                                   made itself the front process when it started and took
+//                                   the key window from the user's app for the second the
+//                                   probe ran (WindowServer log, 2026-09-24).
 //   kosmos-probe displays           Each display's identity as Kosmos reads it: EDID
 //                                   serial, framebuffer, and the bar number, checked against
 //                                   SketchyBar's own when it runs. Read only. Every
 //                                   framebuffer and the EDID fields it publishes, with or
 //                                   without a display:
 //                                   ioreg -rtc IOMobileFramebufferShim -d1 -w0 | grep -E '\+-o disp|ProductAttributes'
+//   kosmos-probe secure-input       Which Carbon hotkeys fire while Secure Input is on, from
+//                                   real key presses its window asks for (SecureInput.swift).
 import AppKit
 import CKosmos
 import KosmosCore
@@ -49,9 +60,12 @@ case "fullscreen-window": fullscreenWindow()
 case "fullscreen": fullscreen()
 case "departures-window": departuresWindow()
 case "departures": departures()
+case "hidden-window": showHiddenWindow()
+case "reveal": reveal()
 case "displays": displays()
+case "secure-input": secureInput()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | displays")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | reveal | displays | secure-input")
     exit(2)
 }
 
@@ -70,10 +84,26 @@ default:
     exit(0)
 }
 
-func spawnPanel() -> (Process, UInt32) {
+/// An invisible window off every display, in an app that can never be the front process.
+/// Prints its window id and stays until killed.
+@MainActor func showHiddenWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 60, height: 60),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    window.alphaValue = 0
+    window.ignoresMouseEvents = true
+    window.orderFrontRegardless()
+    print(window.windowNumber)
+    app.run()
+    exit(0)
+}
+
+/// Runs `command` (`panel` or `hidden-window`) in a child process and returns its window.
+func spawnPanel(_ command: String = "panel") -> (Process, UInt32) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    process.arguments = ["panel"]
+    process.arguments = [command]
     let pipe = Pipe()
     process.standardOutput = pipe
     try! process.run()
@@ -251,7 +281,7 @@ func bar() {
     exit(0)
 }
 
-nonisolated(unsafe) var probeStart = ContinuousClock.now
+nonisolated(unsafe) var fullscreenStart = ContinuousClock.now
 nonisolated(unsafe) var probeWindow: UInt32 = 0
 
 @MainActor func fullscreen() -> Never {
@@ -267,11 +297,11 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
     var line = Data()
     while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
     probeWindow = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
-    probeStart = .now
+    fullscreenStart = .now
     print("window \(probeWindow), pid \(child.processIdentifier)")
     pipe.fileHandleForReading.readabilityHandler = { handle in
         let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty { print(String(format: "%7.1f ms child: ", elapsed(probeStart)) + text) }
+        if !text.isEmpty { print(String(format: "%7.1f ms child: ", elapsed(fullscreenStart)) + text) }
     }
     for id: UInt32 in [1325, 1326, 1327, 1328, 1401, 806, 807, 808, 815, 816] {
         _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
@@ -281,19 +311,19 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
             switch id {
             case 1325, 1326:
                 guard u32(8) == probeWindow else { return }
-                print(String(format: "%7.1f ms event %d space %llu", elapsed(probeStart), id, u64(0)))
+                print(String(format: "%7.1f ms event %d space %llu", elapsed(fullscreenStart), id, u64(0)))
                 // The check the inventory makes on these events, off the main thread.
                 DispatchQueue.global(qos: .userInitiated).async {
                     let state = Displays.isFullscreen(probeWindow).map { "\($0)" } ?? "nil (no Space)"
-                    print(String(format: "%7.1f ms   Displays.isFullscreen: ", elapsed(probeStart)) + state)
+                    print(String(format: "%7.1f ms   Displays.isFullscreen: ", elapsed(fullscreenStart)) + state)
                 }
             case 1327, 1328:
-                print(String(format: "%7.1f ms event %d space %llu", elapsed(probeStart), id, u64(0)))
+                print(String(format: "%7.1f ms event %d space %llu", elapsed(fullscreenStart), id, u64(0)))
             case 1401:
-                print(String(format: "%7.1f ms event 1401", elapsed(probeStart)))
+                print(String(format: "%7.1f ms event 1401", elapsed(fullscreenStart)))
             default:
                 guard u32(0) == probeWindow else { return }
-                print(String(format: "%7.1f ms event %d", elapsed(probeStart), id))
+                print(String(format: "%7.1f ms event %d", elapsed(fullscreenStart), id))
             }
         }, id, nil)
     }
@@ -383,6 +413,49 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
     DispatchQueue.main.asyncAfter(deadline: .now() + 8) { exit(0) }
     app.run()
     exit(0)
+}
+
+@MainActor func reveal() {
+    _ = NSApplication.shared   // bridged operations need an AppKit client
+    let (child, window) = spawnPanel("hidden-window")
+    defer { child.terminate() }
+    guard let desktop = Displays.current().ordinarySpace(original: nil) else { print("no ordinary Space"); return }
+    let space = kosmos_holding_create()
+    guard space != 0 else { print("holding Space not created"); return }
+    var ids = [window]
+    defer {
+        _ = kosmos_remove_windows(space, &ids, 1)
+        _ = kosmos_space_destroy(space)
+    }
+    print("window \(window), ordinary Space \(desktop), holding Space \(space)")
+    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier.
+    func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
+        _ = kosmos_barrier(space)
+        let ordinary = (kosmos_window_spaces(window) as? [UInt64]) ?? [], held = inSpace(window, space)
+        print("\(step): ordinary Spaces \(ordinary), in holding \(held)")
+        return (ordinary, held)
+    }
+    let cycles = 3
+    var addOnly = 0, addThenRemove = 0
+    for cycle in 1...cycles {
+        kosmos_add_windows(space, &ids, 1, true)
+        _ = state("\(cycle) strip (exclusive add to the holding Space)")
+        kosmos_add_windows(desktop, &ids, 1, true)
+        if state("\(cycle)   exclusive add to \(desktop)").held {
+            Thread.sleep(forTimeInterval: 0.2)
+            if state("\(cycle)   0.2 s later").held { addOnly += 1 }
+        }
+        kosmos_remove_windows(space, &ids, 1)
+        let revealed = state("\(cycle)   then removal from the holding Space")
+        if revealed.ordinary == [desktop] && !revealed.held { addThenRemove += 1 }
+    }
+    kosmos_add_windows(space, &ids, 1, true)
+    _ = state("strip")
+    kosmos_remove_windows(space, &ids, 1)
+    let landed = state("removal alone")
+    print("the exclusive add left the window in the holding Space in \(addOnly) of \(cycles) cycles; "
+          + "the add then the removal revealed it on \(desktop) in \(addThenRemove) of \(cycles); "
+          + "removed from its only Space, it landed on \(landed.ordinary)")
 }
 
 @MainActor func displays() {
