@@ -152,7 +152,12 @@ final class Controller {
             hiddenApps[pid]?.removeAll { $0 == id }
             fullscreenParked.remove(id)
             ledger.forget(id)
-            execute(session.remove(id))
+            var plan = session.remove(id)
+            // Kosmos's focus moved to a window behind the one in native fullscreen, which
+            // is still key. Focusing a window of the desktop would take the user out of the
+            // fullscreen Space; the fullscreen window brings the focus back when it leaves.
+            if case .window(let keyed)? = key, fullscreenParked.contains(keyed) { plan.focus = nil }
+            execute(plan)
         }
     }
 

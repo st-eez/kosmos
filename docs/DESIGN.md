@@ -171,6 +171,9 @@ off the main thread).
   next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
   replaced only in that case, because focusing earlier could put Kosmos's echo between
   the departure and the report of the window macOS keys next.
+- While a window in native fullscreen is key, a closed focus is replaced without being
+  focused. Parking the fullscreen window moved Kosmos's focus to a window behind it, and
+  focusing the desktop would take the user out of the fullscreen Space.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 
