@@ -463,11 +463,13 @@ final class Controller {
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
-            // it left too.
+            // it left too. It is read only when the verdict depends on it, which an echo, or a
+            // report of a window on the shown workspace, never does: after a switch the read
+            // waited on WindowServer's Space transaction.
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
-            let keyLeft: Departure = placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
-                                   concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
+                                   concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss),
+                         keyLeft: placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -516,23 +518,23 @@ final class Controller {
 
     /// Decides the key window report of a window with a place. The kill switch counts it, and
     /// a report that is no echo answers the app's public requests (DESIGN.md, section 5.4).
-    private func decidePlaced(_ report: KeyReport, keyLeft: Departure) {
+    private func decidePlaced(_ report: KeyReport, keyLeft: @autoclosure () -> Departure) {
         let echo = reports.isEcho(report.key, receivedAt: report.received)
         misses.reported(report.key, pid: report.pid, receivedAt: report.received, echo: echo)
         if !echo { reports.publicRequestsAnswered(by: report.pid, receivedAt: report.received) }
-        decide(report, keyLeft: keyLeft)
+        decide(report, keyLeft: keyLeft())
     }
 
     /// Acts on a key window report. A report whose verdict depends on a departure that is
     /// not known yet is held until the departure arrives or the grace ends
     /// (tla/Kosmos.tla, Adopt and Hold).
-    private func decide(_ report: KeyReport, keyLeft: Departure) {
+    private func decide(_ report: KeyReport, keyLeft: @autoclosure () -> Departure) {
         let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
         // After a failed batch, recovery showed the windows of hidden workspaces, so a click
         // reaches them (needsResync).
         let verdict = reports.classify(report.key, receivedAt: report.received,
                                        onShownWorkspace: id.flatMap(session.workspace(of:)).map(session.isShown) ?? false,
-                                       concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft)
+                                       concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft())
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report
         // of no key window leave it held.
