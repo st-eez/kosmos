@@ -42,7 +42,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Area | Decision | Rejected alternative |
 | --- | --- | --- |
 | Window geometry | Accessibility on one worker thread per app; batched, deduplicated writes with generation ids; one read-back per batch | A shared thread pool, where one hung app stalls every relayout |
-| Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep every 2 to 5 s as a backstop | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
+| Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep at launch, on a Space change, after an unlock or wake and after a display change, as a backstop, with no timer (as yabai and rift) | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
 | Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
 | Focus | Private window-targeted focus in every case: AXRaise the window on its app's worker, then front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
@@ -119,6 +119,11 @@ off the main thread).
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
+- Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
+  Space change, after an unlock or a wake, and after a display change, as yabai, rift and
+  Amethyst do. A window a sweep finds or loses that no event reported is logged as "missed
+  by events", so a gap in macOS's notifications shows in the log. The 3 s sweep this
+  replaced logged none on 2026-09-24, over a day of use and live tests.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
@@ -157,8 +162,8 @@ off the main thread).
   the app answers again, or reports the window focused, when its app unhides, when it is
   ordered in or changes Space, and at the sweep after a Space change while it is ordered
   in. Accessibility lists no window on a
-  Space that is not shown, such as another fullscreen Space, so a sweep every 3 s would
-  ask each such app again and again. A worker asked about windows it does not know reads
+  Space that is not shown, such as another fullscreen Space, so reading them at every sweep
+  would ask each such app again and again. A worker asked about windows it does not know reads
   its app's window list again first, once for all of them, and knows the elements it has
   cached without asking the app, so the list costs one call. Terminal launched hidden
   restored a window that no read answered for and no creation report named while it

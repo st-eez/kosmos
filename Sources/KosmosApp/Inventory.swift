@@ -82,7 +82,6 @@ final class Inventory {
         return (app?.bundleIdentifier, app?.localizedName)
     }
     private var watchPending = false
-    private var sweepTimer: Timer?
     /// Windows that events changed while a sweep was running. The sweep's snapshot is older
     /// than those events, so it skips them. Nil when no sweep is running.
     private var touchedDuringSweep: Set<UInt32>?
@@ -106,9 +105,8 @@ final class Inventory {
                 MainActor.assumeIsolated { self?.appHidden(pid, hidden, at: received) }
             }
         }
-        sweepTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.sweep() }
-        }
+        // Events drive the inventory. Launch, a Space change, an unlock and a wake sweep as a
+        // backstop, as yabai and rift do; there is no timer (DESIGN.md, section 5.1).
         sweep()
     }
 
