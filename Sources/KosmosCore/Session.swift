@@ -121,9 +121,10 @@ public struct Session: Sendable {
         case .workspaceBackAndForth:
             guard let previous, previous != visible else { return nil }
             return show(previous)
-        case .moveNodeToWorkspace(let target, let follow):
-            guard let window = focused, let name = resolve(target), name != visible else { return nil }
-            return move(window, to: name, follow: follow)
+        case .moveNodeToWorkspace(let target, let follow, let chosen):
+            guard let window = chosen ?? focused, let source = home[window],
+                  let name = resolve(target), name != source else { return nil }
+            return move(window, from: source, to: name, follow: follow)
         case .reloadConfig:
             return nil   // the app reloads
         default:
@@ -192,21 +193,23 @@ public struct Session: Sendable {
         return plan
     }
 
-    private mutating func move(_ window: WindowID, to name: String, follow: Bool) -> Plan {
-        _ = workspaces[visible]!.remove(window)
+    private mutating func move(_ window: WindowID, from source: String, to name: String, follow: Bool) -> Plan {
+        let wasFocused = source == visible && focused == window
+        _ = workspaces[source]!.remove(window)
         workspaces[name]!.insert(window)
         workspaces[name]!.focus(window)
         home[window] = name
-        if follow {
+        if follow, name != visible {
             var plan = show(name)
             plan.hide.removeAll { $0 == window }   // it travels with the switch
             plan.show.removeAll { $0 == window }
             return plan
         }
         var plan = Plan()
-        plan.hide = [window]
-        plan.frames = frames(of: visible).merging(frames(of: name)) { a, _ in a }
-        plan.focus = focused.map(KeyWindow.window) ?? KeyWindow.none
+        if source == visible { plan.hide = [window] }
+        if name == visible { plan.show = [window] }
+        plan.frames = frames(of: source).merging(frames(of: name)) { a, _ in a }
+        if wasFocused || name == visible { plan.focus = focused.map(KeyWindow.window) ?? KeyWindow.none }
         return plan
     }
 }

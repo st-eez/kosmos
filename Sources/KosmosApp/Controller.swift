@@ -3,6 +3,7 @@ import KosmosCore
 import os
 
 private let controllerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "controller")
+private let signposter = OSSignposter(subsystem: "io.github.st-eez.kosmos", category: .pointsOfInterest)
 
 /// Carries out the Session's plans: frame writes through the app workers, reveals and
 /// conceals through Hiding, and focus through the focus queue once the switch's barrier
@@ -60,7 +61,7 @@ final class Controller {
             return (1, "observing only while another window manager runs")
         case .success(let command):
             reports.commandExecuted(receivedAt: received)
-            if let plan = session.perform(command) { execute(plan) }
+            if let plan = session.perform(command) { execute(plan, since: received) }
             return (0, "")
         }
     }
@@ -110,8 +111,18 @@ final class Controller {
                 touch(window)
                 execute(session.follow(window))
             }
-        case .minimized(let id, let minimized):
-            execute(minimized ? session.park(id) : session.unpark(id))
+        case .minimized(let id, true):
+            execute(session.park(id))
+        case .minimized(let id, false):
+            // A restored window returns to its own workspace, and Kosmos follows it there
+            // (DESIGN.md, section 5.5).
+            var plan = session.unpark(id)
+            if let home = session.workspace(of: id), home != session.visible {
+                let frames = plan.frames
+                plan = session.follow(id)
+                plan.frames.merge(frames) { new, _ in new }
+            }
+            execute(plan)
         case .framesApplied(let results):
             for result in results { ledger.confirm(result.id, target: result.target, readBack: result.readBack) }
         case .windowCreated, .windowDestroyed, .titleChanged:
@@ -123,7 +134,8 @@ final class Controller {
 
     private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
 
-    private func execute(_ plan: Session.Plan) {
+    /// `since` is when the command arrived, for the switch timing log.
+    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now) {
         guard managing, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
         if plan.show.isEmpty && plan.hide.isEmpty {
@@ -131,8 +143,17 @@ final class Controller {
         } else {
             switchGeneration += 1
             let generation = switchGeneration
+            let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
+            let submitted = ContinuousClock.now
             hiding.apply(show: plan.show, hide: concealment(of: plan.hide)) { [weak self] confirmed in
                 guard let self else { return }
+                signposter.endInterval("switch", interval)
+                let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
+                controllerLog.notice("""
+                    switch to \(self.session.visible, privacy: .public): \(plan.show.count) shown, \(plan.hide.count) hidden, \
+                    before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms, \
+                    total \(Self.ms(total), privacy: .public) ms, confirmed \(confirmed)
+                    """)
                 if !confirmed { controllerLog.error("switch not confirmed; windows restored") }
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
                 guard confirmed, generation == self.switchGeneration else { return }
@@ -140,6 +161,10 @@ final class Controller {
             }
         }
         publishState()
+    }
+
+    private static func ms(_ duration: Duration) -> String {
+        String(format: "%.3f", Double(duration.components.attoseconds) / 1e15 + Double(duration.components.seconds) * 1000)
     }
 
     private func writeFrames(_ targets: [WindowID: CGRect]) {

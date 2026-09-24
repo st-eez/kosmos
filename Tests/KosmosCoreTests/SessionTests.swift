@@ -18,6 +18,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
         (["join-with", "up"], .joinWith(.up)),
         (["move-node-to-workspace", "--focus-follows-window", "prev"], .moveNodeToWorkspace(.previous, focusFollowsWindow: true)),
         (["move-node-to-workspace", "3"], .moveNodeToWorkspace(.named("3"), focusFollowsWindow: false)),
+        (["move-node-to-workspace", "--window-id", "42", "5"], .moveNodeToWorkspace(.named("5"), focusFollowsWindow: false, window: 42)),
         (["layout", "tiles", "horizontal", "vertical"], .layout(.toggleOrientation)),
         (["layout", "floating", "tiling"], .layout(.toggleFloating)),
         (["fullscreen"], .fullscreen),
@@ -34,7 +35,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func rejectsWhatItDoesNotKnow() {
     for arguments in [[], ["focus"], ["focus", "sideways"], ["resize", "smart", "100"], ["resize", "smart", "+0"],
                       ["fullscreen", "--no-outer-gaps"], ["layout", "accordion"], ["move-node-to-workspace"],
-                      ["workspace", "1", "2"], ["exec-and-forget", "true"]] {
+                      ["workspace", "1", "2"], ["exec-and-forget", "true"],
+                      ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"]] {
         guard case .failure = Command.parse(arguments) else {
             Issue.record("accepted \(arguments)")
             continue
@@ -158,4 +160,34 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     #expect(s.perform(.focus(.left)) == nil)
     #expect(s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false)) == nil)
+}
+
+@Test func moveNodeByWindowIdFromTheShownWorkspace() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    let plan = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 1))!
+    #expect(plan.hide == [1])
+    #expect(plan.focus == nil)   // the focused window stayed
+    #expect(s.workspace(of: 1) == "3")
+    #expect(plan.frames[2] == display)
+}
+
+@Test func moveNodeByWindowIdIntoTheShownWorkspaceShowsIt() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(7, to: "2")
+    let plan = s.perform(.moveNodeToWorkspace(.named("1"), focusFollowsWindow: false, window: 7))!
+    #expect(plan.show == [7])
+    #expect(plan.hide.isEmpty)
+    #expect(s.workspace(of: 7) == "1")
+    #expect(plan.frames.count == 2)
+}
+
+@Test func moveNodeBetweenHiddenWorkspacesTouchesNothingOnScreen() {
+    var s = session()
+    _ = s.add(7, to: "2")
+    let plan = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 7))!
+    #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
+    #expect(s.workspace(of: 7) == "3")
 }

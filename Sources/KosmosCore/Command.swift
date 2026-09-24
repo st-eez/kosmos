@@ -21,7 +21,8 @@ public enum Command: Equatable, Sendable {
     case move(Direction)
     case swap(Direction)
     case joinWith(Direction)
-    case moveNodeToWorkspace(Workspace, focusFollowsWindow: Bool)
+    /// Moves the focused window, or the window given with `--window-id`.
+    case moveNodeToWorkspace(Workspace, focusFollowsWindow: Bool, window: WindowID? = nil)
     case layout(Layout)
     case fullscreen
     case resize(ResizeDimension, by: CGFloat)
@@ -54,12 +55,20 @@ public enum Command: Equatable, Sendable {
             default: return .success(.joinWith(direction))
             }
         case "move-node-to-workspace":
-            let follow = rest.contains("--focus-follows-window")
-            let targets = rest.filter { $0 != "--focus-follows-window" }
-            guard targets.count == 1, !targets[0].hasPrefix("--") else {
-                return fail("usage: move-node-to-workspace [--focus-follows-window] <name|next|prev>")
+            let usageText = "usage: move-node-to-workspace [--focus-follows-window] [--window-id <id>] <name|next|prev>"
+            var follow = false, window: WindowID?, targets: [String] = []
+            var words = rest[...]
+            while let word = words.popFirst() {
+                switch word {
+                case "--focus-follows-window": follow = true
+                case "--window-id":
+                    guard let id = words.popFirst().flatMap(WindowID.init) else { return fail(usageText) }
+                    window = id
+                default: targets.append(word)
+                }
             }
-            return .success(.moveNodeToWorkspace(workspace(targets[0]), focusFollowsWindow: follow))
+            guard targets.count == 1, !targets[0].hasPrefix("--") else { return fail(usageText) }
+            return .success(.moveNodeToWorkspace(workspace(targets[0]), focusFollowsWindow: follow, window: window))
         case "layout":
             switch rest {
             case ["horizontal"], ["tiles", "horizontal"]: return .success(.layout(.orientation(.horizontal)))
