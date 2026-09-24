@@ -68,7 +68,10 @@
 //                                   empty workspace, both on stub A and, with `finder`, on
 //                                   Finder (it fronts Finder and moves none of its windows);
 //                                   then a key window concealed and revealed, where the focus
-//                                   queue's already key check could skip wrongly. The
+//                                   queue's already key check could skip wrongly, and an app
+//                                   whose every window is concealed, with and without its
+//                                   ordinary Space, fronted both ways to see whether it keys
+//                                   one of them. The
 //                                   stubs say which window they hold key, and every
 //                                   AXFocusedWindowChanged is logged against the raise. They are
 //                                   accessory apps with small windows at the bottom right, which
@@ -1112,11 +1115,13 @@ final class FocusNotes: @unchecked Sendable {
     // does. The focus queue skips a request when the app is front and names the target as
     // focused; it would skip wrongly if the app named it while holding no key window.
     var wrongSkips = 0, concealTrials = 0, rekeyed = 0
+    var concealedKeys: [String: Int] = [:], concealedTries: [String: Int] = [:]
     let space = kosmos_holding_create()
     if let desktop = Displays.current().ordinarySpace(original: nil), space != 0 {
         var ids = [a.windows[0]]
         defer {
-            _ = kosmos_remove_windows(space, &ids, 1)
+            var every = a.windows
+            _ = kosmos_remove_windows(space, &every, every.count)
             _ = kosmos_space_destroy(space)
         }
         for round in 1...rounds {
@@ -1148,9 +1153,43 @@ final class FocusNotes: @unchecked Sendable {
                   + "\(wrong ? ", WRONGLY" : ""); Kosmos's order then \(keyedAgain ? "keyed A1" : "did NOT key A1"); "
                   + "focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
         }
+
+        // An app whose every window is concealed, fronted as an empty workspace fronts Finder,
+        // by S's activate and by the private front with no key window: whether it keys a
+        // concealed window, with the windows kept in their ordinary Space or not. B is front
+        // before each try.
+        for round in 1...rounds {
+            for exclusive in [false, true] {
+                for way in [ActivationWay.plain, nil] as [ActivationWay?] {
+                    focus(a, a.windows[0], .raiseFirst)
+                    var all = a.windows
+                    kosmos_add_windows(space, &all, all.count, exclusive)
+                    _ = kosmos_barrier(space)
+                    focus(b, b.windows[0], .raiseFirst)
+                    let row = "A's windows \(exclusive ? "concealed exclusively" : "concealed in their ordinary Space too"), "
+                        + "A fronted by \(way.map { "S \($0.label)" } ?? "kosmos_front_without_windows")"
+                    if front(b) {
+                        let returned = way.map { s.activate(a.pid, $0) } ?? kosmos_front_without_windows(a.pid)
+                        wait(0.3)
+                        let appKey = a.appKey(), axFocused = focusedWindow(of: a.pid)
+                        concealedTries[row, default: 0] += 1
+                        if appKey != nil { concealedKeys[row, default: 0] += 1 }
+                        print("round \(round), \(row): returned \(returned), A \(front(a) ? "is" : "is NOT") front, "
+                              + "app key \(a.label(appKey)), AX focused \(a.label(axFocused))")
+                    } else {
+                        print("round \(round), \(row): setup did not front B, skipped")
+                    }
+                    // An exclusively concealed window needs an ordinary Space before it leaves.
+                    if exclusive { kosmos_add_windows(desktop, &all, all.count, true) }
+                    kosmos_remove_windows(space, &all, all.count)
+                    _ = kosmos_barrier(space)
+                    wait(0.2)
+                }
+            }
+        }
     } else {
         if space != 0 { _ = kosmos_space_destroy(space) }
-        print("no holding Space or no ordinary Space; the concealed case did not run")
+        print("no holding Space or no ordinary Space; the concealed cases did not run")
     }
 
     print("\nsummary: a hit keys the target window in the app that holds it; a miss leaves another window key")
@@ -1167,6 +1206,9 @@ final class FocusNotes: @unchecked Sendable {
     }
     print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
           + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
+    for row in concealedTries.keys.sorted() {
+        print("  \(row): A keyed a concealed window in \(concealedKeys[row] ?? 0) of \(concealedTries[row] ?? 0)")
+    }
     if !raiseTimes.isEmpty {
         print(String(format: "  AXRaise: median %.2f ms, max %.2f ms over %d raises", percentile(raiseTimes, 0.5), percentile(raiseTimes, 1), raiseTimes.count))
     }
