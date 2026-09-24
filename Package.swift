@@ -17,14 +17,21 @@ let package = Package(
         ),
         // The model: trees, layout and commands. No AppKit and no Accessibility.
         .target(name: "KosmosCore"),
-        // The socket protocol, server and client. No AppKit, so the CLI stays fast to launch.
+        // The socket protocol, server and client. No Foundation or AppKit, so the CLI stays
+        // fast to launch.
         .target(name: "KosmosIPC"),
         // Swift wrappers for SkyLight queries and events.
         .target(name: "KosmosSkyLight", dependencies: ["CKosmos"]),
         // The recovery record and procedure, shared by the app and the guardian.
         .target(name: "KosmosRecovery", dependencies: ["CKosmos", "KosmosSkyLight"]),
         .executableTarget(name: "KosmosApp", dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
-        .executableTarget(name: "kosmos", dependencies: ["KosmosIPC"]),
+        // Swift Build links Foundation into every executable. Dropping unused libraries keeps it
+        // out of the CLI, where loading it would add about 1.8 ms to each launch.
+        .executableTarget(
+            name: "kosmos",
+            dependencies: ["KosmosIPC"],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-dead_strip_dylibs"])]
+        ),
         .executableTarget(name: "kosmos-guardian", dependencies: ["KosmosRecovery"]),
         // Measurements of private behaviour that the design depends on (DESIGN.md, section 6).
         .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosRecovery", "KosmosSkyLight"]),
