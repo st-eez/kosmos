@@ -277,8 +277,9 @@ off the main thread).
     path off too.
   - Wrong windows. Only the private key record counts, which keys a background app's
     window; inside the front app the raise keys it. A request misses when its app reports
-    another of its windows key and no echo of any request arrives before Kosmos's next
-    request. Five misses in a row turn the
+    another of its windows key, and neither an echo of any request nor a report of the
+    requested window arrives first, before Kosmos's next request. A background report that
+    consumes the echo leaves the count alone. Five misses in a row turn the
     path off. On this Mac AXRaise and then the private sequence keyed the right window in 60
     of 60 AutoRaise trials, 9 of them between two windows of the active app, so the miss
     rate is at most about 5% at 95% confidence, and five misses in a row at 5% come once in

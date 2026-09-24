@@ -105,3 +105,16 @@ private func miss(_ misses: inout FocusMisses<Int>, at: Int, reported: UInt32 = 
     }
     #expect(misses.inARow == 0)
 }
+
+@Test func aClickOnAnotherWindowAfterTheRequestedOneWasKeyIsNoMiss() {
+    // A background report consumed the echo, so the activation's report of window 5 is no
+    // echo; the user then clicks window 9 of the same app.
+    var misses = FocusMisses<Int>()
+    for request in 0..<10 {
+        _ = misses.willRequest(5, pid: 1, at: request * 10)
+        misses.reported(.window(5), pid: 1, receivedAt: request * 10 + 1, echo: false)
+        misses.reported(.window(9), pid: 1, receivedAt: request * 10 + 2, echo: false)
+    }
+    let tripped = misses.willRequest(5, pid: 1, at: 100)
+    #expect(!tripped && misses.inARow == 0)
+}

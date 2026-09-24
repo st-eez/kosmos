@@ -36,14 +36,20 @@ public struct FocusMisses<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// A key window report. `echo` is true when the report classifier matched it to one of
-    /// Kosmos's requests.
+    /// Kosmos's requests. A report of the requested window that is no echo also settles the
+    /// request: a background report can consume the echo first, and the user's later click
+    /// on another window of that app would otherwise count as a miss.
     public mutating func reported(_ key: KeyWindow, pid: Int32, receivedAt stamp: Stamp, echo: Bool) {
         guard case .window(let window) = key else { return }
         if echo {
             inARow = 0
             pending = nil
-        } else if let request = pending, request.pid == pid, request.window != window, request.requested <= stamp {
-            pending?.wrongWindow = true
+        } else if let request = pending, request.pid == pid, request.requested <= stamp {
+            if request.window == window {
+                pending = nil
+            } else {
+                pending?.wrongWindow = true
+            }
         }
     }
 }
