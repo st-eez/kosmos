@@ -39,5 +39,6 @@ let package = Package(
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
         .testTarget(name: "KosmosIPCTests", dependencies: ["KosmosIPC"]),
         .testTarget(name: "KosmosRecoveryTests", dependencies: ["KosmosRecovery"]),
+        .testTarget(name: "KosmosSkyLightTests", dependencies: ["KosmosSkyLight"]),
     ]
 )

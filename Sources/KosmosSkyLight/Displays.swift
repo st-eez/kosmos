@@ -31,9 +31,16 @@ public struct Displays {
     /// while one is shown. Nil only when no ordinary Space exists.
     public func ordinarySpace(original: UInt64?) -> UInt64? {
         let main = display(for: CGMainDisplayID()) ?? displays.first
-        if let current = main?.currentSpace { return current }
-        if let original, ordinarySpaces.contains(original) { return original }
-        return main?.spaces.first ?? displays.lazy.flatMap(\.spaces).first
+        return Self.ordinarySpace(current: main?.currentSpace, spaces: (main?.spaces ?? []) + displays.flatMap(\.spaces),
+                                  original: original)
+    }
+
+    /// The choice itself: `current` is the main display's current Space when it is
+    /// ordinary, and `spaces` every ordinary Space, the main display's first.
+    static func ordinarySpace(current: UInt64?, spaces: [UInt64], original: UInt64?) -> UInt64? {
+        if let current { return current }
+        if let original, spaces.contains(original) { return original }
+        return spaces.first
     }
 
     public func currentSpace(at point: CGPoint) -> UInt64? {
