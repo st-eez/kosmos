@@ -389,14 +389,20 @@ off the main thread).
 - Open item: an empty workspace on either path. `kosmos_front_without_windows` fronts the
   app with no window brought forward, but the app still keys its own last key window: it
   did in 10 of 10 trials with a stub whose window was on screen. Finder keyed nothing only
-  because it had no window open. Activating Finder can key a hidden Finder window, and
-  one that keeps its ordinary Space for Command-Tab is the likeliest, and Kosmos would
-  follow it off the empty workspace on every switch. Concealing Finder's windows fully
-  would not reach one concealed earlier, as the conceal ledger leaves a concealed window
-  as it was. `kosmos-probe keying` now measures whether an app whose every window is
-  concealed keys one when fronted either way, with the windows kept in their ordinary Space
-  and without. That picks between stripping Finder's concealed windows of their ordinary
-  Space before an empty workspace fronts it, and a small Kosmos window keyed instead.
+  because it had no window open. A stub whose every window was concealed keyed one of
+  them in 10 of 10 trials in each of four ways: kept in their ordinary Space or concealed
+  exclusively, fronted by `activate` or by `kosmos_front_without_windows`
+  (`kosmos-probe keying`, September 24, 2026). So Finder, or any app with a concealed
+  window, cannot be the empty workspace's target: Kosmos would follow the concealed window
+  it keys off the empty workspace on every switch. The plan is a window of Kosmos's own
+  to key instead: 1 by 1 point, borderless, clear, ignoring the mouse, on every Space and
+  out of the window cycle, never managed, and keyed by the private path since Kosmos
+  cannot activate itself. `kosmos-probe keying` measures whether a background accessory
+  app can key such a window of its own that way. AeroSpace does nothing on an empty
+  workspace, so macOS keeps the outgoing window key while it is hidden and keystrokes
+  reach it (`refresh.swift`, upstream at 39e51904). The aerospace-steez fork fronts
+  Finder with `kCPSNoWindows` instead, following yabai (its commit 2031030b), which keys a
+  Finder window whenever Finder has one.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space

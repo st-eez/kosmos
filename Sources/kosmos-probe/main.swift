@@ -67,6 +67,9 @@
 //                                   private front with no key window that Kosmos uses for an
 //                                   empty workspace, both on stub A and, with `finder`, on
 //                                   Finder (it fronts Finder and moves none of its windows);
+//                                   a background accessory app keying an invisible window of
+//                                   its own by the private path, as an empty workspace
+//                                   would, from itself and from another process;
 //                                   then a key window concealed and revealed, where the focus
 //                                   queue's already key check could skip wrongly, and an app
 //                                   whose every window is concealed, with and without its
@@ -788,8 +791,11 @@ func axTimeout() {
 /// visible area and prints the window ids. Each "key" line on its standard input prints the
 /// window the app holds key, or 0. Each "activate" line activates the app from this
 /// background thread, as Kosmos's focus queue activates Kosmos, and prints what `activate`
-/// returned; "activate <way> <pid>" activates that app instead (ActivationWay). It exits
-/// when its standard input closes.
+/// returned; "activate <way> <pid>" activates that app instead (ActivationWay). "invisible"
+/// opens the window an empty workspace would key (InvisibleWindow) and prints its id, and
+/// "key-self <id>" keys a window of the app's own by the private path from this background
+/// thread, as Kosmos's focus queue would, and prints what the call returned. It exits when
+/// its standard input closes.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -809,8 +815,14 @@ func axTimeout() {
             switch line {
             case "key": DispatchQueue.main.async { MainActor.assumeIsolated { print(NSApp.keyWindow?.windowNumber ?? 0) } }
             case "activate": print(NSRunningApplication.current.activate(options: []))
+            case "invisible":
+                DispatchQueue.main.sync { MainActor.assumeIsolated { print(InvisibleWindow.open()) } }
             default:
                 let parts = line.split(separator: " ")
+                if parts.count == 2, parts[0] == "key-self", let id = UInt32(parts[1]) {
+                    print(kosmos_make_key(getpid(), id))
+                    continue
+                }
                 guard parts.count == 3, parts[0] == "activate", let way = ActivationWay(rawValue: String(parts[1])),
                       let pid = pid_t(parts[2]) else { break }
                 print(way.activate(pid))
@@ -820,6 +832,31 @@ func axTimeout() {
     }
     app.run()
     exit(0)
+}
+
+/// A window for an empty workspace to key: 1 by 1 point at the main screen's bottom left,
+/// borderless, clear and transparent, ignoring the mouse, on every Space, and out of the
+/// window cycle. A borderless window cannot become key unless it says so.
+final class InvisibleWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+
+    @MainActor private static var opened: [InvisibleWindow] = []
+
+    /// Opens one and returns its window id.
+    @MainActor static func open() -> Int {
+        let origin = NSScreen.main?.frame.origin ?? .zero
+        let window = InvisibleWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 1, height: 1)),
+                                     styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
+        window.isReleasedWhenClosed = false
+        window.orderFrontRegardless()
+        opened.append(window)
+        return window.windowNumber
+    }
 }
 
 /// How a background app with no window, as Kosmos is, asks for another app's activation
@@ -895,6 +932,18 @@ final class KeyStub {
     /// Activates the app from its own background thread. Returns what `activate` returned.
     func activateItself() -> Bool {
         input.fileHandleForWriting.write(Data("activate\n".utf8))
+        return line() == "true"
+    }
+
+    /// Opens an InvisibleWindow in the stub and returns its id.
+    func openInvisibleWindow() -> UInt32 {
+        input.fileHandleForWriting.write(Data("invisible\n".utf8))
+        return UInt32(line()) ?? 0
+    }
+
+    /// Keys a window of the stub's own by the private path, from the stub's background thread.
+    func keyOwnWindow(_ id: UInt32) -> Bool {
+        input.fileHandleForWriting.write(Data("key-self \(id)\n".utf8))
         return line() == "true"
     }
 
@@ -1111,6 +1160,34 @@ final class FocusNotes: @unchecked Sendable {
         }
     }
 
+    // Kosmos keying a window of its own for an empty workspace: S's invisible window, keyed
+    // by the private path from S's own background thread and from another process. B is
+    // front before each try.
+    let invisible = s.openInvisibleWindow()
+    var ownKeyed: [String: Int] = [:], ownTries: [String: Int] = [:]
+    let ownWays: [(label: String, key: () -> Bool)] = [
+        ("S keying its invisible window itself", { s.keyOwnWindow(invisible) }),
+        ("the probe keying S's invisible window", { kosmos_make_key(s.pid, invisible) }),
+    ]
+    for round in 1...rounds where invisible != 0 {
+        for way in ownWays {
+            focus(b, b.windows[0], .raiseFirst)
+            guard front(b) else {
+                print("round \(round), \(way.label): setup did not front B, skipped")
+                continue
+            }
+            let returned = way.key()
+            wait(0.3)
+            let isFront = front(s), appKey = s.appKey()
+            ownTries[way.label, default: 0] += 1
+            if isFront && appKey == invisible { ownKeyed[way.label, default: 0] += 1 }
+            print("round \(round), \(way.label): returned \(returned), S \(isFront ? "is" : "is NOT") front 0.3 s later, "
+                  + "its key window \(appKey.map { $0 == invisible ? "the invisible one" : String($0) } ?? "none"), "
+                  + "B \(front(b) ? "still front" : "not front")")
+        }
+    }
+    if invisible == 0 { print("S opened no invisible window; its case did not run") }
+
     // A key window concealed in a holding Space and revealed again, as a switch away and back
     // does. The focus queue skips a request when the app is front and names the target as
     // focused; it would skip wrongly if the app named it while holding no key window.
@@ -1203,6 +1280,9 @@ final class FocusNotes: @unchecked Sendable {
     print("  a background accessory app activating itself became front in \(selfActivated) of \(selfTrials)")
     for row in tries.keys.sorted() {
         print("  \(row): front in \(fronted[row] ?? 0) of \(tries[row] ?? 0)")
+    }
+    for way in ownWays {
+        print("  \(way.label): S front with it key in \(ownKeyed[way.label] ?? 0) of \(ownTries[way.label] ?? 0)")
     }
     print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
           + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
