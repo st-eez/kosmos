@@ -296,6 +296,11 @@ public struct Session: Sendable {
         home[new] = name
         if let minimum = minimums.removeValue(forKey: old), !parked { minimums[new] = minimum }
         merged[new] = merged.removeValue(forKey: old)
+        // Selected while its workspace is merged away, the tab returns in the place of `old`.
+        if let origin = merged[new] {
+            mergedAway[origin]?.remove(new)
+            mergedAway[origin]?.replace(old, with: new)
+        }
         parkedConcealed.remove(old)
         var plan = Plan()
         for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }

@@ -418,6 +418,16 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.frames(of: "6")[60] == frames[60])
     }
 
+    @Test func aTabSelectedWhileItsWorkspaceIsMergedReturnsInItsPlace() {
+        var s = desk()
+        _ = s.add(60, to: "6"); _ = s.add(62, to: "6")
+        s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [builtIn], assigned: [:], merge: ["6": "1"])
+        _ = s.replace(60, with: 61)
+        s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
+        #expect(s.workspaces["6"]!.tree == "h[61 62]" && s.workspace(of: 61) == "6")
+        #expect(s.workspaces["1"]!.root.windows.isEmpty)
+    }
+
     @Test func aFlapMovesTheMergedWindowsBackAtOnce() {
         var s = desk()
         _ = s.add(60, to: "6")
@@ -518,9 +528,10 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 /// Runs random commands, focus changes, arrivals, departures and display changes on three
 /// displays, carries out each plan's reveals and conceals on a model of the screen, and
 /// checks after each step what DESIGN.md section 5.13 promises: every display shows at most
-/// one workspace, one it may show; the focused workspace is shown; a window is concealed
-/// exactly when its workspace is hidden, unless it is parked; and every tiled window of a
-/// shown workspace lies on that workspace's display.
+/// one workspace, one it may show; the focused workspace is shown; every window is in the
+/// workspace it belongs to; a window is concealed exactly when its workspace is hidden,
+/// unless it is parked; and every tiled window of a shown workspace lies on that
+/// workspace's display.
 @Test(arguments: 1...12 as ClosedRange<UInt64>)
 func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -553,7 +564,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         let target: Command.MonitorTarget = [.direction(.left), .direction(.right), .direction(.up), .direction(.down),
                                              .next, .previous, .number(Int.random(in: 1...3, using: &random))].randomElement(using: &random)!
         let wrap = Bool.random(using: &random)
-        let operation = Int.random(in: 0..<23, using: &random)
+        let operation = Int.random(in: 0..<24, using: &random)
         switch operation {
         case 0..<4:
             guard windows.count < 30 else { break }
@@ -578,6 +589,15 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             let boundaries: Command.Boundaries = wrap ? .allMonitorsWrapping : .allMonitors
             carryOut(s.perform(Bool.random(using: &random) ? .focus(direction, boundaries: boundaries) : .move(direction, boundaries: boundaries)))
         case 19: carryOut(s.perform(.layout(.toggleFloating)))
+        case 20:
+            // A tab switch, to a new tab or to a window with a place of its own. Both tabs
+            // leave the holding Space, as Controller.tabSwitched has it.
+            guard let window else { break }
+            let new = Bool.random(using: &random) ? windows.randomElement(using: &random)! : nextWindow
+            guard new != window else { break }
+            if new == nextWindow { nextWindow += 1 }
+            concealed.subtract([window, new])
+            carryOut(s.replace(window, with: new))
         default:
             // A display change or a forced profile, and the resync after it.
             let profile = profiles.randomElement(using: &random)!
@@ -612,6 +632,11 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
                 #expect(concealed.contains(window) == !s.isShown(name),
                         "seed \(seed) step \(step) operation \(operation): \(window) on \(name)")
             }
+        }
+        for window in 1..<nextWindow {
+            guard let name = s.workspace(of: window) else { continue }
+            #expect(s.workspaces[name]?.contains(window) == true,
+                    "seed \(seed) step \(step) operation \(operation): \(window) in no tree of \(name)")
         }
     }
 }
