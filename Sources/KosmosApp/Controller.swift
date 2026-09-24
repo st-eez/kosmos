@@ -37,9 +37,9 @@ final class Controller {
     var mouseFollowsFocus = false
     /// The active display profile, for the bar.
     var profile: String?
-    /// The display the session tiles, as the bar numbers it. Read at launch, as the session's
-    /// display is.
-    private let barDisplay: BarSnapshot.Display
+    /// The display the session tiles, as the bar numbers it. Read at launch and at each
+    /// resync, as the session's display is.
+    private var barDisplay: BarSnapshot.Display
     var publish: (@MainActor (Data) -> Void)?
     /// Called with a description when the private focus path turns off, and with nil when it
     /// turns back on.
@@ -121,16 +121,21 @@ final class Controller {
         }
     }
 
-    /// After an unlock, or a wake while unlocked: lays the shown workspace out on the display
-    /// area as it is now, conceals and reveals every window again, requests the focus intent
-    /// and publishes the state. Other workspaces are laid out when they are shown.
+    /// After an unlock, or a wake while unlocked: reads the main display again, lays the shown
+    /// workspace out on its area as it is now, conceals and reveals every window again,
+    /// requests the focus intent and publishes the state. Other workspaces are laid out when
+    /// they are shown.
     func resync() {
-        guard managing, !sessionLocked else { return publishState() }
+        // With no display at all, the ones read before stay.
         let display = Controller.displayRect()
-        if display != .zero, display != session.display {
-            controllerLog.notice("display area is now \(String(describing: display), privacy: .public)")
-            session.display = display
+        if display != .zero {
+            barDisplay = Controller.barDisplay()
+            if display != session.display {
+                controllerLog.notice("display area is now \(String(describing: display), privacy: .public)")
+                session.display = display
+            }
         }
+        guard managing, !sessionLocked else { return publishState() }
         // Reports received before now are older than the focus this asks for again.
         reports.commandExecuted(receivedAt: .now)
         var plan = Session.Plan()

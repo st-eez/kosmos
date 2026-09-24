@@ -129,8 +129,9 @@ off the main thread).
 - While locked, the inventory admits and removes no window and runs no sweep, and Kosmos
   writes no frames, runs no hides, requests no focus, ignores focus reports and refuses
   commands. After an unlock, and after a wake while unlocked, the inventory sweeps, and
-  Kosmos lays the shown workspace out on the display area as it is then, conceals and
-  reveals every window again, requests the focus intent and publishes the state. A wake
+  Kosmos reads the main display again, lays the shown workspace out on its area as it is
+  then, conceals and reveals every window again, requests the focus intent and publishes
+  the state. A wake
   gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
   locks its screen first.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
