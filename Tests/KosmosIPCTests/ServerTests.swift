@@ -117,16 +117,13 @@ import Testing
         #expect(try Response(decoding: answer) == Response())
 
         // The client stops reading. Each frame is far larger than the socket buffers, so frame 1
-        // stays in the middle of its write and later frames wait in the outbox. With a limit of
-        // 16, frame 18 finds 2 through 17 waiting and replaces them, and frame 34 replaces 18
-        // through 33, which leaves 34 through 40.
-        let limit = IPCServer.outboxLimit
-        let count = 2 * limit + 8
+        // stays in the middle of its write, and each later frame replaces the one waiting.
+        let count = 10
         let padding = String(repeating: "x", count: 256 << 10)
         for seq in 1...count {
             test.server.publish(Array(#"{"pad":"\#(padding)","seq":\#(seq)}"#.utf8))
         }
-        let expected = [1] + Array((2 * limit + 2)...count)
+        let expected = [1, count]
 
         var received: [Int] = []
         while received.count < expected.count {

@@ -8,9 +8,6 @@ import Dispatch
 /// Only the handler runs on the main actor, and the server waits for it without holding up
 /// other clients.
 public actor IPCServer {
-    /// Frames that may wait behind the one being written to a subscriber. The next frame
-    /// replaces them all, because each frame is a full snapshot that supersedes older ones.
-    static let outboxLimit = 16
     /// A client must send its whole request within this time of connecting.
     static let requestDeadline = DispatchTimeInterval.seconds(1)
 
@@ -70,8 +67,9 @@ public actor IPCServer {
 
     /// Sends `payload` to every subscriber, and to each new subscriber when it joins. The
     /// payload must be one JSON value without newlines, because `kosmos subscribe` prints each
-    /// frame as one line. Returns at once. A slow subscriber skips frames. Once `outboxLimit`
-    /// frames wait for it, the next one replaces them, so it never holds up the caller.
+    /// frame as one line. Returns at once. Each frame is a full snapshot, so a subscriber still
+    /// receiving an earlier frame gets only the newest one after it, and never holds up the
+    /// caller.
     public nonisolated func publish(_ payload: [UInt8]) {
         let data = frameData(payload)
         queue.async { self.assumeIsolated { $0.broadcast(data) } }
@@ -89,10 +87,10 @@ public actor IPCServer {
         let io: DispatchIO
         var decoder = FrameDecoder()
         var state = State.awaitingRequest
-        /// The channel gets one frame at a time, so the frames behind it wait here, where the
-        /// server can still drop them.
+        /// The channel gets one frame at a time. The next frame waits here, and a newer one
+        /// replaces it.
         var writing = false
-        var outbox: [DispatchData] = []
+        var waiting: DispatchData?
 
         init(io: DispatchIO) {
             self.io = io
@@ -184,14 +182,16 @@ public actor IPCServer {
         }
     }
 
-    /// Writes `frame` now, or queues it behind the frame being written. Only subscribers queue
-    /// frames, and every queued frame is a full snapshot, so a full outbox is emptied and the
-    /// newest frame waits alone.
+    /// Writes `frame` now, or keeps it until the frame being written is done. Only subscribers
+    /// get a frame during a write, since the subscribe response is always a connection's first
+    /// frame, and each of their frames is a full snapshot, so it replaces any frame waiting.
     private func send(_ frame: DispatchData, to id: Int) {
         guard let connection = connections[id] else { return }
-        guard connection.writing else { return write(frame, to: connection, id: id) }
-        if connection.outbox.count >= Self.outboxLimit { connection.outbox.removeAll() }
-        connection.outbox.append(frame)
+        if connection.writing {
+            connection.waiting = frame
+        } else {
+            write(frame, to: connection, id: id)
+        }
     }
 
     private func write(_ frame: DispatchData, to connection: Connection, id: Int) {
@@ -207,8 +207,9 @@ public actor IPCServer {
         connection.writing = false
         if error != 0 {
             disconnect(id)
-        } else if !connection.outbox.isEmpty {
-            write(connection.outbox.removeFirst(), to: connection, id: id)
+        } else if let frame = connection.waiting {
+            connection.waiting = nil
+            write(frame, to: connection, id: id)
         } else if connection.state == .replying {
             disconnect(id)
         }
