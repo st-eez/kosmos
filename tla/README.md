@@ -32,18 +32,18 @@ Java 11 or newer is required.
 | `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 |
 | `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 |
 | `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 6,293 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 71 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 57 |
-| `leave` | all inputs, the key window leaving, with or without a report of the next, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,652,495 |
-| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,652,495 |
-| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 933,205 |
-| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 996,315 |
-| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 12,010 |
-| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,249,371 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 6,465 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 72 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 59 |
+| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 |
+| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 |
+| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 925,239 |
+| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 973,302 |
+| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 11,149 |
+| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,235,551 |
 | `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 |
-| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 69,706 |
-| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,703,045 |
+| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 71,139 |
+| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 |
 
 The first three expected failures record trade-offs, and the others record the behaviour
 this model replaced:
@@ -192,5 +192,17 @@ Each change below started as a counterexample from TLC.
     AeroSpace fork's selection trials measured it (wm-research, hiding.md).
 13. **Departures with no report of the next key window.** A departure of Kosmos's focus
     waited for macOS's report of the next key window, which need not come
-    (`quiet-unbounded`). The wait now ends with the grace, and the departure focuses. The
-    grace outlasts the report's delay, so a report on its way arrives first.
+    (`quiet-unbounded`). The wait now ends with a bound, and the departure focuses.
+    - A minimize keys the next window only when its animation ends, 0.73 s after
+      Accessibility reported it in the live log, so the model lets Kosmos hear of a
+      departure before macOS's key change (AllowLate). The bound outlasts that key
+      change: it is Kosmos's departure bound of a second, where the grace of 100 ms
+      would not be.
+    - A window keyed during the animation, by Kosmos or the user, is taken to leave macOS
+      nothing to key when it ends. That is how AppKit keys the next window when the key
+      window orders out, but it is not measured; the departures probe asks.
+    - Kosmos's own echo ended the wait for macOS's report and left nothing focused. Only
+      a report that is not Kosmos's echo ends it.
+    - A click or Command-Tab during the animation reads as macOS's own key change, since
+      the window key before it has left, and Kosmos keeps its workspace. The model leaves
+      such input out.
