@@ -2,19 +2,16 @@
 // Kosmos can learn that it turned on (DESIGN.md, section 5.6).
 //
 // The probe registers each key below as an exclusive hotkey, and its window asks the person
-// at the keyboard to press each one in three phases: Secure Input off, the probe's own
-// password field focused, and another process holding Secure Input while the probe's plain
-// field is focused. Every press lands in the probe's own window: a hotkey that fires consumes
-// the key, and one that does not lets the key reach the window, where a local monitor sees
-// it. So each press has an answer without a timeout.
+// at the keyboard to press each one twice: with Secure Input off, and with the probe's own
+// password field focused. Every press lands in the probe's own window: a hotkey that fires
+// consumes the key, and one that does not lets the key reach the window, where a local
+// monitor sees it. So each press has an answer without a timeout.
 //
 // Real presses only. Synthetic presses gave a different answer depending on how the event
-// was built: made from the HID state, every hotkey on a character key missed even with
-// Secure Input off. They also type into whatever app is in front if the probe loses focus.
+// was built, and they type into whatever app is in front if the probe loses focus.
 //
 // Secure Input ends when its holder exits (measured: WindowServer sends event 753 at the
-// exit), so a crash or a kill leaves it off. The holder child exits when the probe's pipe
-// closes, and both processes stop themselves with an alarm.
+// exit), so a crash or a kill leaves it off, and the probe stops itself with an alarm.
 import AppKit
 import Carbon.HIToolbox
 import CKosmos
@@ -49,15 +46,14 @@ private let testKeys: [TestKey] = [
 ]
 
 private enum Phase: CaseIterable {
-    case off, ownField, otherProcess
+    case off, on
 
-    var secureInput: Bool { self != .off }
+    var secureInput: Bool { self == .on }
 
     var title: String {
         switch self {
         case .off: "off"
-        case .ownField: "own password field"
-        case .otherProcess: "another process"
+        case .on: "password field"
         }
     }
 
@@ -65,8 +61,7 @@ private enum Phase: CaseIterable {
     var explanation: String {
         switch self {
         case .off: "Secure Input is off"
-        case .ownField: "Secure Input is on, from this window's password field"
-        case .otherProcess: "Secure Input is on, held by another process"
+        case .on: "Secure Input is on, from this window's password field"
         }
     }
 }
@@ -96,28 +91,7 @@ private func stamp() -> String {
     String(format: "+%7.1f ms", elapsed(probeStart))
 }
 
-@MainActor func secureInput(_ mode: String?) -> Never {
-    switch mode {
-    case nil: secureInputProbe()
-    case "hold": holdSecureInput()
-    default:
-        print("usage: kosmos-probe secure-input")
-        exit(2)
-    }
-}
-
-/// The child that holds Secure Input for the third phase. It has no window, like a
-/// background app that forgot to release it.
-private func holdSecureInput() -> Never {
-    alarm(600)
-    EnableSecureEventInput()
-    print("on")
-    _ = FileHandle.standardInput.readDataToEndOfFile()
-    DisableSecureEventInput()
-    exit(0)
-}
-
-@MainActor private func secureInputProbe() -> Never {
+@MainActor func secureInput() -> Never {
     print("\(stamp()) start")
     if IsSecureEventInputEnabled() {
         print("Secure Input is already on, held by \(holderDescription()); release it and run again")
@@ -152,28 +126,15 @@ private func holdSecureInput() -> Never {
     window.front()
 
     var results: [String: [Phase: Outcome]] = [:]
-    var holders: [Phase: String] = [:]
-    var holder: Process?
     for phase in Phase.allCases {
-        switch phase {
-        case .off:
-            window.focus(secure: false)
-        case .ownField:
-            window.focus(secure: true)
+        window.focus(secure: phase == .on)
+        if phase == .on {
             print("\(stamp()) password field focused")
-            pump(until: { IsSecureEventInputEnabled() }, timeout: 1)
-        case .otherProcess:
-            window.focus(secure: false)
-            print("\(stamp()) plain field focused")
-            pump(until: { !IsSecureEventInputEnabled() }, timeout: 1)
-            holder = spawnHolder()
-            print("\(stamp()) holder child \(holder?.processIdentifier ?? 0) turned Secure Input on")
             pump(until: { IsSecureEventInputEnabled() }, timeout: 1)
             print("checks with Secure Input on:")
             timeChecks()
         }
-        holders[phase] = IsSecureEventInputEnabled() ? "on, held by \(holderDescription())" : "off"
-        print("phase \(phase.title): Secure Input \(holders[phase]!)")
+        print("phase \(phase.title): Secure Input \(IsSecureEventInputEnabled() ? "on, held by \(holderDescription())" : "off")")
         for key in testKeys {
             guard refs[key.name] != nil else {
                 results[key.name, default: [:]][phase] = .taken
@@ -183,18 +144,11 @@ private func holdSecureInput() -> Never {
         }
     }
 
-    if let holder {
-        try? (holder.standardInput as? Pipe)?.fileHandleForWriting.close()
-        holder.waitUntilExit()
-    }
     window.close()
     for ref in refs.values { UnregisterEventHotKey(ref) }
     pump(until: { !IsSecureEventInputEnabled() }, timeout: 1)
     if let previous { previous.activate(from: .current, options: []) }
 
-    print("")
-    print("Secure Input during each phase:")
-    for phase in Phase.allCases { print("  \(phase.title): \(holders[phase]!)") }
     print("")
     print("Hotkeys:")
     let width = testKeys.map(\.name.count).max()! + 2
@@ -282,21 +236,9 @@ private func holderDescription() -> String {
     return "pid \(pid) (\(name)\(pid == getpid() ? ", this probe" : ""))"
 }
 
-@MainActor private func spawnHolder() -> Process {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    process.arguments = ["secure-input", "hold"]
-    let input = Pipe(), output = Pipe()
-    process.standardInput = input
-    process.standardOutput = output
-    try! process.run()
-    _ = output.fileHandleForReading.readData(ofLength: 3)   // "on\n"
-    return process
-}
-
 /// Asks the person at the keyboard for one press and waits for it. Return skips the key.
 @MainActor private func askForPress(_ key: TestKey, phase: Phase, window: ProbeWindow) -> Outcome {
-    let prompt = "Phase \(Phase.allCases.firstIndex(of: phase)! + 1) of 3: \(phase.explanation).\n"
+    let prompt = "Phase \(Phase.allCases.firstIndex(of: phase)! + 1) of 2: \(phase.explanation).\n"
         + "Press \(key.name) (\(symbols(key.flags)) \(key.label)), key \(testKeys.firstIndex { $0.name == key.name }! + 1) "
         + "of \(testKeys.count). Return skips it."
     var note = ""
@@ -307,8 +249,10 @@ private func holderDescription() -> String {
         window.say(window.isKey ? prompt + note : "Click this window to continue.")
         pump(until: { firedID != nil || typed != nil || skipped || !window.isKey }, timeout: 600)
         if IsSecureEventInputEnabled() != phase.secureInput {
-            // A click in the other field, or another app, changed it.
-            window.focus(secure: phase == .ownField)
+            // Focus left the window, or a click moved it to the other field. The press is
+            // asked for again, so every answer comes from the phase's state.
+            print("\(stamp()) Secure Input changed during phase \(phase.title); asking for \(key.name) again")
+            window.focus(secure: phase == .on)
             pump(until: { IsSecureEventInputEnabled() == phase.secureInput }, timeout: 1)
             note = "\nSecure Input changed; press it again."
             continue
@@ -323,7 +267,7 @@ private func holderDescription() -> String {
             note = "\nThat was \(symbols(typed.flags)) \(label). Press \(symbols(key.flags)) \(key.label)."
         } else {
             pump(until: { window.isKey }, timeout: 600)
-            window.focus(secure: phase == .ownField)
+            window.focus(secure: phase == .on)
         }
     }
 }

@@ -30,7 +30,7 @@ case "survive-kill": surviveKill()
 case "bar": bar()
 case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
-case "secure-input": secureInput(arguments.dropFirst().first)
+case "secure-input": secureInput()
 default:
     print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | secure-input")
     exit(2)
