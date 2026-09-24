@@ -320,8 +320,9 @@ off the main thread).
     NSWorkspace reported its app hidden.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
-    window key before it. A report of another window replaces it. Every held report logs
-    its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
+    window key before it. A newer report of another window replaces it; one stamped
+    before the held report, from another app's worker, was overtaken by it. Every held
+    report logs its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
     happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
     1, where macOS keyed Ghostty.
   - Fronting another window of the app that is already key can leave that app's key
@@ -331,7 +332,12 @@ off the main thread).
     echoes. Kosmos requests the focus again, once for each requested window; if that
     misses too, it leaves the key window where macOS put it. This happened live: Kosmos
     fronted Ghostty for a window of workspace 1, Ghostty reported the window a switch
-    had just concealed on workspace 3, and Kosmos followed it there.
+    had just concealed on workspace 3, and Kosmos followed it there. The rule belongs to
+    the key record inside the front app. With the split path below, the worker's raise
+    keys the window there and requests do not miss, and the rule misreads reports that
+    arrive out of order: the activation read of a Command-Tab repeats the window its own
+    notification just reported (tla/README.md, change 21). The split path drops it, and
+    with it a held report's repeat after a miss.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,
@@ -372,19 +378,19 @@ off the main thread).
     the worker keys it and the queue posts no key record. The worker ends a stale request,
     and one whose front app already has the target focused; then, under the request's lock
     just before the raise, it records and marks the request raising while the app is front.
-  - For a background app the worker raises without a record, as the raise changes only the
-    app's own focused window, and the queue keys it. Unless the request went stale, the app
-    came front meanwhile, or the worker is raising it, the queue marks it sent, records, and
-    posts the key record, which activates the app with the named window. A worker that
-    finds it sent raises nothing.
+  - For a background app the worker's job only orders the request behind the app's earlier
+    jobs, and raises nothing. Unless the request went stale, the app came front meanwhile,
+    or the worker is raising it, the queue marks it sent, records, and posts the key record,
+    which activates the app with the named window but leaves it where it sits in its app's
+    stacking order. Then the app's worker raises the window, only while the app is front
+    and the window is still its focused window, so it never raises over a window the user
+    chose since. POSTRAISEDESIGN
   - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
     serves only a call that fails.
-  - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
-    both ways, either app busy with the 30 ms timeout nondeterministic, background apps
-    opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
-    keys the target inside the front app. Where it does not, the model's WorkerKey step has
-    the worker record and post the key record after the raise while the request is still
-    current. `kosmos-probe keying`'s "AXRaise alone" order settles which case holds.
+  - TLC checks the split path with RaiseKeys and RaiseReports as `kosmos-probe keying`
+    measured, either app busy with the 30 ms timeout nondeterministic, background apps
+    opening windows, and the key window on top of its app at rest (tla/README.md, changes
+    15 to 21).
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
@@ -438,13 +444,14 @@ off the main thread).
     (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, before the queue's key record for a background app. On
-  macOS 27 the record alone leaves the key window unchanged inside the app that is already
-  frontmost, for stacked and side by side windows alike, while AXRaise and then the record
-  keyed the right window in every case, same app or not (`kosmos-probe raise` on the hover
-  branch). yabai and alt-tab raise after the record, an order no probe has checked on
-  macOS 27. A slow app's raise lands after the key record, and a hung app holds only its
-  own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
+- AXRaise runs on the app's worker. Inside the front app the key record alone keyed nothing
+  in 20 of 20, stacked or side by side, and AXRaise alone keyed the window in 20 of 20. For
+  another app the key record alone keyed the window 10 times in 10 but never put it on
+  top, and the key record then AXRaise did both 10 times in 10, where AXRaise first put it
+  on top once in 10 (`kosmos-probe keying`). yabai and alt-tab raise after the record too.
+  AXRaise in a background app makes it post a focus notification 0.4 to 0.5 ms later,
+  without keying it. A slow app's raise lands late, and a hung app holds only its own
+  worker.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the public
   path on the app's worker: make the window the app's main window, raise it, then activate
   the app. For an empty workspace it activates Kosmos, which holds no workspace window. No
@@ -452,8 +459,8 @@ off the main thread).
   Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
   off the empty workspace on every switch. Concealing Finder's windows fully instead would
   not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
-  Whether macOS 27 lets a background agent activate itself is unmeasured; Kosmos logs a
-  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app
+  A background accessory app activating itself became front 0 times in 10
+  (`kosmos-probe keying`), so on macOS 27 that activation does nothing. The app
   picks its key window, so the spec's assumption that the requested window becomes key no
   longer holds, and a wrong window is adopted like the user's choice. A public request's
   expectation ends at the first report from its app that is no echo, so a click on the

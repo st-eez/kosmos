@@ -122,6 +122,31 @@ and Kosmos cannot yet tell those key changes from the user's. The gap is widest 
 window leaves fullscreen: Kosmos handles that return once the window joins the desktop's
 Space, about 0.5 s after it starts to leave.
 
+The `split-` configs run a focus request as the steps the implementation takes
+(`SplitQueue`): the focus queue's, the target app worker's, the app's AXRaise landing
+later, the raise after a background app's key record (`PostRaise`), the app's focus
+notification, whose observer callback runs some time after the change (`NoteDelay`), and
+the activation read, which runs on the app's worker and reads the app's focused window
+whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
+unless named `busyb`). AXRaise alone keys a window inside the front app (`RaiseKeys`), and
+a raise in a background app is reported as a focus change (`RaiseReports`), both as
+`kosmos-probe keying` measured. Requests do not miss there, so the split configs run
+without misses and without the miss rule (change 21). In the `background` configs
+background apps also change their own focused window (`AllowBackground`). In the `notice`
+configs the main actor also notices an activation some time after it happens
+(`NoticeDelay`). The split configs also check that the key window is the front window of
+its app at rest (`FocusOnTop`).
+
+Each run was stopped after 10 minutes. A run that finished gives its state count; one that
+was stopped gives the states it had checked without a violation.
+
+SPLITTABLE
+
+Each of these runs one rule the implementation had, or one the spec had, and fails as
+expected (changes 17 to 21):
+
+SPLITFAILS
+
 `RecoveryPath` holds by construction here, because the holding Space is recorded before
 the first hide. The recovery protocol needs its own spec.
 
@@ -239,3 +264,138 @@ Each change below started as a counterexample from TLC.
     which `KeepsWorkspaceAfterLeave` now checks per display. Holding those reports for the
     grace would delay every click on another display by 100 ms. The single display
     configs find the same state counts as before.
+
+The split model, merged with the one above from the `hover` branch, found the rest.
+
+15. **Skipping on reports.** The main actor skipped a request for the window macOS last
+    reported key. Reports lag: after `workspace 2` then `workspace 1`, the second switch's
+    request for w1 was skipped because the report of w3 had not arrived, and w3 stayed
+    key. Requesting while an echo was due instead recorded an expectation for a request
+    that changed nothing; no report cleared it, and a later click away and back to that
+    window was taken for an echo. Recording no expectation for such a request let it land
+    after a click and be adopted as the user's. The main actor now requests every focus,
+    and the focus queue skips a request whose window is really key when it runs.
+16. **Recording at the call.** With expectations recorded when the main actor requested and
+    forgotten when the queue skipped, the user's click back to a window matched the
+    expectation of a re-request the queue had not run yet, and was taken for an echo. The
+    queue now records each expectation just before its call, so a request it skips leaves
+    nothing to match.
+
+The split configs found more, each in the implementation's order of steps before the
+change that removed it:
+
+17. **Background reports.** A busy app's late raise of w3, after the user had switched
+    away, changed only that background app's own focused window, and the app reported it.
+    w3 was concealed by then, so Kosmos took the report for a Command-Tab and followed it
+    back to the workspace the user had left. A report from an app that is not the front
+    process when it arrives now consumes an echo it matches and is otherwise ignored, and
+    it does not count as the last report, or the user's real Command-Tab to that window
+    was later dropped as a repeat.
+18. **Recording for the other side.** Records were taken by whichever of the queue and the
+    worker decided first, before the other's call. A worker that found the target key
+    already dropped the queue's record, and the queue's activation then went unrecorded
+    and was adopted after the user's click; that was still so at d1be665
+    (`split-user-d1be665`). A request that turned stale after its record kept it, and it
+    swallowed the user's own click or Command-Tab to that window. A raise that recorded
+    after the queue's activation changed nothing and left its record behind. Now each
+    side records only just before its own call that changes the key window, and skips its
+    call once the other has made one. The queue posts no key record for a front app,
+    where it changes nothing unless the window is frontmost in its app. There the worker
+    keys: when AXRaise alone keys the window, it records just before the raise; when it
+    does not, it raises, then records and posts the key record while the request is still
+    current. A worker that raised, read, and posted the key record only if the window was
+    not key served both cases but failed: the user's Command-Tab between the raise and the
+    read made the read say not key, and the key record took focus back. Which case holds
+    is for `kosmos-probe keying` to settle.
+19. **Late reports and late raises.** The split model then took each report as the
+    implementation takes it: an activation read runs on the app's worker, behind its
+    raises, and reads whatever window the app has by then, and a busy app's AXRaise can
+    land after the worker stopped waiting. That found, in turn:
+    - A notification and an activation read both report one activation. With the
+      notification consuming the record, the read, arriving after an unrelated echo, was
+      adopted and followed into a hidden workspace. An activation read now matches
+      Kosmos's activation record for that app whatever window it reads, and a
+      notification only joins such a record.
+    - Echoes from one app came after the echo of a later request from another, which
+      dropped the earlier records with it; only the matched record goes now. The repeat
+      filter dropped a Command-Tab to the window of the last report processed, which was
+      another app's older report; it is gone.
+    - The user clicked A, then B, and A's report came last; a report stamped before the
+      last one taken as the user's is now ignored.
+    - An activation read marked background once its app lost the front dropped the user's
+      Command-Tab when Kosmos's older request fronted another app first. Such a read is
+      now ignored only when no Kosmos activation was recorded after it.
+    - A notification checked when the worker delivered it, behind the worker's calls, was
+      judged against a newer front app and dropped a click. Notifications are checked
+      when sent.
+    - A raise the worker gave up on landed after a newer command, keying a concealed
+      window that Kosmos followed. The worker waits for the raise.
+    - A raise in a background app landed after the app came front and keyed a stale
+      window. Nothing raises a background app's window.
+    - Whether a window was hidden, judged as the report was classified, turned a
+      Command-Tab into a click on a window being concealed after a later switch revealed
+      it. It is judged at the report's stamp.
+
+    One case is left: when Kosmos keys an app again before that app's activation read
+    runs, the read finds Kosmos's window, and no report says which window the user
+    activated. The spec exempts it with a ghost (`lastAmb`) and DESIGN.md 5.4 records it.
+20. **Callbacks after the change.** An app's observer callback runs some time after the
+    change it reports, and stamps it and checks the front app and the window's hiddenness
+    then (`NoteDelay`). The main actor likewise notices an activation some time after it
+    happens (`NoticeDelay`). Both run before the user's next input, and an app's
+    callbacks run before its activation read, but Kosmos's own steps can run in between.
+    That found:
+    - A background app changed its focused window, Kosmos's older request brought the
+      app front, and the change's callback then found the app front. Kosmos adopted the
+      stale window over the user's later Command-Tab (`split-user-background-nohold`). A
+      notification from an app Kosmos activated now waits for that activation's read,
+      and stands only if the read finds its window.
+    - The notification of a Command-Tab to a hidden window ends in Kosmos requesting its
+      intent again. Counted as the last report taken for the user's, it dropped the
+      activation read, stamped earlier, that would have followed the Command-Tab
+      (`split-user-reasserttakes`). Only a report Kosmos adopts or follows counts now.
+    - A click on a window being concealed had its callback run after the conceal, so the
+      window looked hidden, and Kosmos followed it back to the old workspace over the
+      user's next click (`split-user-notefollows`). Only an activation read follows now.
+    - With notices late, Kosmos's older request recorded and made its activation after
+      the user's Command-Tab and before the main actor noticed the Command-Tab. The read,
+      stamped after Kosmos's record, looked overtaken by the user and was dropped
+      (`split-user-notice-nocheck`). The notice now records that its app had already
+      lost the front to an activation Kosmos recorded, and such a read stands.
+
+    Two more cases are left, exempted with ghosts and recorded in DESIGN.md 5.4. A click
+    inside the front app is lost when a request Kosmos made before it activates another
+    app before the click's callback runs (`lastLost`; `split-user-lostclick` checks
+    without the exemption). A switch that reveals or conceals a window between the user's
+    activation of it and the main actor's notice makes the notice misjudge whether it
+    was hidden (`lastMis`, kept until Kosmos settles, since the wrong follow decides what
+    later inputs lead to).
+
+    The state view also treats the generation of the request the focus queue is running
+    as current or stale now, as it does for queued requests. Before, a stale and a current
+    running request could share a view, so TLC could skip behaviors; every `split-` config
+    was run again with it.
+
+21. **The split model beside returning's rules.** Reports of different apps reach Kosmos out
+    of order, and three rules misread them:
+    - The miss rule takes a report that repeats the key window Kosmos last heard of, while
+      a request to another window of that app awaits its echo, for a miss. The
+      activation read of a Command-Tab repeats the window its own notification just
+      reported, so Kosmos took it for a miss of its older request to that app, asked for
+      its intent again, and lost the Command-Tab (`split-user-missrule`). Inside the front
+      app the worker's AXRaise keys the window, 20 times in 20, and the key record
+      activates a background app with the named window, 10 times in 10 (`kosmos-probe
+      keying`), so the split path does not miss. The split configs run without misses and
+      without the rule.
+    - For the same reason, a report that repeats the held window was taken for the held
+      report after a miss. A newer Command-Tab to the window of a held, older one was
+      dropped with it when the older one turned out stale. Without misses that goes too.
+    - An older report of another app arriving late ended a held report as a newer
+      activation, and replaced it. A report stamped before the held report is now
+      overtaken by it, as by the last report taken for the user's.
+
+    The key record leaves a background app's window where it sits in that app's stacking
+    order, 0 times in 10 on top (`kosmos-probe keying`), so `FocusOnTop` fails without the
+    raise after it (`split-user-nopostraise`). The app's worker raises the window after
+    the key record while the app is front and the window is still its focused window;
+    the key record then AXRaise put it on top 10 times in 10. POSTRAISE
