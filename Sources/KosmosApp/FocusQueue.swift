@@ -41,10 +41,9 @@ final class FocusQueue: Sendable {
     /// `dropped` gets that stamp when the call fails. Recording when the request is made failed
     /// TLC: a request still queued took a click on its window for its echo.
     ///
-    /// `movePointer` centers the pointer on the target window first, unless the pointer is
-    /// inside it already.
+    /// `movePointer`: center the pointer on the window before keying it.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
-                 movePointer: Bool = false, generation: UInt64,
+                 movePointer: Bool, generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
                  dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         queue.async { [self] in
