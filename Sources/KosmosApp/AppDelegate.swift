@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var instanceLock: InstanceLock?
     private var statusItem: StatusItem?
     private var onboarding: Onboarding?
+    private let inventory = Inventory()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -18,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let statusItem = StatusItem()
         self.statusItem = statusItem
+        // WindowServer tracking needs no permission, so it starts before the Accessibility grant.
+        inventory.start()
         if AXIsProcessTrusted() {
             start()
         } else {
