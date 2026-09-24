@@ -201,8 +201,9 @@ final class Controller {
     /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus
     /// leaves, the workspace's next window, or Finder, is focused now, or after macOS's
     /// report of the next key window when the key window left too (DepartureFocus). A
-    /// report that does not come within the grace, as when an app keeps no key window, has
-    /// the departure focus then.
+    /// report that does not come within the departure bound, as when an app keeps no key
+    /// window, has the departure focus then. The bound outlasts macOS's key change after a
+    /// minimize, which ends its animation first; the grace would not.
     private func depart(_ windows: [WindowID]) {
         let focusLeft = session.focused.map(windows.contains) == true
         execute(session.park(windows))
@@ -216,7 +217,7 @@ final class Controller {
             departures += 1
             let number = departures
             awaitingKey = (keyWindow, number)
-            afterGrace { controller in
+            after(Inventory.departureBound) { controller in
                 guard controller.awaitingKey?.number == number else { return }
                 controller.awaitingKey = nil
                 controller.requestFocus(controller.intent)
@@ -253,8 +254,12 @@ final class Controller {
             let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             let repeated = key == reported
             key = reported
-            // macOS's report of the next key window, which a departure waited for.
-            if let previous, awaitingKey?.window == previous { awaitingKey = nil }
+            // macOS's report of the next key window, which a departure waited for. Kosmos's
+            // own echo is not it: a window keyed during a minimize's animation leaves macOS
+            // nothing to key when it ends, so the wait runs to its bound and focuses.
+            if let previous, awaitingKey?.window == previous, !reports.isEcho(reported, receivedAt: report.received) {
+                awaitingKey = nil
+            }
             let miss = reports.miss(reported, app: id.flatMap { owner[$0] ?? inventory.windows[$0]?.pid },
                                     repeated: repeated, receivedAt: report.received)
             if miss != .none {
@@ -339,7 +344,7 @@ final class Controller {
             break
         case .undecided:
             let number = held.hold(report, of: report.key)
-            afterGrace { controller in
+            after(Self.grace) { controller in
                 if let report = controller.held.expire(number) { controller.decideHeld(report) }
             }
         case .reassert:
@@ -373,10 +378,10 @@ final class Controller {
         decide(report, keyLeft: left ? .left : .stayed)
     }
 
-    /// Runs `body` on the main actor once the grace ends.
-    private func afterGrace(_ body: @escaping @MainActor (Controller) -> Void) {
+    /// Runs `body` on the main actor after `delay`.
+    private func after(_ delay: Duration, _ body: @escaping @MainActor (Controller) -> Void) {
         Task { [weak self] in
-            try? await Task.sleep(for: Self.grace)
+            try? await Task.sleep(for: delay)
             if let self { body(self) }
         }
     }

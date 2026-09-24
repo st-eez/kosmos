@@ -216,8 +216,13 @@ off the main thread).
   replaced at once too, unless the key window macOS last reported left with it: then
   macOS's report of the next key window is still on its way and focuses. Focusing earlier
   could put Kosmos's echo between the departure and that report. When macOS keys no
-  window, the departure focuses, and when no report comes within 100 ms, as when an app
-  keeps no key window after its last window minimizes, the departure focuses then.
+  window, the departure focuses, and when no report comes within a second, as when an
+  app keeps no key window after its last window minimizes, the departure focuses then.
+  The second outlasts a minimize, whose next key window macOS reported 0.73 s after the
+  minimize. A window keyed during the animation, by Kosmos or the user, is taken to leave
+  macOS nothing to key when it ends (not measured; the departures probe asks). A click
+  or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
+  its workspace.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private

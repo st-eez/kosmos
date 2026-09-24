@@ -219,3 +219,12 @@ import Testing
     #expect(!showsFullscreenSpace(key: .window(9), keyManaged: false, keyApp: 200, fullscreen: fullscreen))
     #expect(!showsFullscreenSpace(key: KeyWindow.none, keyManaged: false, keyApp: nil, fullscreen: fullscreen))
 }
+
+@Test func anEchoIsKnownBeforeItIsClassified() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(3), app: 100, at: 10)
+    #expect(reports.isEcho(.window(3), receivedAt: 11))
+    #expect(!reports.isEcho(.window(3), receivedAt: 9))   // received before the request
+    #expect(!reports.isEcho(.window(4), receivedAt: 11))
+    #expect(reports.isEcho(.window(3), receivedAt: 11))   // asking consumes nothing
+}

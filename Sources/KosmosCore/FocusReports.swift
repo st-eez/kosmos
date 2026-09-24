@@ -84,6 +84,11 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         lastCommand.map { stamp < $0 } ?? false
     }
 
+    /// Whether the report would be the echo of a request of Kosmos's.
+    public func isEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
+        expected.contains { $0.key == key && $0.requested <= stamp }
+    }
+
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
     public mutating func requestDropped(_ key: KeyWindow, at stamp: Stamp) {
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested == stamp }) {

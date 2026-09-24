@@ -21,9 +21,14 @@
 //                                   the next key window? Minimizes, closes and hides a
 //                                   window of its own accessory app, with one clock, and
 //                                   minimizes the app's last window, after which macOS may
-//                                   report no key window at all.
+//                                   report no key window at all, and keys another window
+//                                   during a minimize's animation.
 //                                   The window belongs to an accessory app, which Kosmos
 //                                   does not manage.
+//   kosmos-probe tabs               Does WindowServer order out the deselected window of a
+//                                   native tab group, and which Spaces keep it? Two tabs of
+//                                   its own, invisible and off every display, in an app with
+//                                   the prohibited activation policy, switched twice.
 //   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
 //                                   out of the holding Space, and where does a window
 //                                   removed from its only Space land? Its window is
@@ -62,12 +67,14 @@ case "fullscreen-window": fullscreenWindow()
 case "fullscreen": fullscreen()
 case "departures-window": departuresWindow()
 case "departures": departures()
+case "tabs-window": tabsWindow()
+case "tabs": tabs()
 case "hidden-window": showHiddenWindow()
 case "reveal": reveal()
 case "displays": displays()
 case "secure-input": secureInput()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | reveal | displays | secure-input")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs | reveal | displays | secure-input")
     exit(2)
 }
 
@@ -339,10 +346,12 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
 /// Milliseconds since boot, the same in every process.
 func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
 
-/// Two windows of an accessory app. The first is minimized and restored, then closed.
-/// The second, the app's last window, is minimized and restored: does macOS report any
-/// key window then, or does the app stay front with none? Then the app hides. Each key
-/// change is printed with its uptime.
+/// Two windows of an accessory app. The first is minimized and restored. It is minimized
+/// again while the second is keyed during the animation: does macOS still key a window
+/// when the animation ends? The first is restored and closed. The second, the app's last
+/// window, is minimized and restored: does macOS report any key window then, or does the
+/// app stay front with none? Then the app hides. Each key change is printed with its
+/// uptime.
 @MainActor func departuresWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -366,11 +375,14 @@ func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 
     let say = { (text: String) in print(String(format: "%.1f child: ", uptime()) + text) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("minimize A"); first.miniaturize(nil) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { say("restore A"); first.deminiaturize(nil) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { say("close A"); first.close() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { say("minimize B, the last window"); other.miniaturize(nil) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { say("restore B"); other.deminiaturize(nil) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 8.5) { say("hide app"); app.hide(nil) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { exit(0) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { say("minimize A"); first.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { say("key B during the animation"); other.makeKeyAndOrderFront(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { say("restore A"); first.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { say("close A"); first.close() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { say("minimize B, the last window"); other.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) { say("restore B"); other.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10.5) { say("hide app"); app.hide(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { exit(0) }
     app.run()
     exit(0)
 }
@@ -416,9 +428,73 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
             print(String(format: "%.1f workspace %@ %@", uptime(), short, app?.localizedName ?? "?"))
         }
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 11) { exit(0) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 13) { exit(0) }
     app.run()
     exit(0)
+}
+
+/// Two windows in one native tab group, invisible and off every display. Prints both
+/// window ids, then selects each tab in turn.
+@MainActor func tabsWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    func window(_ title: String) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 300, height: 200),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = title
+        window.tabbingMode = .preferred
+        window.tabbingIdentifier = "kosmos-probe-tabs"
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.isReleasedWhenClosed = false
+        return window
+    }
+    let first = window("kosmos-probe tab A"), second = window("kosmos-probe tab B")
+    first.orderFrontRegardless()
+    first.addTabbedWindow(second, ordered: .above)
+    second.orderFrontRegardless()
+    print("\(first.windowNumber) \(second.windowNumber) tabs \(first.tabbedWindows?.count ?? 0)")
+    let say = { (text: String) in print(text) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        say("select A"); first.tabGroup?.selectedWindow = first
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        say("select B"); first.tabGroup?.selectedWindow = second
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+@MainActor func tabs() {
+    _ = NSApplication.shared
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["tabs-window"]
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    defer { child.terminate() }
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    let text = String(decoding: line, as: UTF8.self)
+    let ids = text.split(whereSeparator: \.isWhitespace).prefix(2).compactMap { UInt32($0) }
+    print("child: " + text.trimmingCharacters(in: .whitespacesAndNewlines))
+    /// Each tab's order and Spaces as the inventory would read them.
+    func state(_ step: String) {
+        let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(ids).map { ($0.id, $0) })
+        let parts = ids.map { id in
+            let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
+            return "\(id) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)"
+        }
+        print(step + ": " + parts.joined(separator: ", "))
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+    state("B selected at start")
+    Thread.sleep(forTimeInterval: 1.0)
+    state("after select A")
+    Thread.sleep(forTimeInterval: 1.0)
+    state("after select B")
 }
 
 @MainActor func reveal() {
