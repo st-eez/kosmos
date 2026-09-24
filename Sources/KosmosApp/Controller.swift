@@ -108,15 +108,9 @@ final class Controller {
             """)
         // macOS can move windows while the session is locked or the displays sleep, and
         // moves those of a display that leaves; the ledger would take them for placed. Each
-        // window's frame is written again, as its workspace is shown.
+        // window's frame is written again.
         ledger = FrameLedger()
-        // When the displays changed, hidden workspaces are laid out on theirs now: a
-        // concealed window left on a display that is gone would come back off screen from
-        // recovery.
-        if managing, !sessionLocked, session.monitors != displaysBefore {
-            for name in session.names where !session.isShown(name) { writeFrames(session.frames(of: name)) }
-        }
-        resync()
+        resync(displaysChanged: session.monitors != displaysBefore)
     }
 
     /// Why the private focus path is off, for the status item, or nil while it is on.
@@ -173,18 +167,23 @@ final class Controller {
         }
     }
 
-    /// Lays the shown workspaces out on their areas as they are now, conceals and reveals
-    /// every window again, requests the focus intent and publishes the state. Other
+    /// Lays the shown workspaces out on their areas as they are now, and every other
+    /// workspace too when the displays changed, conceals and reveals every window again,
+    /// requests the focus intent and publishes the state. With the same displays, the other
     /// workspaces are laid out when they are shown.
-    private func resync() {
+    private func resync(displaysChanged: Bool) {
         guard managing else { return publishState() }
         // Reports received before now are older than the focus this asks for again, and an
         // echo in flight at the lock was dropped with the other reports while locked.
         reports.forgetRequests()
         reports.commandExecuted(receivedAt: .now)
         var plan = Session.Plan()
+        // A concealed window left on a display that is gone would come back off screen from
+        // recovery, so after a display change hidden workspaces are laid out on theirs now.
+        for name in session.names where displaysChanged || session.isShown(name) {
+            plan.frames.merge(session.frames(of: name)) { current, _ in current }
+        }
         let shown = session.shownWorkspaces
-        for name in shown { plan.frames.merge(session.frames(of: name)) { current, _ in current } }
         plan.show = shown.flatMap { session.windows(of: $0) }
         plan.hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
         plan.focus = intent
