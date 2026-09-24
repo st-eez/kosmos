@@ -93,3 +93,11 @@ import Testing
     reports.publicRequestsAnswered(by: 7, receivedAt: 9)
     #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, wasHidden: false) == .echo)
 }
+
+@Test func forgottenRequestsSwallowNoReport() {
+    // An echo that arrived while the session was locked was never classified.
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), at: 10)
+    reports.forgetRequests()
+    #expect(reports.classify(.window(1), receivedAt: 20, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
+}

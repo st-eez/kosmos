@@ -136,7 +136,9 @@ final class Controller {
             }
         }
         guard managing else { return publishState() }
-        // Reports received before now are older than the focus this asks for again.
+        // Reports received before now are older than the focus this asks for again, and an
+        // echo in flight at the lock was dropped with the other reports while locked.
+        reports.forgetRequests()
         reports.commandExecuted(receivedAt: .now)
         var plan = Session.Plan()
         plan.frames = session.frames(of: session.visible)

@@ -48,6 +48,11 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         expected.removeAll { $0.publicIn == app && $0.requested <= stamp }
     }
 
+    /// Forgets every request, as when their echoes may have come and gone unclassified.
+    public mutating func forgetRequests() {
+        expected.removeAll()
+    }
+
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
     public mutating func requestDropped(_ key: KeyWindow, at stamp: Stamp) {
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested == stamp }) {
