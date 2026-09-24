@@ -53,8 +53,8 @@ actor AppWorker {
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
-    /// Set while the app is backed off.
-    private var askingSince: ContinuousClock.Instant?
+    private var backoff = AXBackoff<ContinuousClock.Instant>()
+    /// Runs while `backoff` is asking.
     private var probe: CFRunLoopTimer?
     private let probeElement: AXUIElement
 
@@ -93,7 +93,8 @@ actor AppWorker {
             let result = observe(app, notification)
             if result != .success, result != .notificationAlreadyRegistered { return false }
         }
-        guard trackWindows() else { return false }
+        // A call that timed out above leaves the worker to the probe.
+        guard trackWindows(), !backoff.backedOff else { return false }
         started = true
         send(.answering)
         return true
@@ -137,7 +138,7 @@ actor AppWorker {
         do {
             guard let element = try copy(app, kAXFocusedWindowAttribute) else { return .some(nil) }
             let id = track(element as! AXUIElement)
-            return askingSince == nil ? .some(id) : nil
+            return backoff.backedOff ? nil : .some(id)
         } catch {
             return nil
         }
@@ -146,7 +147,7 @@ actor AppWorker {
     /// Starts asking the app every 0.5 s, for an app that did not answer during its launch
     /// retries.
     func askLater() {
-        guard !started else { return }
+        guard !started, backoff.notStarted() else { return }
         scheduleProbe()
     }
 
@@ -189,7 +190,7 @@ actor AppWorker {
     private func raiseWindow(_ id: UInt32) {
         guard let element = elements[id] else { return }
         let error = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
-        if error != .success, askingSince == nil { log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)") }
+        if error != .success, !backoff.backedOff { log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)") }
     }
 
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
@@ -203,7 +204,7 @@ actor AppWorker {
 
     private func drainWrites() {
         drainScheduled = false
-        guard askingSince == nil else { return }   // held until the app answers again
+        guard !backoff.backedOff else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
@@ -219,7 +220,7 @@ actor AppWorker {
             }
             // A write the app did not answer waits, with the ones after it, for the app to
             // answer again.
-            if askingSince != nil {
+            if backoff.backedOff {
                 queuedWrites[id] = entry
                 continue
             }
@@ -241,7 +242,7 @@ actor AppWorker {
     }
 
     private func logFailure(_ error: AXError, _ attribute: String) {
-        guard error != .success, askingSince == nil else { return }   // backing off is logged once
+        guard error != .success, !backoff.backedOff else { return }   // backing off is logged once
         log.error("pid \(self.pid) set \(attribute, privacy: .public) failed: \(error.rawValue)")
     }
 
@@ -259,7 +260,7 @@ actor AppWorker {
             if let id = track(element) { send(.windowCreated(id)) }
         case kAXFocusedWindowChangedNotification:
             let id = track(element)
-            if askingSince == nil { send(.focusedWindowChanged(id)) }
+            if !backoff.backedOff { send(.focusedWindowChanged(id)) }
         case kAXUIElementDestroyedNotification:
             if let id = elements.first(where: { CFEqual($0.value, element) })?.key {
                 elements[id] = nil
@@ -320,19 +321,17 @@ actor AppWorker {
     /// least half the timeout backs the app off. An app still launching fails in under 9 ms
     /// (`kosmos-probe ax-timeout`) and is left to the launch retries.
     private func ax(_ call: () -> AXError) -> AXError {
-        guard askingSince == nil else { return .cannotComplete }
+        guard !backoff.backedOff else { return .cannotComplete }
         let start = ContinuousClock.now
         let result = call()
         if result == .cannotComplete, ContinuousClock.now - start > .seconds(Double(Self.timeout) / 2) {
-            askingSince = start
             log.notice("\(self.name, privacy: .public) did not answer Accessibility in \(Self.timeout, format: .fixed(precision: 1)) s; asking every 0.5 s")
-            scheduleProbe()
+            if backoff.timedOut(at: start) { scheduleProbe() }
         }
         return result
     }
 
     private func scheduleProbe() {
-        guard probe == nil else { return }
         let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + 0.5, 0.5, 0, 0) { [weak self] _ in
             self?.assumeIsolated { $0.askAgain() }
         }
@@ -340,24 +339,25 @@ actor AppWorker {
         probe = timer
     }
 
-    /// One read with a 50 ms timeout. Any answer ends the backoff. A worker that has not
-    /// started starts; one that has tracks the windows created meanwhile, writes the held
-    /// frames and reports `answering`.
+    /// One read with a 50 ms timeout. Any answer lets calls go again. A worker that has not
+    /// started starts; one that has tracks the windows created meanwhile and writes the held
+    /// frames. If none of those calls timed out and the worker has started, asking stops and
+    /// the worker reports `answering`, which `start` also does.
     private func askAgain() {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
-        let since = askingSince
-        askingSince = nil
-        if started {
+        let since = backoff.answered()
+        let wasStarted = started
+        if wasStarted {
             _ = trackWindows()
-            guard askingSince == nil else { return }   // timed out again
             drainWrites()
-            send(.answering)
-        } else if !start() {
-            return   // asked again at the next tick
+        } else {
+            _ = start()
         }
+        guard backoff.settled(started: started) else { return }   // asked again at the next tick
         if let probe { CFRunLoopTimerInvalidate(probe) }
         probe = nil
+        if wasStarted { send(.answering) }
         if let since {
             log.notice("\(self.name, privacy: .public) answers Accessibility again after \((ContinuousClock.now - since).formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public)")
         }

@@ -156,8 +156,9 @@ off the main thread).
 - A call that waited out at least half the timeout backs its app off. The worker then makes
   no call to the app, keeps only the newest frame target of each window, and asks for the
   app's role with a 50 ms timeout every 0.5 s. When the app answers, the worker tracks the
-  windows created meanwhile, writes the held frames and reports that the app answers, and
-  the inventory reads the facts it could not read before. A launching app fails fast and is
+  windows created meanwhile and writes the held frames. It stops asking and reports that
+  the app answers only if none of those calls timed out, and the inventory then reads the
+  facts it could not read before. A launching app fails fast and is
   left to the launch retries.
 
 ### 5.3 Hiding and recovery
