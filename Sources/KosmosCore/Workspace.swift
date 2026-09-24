@@ -40,7 +40,6 @@ struct RestoreHint: Sendable {
     let orientation: Orientation
     /// The sibling before the window, or after it when the window came first.
     let neighbor: NodeRef?
-    let afterNeighbor: Bool
 }
 
 enum NodeRef: Sendable {
@@ -286,8 +285,7 @@ extension Workspace {
             index: index,
             fraction: parent.children[index].weight,
             orientation: parent.orientation,
-            neighbor: neighbor,
-            afterNeighbor: index > 0
+            neighbor: neighbor
         )
         root[parentPath].children.remove(at: index)
         if fullscreenWindow == window { fullscreenWindow = nil }
@@ -326,7 +324,8 @@ extension Workspace {
             root[parent].children[index].kind = .container(wrapper)
             path.append(0)
         }
-        let index = path.last! + (hint.afterNeighbor ? 1 : 0)
+        // A window with an index past 0 came after its neighbor.
+        let index = path.last! + (hint.index > 0 ? 1 : 0)
         root[path.dropLast()].insert(.window(window), at: index, fraction: hint.fraction)
     }
 }
