@@ -196,8 +196,9 @@ vars == <<s, history>>
 
 \* `ws` holds the window for a hover job.
 Job(kind, ws, g, evs, t) == [kind |-> kind, ws |-> ws, g |-> g, evs |-> evs, t |-> t]
-\* k: the workspace each display shows once the switch is done. skip: the windows
-\* Kosmos knew had left when it planned the switch, which it leaves out.
+\* k: the workspace each display shows once the switch is done, which a reveal
+\* shows and a conceal keeps visible. skip: the windows Kosmos knew had left when
+\* it planned the switch, which it leaves out.
 Op(op, k, g, skip) == [op |-> op, k |-> k, g |-> g, skip |-> skip]
 \* c: with SplitQueue, the window was concealed when Kosmos requested it.
 FocusOp(w, g, c) == [w |-> w, g |-> g, c |-> c]
