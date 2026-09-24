@@ -43,6 +43,12 @@ public struct Displays {
         return spaces.first
     }
 
+    /// Whether the window belongs to an ordinary Space. Native fullscreen Spaces and Kosmos's
+    /// holding Space are not ordinary, whether or not the window's Space list names them.
+    public func isInOrdinarySpace(_ window: UInt32) -> Bool {
+        !ordinarySpaces.isDisjoint(with: (kosmos_window_spaces(window) as? [UInt64]) ?? [])
+    }
+
     public func currentSpace(at point: CGPoint) -> UInt64? {
         var id: CGDirectDisplayID = 0, count: UInt32 = 0
         guard CGGetDisplaysWithPoint(point, 1, &id, &count) == .success, count > 0 else { return nil }

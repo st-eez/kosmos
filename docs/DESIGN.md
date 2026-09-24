@@ -150,7 +150,8 @@ off the main thread).
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
 - Recovery adds each window without an ordinary Space to the current Space of the display
   under it, or to the Space a reveal would choose, then empties each recorded Space,
-  destroys the Spaces and clears the record. Every step can safely run twice.
+  destroys the Spaces and clears the record. It keeps the record while a window it added
+  is on no ordinary Space. Every step can safely run twice.
 
 ### 5.4 Focus
 

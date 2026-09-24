@@ -17,8 +17,8 @@ public enum Recovery {
         /// The WindowServer could not be identified; the record is kept.
         case windowServerUnknown
         case restored(windows: Int, spaces: Int)
-        /// Some windows are still in a recorded Space or on no Space; the record is kept
-        /// for another attempt.
+        /// Some windows are still in a recorded Space or not back on a Space; the record
+        /// is kept for another attempt.
         case incomplete(remaining: Int)
     }
 
@@ -57,15 +57,18 @@ public enum Recovery {
         let handled = Set(plan.moves.values.joined()).union(plan.removals.values.joined())
         let after = SpaceMembers.read(liveSpaces)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
-        let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }
-        guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
-            let withoutSpace = plan.windows.filter(onNoSpace).count
-            recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
+        let displays = Displays.current()
+        let exists = { (window: UInt32) in !SkyLight.rows([window]).isEmpty }
+        // A window that closed needs no Space.
+        let unplaced = plan.unplaced(isOnNoSpace: { exists($0) && spaces(of: $0).isEmpty },
+                                     isInOrdinarySpace: { !exists($0) || displays.isInOrdinarySpace($0) })
+        guard remaining == 0 && unplaced.isEmpty else {
+            recoveryLog.error("\(remaining) windows still concealed, \(unplaced.count) not back on a Space; keeping the record")
             // The record keeps the Spaces that still exist, and every window.
             var kept = record
             kept.spaces = liveSpaces.filter { !after.gone.contains($0) }
             file.publish(kept)
-            return .incomplete(remaining: remaining + withoutSpace)
+            return .incomplete(remaining: remaining + unplaced.count)
         }
         // Destroying an empty Space cannot be confirmed through the bridge. One left behind
         // is empty and hides nothing.

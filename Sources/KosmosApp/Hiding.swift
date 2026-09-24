@@ -141,9 +141,10 @@ private final class HidingStore: @unchecked Sendable {
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
         // Adds before removals: a window removed from its only Space lands on whichever
-        // Space is active, which can be a native fullscreen one.
-        if !batch.moves.isEmpty {
-            let displays = Displays.current()
+        // Space is active, which can be a native fullscreen one. Displays are read only for
+        // adds: the read took up to 7 ms on the development Mac.
+        let displays = batch.moves.isEmpty ? nil : Displays.current()
+        if let displays {
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
             var destinations: [UInt64: [UInt32]] = [:]
             for window in batch.moves {
@@ -175,7 +176,9 @@ private final class HidingStore: @unchecked Sendable {
         }
         let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
         let shown = batch.mustHaveLeft.allSatisfy { !members[$0.value]!.contains($0.key) }
-        let placed = batch.moves.allSatisfy(Self.hasOrdinarySpace)
+        // An add that failed, followed by its removal, would leave the window on the active
+        // Space, which can be a native fullscreen one.
+        let placed = batch.moves.allSatisfy { displays?.isInOrdinarySpace($0) == true }
         guard hidden && shown && placed else { return false }
         ledger.commit(batch, into: space)
         return true
@@ -238,6 +241,10 @@ private final class HidingStore: @unchecked Sendable {
 
     func recoverOutcome() -> Recovery.Outcome { recover() }
 
+    /// Whether the window has a Space besides the holding Space, which the list leaves out,
+    /// so a removal from the holding Space leaves it where it was. Any listed Space counts, a
+    /// native fullscreen one included: an add to an ordinary Space would take the window out
+    /// of it.
     private static func hasOrdinarySpace(_ window: UInt32) -> Bool {
         !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
     }
