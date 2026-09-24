@@ -51,7 +51,7 @@ final class Hiding {
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
-    /// Reveals `show`, then conceals `hide`, then reads the barrier, on the bridge queue.
+    /// Reveals `show`, then conceals `hide`, then confirms both, on the bridge queue.
     /// Concealing needs a ready guardian; revealing does not.
     func apply(show: [UInt32], hide: [UInt32], done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady

@@ -7,8 +7,8 @@ private let controllerLog = Logger(subsystem: "io.github.st-eez.kosmos", categor
 private let signposter = OSSignposter(subsystem: "io.github.st-eez.kosmos", category: .pointsOfInterest)
 
 /// Carries out the Session's plans: frame writes through the app workers, reveals and
-/// conceals through Hiding, and focus through the focus queue once the switch's barrier
-/// confirms it (DESIGN.md, section 4.3; tla/Kosmos.tla).
+/// conceals through Hiding, and focus through the focus queue once the switch is confirmed
+/// (DESIGN.md, section 4.3; tla/Kosmos.tla).
 @MainActor
 final class Controller {
     private var session: Session
@@ -19,7 +19,7 @@ final class Controller {
     private let hiding: Hiding
     private let focusQueue = FocusQueue()
     private let bar = BarPush()
-    /// Bumped by every switch; a switch whose barrier returns after a newer one does not focus.
+    /// Bumped by every switch; a switch confirmed after a newer one does not focus.
     private var switchGeneration = 0
     private var owner: [WindowID: pid_t] = [:]
     /// Window ids by most recent focus, newest last.
