@@ -284,7 +284,9 @@ off the main thread).
   public call fronts Finder with no key window, and activating Finder can key a hidden
   Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
   off the empty workspace on every switch. Concealing Finder's windows fully instead would
-  not reach one concealed earlier: the conceal ledger leaves a concealed window as it was. The app picks its key window, so
+  not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
+  Whether macOS 27 lets a background agent activate itself is unmeasured; Kosmos logs a
+  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app picks its key window, so
   the spec's assumption that the requested window becomes key no longer holds, and a wrong
   window is adopted like the user's choice. A public request's expectation ends at the
   first report from its app that is no echo, so a click on the requested window afterwards

@@ -38,8 +38,10 @@
 //                                   record then AXRaise (yabai and alt-tab), and AXRaise alone.
 //                                   Covers two stacked windows of one app, two side by side,
 //                                   another app, and back into an app whose other window was
-//                                   key, then a key window concealed and revealed, where the
-//                                   focus queue's already key check could skip wrongly. The
+//                                   key; a background accessory app activating itself, as
+//                                   Kosmos does for an empty workspace on the public path;
+//                                   then a key window concealed and revealed, where the focus
+//                                   queue's already key check could skip wrongly. The
 //                                   stubs say which window they hold key, and every
 //                                   AXFocusedWindowChanged is logged against the raise. They are
 //                                   accessory apps with small windows at the bottom right, which
@@ -470,7 +472,9 @@ func axTimeout() {
 /// An accessory app for `keying`, which a running Kosmos leaves alone. Opens a 170 by 90
 /// window for each "left,up" offset from the bottom right corner of the main screen's
 /// visible area and prints the window ids. Each "key" line on its standard input prints the
-/// window the app holds key, or 0. It exits when its standard input closes.
+/// window the app holds key, or 0. Each "activate" line activates the app from this
+/// background thread, as Kosmos's focus queue activates Kosmos, and prints what `activate`
+/// returned. It exits when its standard input closes.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -487,8 +491,11 @@ func axTimeout() {
     print(ids.map(String.init).joined(separator: " "))
     Thread.detachNewThread {
         while let line = readLine() {
-            guard line == "key" else { continue }
-            DispatchQueue.main.async { MainActor.assumeIsolated { print(NSApp.keyWindow?.windowNumber ?? 0) } }
+            switch line {
+            case "key": DispatchQueue.main.async { MainActor.assumeIsolated { print(NSApp.keyWindow?.windowNumber ?? 0) } }
+            case "activate": print(NSRunningApplication.current.activate(options: []))
+            default: break
+            }
         }
         exit(0)
     }
@@ -529,6 +536,12 @@ final class KeyStub {
         let text = String(decoding: buffer[buffer.startIndex..<end], as: UTF8.self)
         buffer.removeSubrange(buffer.startIndex...end)
         return text
+    }
+
+    /// Activates the app from its own background thread. Returns what `activate` returned.
+    func activateItself() -> Bool {
+        input.fileHandleForWriting.write(Data("activate\n".utf8))
+        return line() == "true"
     }
 
     /// The window the app itself holds key, from AppKit, or nil.
@@ -686,6 +699,24 @@ final class FocusNotes: @unchecked Sendable {
         }
     }
 
+    // An accessory app in the background activating itself, as Kosmos does for an empty
+    // workspace on the public path.
+    var selfActivated = 0, selfTrials = 0
+    for round in 1...rounds {
+        focus(a, a.windows[0], .raiseFirst)
+        guard front(a) else {
+            print("round \(round), self-activation: setup did not front A, skipped")
+            continue
+        }
+        let returned = b.activateItself()
+        wait(0.3)
+        let isFront = front(b)
+        selfTrials += 1
+        if isFront { selfActivated += 1 }
+        print("round \(round), B activating itself from the background: activate returned \(returned), "
+              + "B \(isFront ? "is" : "is NOT") the front app 0.3 s later")
+    }
+
     // A key window concealed in a holding Space and revealed again, as a switch away and back
     // does. The focus queue skips a request when the app is front and names the target as
     // focused; it would skip wrongly if the app named it while holding no key window.
@@ -739,6 +770,7 @@ final class FocusNotes: @unchecked Sendable {
             print("  \(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs)")
         }
     }
+    print("  a background accessory app activating itself became front in \(selfActivated) of \(selfTrials)")
     print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
           + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
     if !raiseTimes.isEmpty {

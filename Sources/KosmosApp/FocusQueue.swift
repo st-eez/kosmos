@@ -3,6 +3,9 @@ import CKosmos
 import KosmosCore
 import KosmosRecovery
 import Synchronization
+import os
+
+private let focusLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
 
 /// Makes windows key off the main thread (DESIGN.md, sections 4.2 and 5.4). Each request
 /// carries the focus generation it was made for, and is dropped when a newer intent exists
@@ -73,8 +76,16 @@ final class FocusQueue: Sendable {
                 // hidden Finder window that keeps its ordinary Space for Command-Tab, and
                 // Kosmos would follow it off the empty workspace. Kosmos itself has no window
                 // a workspace holds, and nothing reports its activation, so nothing is
-                // recorded.
-                if kosmos_front_pid() != getpid() { _ = NSRunningApplication.current.activate(options: []) }
+                // recorded. Whether macOS 27 lets a background agent activate itself is
+                // unmeasured (`kosmos-probe keying`), so a refusal is logged.
+                guard kosmos_front_pid() != getpid() else { return }
+                if !NSRunningApplication.current.activate(options: []) {
+                    focusLog.notice("activating Kosmos for an empty workspace returned false")
+                }
+                queue.asyncAfter(deadline: .now() + .milliseconds(200)) {
+                    guard isCurrent(), kosmos_front_pid() != getpid() else { return }
+                    focusLog.notice("Kosmos is not the front process 0.2 s after activating itself for an empty workspace")
+                }
             }
         }
     }
