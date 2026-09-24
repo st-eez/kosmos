@@ -427,6 +427,13 @@ off the main thread).
   cover the public path. If the app keys the requested window late, after the user chose
   another of its windows, that late report reads as the user's and pulls focus back, change
   6's bounce in the fallback alone.
+- Open item: a focus request reads WindowServer on the main thread to skip a window that
+  just left the screen (`leftScreen`). Right after a switch that read waits on
+  WindowServer's Space transaction: 29 of about 290 busy main thread samples in 40
+  switches on 2026-09-24. The focus queue could read it at FocusStart instead, off the
+  main thread and closer to the key call. That changes RequestFocus and FocusStart in
+  tla/Kosmos.tla, as the request would take a new generation even when the queue drops its
+  target, so it waits for the focus spec's merge.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
@@ -673,7 +680,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - The pointer follows focus the other way too. A command that focuses a window moves the
   pointer to its center unless the pointer is already inside it, and so does Command-Tab
   to a window that is not under the pointer. A click always happens under the pointer, so
-  it never moves it.
+  it never moves it. The focus queue moves the pointer right before it keys the window,
+  and reads the window's frame there, off the main thread; a request that is stale or
+  names a concealed window moves nothing.
 - `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
   the command `focus-follows-mouse on|off|toggle` switches it at run time.
 

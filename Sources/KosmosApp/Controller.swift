@@ -712,7 +712,6 @@ final class Controller {
         // A window that just left the screen, before Kosmos heard: fronting it would
         // unminimize it or unhide its app. Its departure focuses.
         if case .window(let id) = target, inventory.leftScreen(id) { return }
-        if movePointer, case .window(let id) = target { centerPointer(on: id) }
         // The focus queue skips a target that is key already, checked when the request runs:
         // the key window last reported here can be older than a request still in flight.
         let pid: pid_t?
@@ -726,7 +725,7 @@ final class Controller {
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
-                           concealed: concealed, generation: focusQueue.newGeneration(),
+                           concealed: concealed, movePointer: movePointer, generation: focusQueue.newGeneration(),
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
@@ -747,14 +746,6 @@ final class Controller {
         focusQueue.killSwitch.turnOff(.wrongWindows)
         controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
         onFocusProblem?(focusProblem)
-    }
-
-    /// Moves the pointer to the window's center unless it is already inside the window,
-    /// as AeroSpace's `move-mouse window-lazy-center` does.
-    private func centerPointer(on window: WindowID) {
-        guard let frame = SkyLight.rows([window]).first?.frame, !frame.isEmpty,
-              let pointer = CGEvent(source: nil)?.location, !frame.contains(pointer) else { return }
-        CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     private func touch(_ window: WindowID) {
