@@ -62,6 +62,12 @@
 (*                                                                         *)
 (* Workspaces are laid out while hidden, so a switch writes no frames and  *)
 (* frames are not modelled.                                                *)
+(*                                                                         *)
+(* Each display shows one workspace, and each workspace belongs on one     *)
+(* display (`DisplayOf`, the profile's assignment). The focused workspace  *)
+(* is the one on the focused display. A window on any shown workspace is   *)
+(* on screen: a report of it is adopted and moves the focus to its         *)
+(* display, and a command for a shown workspace only moves the focus.      *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
@@ -69,6 +75,7 @@ CONSTANTS
     Win,            \* windows
     Workspaces,     \* workspace 1 is visible initially
     WsOf,           \* [Win -> Workspaces]
+    DisplayOf,      \* [Workspaces -> displays]: the display each workspace shows on
     AppOf,          \* [Win -> apps]
     MaxEvents,      \* bound on user inputs
     AllowClicks,    \* the user may click a visible window
@@ -84,6 +91,7 @@ CONSTANTS
     FollowStale,    \* Kosmos follows a return received before the latest command (the behaviour before this rule)
     Grace,          \* Kosmos holds a report until it knows whether the key window before it left
     MissRule,       \* Kosmos takes a repeat of a hidden key window during its request to that app for a miss
+    AdoptShown,     \* Kosmos adopts a window of any shown workspace, where it adopted the focused workspace's alone
     WaitBound,      \* a departure's wait for macOS's report of the next key window has a bound
     RevealFirst,    \* a switch reveals the incoming windows before concealing the outgoing
     Coalesce        \* a resumed command does not focus while a newer command is queued
@@ -91,11 +99,16 @@ CONSTANTS
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ AllowLeave \in BOOLEAN /\ FollowRekeys \in BOOLEAN
 ASSUME AllowReturn \in BOOLEAN /\ FollowStale \in BOOLEAN /\ Grace \in BOOLEAN
 ASSUME AllowMiss \in BOOLEAN /\ MissRule \in BOOLEAN /\ AllowQuiet \in BOOLEAN /\ WaitBound \in BOOLEAN
-ASSUME AllowOpen \in BOOLEAN /\ AllowLate \in BOOLEAN
+ASSUME AllowOpen \in BOOLEAN /\ AllowLate \in BOOLEAN /\ AdoptShown \in BOOLEAN
 
 NoWin == "none"   \* no key window: Finder fronted without windows
 AppOfX(w) == IF w = NoWin THEN "finder" ELSE AppOf[w]
 WsWins(k) == {w \in Win : WsOf[w] = k}
+Displays == {DisplayOf[k] : k \in Workspaces}
+\* The first workspace of each display is shown initially.
+InitShown == [d \in Displays |-> CHOOSE k \in Workspaces : DisplayOf[k] = d /\ \A j \in Workspaces : DisplayOf[j] = d => k <= j]
+Shown(t) == {t.onDisplay[d] : d \in Displays}
+ShownWins(t) == UNION {WsWins(k) : k \in Shown(t)}
 
 VARIABLES
     s,        \* the state record
@@ -107,6 +120,7 @@ vars == <<s, history>>
 Job(kind, ws, g, evs, t) == [kind |-> kind, ws |-> ws, g |-> g, evs |-> evs, t |-> t]
 \* k: the workspace revealed, or kept visible by a conceal. skip: the windows
 \* Kosmos knew had left when it planned the switch, which it leaves out.
+\* k: the workspace each display shows once the switch is done.
 Op(op, k, g, skip) == [op |-> op, k |-> k, g |-> g, skip |-> skip]
 FocusOp(w, g) == [w |-> w, g |-> g]
 
@@ -116,19 +130,20 @@ InitMru(f) == [k \in Workspaces |->
 Init ==
     /\ \E f \in WsWins(1) :
          s = [ start    |-> f,
-               active   |-> 1,        \* Kosmos: visible workspace
+               active   |-> 1,        \* Kosmos: the focused workspace
+               onDisplay |-> InitShown, \* Kosmos: the workspace each display shows
                focus    |-> f,        \* Kosmos: focused window, NoWin on an empty workspace
                mru      |-> InitMru(f),
                sw       |-> 0,        \* latest switch
                gen      |-> 0,        \* current focus intent
-               hidden   |-> [w \in Win |-> WsOf[w] # 1],   \* WindowServer: in the holding Space
+               hidden   |-> [w \in Win |-> WsOf[w] \notin {InitShown[d] : d \in Displays}],   \* WindowServer: in the holding Space
                recorded |-> TRUE,     \* holding Space id published before any hide
                osFocus  |-> f,        \* macOS key window
                ne       |-> 0,        \* key changes so far
-               shown    |-> 1,        \* WindowServer: workspace of the last executed reveal
+               shown    |-> InitShown, \* WindowServer: the workspaces of the last executed reveal
                lastCmdT |-> 0,        \* input position of the latest executed command
                lastWin  |-> {},       \* ghost: the windows the latest input claims if it was a click, Command-Tab or return
-               goal     |-> 1,        \* ghost: the workspace the user last asked for
+               goal     |-> InitShown, \* ghost: the workspace the user last asked for on each display
                mq       |-> <<>>,
                bq       |-> <<>>,
                fq       |-> <<>>,
@@ -169,17 +184,20 @@ KeyChange(t, w, at) ==
 (* The switch protocol                                                     *)
 (***************************************************************************)
 \* Model changes happen at once on the main actor; WindowServer work is queued.
+\* k shows on its display, which becomes focused.
 StartSwitch(t, k, target) ==
-    LET reveal == Op("reveal", k, 0, t.left)
-        conceal == Op("conceal", k, 0, t.left)
+    LET shown == [t.onDisplay EXCEPT ![DisplayOf[k]] = k]
+        reveal == Op("reveal", shown, 0, t.left)
+        conceal == Op("conceal", shown, 0, t.left)
         ops == IF RevealFirst THEN <<reveal, conceal>> ELSE <<conceal, reveal>>
         mru1 == IF t.focus # NoWin THEN [t.mru EXCEPT ![t.active] = t.focus] ELSE t.mru
     IN [t EXCEPT !.sw = t.sw + 1,
                  !.gen = t.gen + 1,
                  !.active = k,
+                 !.onDisplay = shown,
                  !.focus = target,
                  !.mru = [mru1 EXCEPT ![k] = target],
-                 !.bq = t.bq \o ops \o <<Op("barrier", k, t.sw + 1, {})>>]
+                 !.bq = t.bq \o ops \o <<Op("barrier", shown, t.sw + 1, {})>>]
 
 \* Departures Kosmos can know of: the ones it handled, and the ones
 \* WindowServer reports when Kosmos reads it.
@@ -191,9 +209,18 @@ RequestFocus(t, w, g) ==
     IF w # NoWin /\ w \in Known(t) THEN t
     ELSE [t EXCEPT !.fq = Append(@, FocusOp(w, g))]
 
+\* The focus moves to a workspace another display shows: nothing is revealed or
+\* concealed, and its window is requested at once.
+FocusShown(t, k) ==
+    LET mru1 == IF t.focus # NoWin THEN [t.mru EXCEPT ![t.active] = t.focus] ELSE t.mru
+    IN RequestFocus([t EXCEPT !.gen = t.gen + 1, !.active = k, !.focus = t.mru[k], !.mru = mru1],
+                    t.mru[k], t.gen + 1)
+
 RunCommand(t, x) ==
     LET t1 == [t EXCEPT !.lastCmdT = x.t]
-    IN IF x.ws = t.active THEN t1 ELSE StartSwitch(t1, x.ws, t1.mru[x.ws])
+    IN IF x.ws = t.active THEN t1
+       ELSE IF x.ws \in Shown(t) THEN FocusShown(t1, x.ws)
+       ELSE StartSwitch(t1, x.ws, t1.mru[x.ws])
 
 \* The barrier confirmed the reveal. Focus the intent unless it is stale, or a
 \* newer command is already queued (coalescing a burst).
@@ -252,8 +279,8 @@ Adopt(t, ev, final, miss) ==
        ELSE IF w = NoWin THEN IF KeyLeft(t, ev) THEN Reassert(t) ELSE t   \* a departure focuses
        ELSE IF w \in t.left THEN t   \* a window that left is no one's focus
        ELSE IF miss THEN Reassert(t)   \* retry the missed request
-       ELSE IF WsOf[w] = t.active
-            THEN RequestFocus([t EXCEPT !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1], w, t.gen + 1)
+       ELSE IF WsOf[w] \in IF AdoptShown THEN Shown(t) ELSE {t.active}   \* on screen: its display becomes the focused one
+            THEN RequestFocus([t EXCEPT !.focus = w, !.active = WsOf[w], !.mru[WsOf[w]] = w, !.gen = t.gen + 1], w, t.gen + 1)
        ELSE IF ev.hid /\ FollowRekeys THEN StartSwitch(t, WsOf[w], w)
        ELSE IF ev.hid /\ ~KeyLeft(t, ev) THEN IF wait THEN Hold(t, ev) ELSE StartSwitch(t, WsOf[w], w)
        ELSE Reassert(t)   \* visible mid-switch, or a re-key after the key window left
@@ -332,10 +359,11 @@ ExecBridge ==
     LET x == Head(s.bq)
         t == [s EXCEPT !.bq = Tail(@)]
     IN /\ s.bq # <<>>
-       /\ s' = CASE x.op = "reveal"  -> [t EXCEPT !.hidden = [w \in Win |-> IF WsOf[w] = x.k /\ w \notin x.skip
+       /\ LET keep == {x.k[d] : d \in Displays} IN
+          s' = CASE x.op = "reveal"  -> [t EXCEPT !.hidden = [w \in Win |-> IF WsOf[w] \in keep /\ w \notin x.skip
                                                                         THEN FALSE ELSE @[w]],
                                                  !.shown = x.k]
-                 [] x.op = "conceal" -> [t EXCEPT !.hidden = [w \in Win |-> IF WsOf[w] # x.k /\ w \notin x.skip
+                 [] x.op = "conceal" -> [t EXCEPT !.hidden = [w \in Win |-> IF WsOf[w] \notin keep /\ w \notin x.skip
                                                                         THEN TRUE ELSE @[w]]]
                  [] x.op = "barrier" -> [t EXCEPT !.mq = Append(@, Job("resume", 0, x.g, <<>>, 0))]
        /\ UNCHANGED history
@@ -411,14 +439,14 @@ Fallback ==
     /\ UNCHANGED history
 
 \* A user activation of a window a switch is about to conceal makes no claim.
-Claim(w) == IF WsOf[w] = s.goal \/ s.hidden[w] THEN {w} ELSE {}
-Goal(w) == IF s.hidden[w] THEN WsOf[w] ELSE s.goal
+Claim(w) == IF WsOf[w] = s.goal[DisplayOf[WsOf[w]]] \/ s.hidden[w] THEN {w} ELSE {}
+Goal(w) == IF s.hidden[w] THEN [s.goal EXCEPT ![DisplayOf[WsOf[w]]] = WsOf[w]] ELSE s.goal
 
 Command ==
     /\ Len(history) < MaxEvents
     /\ \E k \in Workspaces :
          /\ s' = [s EXCEPT !.mq = Append(@, Job("input", k, 0, <<>>, Len(history) + 1)),
-                           !.lastWin = {}, !.goal = k]
+                           !.lastWin = {}, !.goal[DisplayOf[k]] = k]
          /\ history' = Append(history, k)
 
 \* A return Kosmos has not handled yet. The model leaves out clicks and
@@ -455,7 +483,7 @@ Open ==
     /\ Len(history) < MaxEvents
     /\ \E w \in Win \ s.gone :
          /\ s.hidden[w] /\ w # s.osFocus
-         /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = {w}, !.goal = WsOf[w]]
+         /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = {w}, !.goal[DisplayOf[WsOf[w]]] = WsOf[w]]
          /\ history' = Append(history, -5)
 
 \* The user closes, minimizes or hides a window after seeing it key, and brings
@@ -491,7 +519,7 @@ Leave ==
                 t1 == [s EXCEPT !.gone = @ \cup out, !.lag = @ \cup out,
                                 !.closed = IF closed THEN @ \cup out ELSE @,
                                 !.notices = @ \o notices, !.lastWin = {},
-                                !.goal = IF queued THEN @ ELSE s.active]
+                                !.goal = IF queued THEN @ ELSE s.onDisplay]
             IN /\ s' = CASE quiet -> [t1 EXCEPT !.osFocus = NoWin]
                         [] late  -> [t1 EXCEPT !.rekey = <<[w |-> v, t |-> Len(history) + 1]>>]
                         [] OTHER -> KeyChange(t1, v, Len(history) + 1)
@@ -504,7 +532,7 @@ Return ==
     /\ Len(history) < MaxEvents
     /\ Seen
     /\ \E w \in s.gone \ (s.closed \cup s.lag) :
-         /\ s' = KeyChange([s EXCEPT !.gone = @ \ {w}, !.lastWin = {w}, !.goal = WsOf[w],
+         /\ s' = KeyChange([s EXCEPT !.gone = @ \ {w}, !.lastWin = {w}, !.goal[DisplayOf[WsOf[w]]] = WsOf[w],
                                      !.notices = Append(@, [w |-> w, closed |-> FALSE, back |-> TRUE,
                                                             t |-> Len(history) + 1])],
                            w, Len(history) + 1)
@@ -524,8 +552,8 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
 Quiescent == s.mq = <<>> /\ s.bq = <<>> /\ s.fq = <<>> /\ s.evs = <<>> /\ s.notices = <<>>
              /\ s.lag = {} /\ s.held = <<>> /\ s.waiting = NoWin /\ s.rekey = <<>>
 
-\* The screen shows Kosmos's workspace and macOS keys Kosmos's focus.
-Converged == Visible = WsWins(s.active) \ s.gone /\ s.osFocus = s.focus
+\* The screen shows Kosmos's workspaces and macOS keys Kosmos's focus.
+Converged == Visible = ShownWins(s) \ s.gone /\ s.osFocus = s.focus
 
 ConvergesWhenQuiet == Quiescent => Converged
 
@@ -541,14 +569,17 @@ HonorsLastCommand == Quiescent /\ LastCommand(history) # 0 => s.active = LastCom
 \* no claim.
 HonorsLastActivation == Quiescent /\ s.lastWin # {} => s.focus \in s.lastWin
 
-\* When the key window leaves, Kosmos stays on the workspace the user was on.
-KeepsWorkspaceAfterLeave == Quiescent /\ history # <<>> /\ history[Len(history)] = -3 => s.active = s.goal
+\* When the key window leaves, each display keeps the workspace the user had on
+\* it. The focus may move to another display where macOS keyed a window.
+KeepsWorkspaceAfterLeave == Quiescent /\ history # <<>> /\ history[Len(history)] = -3 => s.onDisplay = s.goal
 
-\* Windows of two workspaces are never visible together.
-NoMixedFrame == \E k \in Workspaces : Visible \subseteq WsWins(k)
+OnDisplay(d) == {w \in Win : DisplayOf[WsOf[w]] = d}
 
-\* The screen is never empty while the workspace WindowServer last revealed has windows.
-NoBlankFrame == Visible = {} => WsWins(s.shown) = {}
+\* Windows of two workspaces are never visible together on a display.
+NoMixedFrame == \A d \in Displays : \E k \in Workspaces : Visible \cap OnDisplay(d) \subseteq WsWins(k)
+
+\* No display is empty while the workspace WindowServer last revealed there has windows.
+NoBlankFrame == \A d \in Displays : Visible \cap OnDisplay(d) = {} => WsWins(s.shown[d]) = {}
 
 \* Every hidden window can be found from the published record.
 RecoveryPath == \A w \in Win : s.hidden[w] => s.recorded
@@ -564,7 +595,7 @@ StateView == <<[s EXCEPT !.sw = 0, !.gen = 0,
                          !.mq = ViewQ(s.mq, s.sw), !.bq = ViewQ(s.bq, s.sw), !.fq = ViewQ(s.fq, s.gen)],
                history>>
 
-TraceView == [history |-> history, active |-> s.active, focus |-> s.focus,
+TraceView == [history |-> history, active |-> s.active, onDisplay |-> s.onDisplay, focus |-> s.focus,
               osFocus |-> s.osFocus, visible |-> Visible, gone |-> s.gone, left |-> s.left,
               notices |-> s.notices, lag |-> s.lag, held |-> s.held, waiting |-> s.waiting, rekey |-> s.rekey,
               sw |-> s.sw, gen |-> s.gen,
