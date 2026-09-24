@@ -13,8 +13,7 @@
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
 //   kosmos-probe secure-input       Which Carbon hotkeys fire while Secure Input is on, from
-//                                   real key presses its window asks for, and what detecting
-//                                   Secure Input costs (SecureInput.swift).
+//                                   real key presses its window asks for (SecureInput.swift).
 import AppKit
 import CKosmos
 import KosmosRecovery

@@ -166,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
-    /// polls, so this never runs on a switch (DESIGN.md, section 5.6).
+    /// polls, so this never runs inside a switch, though an app that holds Secure Input only
+    /// while active makes it run right after one (DESIGN.md, section 5.6).
     ///
     /// Ceiling: a second holder's enable, or a release while another holder remains, sends no
     /// event, so the named holder can be stale until Secure Input turns off and on. Reading
