@@ -14,6 +14,7 @@ final class Controller {
     private var session: Session
     private var ledger = FrameLedger()
     private var reports = FocusReports<ContinuousClock.Instant>()
+    private var misses = FocusMisses<ContinuousClock.Instant>()
     private let inventory: Inventory
     private let hiding: Hiding
     private let focusQueue = FocusQueue()
@@ -40,7 +41,8 @@ final class Controller {
     /// tab by the user's or the app's choice, so its report counts as one of a concealed
     /// window, and the tab deselected before it did not depart: it is followed at once.
     private var placedHidden: Set<WindowID> = []
-    /// The key window macOS last reported.
+    /// The key window macOS last reported. Too old to skip a focus request against, which the
+    /// focus queue decides when the request runs.
     private var key: KeyWindow?
     /// A report whose verdict waits for the departure of the window key before it
     /// (tla/Kosmos.tla, Hold).
@@ -60,10 +62,16 @@ final class Controller {
     var mouseFollowsFocus = false
     /// The active display profile, for the bar.
     var profile: String?
-    /// The display the session tiles, as the bar numbers it. Read at launch, as the session's
-    /// display is.
-    private let barDisplay: BarSnapshot.Display
+    /// The display the session tiles, as the bar numbers it. Read at launch and at each
+    /// resync, as the session's display is.
+    private var barDisplay: BarSnapshot.Display
     var publish: (@MainActor (Data) -> Void)?
+    /// Called with a description when the private focus path turns off, and with nil when it
+    /// turns back on.
+    var onFocusProblem: (@MainActor (String?) -> Void)?
+    /// While the session is locked or switched out, Kosmos writes no frames, runs no hides,
+    /// requests no focus and takes no command; `resync` catches up (DESIGN.md, section 5.1).
+    private var sessionLocked: Bool { inventory.sessionLocked }
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
         self.inventory = inventory
@@ -91,6 +99,24 @@ final class Controller {
         writeFrames(session.frames(of: session.visible))
     }
 
+    /// Why the private focus path is off, for the status item, or nil while it is on.
+    var focusProblem: String? {
+        switch focusQueue.killSwitch.offReason {
+        case .crashed?: "Private focus is off after a crash inside it, until kosmos reload-config"
+        case .wrongWindows?: "Private focus is off after \(FocusMisses<ContinuousClock.Instant>.limit) wrong windows in a row, until kosmos reload-config"
+        case nil: nil
+        }
+    }
+
+    /// A config reload turns the private focus path back on (DESIGN.md, section 5.4).
+    func turnOnPrivateFocus() {
+        guard focusQueue.killSwitch.offReason != nil else { return }
+        focusQueue.killSwitch.turnOn()
+        misses = FocusMisses()
+        controllerLog.notice("private focus is on again")
+        onFocusProblem?(nil)
+    }
+
     func run(_ arguments: [String], received: ContinuousClock.Instant) -> (code: Int32, text: String) {
         switch arguments {
         case ["state"]:
@@ -114,11 +140,44 @@ final class Controller {
         case .success where !managing:
             // Changing the model without moving windows would leave the two apart.
             return (1, "observing only while another window manager runs")
+        case .success where sessionLocked:
+            return (1, "the session is locked")
         case .success(let command):
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) { execute(plan, since: received, fromCommand: true) }
             return (0, "")
         }
+    }
+
+    /// After an unlock, or a wake while unlocked: reads the main display again, lays the shown
+    /// workspace out on its area as it is now, conceals and reveals every window again,
+    /// requests the focus intent and publishes the state. Other workspaces are laid out when
+    /// they are shown.
+    func resync() {
+        // With no display at all, the ones read before stay.
+        let display = Controller.displayRect()
+        if display != .zero {
+            barDisplay = Controller.barDisplay()
+            if display != session.display {
+                controllerLog.notice("display area is now \(String(describing: display), privacy: .public)")
+                session.display = display
+            }
+        }
+        guard managing else { return publishState() }
+        // Reports received before now are older than the focus this asks for again, and an
+        // echo in flight at the lock was dropped with the other reports while locked.
+        reports.forgetRequests()
+        reports.commandExecuted(receivedAt: .now)
+        var plan = Session.Plan()
+        plan.frames = session.frames(of: session.visible)
+        // macOS can move windows while the session is locked or the displays sleep, and the
+        // ledger would take them for placed: every tiled window of the shown workspace is
+        // written again. Floating windows have no layout frame and stay where they are.
+        for id in plan.frames.keys { ledger.forget(id) }
+        plan.show = session.windows(of: session.visible)
+        plan.hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
+        plan.focus = intent
+        execute(plan)
     }
 
     /// The main display's visible area in the top left origin coordinates Accessibility uses.
@@ -265,8 +324,8 @@ final class Controller {
         if let report = unplacedKey, report.key == .window(new), !session.isParked(new) {
             unplacedKey = nil
             placedHidden.remove(new)
-            decide(KeyReport(key: report.key, received: report.received, previous: report.previous,
-                             concealed: session.workspace(of: new) != session.visible, miss: .none), keyLeft: .stayed)
+            decidePlaced(KeyReport(key: report.key, received: report.received, pid: report.pid, previous: report.previous,
+                                   concealed: session.workspace(of: new) != session.visible, miss: .none), keyLeft: .stayed)
         }
         return true
     }
@@ -333,7 +392,8 @@ final class Controller {
     private func appUnhidden(_ pid: pid_t, at received: ContinuousClock.Instant) {
         guard hiddenApps[pid]?.isEmpty == false else { return }
         Task {
-            let keyed = await inventory.worker(pid)?.focusedWindow()
+            // An app that does not answer names no window, and the fallback is followed.
+            let keyed = await inventory.worker(pid)?.focusedWindow() ?? nil
             // Hidden again while the worker answered: the windows wait for the next unhide.
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true,
                   let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty else { return }
@@ -344,11 +404,19 @@ final class Controller {
 
     private func handle(_ report: AXReport) {
         switch report.kind {
+        case .backgroundFocus(let id):
+            // An app that is not front changed its own focused window, as after AXRaise in
+            // it: no key window report, and never the last one seen. It can still be
+            // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe). It leaves the
+            // kill switch's count alone: a raise's report says nothing about the key record.
+            guard !sessionLocked else { return }
+            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             let repeated = key == reported
             key = reported
+            guard !sessionLocked else { return }   // resync requests the intent again
             // macOS's report of the next key window, which a departure waited for. Kosmos's
             // own echo is not it: a window keyed during a minimize's animation leaves macOS
             // nothing to key when it ends, so the wait runs to its bound and focuses.
@@ -365,7 +433,8 @@ final class Controller {
             // A tab with no place yet is decided when it takes one.
             if let id, session.workspace(of: id) == nil || session.isParked(id) {
                 unplacedKey = session.workspace(of: id) == nil
-                    ? KeyReport(key: reported, received: report.received, previous: previous, concealed: false, miss: miss) : nil
+                    ? KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
+                                concealed: false, miss: miss) : nil
                 return
             }
             unplacedKey = nil
@@ -376,8 +445,8 @@ final class Controller {
             // it left too.
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
             let keyLeft: Departure = placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed
-            decide(KeyReport(key: reported, received: report.received, previous: previous,
-                             concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
+            decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
+                                   concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -399,7 +468,7 @@ final class Controller {
                                                                  height: taller ? result.readBack.height : 0)))
                 }
             }
-        case .windowCreated, .windowDestroyed, .titleChanged:
+        case .windowCreated, .windowDestroyed, .answering:
             break
         }
     }
@@ -408,6 +477,8 @@ final class Controller {
     private struct KeyReport {
         let key: KeyWindow
         let received: ContinuousClock.Instant
+        /// The app that reported it.
+        let pid: pid_t
         /// The window key before it, when that was another window.
         let previous: WindowID?
         /// The reported window was concealed when it became key.
@@ -421,6 +492,15 @@ final class Controller {
     /// departures probe measured 17 ms after the hide. Every follow of a Command-Tab waits
     /// this long.
     private static let grace: Duration = .milliseconds(100)
+
+    /// Decides the key window report of a window with a place. The kill switch counts it, and
+    /// a report that is no echo answers the app's public requests (DESIGN.md, section 5.4).
+    private func decidePlaced(_ report: KeyReport, keyLeft: Departure) {
+        let echo = reports.isEcho(report.key, receivedAt: report.received)
+        misses.reported(report.key, pid: report.pid, receivedAt: report.received, echo: echo)
+        if !echo { reports.publicRequestsAnswered(by: report.pid, receivedAt: report.received) }
+        decide(report, keyLeft: keyLeft)
+    }
 
     /// Acts on a key window report. A report whose verdict depends on a departure that is
     /// not known yet is held until the departure arrives or the grace ends
@@ -450,10 +530,14 @@ final class Controller {
                 if let report = controller.held.expire(number) { controller.decideHeld(report) }
             }
         case .reassert:
-            requestFocus(intent)
+            requestFocus(intent, retry: report.miss == .retry)
         case .adopt(let window):
             session.adopt(window)
             touch(window)
+            // A new generation, so a request of Kosmos's still queued cannot key its window
+            // after the user's choice; the worker finds this one key already and records
+            // nothing (tla/Kosmos.tla, Adopt).
+            requestFocus(.window(window))
             publishState()
         case .follow(let window):
             touch(window)
@@ -503,7 +587,7 @@ final class Controller {
 
     /// `since` is when the command arrived, for the switch timing log.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
-        guard managing, !plan.isEmpty else { return publishState() }
+        guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -553,6 +637,7 @@ final class Controller {
     }
 
     private func writeFrames(_ targets: [WindowID: CGRect]) {
+        guard !sessionLocked else { return }
         let writes = ledger.writes(for: targets)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] ?? 0 }) where pid != 0 {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
@@ -574,8 +659,11 @@ final class Controller {
         return kinds
     }
 
-    /// Every focus request goes through here. `fromCommand`: a command asked for it.
-    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false, fromCommand: Bool = false) {
+    /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
+    /// it follows a miss, which the kill switch then counts once.
+    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false, fromCommand: Bool = false,
+                              retry: Bool = false) {
+        guard !sessionLocked else { return }
         // Focusing a desktop window takes the user out of a fullscreen Space: only a command
         // does that, not a window closing or hiding behind it, nor an unhide that conceals
         // windows.
@@ -584,7 +672,8 @@ final class Controller {
         // unminimize it or unhide its app. Its departure focuses.
         if case .window(let id) = target, inventory.leftScreen(id) { return }
         if movePointer, case .window(let id) = target { centerPointer(on: id) }
-        guard target != key else { return }   // already key: activating again costs the system work
+        // The focus queue skips a target that is key already, checked when the request runs:
+        // the key window last reported here can be older than a request still in flight.
         let pid: pid_t?
         switch target {
         case .window(let id):
@@ -594,11 +683,29 @@ final class Controller {
             pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
         }
         guard let pid else { return }
-        let stamp = ContinuousClock.now
-        reports.focusRequested(target, app: pid, at: stamp)
-        focusQueue.request(target, pid: pid, generation: focusQueue.newGeneration()) { [weak self] in
-            self?.reports.requestDropped(target, at: stamp)
-        }
+        let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
+                           concealed: concealed, generation: focusQueue.newGeneration(),
+                           performing: { [weak self] stamp, path in
+                               self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
+                           },
+                           dropped: { [weak self] stamp in
+                               self?.reports.requestDropped(target, at: stamp)
+                               self?.misses.requestDropped(at: stamp)
+                           })
+    }
+
+    /// A call that changes the key window to `target` is about to be made: records the echo
+    /// that will come back, inexact for the public activation, and counts the private key
+    /// record toward the kill switch (DESIGN.md, section 5.4).
+    private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, retry: Bool,
+                            at stamp: ContinuousClock.Instant) {
+        reports.focusRequested(target, app: pid, at: stamp, publicly: path == .activation)
+        guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
+              misses.willRequest(id, pid: pid, at: stamp, retry: retry) else { return }
+        focusQueue.killSwitch.turnOff(.wrongWindows)
+        controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
+        onFocusProblem?(focusProblem)
     }
 
     /// Moves the pointer to the window's center unless it is already inside the window,

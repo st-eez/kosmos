@@ -150,6 +150,7 @@ CFArrayRef kosmos_window_spaces(uint32_t window) {
 // Focus. The same front-process call as yabai and Amethyst.
 extern CGError _SLPSSetFrontProcessWithOptions(ProcessSerialNumber *psn, uint32_t window, uint32_t mode);
 extern CGError SLPSPostEventRecordTo(ProcessSerialNumber *psn, uint8_t *bytes);
+extern CGError _SLPSGetFrontProcess(ProcessSerialNumber *psn);
 static const uint32_t kCPSUserGenerated = 0x200;
 static const uint32_t kCPSNoWindows = 0x400;
 
@@ -177,6 +178,16 @@ bool kosmos_make_key(pid_t pid, uint32_t window) {
     bytes[0x3a] = 0x10;
     memcpy(bytes + 0x3c, &window, sizeof(uint32_t));
     return SLPSPostEventRecordTo(&psn, bytes) == kCGErrorSuccess;
+}
+
+pid_t kosmos_front_pid(void) {
+    ProcessSerialNumber psn = {0};
+    pid_t pid = 0;
+    if (_SLPSGetFrontProcess(&psn) != kCGErrorSuccess) return 0;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations" // the pid of a PSN
+    return GetProcessPID(&psn, &pid) == noErr ? pid : 0;
+#pragma clang diagnostic pop
 }
 
 bool kosmos_front_without_windows(pid_t pid) {

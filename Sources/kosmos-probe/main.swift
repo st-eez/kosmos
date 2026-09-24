@@ -50,6 +50,24 @@
 //                                   ioreg -rtc IOMobileFramebufferShim -d1 -w0 | grep -E '\+-o disp|ProductAttributes'
 //   kosmos-probe secure-input       Which Carbon hotkeys fire while Secure Input is on, from
 //                                   real key presses its window asks for (SecureInput.swift).
+//   kosmos-probe ax-timeout         What Accessibility returns, and how long it takes, for a
+//                                   child app that is launching, answering and hung. The
+//                                   child is an accessory app with no window, which a running
+//                                   Kosmos ignores. Needs Accessibility for the terminal.
+//   kosmos-probe keying [rounds]    Keys windows of two stub apps four ways: the key record
+//                                   alone, AXRaise then the record (the order Kosmos uses), the
+//                                   record then AXRaise (yabai and alt-tab), and AXRaise alone.
+//                                   Covers two stacked windows of one app, two side by side,
+//                                   another app, and back into an app whose other window was
+//                                   key; a background accessory app activating itself, as
+//                                   Kosmos does for an empty workspace on the public path;
+//                                   then a key window concealed and revealed, where the focus
+//                                   queue's already key check could skip wrongly. The
+//                                   stubs say which window they hold key, and every
+//                                   AXFocusedWindowChanged is logged against the raise. They are
+//                                   accessory apps with small windows at the bottom right, which
+//                                   a running Kosmos leaves alone. The probe takes keyboard focus
+//                                   while it runs and hands it back at the end.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -77,8 +95,12 @@ case "hidden-window": showHiddenWindow()
 case "reveal": reveal()
 case "displays": displays()
 case "secure-input": secureInput()
+case "ax-child": axChild()
+case "ax-timeout": axTimeout()
+case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
+case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds]")
     exit(2)
 }
 
@@ -639,4 +661,424 @@ func sketchyBarNumbers() -> [UInt32: Int]? {
         guard let id = display["DirectDisplayID"] as? Int, let number = display["arrangement-id"] as? Int else { return nil }
         return (UInt32(id), number)
     }, uniquingKeysWith: { first, _ in first })
+}
+
+/// An accessory app with no window. Each number on stdin hangs its main thread for that many
+/// seconds, then it prints "awake". Prints "ready" once its run loop runs.
+@MainActor func axChild() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    Thread.detachNewThread {
+        while let line = readLine() {
+            guard let seconds = Double(line) else { continue }
+            DispatchQueue.main.async {
+                Thread.sleep(forTimeInterval: seconds)
+                print("awake")
+            }
+        }
+        exit(0)
+    }
+    DispatchQueue.main.async { print("ready") }
+    app.run()
+    exit(0)
+}
+
+func axTimeout() {
+    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["ax-child"]
+    let input = Pipe(), output = Pipe()
+    child.standardInput = input
+    child.standardOutput = output
+    func line() -> String {
+        var bytes = Data()
+        while true {
+            let byte = output.fileHandleForReading.readData(ofLength: 1)
+            if byte.isEmpty || byte == Data("\n".utf8) { return String(decoding: bytes, as: UTF8.self) }
+            bytes.append(byte)
+        }
+    }
+    func hang(_ seconds: Double) { input.fileHandleForWriting.write(Data("\(seconds)\n".utf8)) }
+    func read(_ element: AXUIElement) -> (AXError, Double) {
+        var value: CFTypeRef?
+        let start = ContinuousClock.now
+        let result = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
+        return (result, elapsed(start))
+    }
+    func show(_ result: (AXError, Double)) -> String { String(format: "error %d in %.1f ms", result.0.rawValue, result.1) }
+    let systemWide = AXUIElementCreateSystemWide()
+
+    // Launching: read from the moment of the spawn until the child answers.
+    let spawned = ContinuousClock.now
+    try! child.run()
+    defer { child.terminate() }
+    let pid = child.processIdentifier
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 1.0)
+    var failures: [Int32: Int] = [:]
+    var slowest = 0.0
+    var answered: Double?
+    while elapsed(spawned) < 5000 {
+        let result = read(app)
+        if result.0 == .success { answered = elapsed(spawned); break }
+        failures[result.0.rawValue, default: 0] += 1
+        slowest = max(slowest, result.1)
+        usleep(5000)
+    }
+    print("launching: failures by error \(failures.sorted { $0.key < $1.key }), slowest failure \(String(format: "%.1f", slowest)) ms, first answer \(answered.map { String(format: "%.0f ms", $0) } ?? "none") after spawn")
+    _ = line()   // ready
+
+    var times = (0..<20).map { _ in read(app).1 }
+    print(String(format: "answering: read median %.3f ms, max %.3f ms", percentile(times, 0.5), percentile(times, 1)))
+
+    // Hung: one read with no timeout set anywhere, then one per element timeout.
+    hang(4)
+    usleep(100_000)
+    print("hung, no timeout set: \(show(read(AXUIElementCreateApplication(pid))))")
+    for timeout: Float in [0.05, 0.25, 1.0] {
+        let element = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(element, timeout)
+        print("hung, element timeout \(timeout) s: \(show(read(element)))")
+    }
+    var observer: AXObserver?
+    AXObserverCreate(pid, { _, _, _, _ in }, &observer)
+    let element = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(element, 0.25)
+    var start = ContinuousClock.now
+    let added = AXObserverAddNotification(observer!, element, kAXFocusedWindowChangedNotification as CFString, nil)
+    print(String(format: "hung, add observer notification, element timeout 0.25 s: error %d in %.1f ms", added.rawValue, elapsed(start)))
+    _ = line()   // awake
+
+    // A fresh element takes the system wide timeout.
+    hang(3)
+    usleep(100_000)
+    AXUIElementSetMessagingTimeout(systemWide, 0.25)
+    print("hung, fresh element, system wide timeout 0.25 s: \(show(read(AXUIElementCreateApplication(pid))))")
+    AXUIElementSetMessagingTimeout(systemWide, 0)
+    print("hung, fresh element, system wide timeout reset with 0: \(show(read(AXUIElementCreateApplication(pid))))")
+    _ = line()
+
+    // Requests that timed out still wait in the app's queue: time the first answer after a
+    // hang during which 10 probes gave up.
+    hang(1.5)
+    usleep(100_000)
+    let prober = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(prober, 0.05)
+    for _ in 0..<10 { _ = read(prober) }
+    _ = line()
+    start = ContinuousClock.now
+    let after = read(app)
+    print("after a hang with 10 abandoned requests: \(show(after)); \(String(format: "%.1f", elapsed(start))) ms")
+    times = (0..<20).map { _ in read(app).1 }
+    print(String(format: "answering again: read median %.3f ms", percentile(times, 0.5)))
+}
+
+/// An accessory app for `keying`, which a running Kosmos leaves alone. Opens a 170 by 90
+/// window for each "left,up" offset from the bottom right corner of the main screen's
+/// visible area and prints the window ids. Each "key" line on its standard input prints the
+/// window the app holds key, or 0. Each "activate" line activates the app from this
+/// background thread, as Kosmos's focus queue activates Kosmos, and prints what `activate`
+/// returned. It exits when its standard input closes.
+@MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    let ids = offsets.enumerated().map { index, offset in
+        let xy = offset.split(separator: ",").compactMap { Double($0) }
+        let window = NSWindow(contentRect: NSRect(x: screen.maxX - 190 - xy[0], y: screen.minY + 20 + xy[1], width: 170, height: 90),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = "kosmos-probe \(name)\(index + 1)"
+        window.isReleasedWhenClosed = false
+        window.orderFrontRegardless()
+        return window.windowNumber
+    }
+    print(ids.map(String.init).joined(separator: " "))
+    Thread.detachNewThread {
+        while let line = readLine() {
+            switch line {
+            case "key": DispatchQueue.main.async { MainActor.assumeIsolated { print(NSApp.keyWindow?.windowNumber ?? 0) } }
+            case "activate": print(NSRunningApplication.current.activate(options: []))
+            default: break
+            }
+        }
+        exit(0)
+    }
+    app.run()
+    exit(0)
+}
+
+final class KeyStub {
+    let name: String
+    let process: Process
+    /// Held open for the stub's lifetime; the stub exits when it closes.
+    let input: Pipe
+    let output: Pipe
+    private var buffer = Data()
+    private(set) var windows: [UInt32] = []
+    var pid: pid_t { process.processIdentifier }
+
+    init(_ name: String, _ offsets: [String]) {
+        self.name = name
+        process = Process()
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        process.arguments = ["key-stub", name] + offsets
+        input = Pipe()
+        output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        try! process.run()
+        windows = line().split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
+    }
+
+    func line() -> String {
+        while !buffer.contains(UInt8(ascii: "\n")) {
+            let chunk = output.fileHandleForReading.availableData
+            guard !chunk.isEmpty else { print("stub \(name) exited"); exit(1) }
+            buffer.append(chunk)
+        }
+        let end = buffer.firstIndex(of: UInt8(ascii: "\n"))!
+        let text = String(decoding: buffer[buffer.startIndex..<end], as: UTF8.self)
+        buffer.removeSubrange(buffer.startIndex...end)
+        return text
+    }
+
+    /// Activates the app from its own background thread. Returns what `activate` returned.
+    func activateItself() -> Bool {
+        input.fileHandleForWriting.write(Data("activate\n".utf8))
+        return line() == "true"
+    }
+
+    /// The window the app itself holds key, from AppKit, or nil.
+    func appKey() -> UInt32? {
+        input.fileHandleForWriting.write(Data("key\n".utf8))
+        return UInt32(line()).flatMap { $0 == 0 ? nil : $0 }
+    }
+
+    func label(_ window: UInt32?) -> String {
+        guard let window else { return "none" }
+        return windows.firstIndex(of: window).map { "\(name)\($0 + 1)" } ?? String(window)
+    }
+}
+
+/// The window's element in its app, found by window id.
+func windowElement(_ pid: pid_t, _ window: UInt32) -> AXUIElement? {
+    var windows: CFTypeRef?
+    AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &windows)
+    return (windows as? [AXUIElement])?.first { element in
+        var id: UInt32 = 0
+        return _AXUIElementGetWindow(element, &id) == .success && id == window
+    }
+}
+
+/// The app's focused window as Accessibility names it.
+func focusedWindow(of pid: pid_t) -> UInt32? {
+    var focused: CFTypeRef?
+    var id: UInt32 = 0
+    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as CFString, &focused) == .success,
+          let focused, _AXUIElementGetWindow((focused as! AXUIElement), &id) == .success else { return nil }
+    return id
+}
+
+/// Every AXFocusedWindowChanged the stubs post, with when it arrived. Main thread only.
+final class FocusNotes: @unchecked Sendable {
+    var entries: [(pid: pid_t, window: UInt32, at: ContinuousClock.Instant)] = []
+    private var observers: [AXObserver] = []
+
+    func watch(_ pid: pid_t) {
+        var observer: AXObserver?
+        guard AXObserverCreate(pid, { _, element, _, refcon in
+            guard let refcon else { return }
+            var pid: pid_t = 0, window: UInt32 = 0
+            AXUIElementGetPid(element, &pid)
+            _ = _AXUIElementGetWindow(element, &window)
+            Unmanaged<FocusNotes>.fromOpaque(refcon).takeUnretainedValue().entries.append((pid, window, .now))
+        }, &observer) == .success, let observer else { return print("no focus observer for \(pid)") }
+        AXObserverAddNotification(observer, AXUIElementCreateApplication(pid), kAXFocusedWindowChangedNotification as CFString,
+                                  Unmanaged.passUnretained(self).toOpaque())
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        observers.append(observer)
+    }
+}
+
+@MainActor func keying(rounds: Int) {
+    let rounds = max(rounds, 1)
+    _ = NSApplication.shared   // the concealed case's bridged operations need an AppKit client
+    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+    func wait(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
+    // Focus goes back to this app and window at the end.
+    let before = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    let beforeWindow = before.flatMap(focusedWindow(of:))
+    // A1 and A2 overlap, A3 sits apart, and B1 covers parts of A1 and A2.
+    let a = KeyStub("A", ["0,0", "60,40", "300,0"])
+    let b = KeyStub("B", ["30,20"])
+    let notes = FocusNotes()
+    notes.watch(a.pid)
+    notes.watch(b.pid)
+    defer {
+        a.process.terminate()
+        b.process.terminate()
+        if let before, let beforeWindow { _ = kosmos_make_key(before, beforeWindow) }
+    }
+    wait(0.5)
+
+    enum Order: String, CaseIterable {
+        case recordOnly = "record only"
+        case raiseFirst = "AXRaise, then record"
+        case raiseAfter = "record, then AXRaise"
+        case raiseOnly = "AXRaise alone"
+    }
+    /// Keys the window as `order` says and waits 0.3 s. Returns when the raise started, and
+    /// how long it took.
+    @discardableResult
+    func focus(_ stub: KeyStub, _ window: UInt32, _ order: Order) -> (raised: ContinuousClock.Instant, ms: Double)? {
+        var raise: (ContinuousClock.Instant, Double)?
+        func raiseWindow() {
+            guard let element = windowElement(stub.pid, window) else { return print("  no element for \(stub.label(window))") }
+            let start = ContinuousClock.now
+            _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+            raise = (start, elapsed(start))
+        }
+        if order == .raiseFirst || order == .raiseOnly { raiseWindow() }
+        if order != .raiseOnly, !kosmos_make_key(stub.pid, window) { print("  kosmos_make_key failed for \(stub.label(window))") }
+        if order == .raiseAfter { raiseWindow() }
+        wait(0.3)
+        return raise
+    }
+    func front(_ stub: KeyStub) -> Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == stub.pid }
+    func onTop(_ window: UInt32, over others: [UInt32]) -> Bool {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let order = list.compactMap { ($0[kCGWindowNumber as String] as? Int).map(UInt32.init) }
+        guard let index = order.firstIndex(of: window) else { return false }
+        return others.allSatisfy { (order.firstIndex(of: $0) ?? .max) > index }
+    }
+    /// The focus notes since `mark`, as offsets from the raise when there was one.
+    func notesSince(_ mark: Int, raisedAt: ContinuousClock.Instant?) -> String {
+        let stubs = [a, b]
+        let text = notes.entries[mark...].map { note in
+            let stub = stubs.first { $0.pid == note.pid }
+            let offset = raisedAt.map { String(format: " %+.1f ms", Double((note.at - $0).components.attoseconds) / 1e15
+                                                                 + Double((note.at - $0).components.seconds) * 1000) } ?? ""
+            return "\(stub?.label(note.window) ?? String(note.window))\(offset)"
+        }
+        return text.isEmpty ? "none" : text.joined(separator: ", ")
+    }
+
+    typealias Target = (stub: KeyStub, window: UInt32)
+    let cases: [(name: String, setup: [Target], target: Target, covers: [UInt32])] = [
+        ("same app, stacked: A2 key, then A1", [(a, a.windows[1])], (a, a.windows[0]), [a.windows[1]]),
+        ("same app, side by side: A1 key, then A3", [(a, a.windows[0])], (a, a.windows[2]), []),
+        ("other app: A1 key, then B1", [(a, a.windows[0])], (b, b.windows[0]), [a.windows[0], a.windows[1]]),
+        ("back into A after A2 was key: A2, B1, then A1", [(a, a.windows[1]), (b, b.windows[0])], (a, a.windows[0]),
+         [a.windows[1], b.windows[0]]),
+    ]
+    var hits: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
+    var raiseTimes: [Double] = []
+    for round in 1...rounds {
+        for test in cases {
+            for order in Order.allCases {
+                // Kosmos's order sets up each case; a case whose setup did not key is skipped.
+                for step in test.setup { focus(step.stub, step.window, .raiseFirst) }
+                let last = test.setup.last!
+                guard front(last.stub), last.stub.appKey() == last.window else {
+                    print("round \(round), \(test.name), \(order.rawValue): setup did not key \(last.stub.label(last.window)), skipped")
+                    continue
+                }
+                let mark = notes.entries.count
+                let raise = focus(test.target.stub, test.target.window, order)
+                if let raise { raiseTimes.append(raise.ms) }
+                let isFront = front(test.target.stub)
+                let appKey = test.target.stub.appKey()
+                let axFocused = focusedWindow(of: test.target.stub.pid)
+                let isKey = isFront && appKey == test.target.window
+                let isOnTop = onTop(test.target.window, over: test.covers)
+                let row = "\(test.name) | \(order.rawValue)"
+                trials[row, default: 0] += 1
+                if isKey { hits[row, default: 0] += 1 }
+                if isOnTop { raised[row, default: 0] += 1 }
+                let raiseTime = raise.map { String(format: ", AXRaise %.2f ms", $0.ms) } ?? ""
+                print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(isFront ? "yes" : "no"), "
+                      + "app key \(test.target.stub.label(appKey)), AX focused \(test.target.stub.label(axFocused))), "
+                      + "\(isOnTop ? "on top" : "not on top")\(raiseTime); focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
+            }
+        }
+    }
+
+    // An accessory app in the background activating itself, as Kosmos does for an empty
+    // workspace on the public path.
+    var selfActivated = 0, selfTrials = 0
+    for round in 1...rounds {
+        focus(a, a.windows[0], .raiseFirst)
+        guard front(a) else {
+            print("round \(round), self-activation: setup did not front A, skipped")
+            continue
+        }
+        let returned = b.activateItself()
+        wait(0.3)
+        let isFront = front(b)
+        selfTrials += 1
+        if isFront { selfActivated += 1 }
+        print("round \(round), B activating itself from the background: activate returned \(returned), "
+              + "B \(isFront ? "is" : "is NOT") the front app 0.3 s later")
+    }
+
+    // A key window concealed in a holding Space and revealed again, as a switch away and back
+    // does. The focus queue skips a request when the app is front and names the target as
+    // focused; it would skip wrongly if the app named it while holding no key window.
+    var wrongSkips = 0, concealTrials = 0, rekeyed = 0
+    let space = kosmos_holding_create()
+    if let desktop = Displays.current().ordinarySpace(original: nil), space != 0 {
+        var ids = [a.windows[0]]
+        defer {
+            _ = kosmos_remove_windows(space, &ids, 1)
+            _ = kosmos_space_destroy(space)
+        }
+        for round in 1...rounds {
+            focus(a, a.windows[0], .raiseFirst)
+            guard front(a), a.appKey() == a.windows[0] else {
+                print("round \(round), concealed and revealed: setup did not key A1, skipped")
+                continue
+            }
+            kosmos_add_windows(space, &ids, 1, true)
+            _ = kosmos_barrier(space)
+            wait(0.3)
+            print("round \(round), A1 concealed: front \(front(a) ? "yes" : "no"), app key \(a.label(a.appKey())), "
+                  + "AX focused \(a.label(focusedWindow(of: a.pid)))")
+            kosmos_add_windows(desktop, &ids, 1, true)
+            kosmos_remove_windows(space, &ids, 1)
+            _ = kosmos_barrier(space)
+            wait(0.3)
+            let isFront = front(a), appKey = a.appKey(), axFocused = focusedWindow(of: a.pid)
+            let skips = !KeyWindow.window(a.windows[0]).goesAhead(appIsFront: isFront, focused: .some(axFocused))
+            let wrong = skips && appKey != a.windows[0]
+            concealTrials += 1
+            if wrong { wrongSkips += 1 }
+            let mark = notes.entries.count
+            let raise = focus(a, a.windows[0], .raiseFirst)
+            let keyedAgain = front(a) && a.appKey() == a.windows[0]
+            if keyedAgain { rekeyed += 1 }
+            print("round \(round), A1 revealed: front \(isFront ? "yes" : "no"), app key \(a.label(appKey)), "
+                  + "AX focused \(a.label(axFocused)); the already key check would \(skips ? "skip" : "go ahead")"
+                  + "\(wrong ? ", WRONGLY" : ""); Kosmos's order then \(keyedAgain ? "keyed A1" : "did NOT key A1"); "
+                  + "focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
+        }
+    } else {
+        if space != 0 { _ = kosmos_space_destroy(space) }
+        print("no holding Space or no ordinary Space; the concealed case did not run")
+    }
+
+    print("\nsummary: a hit keys the target window in the app that holds it; a miss leaves another window key")
+    for test in cases {
+        for order in Order.allCases {
+            let row = "\(test.name) | \(order.rawValue)"
+            let hit = hits[row] ?? 0, runs = trials[row] ?? 0
+            print("  \(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs)")
+        }
+    }
+    print("  a background accessory app activating itself became front in \(selfActivated) of \(selfTrials)")
+    print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
+          + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
+    if !raiseTimes.isEmpty {
+        print(String(format: "  AXRaise: median %.2f ms, max %.2f ms over %d raises", percentile(raiseTimes, 0.5), percentile(raiseTimes, 1), raiseTimes.count))
+    }
 }

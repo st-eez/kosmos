@@ -228,3 +228,69 @@ import Testing
     #expect(!reports.isEcho(.window(4), receivedAt: 11))
     #expect(reports.isEcho(.window(3), receivedAt: 11))   // asking consumes nothing
 }
+
+@Test func thePublicPathsChoiceAnswersItsRequest() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10, publicly: true)
+    // App 7 keyed window 2 of its own choosing.
+    #expect(reports.classify(.window(2), receivedAt: 11, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(2))
+    reports.publicRequestsAnswered(by: 7, receivedAt: 11)
+    // The user's click on window 1 is theirs, not the request's echo.
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
+}
+
+@Test func anotherWindowOfTheAppLeavesAPrivateRequestExpected() {   // change 6
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10)
+    #expect(reports.classify(.window(2), receivedAt: 11, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(2))
+    reports.publicRequestsAnswered(by: 7, receivedAt: 11)
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+}
+
+@Test func onlyTheNamedAppAnswersAPublicRequest() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10, publicly: true)
+    reports.publicRequestsAnswered(by: 8, receivedAt: 11)
+    // A report received before the request answers nothing either.
+    reports.publicRequestsAnswered(by: 7, receivedAt: 9)
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+}
+
+@Test func forgottenRequestsSwallowNoReport() {
+    // An echo that arrived while the session was locked was never classified.
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: nil, at: 10)
+    reports.forgetRequests()
+    #expect(reports.classify(.window(1), receivedAt: 20, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
+}
+
+@Test func aBackgroundReportConsumesOnlyAnEcho() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: nil, at: 10)
+    let other = reports.consumeEcho(.window(2), receivedAt: 11)
+    let echo = reports.consumeEcho(.window(1), receivedAt: 12)
+    #expect(!other && echo)
+    // Consumed: a later report of window 1 is the user's.
+    #expect(reports.classify(.window(1), receivedAt: 13, onCurrentWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
+}
+
+@Test func aBackgroundEchoOfTheRetriedWindowEndsTheRetry() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 11) == .retry)
+    reports.focusRequested(.window(1), app: 7, at: 12)
+    let echo = reports.consumeEcho(.window(1), receivedAt: 13)
+    #expect(echo)
+    // The retry keyed window 1, so a later miss of it is retried again.
+    reports.focusRequested(.window(1), app: 7, at: 20)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 21) == .retry)
+}
+
+@Test func forgettingRequestsEndsTheRetry() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 11) == .retry)
+    reports.forgetRequests()
+    reports.focusRequested(.window(1), app: 7, at: 20)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 21) == .retry)
+}

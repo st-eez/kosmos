@@ -35,6 +35,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Pixel-based container weights produce wrong and negative sizes | Store fractions |
 | After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read confirms a switch, where the fork polled |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
+| An AX call to a hung app returns kAXErrorCannotComplete 5 ms after its messaging timeout, and with none set macOS 27 waits 1.5 s. An app still launching fails with the same error in under 9 ms and answers about 60 ms after it starts. An answered read takes 13 µs (`kosmos-probe ax-timeout`) | Time out every call at 1 s, and back an app off only after a call that waited out the timeout |
 
 ## 3. Primitive decisions
 
@@ -44,7 +45,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep every 2 to 5 s as a backstop | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
 | Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
-| Focus | Private window-targeted focus in every case: front the process, then post one mouse-down key record far off the window. AXRaise only for windows that can overlap. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
+| Focus | Private window-targeted focus in every case: AXRaise the window on its app's worker, then front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
 | Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
@@ -69,8 +70,8 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Context | Owns | Never does |
 | --- | --- | --- |
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
-| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads | Touch the model directly |
-| Focus queue, serial | Front-process calls and key records, generation checks | Wait on AX |
+| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads, and raises before focus | Touch the model directly |
+| Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | Bridged Space operations and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
@@ -111,14 +112,42 @@ off the main thread).
   - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole.
-  - One AX observer per app: creation, focus, main window, title, destroy and minimize.
+  - One AX observer per app: creation, focus, main window, destroy and minimize.
   - NSWorkspace app lifecycle events, plus a process exit source for each app. The
     inventory alone observes an app's hide and unhide: it records the departure or return
     of the app's windows, then passes the event to the controller.
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
-  lock screen never do, and while the session is locked, creation and destruction wait.
+  lock screen never do, and while the session is locked, creation and destruction wait. A
+  read that gets no answer leaves the window's AX facts as they were.
+- The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
+  `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
+  switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
+  listen for them. Kosmos asks for immediate delivery, because AppKit holds distributed
+  notifications for an app that is not active. The session dictionary
+  (`CGSessionCopyCurrentDictionary`) gives the state at launch, as alt-tab seeds it, and is
+  read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. Open
+  question: unlocked, the dictionary on this Mac has no `CGSSessionScreenIsLocked` key, and
+  a missing key reads as unlocked, so if the key is missing while locked too, each read
+  undoes the lock within 5 s. Every read logs the dictionary's lock and console keys, and a
+  lock test settles it. loginwindow
+  coming to the front, which AeroSpace and rift also watch, is no lock signal. It also
+  fronts its own dialogs, such as the log out confirmation.
+- While locked, the inventory admits and removes no window and runs no sweep, and Kosmos
+  writes no frames, runs no hides, requests no focus, ignores focus reports and refuses
+  commands. After an unlock, and after a wake while unlocked, the inventory sweeps, and
+  Kosmos reads the main display again, writes every tiled window of the shown workspace to
+  its frame on that area whatever the frame ledger holds, conceals and reveals every window
+  again, requests the focus intent and publishes the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
+  wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. A wake
+  gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
+  locks its screen first.
+- The model can still change while locked, as when a window minimizes or returns, its app
+  hides, or a report held before the lock is decided; the resync carries out those plans.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
-  and passes the popup and dialog checks. Apps whose AX is late get bounded retries.
+  and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
+  apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
+  read has returned is read again when its app's worker reports it created, or reports
+  that the app answers again.
 
 ### 5.2 Geometry
 
@@ -128,8 +157,18 @@ off the main thread).
   position alone. Read the frame back once per batch.
 - A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
   until the target changes.
-- AX calls time out after 1 s, reads after 50 ms. An app that times out is backed off and
-  probed.
+- Every AX call times out after 1 s, set once for the whole process, so elements copied
+  out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
+  on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
+  leave its window unknown.
+- A call that waited out at least half the timeout backs its app off. The worker then makes
+  no call to the app, keeps only the newest frame target of each window, and asks for the
+  app's role with a 50 ms timeout every 0.5 s. When the app answers, the worker tracks the
+  windows created meanwhile and writes the held frames. It stops asking and reports that
+  the app answers only if none of those calls timed out, and the inventory then reads the
+  facts it could not read before. A focus change during the backoff went unread, so while
+  the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
+  left to the launch retries.
 
 ### 5.3 Hiding and recovery
 
@@ -166,8 +205,11 @@ off the main thread).
 
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
-- Every report names the key window. For an app activation, the app's worker reads the
-  app's focused window. Hotkeys, socket commands and reports are stamped on receipt.
+- Every report names the key window, the front app's focused window. For an app
+  activation, the app's worker reads the app's focused window. A focus change reported by
+  an app that is not front, as AXRaise in a background app causes, is no key window report:
+  it consumes an echo it matches, is otherwise ignored, and never counts as the last report
+  (tla/Kosmos.tla, Observe). Hotkeys, socket commands and reports are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
     app alone would take a Command-Tab to another window of that app for an echo.
@@ -202,8 +244,57 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again. After a batch fails,
     recovery shows every workspace's windows until a switch conceals them again. A
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
-- Skip activation when the target is already key. When a newer command for another
-  workspace is already queued, the older one lays out but doesn't focus.
+- Skip activation when the target is already key, checked by the focus queue when the
+  request runs: the target's app is the front process and its focused window, read on the
+  app's worker, is the target. The key window last reported can be older than a request
+  still in flight: after `workspace 2` then `workspace 1` in quick succession, a skip
+  against it dropped the request for w1 before w3's report arrived, and w3's echo then
+  left macOS keying w3 while Kosmos focused w1 (kosmos-hover's TLC counterexample;
+  tla/Kosmos.tla, ExecFocus). The front process lookup takes 1.6 us, and only a request for
+  the front app pays an AX read. A read with no answer stops a request for a window and is
+  logged. The read and the raise go to the same app with the same timeout, so the app is
+  not answering, and a record for a call that changes nothing would swallow a later click
+  on the window: going ahead failed TLC's user configs, whose model assumes reads answer.
+  The empty workspace goes ahead when Finder's read gets no answer within 30 ms: stopping
+  would leave a hidden Finder window key, the 30 ms measures a busy worker rather than an
+  app that does not answer, and a record of no key window that gets no echo is matched
+  only by a later report of no key window, which then also drops any older expectation.
+- A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
+  one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
+  WorkerRaise, FocusDecide). Each side records the echo, through the main queue, right
+  before its own call that changes the key window, and never for the other side's call.
+  The queue checks the generation, reads whether the target's app is front, hands the app's
+  worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
+  - Inside the front app the key record changes nothing and only AXRaise keys a window, so
+    the worker keys it and the queue posts no key record. The worker ends a stale request,
+    and one whose front app already has the target focused; then, under the request's lock
+    just before the raise, it records and marks the request raising while the app is front.
+  - For a background app the worker raises without a record, as the raise changes only the
+    app's own focused window, and the queue keys it. Unless the request went stale, the app
+    came front meanwhile, or the worker is raising it, the queue marks it sent, records, and
+    posts the key record, which activates the app with the named window. A worker that
+    finds it sent raises nothing.
+  - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
+    serves only a call that fails.
+  - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
+    both ways, either app busy with the 30 ms timeout nondeterministic, background apps
+    opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
+    keys the target inside the front app. Where it does not, the model's WorkerKey step has
+    the worker record and post the key record after the raise while the request is still
+    current. `kosmos-probe keying`'s "AXRaise alone" order settles which case holds.
+  - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
+    Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
+    then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
+    stayed on w1.
+  - An expectation whose echo arrived while the session was locked is never consumed, since
+    reports are not classified then, so a resync forgets every pending one.
+- The focus queue never names a concealed window (tla/Kosmos.tla, ExecFocus). A request for
+  a window Hiding held concealed when the request was made still supersedes older requests,
+  and then keys nothing; the switch that reveals the window requests focus once its barrier
+  confirms the reveal. The concealment is the one known on the main actor at the request,
+  since Hiding's ledger lives on the bridge queue.
+- When a newer command for another workspace is already queued, the older one lays out but
+  doesn't focus.
 - Every focus request passes one gate: while macOS shows a native fullscreen window's
   Space, only a command requests focus. The Space counts as shown while its window is
   key, or a panel or dialog of its app that Kosmos does not manage. Parking the fullscreen
@@ -223,8 +314,51 @@ off the main thread).
   macOS nothing to key when it ends (not measured; the departures probe asks). A click
   or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
   its workspace.
-- The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
-  disable it.
+- The private path has a kill switch with two triggers. Once off, it stays off across
+  restarts until `kosmos reload-config`, and the status item names the cause.
+  - A crash guard. A byte in a file mapped shared is set during each private call and
+    cleared after it, and a byte found set at launch turns the path off. The two stores
+    cost about 1.4 ns and make no system call. A kill that lands inside the call turns the
+    path off too.
+  - Wrong windows. Only the private key record counts, which keys a background app's
+    window; inside the front app the raise keys it. A request misses when its app reports
+    another of its windows key, and neither an echo of any request nor a report of the
+    requested window arrives first, before Kosmos's next request. A background report that
+    consumes the echo leaves the count alone. A miss and a retry that misses too count as
+    one miss. Five misses in a row turn the path off. On this Mac AXRaise and then the
+    private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
+    between two windows of the active app, so the miss rate is at most about 5% at 95%
+    confidence, and five misses in a row at 5% come once in about 3 million runs. Those
+    trials posted a down and up record pair, and Kosmos posts the down alone;
+    `kosmos-probe keying` measures Kosmos's own sequence. The public path chose the wrong
+    window in 9 of 9 trials, so a false trip costs more than a few late wrong windows
+    (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
+    A request with no report neither misses nor clears the count, so a record that changes
+    nothing, as the record alone did inside the active app, goes uncounted.
+- AXRaise runs on the app's worker, before the queue's key record for a background app. On
+  macOS 27 the record alone leaves the key window unchanged inside the app that is already
+  frontmost, for stacked and side by side windows alike, while AXRaise and then the record
+  keyed the right window in every case, same app or not (`kosmos-probe raise` on the hover
+  branch). yabai and alt-tab raise after the record, an order no probe has checked on
+  macOS 27. A slow app's raise lands after the key record, and a hung app holds only its
+  own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
+- While the path is off, and for a request whose SkyLight call fails, focus takes the public
+  path on the app's worker: make the window the app's main window, raise it, then activate
+  the app. For an empty workspace it activates Kosmos, which holds no workspace window. No
+  public call fronts Finder with no key window, and activating Finder can key a hidden
+  Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
+  off the empty workspace on every switch. Concealing Finder's windows fully instead would
+  not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
+  Whether macOS 27 lets a background agent activate itself is unmeasured; Kosmos logs a
+  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app
+  picks its key window, so the spec's assumption that the requested window becomes key no
+  longer holds, and a wrong window is adopted like the user's choice. A public request's
+  expectation ends at the first report from its app that is no echo, so a click on the
+  requested window afterwards is the user's. Private requests keep theirs until matched
+  (tla/README.md, change 6). The spec models exact keying only, so its TLC passes do not
+  cover the public path. If the app keys the requested window late, after the user chose
+  another of its windows, that late report reads as the user's and pulls focus back, change
+  6's bounce in the fallback alone.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
@@ -260,7 +394,9 @@ off the main thread).
     as a minimized one does, and returns when the app orders it in again. Kosmos takes a
     window still ordered out a second later for none of the other reasons as one. A
     conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
-    fullscreen transition. A deselected tab is not one: it has left the session.
+    fullscreen transition. A deselected tab is not one: it has left the session. While
+    the session is locked no window counts as one, as none is removed then: whether the
+    lock screen orders windows out is unmeasured.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first
@@ -289,8 +425,9 @@ off the main thread).
     switch in a tight layout does not reflow to learn it again. A fullscreen tab's would
     fill the display, so a fullscreen switch passes none.
   - macOS can report the new tab key before the switch pairs, when the tab has no place.
-    Kosmos decides that report again once the tab takes its place, and follows it to a
-    place on a hidden workspace. The window key before it is the deselected tab, which
+    Kosmos decides that report again once the tab takes its place, as a report of a
+    placed window: the kill switch counts it, and it can answer a public request. It
+    follows the tab to a place on a hidden workspace. The window key before it is the deselected tab, which
     did not depart. A report that comes after the tab took a place on a hidden workspace,
     before its conceal completed, is followed at once the same way. That lasts only until
     the conceal completes, the workspace is shown, or another tab replaces it, so a later

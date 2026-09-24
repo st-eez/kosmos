@@ -37,6 +37,10 @@ final class Inventory {
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
+    /// While the session is locked or switched out, no window is admitted or removed and no
+    /// sweep runs; the sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to
+    /// known windows still apply. The Controller reads it too.
+    var sessionLocked = false
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
@@ -90,10 +94,10 @@ final class Inventory {
         sweep()
     }
 
-    /// Starts the per-app Accessibility workers. Needs the Accessibility grant.
+    /// Starts the per-app Accessibility workers. Needs the Accessibility grant. Each worker
+    /// reports `answering` once it starts, and its app's windows are read then.
     func startAccessibility() {
         apps.start()
-        for (id, row) in windows where isCandidate(row) { readAX(id, pid: row.pid) }
     }
 
     /// A window is managed when it is a candidate and Accessibility calls it a standard
@@ -111,6 +115,10 @@ final class Inventory {
         switch report.kind {
         case .windowCreated(let id):
             refresh(id)
+            // WindowServer can report the window before its app's worker knows it.
+            readIfUnknown(id)
+        case .answering:
+            for (id, row) in windows where row.pid == report.pid { readIfUnknown(id) }
         case .windowDestroyed(let id):
             // AX alone never removes a window; WindowServer decides.
             refresh(id)
@@ -132,7 +140,7 @@ final class Inventory {
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
-        case .titleChanged, .framesApplied:
+        case .framesApplied, .backgroundFocus:
             break
         }
         onReport?(report)
@@ -147,6 +155,12 @@ final class Inventory {
             setFullscreen(id, await fullscreenState(id))
             setAX(id, info)
         }
+    }
+
+    /// A candidate whose facts no read has returned yet.
+    private func readIfUnknown(_ id: UInt32) {
+        guard ax[id] == nil, let row = windows[id], isCandidate(row) else { return }
+        readAX(id, pid: row.pid)
     }
 
     /// A native fullscreen window moves to a Space of its own, which SkyLight reports as a
@@ -180,11 +194,12 @@ final class Inventory {
     /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
     /// probe), and a minimize, a hide and native fullscreen have their own reports. The
     /// second outlasts a fullscreen transition, which takes a window off its Space for about
-    /// 0.5 s.
+    /// 0.5 s. While the session is locked no window counts as closed, as none is removed:
+    /// whether the lock screen orders windows out is unmeasured.
     private func checkOrderedOut(_ id: UInt32) {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
-            guard let self, let row = self.windows[id], !row.orderedIn, self.isManaged(id), !self.isMinimized(id),
+            guard let self, !self.sessionLocked, let row = self.windows[id], !row.orderedIn, self.isManaged(id), !self.isMinimized(id),
                   NSRunningApplication(processIdentifier: row.pid)?.isHidden != true,
                   !self.fullscreen.contains(id) else { return }
             self.onKeptOrderedOut?(id)
@@ -207,8 +222,9 @@ final class Inventory {
         onAppHidden?(pid, hidden, received)
     }
 
+    /// Nil info means the app did not answer; what was known stays (DESIGN.md, section 5.1).
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
-        guard let pid = windows[id]?.pid else { return }
+        guard let info, let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)
         ax[id] = info
         if isManaged(id) != wasManaged {
@@ -216,7 +232,7 @@ final class Inventory {
             inventoryLog.info("""
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
-                role \(info?.role ?? "-", privacy: .public) subrole \(info?.subrole ?? "-", privacy: .public)
+                role \(info.role ?? "-", privacy: .public) subrole \(info.subrole ?? "-", privacy: .public)
                 """)
         }
     }
@@ -252,7 +268,7 @@ final class Inventory {
 
     private func apply(_ row: WindowRow) {
         touchedDuringSweep?.insert(row.id)
-        guard ownedByRegularApp(row) else { return }
+        guard ownedByRegularApp(row), !sessionLocked || windows[row.id] != nil else { return }
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
         departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
@@ -273,6 +289,7 @@ final class Inventory {
     }
 
     private func remove(_ id: UInt32, reason: StaticString) {
+        guard !sessionLocked else { return }
         touchedDuringSweep?.insert(id)
         let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
@@ -322,8 +339,8 @@ final class Inventory {
     /// windows that are on no Space, such as one created but not yet shown, so tracked
     /// windows missing from it are queried directly before they count as gone. The queries
     /// can block during a Space transition, so they run off the main thread.
-    private func sweep() {
-        guard touchedDuringSweep == nil else { return }
+    func sweep() {
+        guard !sessionLocked, touchedDuringSweep == nil else { return }
         touchedDuringSweep = []
         let tracked = Array(windows.keys)
         DispatchQueue.global(qos: .utility).async {
@@ -339,6 +356,7 @@ final class Inventory {
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
+        guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
         for row in rows where ownedByRegularApp(row) && windows[row.id] == nil {

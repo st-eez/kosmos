@@ -60,7 +60,8 @@ public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int3
 /// Classifies key window reports against the focus requests Kosmos made. Hotkeys, requests
 /// and reports carry receipt stamps (`Stamp`) so "happened before" can be decided.
 public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
-    private var expected: [(key: KeyWindow, app: Int32?, requested: Stamp)] = []
+    /// `publicly`: the public path made the request.
+    private var expected: [(key: KeyWindow, app: Int32?, requested: Stamp, publicly: Bool)] = []
     private var lastCommand: Stamp?
     /// The window whose missed request Kosmos requested again.
     private var retried: KeyWindow?
@@ -71,11 +72,21 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         lastCommand = stamp
     }
 
-    /// Records a request when it is queued, before it can come back. `app` owns the window,
-    /// or is Finder for no window.
-    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: Stamp) {
+    /// Records a request just before the focus queue makes its calls, before it can come back.
+    /// `app` owns the window, or is Finder for no window. `publicly` says the public path
+    /// makes the request, which lets the app key a window of its own choosing.
+    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: Stamp, publicly: Bool = false) {
         if key != retried { retried = nil }
-        expected.append((key, app, stamp))
+        expected.append((key, app, stamp, publicly))
+    }
+
+    /// A report that is no echo, from an app a public request named and received after it,
+    /// is that request's result: the app keyed another window of its choosing, and a later
+    /// report of the requested window is the user's. Private requests keep their
+    /// expectations until matched, or their late echo would pull focus back from the user's
+    /// choice (tla/README.md, change 6); the spec does not model the public path.
+    public mutating func publicRequestsAnswered(by app: Int32, receivedAt stamp: Stamp) {
+        expected.removeAll { $0.publicly && $0.app == app && $0.requested <= stamp }
     }
 
     /// A user action received before the latest command is stale: the command wins
@@ -92,6 +103,24 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// The expectation a report echoes: the requested window, reported after the request.
     private func echo(of key: KeyWindow, receivedAt stamp: Stamp) -> Int? {
         expected.firstIndex { $0.key == key && $0.requested <= stamp }
+    }
+
+    /// Consumes the expectation `key` answers, if any. An echo names the requested window and
+    /// arrives after the request. Earlier expectations are dropped with it; a report that
+    /// matches none leaves them all. A report from an app that is not front calls this alone:
+    /// it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
+    /// Observe).
+    public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
+        guard let index = echo(of: key, receivedAt: stamp) else { return false }
+        expected.removeFirst(index + 1)
+        if key == retried { retried = nil }
+        return true
+    }
+
+    /// Forgets every request, as when their echoes may have come and gone unclassified.
+    public mutating func forgetRequests() {
+        expected.removeAll()
+        retried = nil
     }
 
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
@@ -135,13 +164,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp, onCurrentWorkspace: Bool,
                                   concealed: Bool, recovered: Bool = false, miss: Miss = .none,
                                   keyLeft: Departure) -> ReportVerdict {
-        // An echo names the requested window and arrives after the request. Earlier
-        // expectations are dropped with it; a report that matches none leaves them all.
-        if let index = echo(of: key, receivedAt: stamp) {
-            expected.removeFirst(index + 1)
-            if key == retried { retried = nil }
-            return .echo
-        }
+        if consumeEcho(key, receivedAt: stamp) { return .echo }
         if isStale(stamp) { return .reassert }
         // No key window: if the key window left, its departure focuses when this came
         // first.
