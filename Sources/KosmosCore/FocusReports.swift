@@ -13,12 +13,9 @@ public enum ReportVerdict: Equatable, Sendable {
     case reassert
     /// A window on the current workspace becomes the focus intent.
     case adopt(UInt32)
-    /// The user reached a hidden window with Command-Tab: switch to its workspace.
+    /// The user reached a hidden window, with Command-Tab or by opening it: switch to its
+    /// workspace.
     case follow(UInt32)
-    /// A hidden window whose app has this window on the shown workspace. Command-Tab to that
-    /// app lands on this one (DESIGN.md, section 5.3), so macOS keyed the hidden one itself:
-    /// this window becomes the focus intent and is requested.
-    case redirect(UInt32)
     /// No key window and nothing to do.
     case ignore
     /// The verdict depends on whether the window key before the report left the screen,
@@ -34,6 +31,17 @@ public enum Departure: Sendable {
     case left
     case stayed
     case unknown
+}
+
+/// A report that repeats the key window while Kosmos awaits the echo of its request for
+/// another window of the same app: the app kept its key window, and the request missed
+/// (tla/Kosmos.tla, Missed).
+public enum Miss: Equatable, Sendable {
+    case none
+    /// Request the focus again, once for each requested window.
+    case retry
+    /// The retry missed too: stop asking, and leave the key window where macOS put it.
+    case accept
 }
 
 /// Whether macOS shows a native fullscreen window's Space: that window is key, or a window
@@ -52,8 +60,10 @@ public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int3
 /// Classifies key window reports against the focus requests Kosmos made. Hotkeys, requests
 /// and reports carry receipt stamps (`Stamp`) so "happened before" can be decided.
 public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
-    private var expected: [(key: KeyWindow, requested: Stamp)] = []
+    private var expected: [(key: KeyWindow, app: Int32?, requested: Stamp)] = []
     private var lastCommand: Stamp?
+    /// The window whose missed request Kosmos requested again.
+    private var retried: KeyWindow?
 
     public init() {}
 
@@ -61,9 +71,11 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         lastCommand = stamp
     }
 
-    /// Records a request when it is queued, before it can come back.
-    public mutating func focusRequested(_ key: KeyWindow, at stamp: Stamp) {
-        expected.append((key, stamp))
+    /// Records a request when it is queued, before it can come back. `app` owns the window,
+    /// or is Finder for no window.
+    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: Stamp) {
+        if key != retried { retried = nil }
+        expected.append((key, app, stamp))
     }
 
     /// A user action received before the latest command is stale: the command wins
@@ -79,33 +91,60 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         }
     }
 
+    /// Whether a report is a miss of Kosmos's own request (`Miss`). The missed request, the
+    /// oldest to that app since the focus queue runs requests in order, never comes back:
+    /// it leaves the expectations, so it cannot take a later report of its window for its
+    /// echo. Call it for every report, before `classify`.
+    /// - Parameters:
+    ///   - app: the app that owns the reported window.
+    ///   - repeated: the report names the key window Kosmos last heard of.
+    public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: Stamp) -> Miss {
+        guard repeated, let app,
+              let index = expected.firstIndex(where: { $0.app == app && $0.key != key && $0.requested <= stamp })
+        else { return .none }
+        let missed = expected.remove(at: index).key
+        if retried == missed {
+            retried = nil
+            return .accept
+        }
+        retried = missed
+        return .retry
+    }
+
     /// - Parameters:
     ///   - onCurrentWorkspace: the window belongs to the workspace Kosmos shows.
-    ///   - reachable: the window of another workspace became key by the user's choice. It
-    ///     was concealed, so only Command-Tab could have reached it, or recovery had shown
-    ///     it, so a click could. Otherwise it is key only during a switch.
-    ///   - repeated: the report names the key window Kosmos last heard of, so no key change
-    ///     and no Command-Tab made it: a focus request of Kosmos's missed.
-    ///   - shownSibling: a concealed window's app has this window on the shown workspace.
+    ///   - concealed: the window was concealed when it became key, so only the user could
+    ///     have reached it, with Command-Tab or by opening it.
+    ///   - recovered: a batch failed, and recovery showed the windows of hidden workspaces,
+    ///     so a click reaches them too. Otherwise a visible window of another workspace is
+    ///     key only during a switch.
+    ///   - miss: what `miss` said of the report.
     ///   - keyLeft: whether the window key before this report has just left the screen. If
     ///     it has, macOS keyed this window itself, so it is not a Command-Tab to follow;
     ///     Kosmos keeps its workspace and focuses it again (tla/Kosmos.tla, KeyLeft).
-    public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp,
-                                  onCurrentWorkspace: Bool, reachable: Bool, repeated: Bool = false,
-                                  shownSibling: UInt32? = nil, keyLeft: Departure) -> ReportVerdict {
+    public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp, onCurrentWorkspace: Bool,
+                                  concealed: Bool, recovered: Bool = false, miss: Miss = .none,
+                                  keyLeft: Departure) -> ReportVerdict {
         // An echo names the requested window and arrives after the request. Earlier
         // expectations are dropped with it; a report that matches none leaves them all.
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) {
             expected.removeFirst(index + 1)
+            if key == retried { retried = nil }
             return .echo
         }
         if isStale(stamp) { return .reassert }
         // No key window: if the key window left, its departure focuses when this came
         // first.
         guard case .window(let id) = key else { return keyLeft == .left ? .reassert : .ignore }
+        // A miss is no one's choice: request the focus again, and after one retry accept the
+        // key window, which Kosmos can adopt only on the shown workspace.
+        switch miss {
+        case .retry: return .reassert
+        case .accept: return onCurrentWorkspace ? .adopt(id) : .ignore
+        case .none: break
+        }
         if onCurrentWorkspace { return .adopt(id) }
-        guard reachable, !repeated else { return .reassert }
-        if let shownSibling { return .redirect(shownSibling) }
+        guard concealed || recovered else { return .reassert }
         switch keyLeft {
         case .left: return .reassert
         case .stayed: return .follow(id)

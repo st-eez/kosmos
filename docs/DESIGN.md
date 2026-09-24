@@ -112,7 +112,9 @@ off the main thread).
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole.
   - One AX observer per app: creation, focus, main window, title, destroy and minimize.
-  - NSWorkspace app lifecycle events, plus a process exit source for each app.
+  - NSWorkspace app lifecycle events, plus a process exit source for each app. The
+    inventory alone observes an app's hide and unhide: it records the departure or return
+    of the app's windows, then passes the event to the controller.
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
@@ -173,29 +175,28 @@ off the main thread).
     and its focus is requested again.
   - A window on Kosmos's current workspace becomes the focus intent and is requested
     again, in case an older request of Kosmos's landed after the user's change.
-  - A window that was hidden when it became key was reached with Command-Tab, and Kosmos
-    follows it to its workspace. That excludes the report right after the key window
-    left, when it closed or minimized or its app hid. macOS then keys another window
+  - Only the user reaches a window that was hidden when it became key: with Command-Tab,
+    or by opening that window, as `open` on a document, an app's Window menu or the
+    Dock's window list do. Kosmos follows it to its workspace. That excludes the report
+    right after the key window left, when it closed or minimized or its app hid. macOS then keys another window
     itself, sometimes a concealed one, and Kosmos keeps its workspace and focuses it
     again. The window key before the report left the screen within the last second if
     WindowServer ordered it out or destroyed it, Accessibility reported it minimized, or
     NSWorkspace reported its app hidden.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
-    a report that would follow waits up to 100 ms for that evidence. The departure of the
-    window key before it ends the wait at once, and a report of another window replaces
-    it. A Command-Tab after that report follows as usual, 100 ms late. This happened
-    live: Command-H on the only window of workspace 2 took Kosmos to workspace 1, where
-    macOS keyed Ghostty.
-  - Command-Tab to an app with a window on the shown workspace lands on that window,
-    because the app's concealed windows lose their Space (5.3). A report of a concealed
-    window whose app has a window on the shown workspace is therefore macOS's own
-    choice, and Kosmos focuses the app's shown window instead.
-  - A report that repeats the key window Kosmos last heard of is no key change, so no
-    Command-Tab made it. Fronting another window of the app that is already key can
-    leave that app's key window in place, and the app reports it again. Kosmos requests
-    its focus again. This happened live: Kosmos fronted Ghostty for a window of
-    workspace 1, Ghostty reported the window a switch had just concealed on workspace
-    3, and Kosmos followed it there.
+    a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
+    window key before it. A report of another window replaces it. Every held report logs
+    its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
+    happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
+    1, where macOS keyed Ghostty.
+  - Fronting another window of the app that is already key can leave that app's key
+    window in place, and the app reports it again. A report that repeats the key window
+    while Kosmos awaits the echo of its request to that app is such a miss, not the
+    user's choice. The missed request never comes back, so it leaves the expected
+    echoes. Kosmos requests the focus again, once for each requested window; if that
+    misses too, it leaves the key window where macOS put it. This happened live: Kosmos
+    fronted Ghostty for a window of workspace 1, Ghostty reported the window a switch
+    had just concealed on workspace 3, and Kosmos followed it there.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,

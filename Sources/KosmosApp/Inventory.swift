@@ -20,8 +20,12 @@ final class Inventory {
     private(set) var focused: UInt32?
     /// Windows in a native fullscreen Space.
     private(set) var fullscreen: Set<UInt32> = []
+    /// How long a departure counts as just now, for the report of the next key window and
+    /// for focus requests. After a minimize, the next key window was reported 0.73 s after
+    /// Accessibility reported the minimize (the live log with the departures probe).
+    static let departureBound: Duration = .seconds(1)
     /// When windows left the screen: closed, minimized, or hidden with their app.
-    private var departures = DepartureLog()
+    private var departures = DepartureLog(bound: departureBound)
     /// When each window's Space membership first changed since its fullscreen state was last
     /// read. A window leaving fullscreen leaves its Space before it joins the desktop's, and
     /// its return dates from the first of those events.
@@ -33,6 +37,9 @@ final class Inventory {
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
+    /// An app hid (true) or came back (false), after the inventory recorded it, and when
+    /// NSWorkspace said so.
+    var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
     /// A managed window that its app ordered out and kept (true), as a closed window of an
     /// NSWindowController is, or that its app ordered in again (false), and when.
     var onOrderedOut: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
@@ -71,7 +78,8 @@ final class Inventory {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
                 let pid = app.processIdentifier
-                MainActor.assumeIsolated { self?.appHidden(pid, hidden) }
+                let received = ContinuousClock.now
+                MainActor.assumeIsolated { self?.appHidden(pid, hidden, at: received) }
             }
         }
         sweepTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -157,11 +165,11 @@ final class Inventory {
         onFullscreenChange?(id, state, since)
     }
 
-    /// Whether the window left the screen within `limit`: it closed, minimized, or hid with
-    /// its app. WindowServer may have ordered it out in an event not handled yet, which
-    /// counts as now.
-    func leftScreen(_ id: UInt32, within limit: Duration) -> Bool {
-        if let left = departures.left(id, within: limit, at: .now) { return left }
+    /// Whether the window left the screen within the departure bound: it closed, minimized,
+    /// or hid with its app. WindowServer may have ordered it out in an event not handled
+    /// yet, which counts as now.
+    func leftScreen(_ id: UInt32) -> Bool {
+        if let left = departures.justLeft(id, at: .now) { return left }
         guard windows[id]?.orderedIn == true else { return false }
         guard let row = SkyLight.rows([id]).first else { return true }
         return !row.orderedIn
@@ -183,12 +191,14 @@ final class Inventory {
         }
     }
 
-    /// An app hid or came back. Its windows leave or return with it.
-    private func appHidden(_ pid: pid_t, _ hidden: Bool) {
+    /// An app hid or came back. Its windows leave or return with it, and the controller hears
+    /// of it after the record changed.
+    private func appHidden(_ pid: pid_t, _ hidden: Bool, at received: ContinuousClock.Instant) {
         inventoryLog.info("\(self.appName(pid), privacy: .public) \(hidden ? "hid" : "unhid", privacy: .public)")
         for (id, row) in windows where row.pid == pid {
             if !hidden { departures.returned(id) } else if row.orderedIn { departures.left(id, at: .now) }
         }
+        onAppHidden?(pid, hidden, received)
     }
 
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
