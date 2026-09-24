@@ -1,0 +1,239 @@
+# Kosmos design
+
+Draft, September 23, 2026.
+
+This design comes out of a month of optimizing a personal AeroSpace fork: native window
+hiding, preloaded workspaces, a TLA+ model of workspace switching, and trace-based timing
+of every phase of a switch. Ten research notes then compared how AeroSpace, yabai,
+Amethyst, rift, paneru, FlashSpace, AltTab, Loop, Hammerspoon, SketchyBar, skhd and i3
+solve each part. They will be published under `docs/research/`.
+
+## 1. Goal and constraints
+
+Switch workspaces in a few milliseconds of Kosmos's own work. Keep process launches,
+file writes and menu bar redraws off the switch path, and never lose a hidden window.
+
+- SIP stays enabled. Private SkyLight calls are used only where they work from an ordinary
+  process with Accessibility permission.
+- Tree tiling only, with i3-style containers.
+- macOS 27 only, Apple Silicon. Swift 6.4 with a small C shim for private calls.
+- No external runtime dependencies.
+- Logical workspaces, not one macOS Space per workspace.
+
+## 2. What the fork measured
+
+| Finding | Consequence |
+| --- | --- |
+| An optimized fork switch costs 35 ms of server time. About 21 ms is its hiding protocol (a Space created per switch, confirmation polling), 6 to 7 ms is journal writes with fsync, and 2 ms is window identity checks | Create Spaces once per session, confirm with one read, keep recovery state in memory-mapped memory |
+| The bridged SkyLight operations are the only SIP-on way to move another app's windows between Spaces. Submitting one takes 0.03 to 0.10 ms | The cost is in confirmation, not the call |
+| Only Accessibility can set another app's window frame. One set takes under 1 ms at the median and a full frame 2 ms (p99 39 ms). The first AX call to an app costs 11 to 35 ms | Write only changed frames, cache AX elements, isolate slow apps |
+| A full window discovery after every command costs 20 to 28 ms of main-thread time, about 40% of the manager's CPU per switch | Track windows through WindowServer notifications instead |
+| Every focus change makes an app frontmost, which costs macOS's app-usage daemons about 80% of one core at four switches per second | Skip activations that change nothing and coalesce bursts |
+| A SwiftUI menu bar label cost 6 to 10 ms of main-thread time per switch. A label that changes width makes macOS 27's MenuBarAgent lay out the whole menu bar, about 60 ms of CPU per switch | A static status item that is never written during a switch |
+| A shell hook that notifies a status bar launches 3 to 8 processes per switch; a direct Mach message costs 1 to 4 µs | Push state to the bar from inside the manager |
+| Option-only Carbon hotkeys stop while another app holds Secure Input, for example a password prompt | Surface Secure Input, and test which modifiers survive it |
+| Pixel-based container weights produce wrong and negative sizes | Store fractions |
+
+## 3. Primitive decisions
+
+| Area | Decision | Rejected alternative |
+| --- | --- | --- |
+| Window geometry | Accessibility on one worker thread per app; batched, deduplicated writes with generation ids; one read-back per batch | A shared thread pool, where one hung app stalls every relayout |
+| Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep every 2 to 5 s as a backstop | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
+| Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
+| Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
+| Focus | Private window-targeted focus in every case: front the process, then post one mouse-down key record far off the window. AXRaise only for windows that can overlap. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
+| Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
+| Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
+| Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
+| IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, a CLI that avoids AppKit (1.4 ms launch), and `subscribe` streams of full snapshots | A CLI that links AppKit (about 15 ms launch) |
+| Bar | Each state snapshot goes to SketchyBar's Mach port as one event, and the bar never queries | Shell hooks on every switch |
+| Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
+| Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
+
+## 4. Architecture
+
+### 4.1 Processes
+
+- **Kosmos.app**, an agent app (LSUIElement) launched at login by a LaunchAgent with
+  `KeepAlive`, so a crash restarts it.
+- **kosmos-guardian**, a separate executable in the bundle, spawned in its own process group.
+  It watches Kosmos with `NOTE_EXIT` and restores hidden windows when Kosmos dies. Kosmos
+  watches the guardian and respawns it, and hides windows only while it is alive.
+- **kosmos**, the CLI, a client without AppKit for scripts and status bar clicks.
+
+### 4.2 Threads and queues
+
+| Context | Owns | Never does |
+| --- | --- | --- |
+| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
+| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads | Touch the model directly |
+| Focus queue, serial | Front-process calls and key records, generation checks | Wait on AX |
+| Bridge queue, serial | Bridged Space operations and the barrier read | Run past its time budget |
+| IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
+| SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
+
+The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
+on its own and never delays another app.
+
+### 4.3 A workspace switch
+
+1. A hotkey or socket command arrives. The main actor updates the model: the new visible
+   workspace, and a focus intent with a new generation.
+2. The incoming workspace was laid out while hidden, so its frames are usually current.
+   One batched SkyLight query validates its windows; layout runs only if something changed,
+   and changed frames go to their apps' workers.
+3. The bridge queue sends the reveal of the incoming windows and the conceal of the
+   outgoing windows back to back, then the barrier read.
+4. Once the barrier confirms the target window is revealed, the focus queue fronts it, or
+   Finder with no window for an empty workspace, and reads back the key window.
+5. The main actor publishes one bar snapshot and one `subscribe` frame.
+
+A switch launches no process, writes no file and leaves the status item alone. Everything
+Kosmos causes (a hide, a reveal, a frame write, a focus request) is recorded as an
+expected echo and consumed before any notification is treated as the user's.
+
+Target, to be confirmed by the probes in section 6: a few milliseconds of Kosmos's own
+work, plus WindowServer's time for two bridged operations and one activation (about 7 ms,
+off the main thread).
+
+## 5. Components
+
+### 5.1 Inventory and events
+
+- Windows are keyed by WindowServer id, and apps by pid plus process start time.
+- Events come from three sources:
+  - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
+    in and out, moved, resized, Space and session changes. The watch list is always sent
+    whole.
+  - One AX observer per app: creation, focus, main window, title, destroy and minimize.
+  - NSWorkspace app lifecycle events, plus a process exit source for each app.
+- Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
+  lock screen never do, and while the session is locked, creation and destruction wait.
+- A new window becomes managed when it is ordered in, has no parent window, sits at level 0
+  and passes the popup and dialog checks. Apps whose AX is late get bounded retries.
+
+### 5.2 Geometry
+
+- Layout compares each target with the last confirmed frame and the pending target.
+  Unchanged windows get no write, and each window keeps only its newest target.
+- When the size changes, write size, then position, then size again; otherwise write the
+  position alone. Read the frame back once per batch.
+- A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
+  until the target changes.
+- AX calls time out after 1 s, reads after 50 ms. An app that times out is backed off and
+  probed.
+
+### 5.3 Hiding and recovery
+
+- Create the holding Space once per session, and record its id in the durable record
+  before the first window enters it.
+- Hidden windows keep their ordinary Space membership and gain holding membership, so
+  Command-Tab still selects the right window. Only an app's other concealed windows lose
+  ordinary membership.
+- There is no fallback to corner parking. At the first unconfirmed bridged operation:
+  restore every hidden window, stop hiding, report the cause, and retry at the next switch.
+- Recovery empties each recorded Space, sends stranded windows to their display's current
+  Space, destroys the Spaces and clears the record. Every step can safely run twice.
+
+### 5.4 Focus
+
+- There is one current focus intent, identified by a generation.
+  - A report naming the intended window confirms it.
+  - A report for the intended app naming another window, within 1 s, gets one
+    re-assertion.
+  - A report for any other app is the user's (a click, Command-Tab) and is adopted,
+    including a window on a hidden workspace.
+- Skip activation when the target is already key. When a newer workspace command is
+  already queued, the older one lays out but doesn't focus.
+- The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
+  disable it.
+
+### 5.5 Tree
+
+- Invariants, checked by `validate()` after every mutation in debug builds and tests:
+  - no container except a root is empty or has exactly one child;
+  - no `tiles` container nests a `tiles` child with the same orientation (it is spliced
+    into the parent at unchanged on-screen sizes);
+  - weights are positive fractions;
+  - each window has exactly one place.
+- First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
+  balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
+- Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
+  workspace at their saved position.
+  - If the user restored one from the Dock, Kosmos follows it to that workspace, as it
+    does for Command-Tab.
+  - A `summon` command brings a window to the current workspace on purpose.
+
+### 5.6 Hotkeys and Secure Input
+
+- Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
+  at 8 µs per call.
+- Secure Input (a password field in any app) blocks Option-only hotkeys. Kosmos shows when
+  Secure Input is active and which app holds it. A probe will show whether bindings that
+  include Control or Command still work.
+
+### 5.7 IPC and bar
+
+- The socket lives in a 0700 directory under Application Support. Peers are checked with
+  `getpeereid`, and all I/O runs off the main actor.
+- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
+  SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar applies
+  snapshots by sequence number and never queries Kosmos.
+- Hooks that launch programs exist only for rare events such as reload and profile change.
+
+### 5.8 Config
+
+- A reload parses and validates the whole file, then applies it in one step. Any error
+  keeps the running config, and a bad file at login falls back to the last good config.
+- Display profiles are built in and matched by monitor name or serial. Runtime toggles are
+  commands and never rewrite the file.
+- Window rules are declarative, and the first match wins. Kosmos warns when an earlier
+  rule shadows a later one.
+
+### 5.9 Status item and onboarding
+
+- The status item is a static template icon at square length. Its image changes only for
+  three states: paused, Accessibility missing, and config error.
+  - A test asserts that switches write nothing to it.
+  - Kosmos keeps running when the user removes the item.
+- Onboarding is an Accessibility window. Launch at login uses `SMAppService` with a
+  `KeepAlive` agent, and config errors appear in one AppKit panel.
+
+## 6. Verification
+
+- **TLA+ first.** Before the scheduler exists, specify it:
+  - one main actor, per-app worker queues, and the focus and bridge queues;
+  - echo accounting and the switch protocol in 4.3.
+
+  Check that the screen and key window converge with Kosmos's model and that the last
+  command wins. Also check that windows of two workspaces are never visible together,
+  that every disturbance settles, and that no hidden window lacks a recovery path.
+- **Unit tests** drive the model, tree, layout, command parser, echo classifier and config
+  loader without AX.
+- **Probes in a macOS virtual machine** cover everything that changes window state:
+  - hiding: barrier ordering, reusable Spaces, Dock restart;
+  - focus: the key record in Chromium and Electron apps, same-app key changes;
+  - discovery notifications, minimum sizes, and Secure Input.
+- **Hardware trials** cover timing, CPU and multi-monitor, because a virtual machine's
+  graphics timing is not representative.
+
+## 7. Milestones
+
+1. **Probes and skeleton.** VM, probes, C shim, app lifecycle, onboarding, socket and CLI.
+2. **Observer mode.** Inventory and events running next to an existing window manager,
+   managing nothing, to prove discovery against a live desktop and measure its CPU.
+3. **Tiling.** Tree, layout and geometry on one monitor.
+4. **Hiding and recovery.** Holding Space, guardian, durable record, switch protocol.
+5. **Focus.** Private focus path, echo classifier, empty workspaces.
+6. **Hotkeys, config and bar.** Carbon hotkeys, TOML, profiles, SketchyBar push.
+7. **Daily driver.** Multi-monitor, floating windows, rules, fullscreen, mouse follows
+   focus. Timing compared against the AeroSpace fork.
+8. **Later.** A native bar as a separate process, borders from Kosmos's own model,
+   persistence across restarts.
+
+## 8. Left out of the first version
+
+Scrolling and BSP layouts, tabbed and stacked title bars, mouse drag and resize, an
+embedded scripting language, window title matchers, marks, persistence across restarts,
+and one macOS Space per workspace.
