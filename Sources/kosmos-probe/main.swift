@@ -27,6 +27,8 @@
 //                                   framebuffer and the EDID fields it publishes, with or
 //                                   without a display:
 //                                   ioreg -rtc IOMobileFramebufferShim -d1 -w0 | grep -E '\+-o disp|ProductAttributes'
+//   kosmos-probe secure-input       Which Carbon hotkeys fire while Secure Input is on, from
+//                                   real key presses its window asks for (SecureInput.swift).
 import AppKit
 import CKosmos
 import KosmosCore
@@ -47,8 +49,9 @@ case "gone-space-recovery": goneSpaceRecovery()
 case "hidden-window": showHiddenWindow()
 case "reveal": reveal()
 case "displays": displays()
+case "secure-input": secureInput()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | reveal | displays")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | reveal | displays | secure-input")
     exit(2)
 }
 

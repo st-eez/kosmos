@@ -68,7 +68,10 @@ final class ClientConnection {
                 offset += written
             } else if errno == EAGAIN {
                 try wait(for: Int16(POLLOUT), deadline: deadline)
-            } else if errno == EPIPE {
+            } else if errno == EPIPE || errno == ENOTCONN {
+                // The server closed the connection. ENOTCONN comes when the close lands before
+                // the write: 14 of 3000 rejected clients in a loop got it, the rest EPIPE or a
+                // closed read.
                 throw IPCError.closed
             } else if errno != EINTR {
                 throw IPCError.system("write", errno)
