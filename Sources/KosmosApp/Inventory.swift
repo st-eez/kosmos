@@ -54,6 +54,9 @@ final class Inventory {
     /// Windows first seen while locked, and their apps. The unlock sweep admits them; until
     /// then they are watched, so their order changes are held as they happen.
     private var arrivedWhileLocked: [UInt32: pid_t] = [:]
+    /// Known windows destroyed while locked, or whose app exited then. The unlock sweep
+    /// removes them, and no event was missed.
+    private var removedWhileLocked: Set<UInt32> = []
     /// From the unlock until the sweep after it, which admits and removes the windows the
     /// lock held back.
     private var awaitingUnlockSweep = false
@@ -343,6 +346,7 @@ final class Inventory {
     private func remove(_ id: UInt32, reason: StaticString) {
         guard !sessionLocked else {
             // The unlock sweep removes it. Its order change is held now, with its time.
+            if windows[id] != nil { removedWhileLocked.insert(id) }
             if let row = windows[id], isCandidate(row) {
                 _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, at: .now, locked: true)
             } else if let pid = arrivedWhileLocked.removeValue(forKey: id) {
@@ -425,13 +429,19 @@ final class Inventory {
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
+        // Windows the lock held back were reported, so the unlock sweep does not count them.
         for row in rows where ownedByRegularApp(row) && windows[row.id] == nil {
-            if swept { missedByEvents += 1; inventoryLog.notice("sweep found \(row.id), missed by events") }
+            if swept, arrivedWhileLocked[row.id] == nil {
+                missedByEvents += 1
+                inventoryLog.notice("sweep found \(row.id), missed by events")
+            }
             apply(row)
         }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
-            missedByEvents += 1
-            inventoryLog.notice("sweep lost \(id), missed by events")
+            if !removedWhileLocked.contains(id) {
+                missedByEvents += 1
+                inventoryLog.notice("sweep lost \(id), missed by events")
+            }
             remove(id, reason: "absent from sweep")
         }
         // A known window whose order or candidate status the sweep corrects is one an event
@@ -459,6 +469,7 @@ final class Inventory {
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false
             arrivedWhileLocked = [:]
+            removedWhileLocked = []
             heldOrder.swept()
             // No window counted as closed and kept since the lock: check each one still out,
             // now that the switches the lock held have paired.
