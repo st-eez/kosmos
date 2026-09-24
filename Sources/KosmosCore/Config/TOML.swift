@@ -374,7 +374,10 @@ private struct TOMLParser {
         if digits.hasPrefix("0x") || digits.hasPrefix("0o") || digits.hasPrefix("0b") {
             throw error("hexadecimal, octal and binary integers are not supported", at: start)
         }
-        if digits.contains(":") || digits.contains("-") {
+        // A date starts with a four digit year and a dash, and a time has colons. A dash
+        // anywhere else belongs to a float's exponent, as in 1e-3.
+        let year = digits.prefix(5).unicodeScalars
+        if digits.contains(":") || (year.count == 5 && year.dropLast().allSatisfy(isDigit) && year.last == "-") {
             throw error("dates and times are not supported", at: start)
         }
         if digits.contains(".") || digits.contains("e") || digits.contains("E") {

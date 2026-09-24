@@ -78,12 +78,15 @@ private func failure(_ text: String) -> String? {
         #expect(try parsed("a = 1_000\nb = +5\nc = -5\nd = 0") == "{a=1000,b=5,c=-5,d=0}")
         #expect(failure("a = 01") == "1:5: a: '01' is not a valid integer")
         #expect(failure("a = 1__0") == "1:5: a: '1__0' is not a valid integer")
+        #expect(failure("a = 1-2") == "1:5: a: '1-2' is not a valid integer")
         #expect(failure("a = 99999999999999999999") == "1:5: a: 99999999999999999999 is out of range for a 64-bit integer")
     }
 
     @Test func unsupportedValuesAreRejected() {
         #expect(failure("a = 1.5") == "1:5: a: floats are not supported")
         #expect(failure("a = 1e3") == "1:5: a: floats are not supported")
+        #expect(failure("a = 1e-3") == "1:5: a: floats are not supported")
+        #expect(failure("a = -2.5E-10") == "1:5: a: floats are not supported")
         #expect(failure("a = -inf") == "1:5: a: floats are not supported")
         #expect(failure("a = 1979-05-27") == "1:5: a: dates and times are not supported")
         #expect(failure("a = 07:32:00") == "1:5: a: dates and times are not supported")
