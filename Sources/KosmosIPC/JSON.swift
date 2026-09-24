@@ -1,4 +1,4 @@
-// A small JSON codec. Linking Foundation for its codec would add about 1.9 ms to every CLI
+// A small JSON codec. Linking Foundation for its codec would add about 1.8 ms to every CLI
 // launch, measured as 1.4 ms for a Swift binary that links only Darwin and 3.2 ms for one that
 // also links Foundation.
 
