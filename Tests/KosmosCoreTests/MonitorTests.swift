@@ -189,26 +189,29 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.perform(.moveNodeToMonitor(.number(3), focusFollowsWindow: false, wrapAround: false, window: 10)) == nil)
     }
 
-    @Test func aMovedFloatingWindowKeepsItsPlaceOnTheNewDisplay() {
+    @Test func aFloatingWindowOnADisplayShowingAnotherWorkspaceGoesToItsOwn() {
         var s = desk()
-        _ = s.add(10)
-        _ = s.float(10)
-        let plan = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: false, wrapAround: false))!
-        #expect(plan.floatingMoves == [10: left.area])
-        // It keeps its place relative to the display it is on, as its center says.
-        #expect(s.floatingFrame(CGRect(x: 100, y: 100, width: 400, height: 300), movingTo: left.area)
-                == CGRect(x: -1820, y: 100, width: 400, height: 300))
-        // Onto a smaller display it keeps its relative place and stays inside.
-        #expect(s.floatingFrame(CGRect(x: 960, y: 540, width: 400, height: 300), movingTo: builtIn.area)
-                == CGRect(x: 956, y: 1571, width: 400, height: 300))
-        #expect(s.floatingFrame(CGRect(x: 0, y: 0, width: 3000, height: 3000), movingTo: builtIn.area).size == builtIn.area.size)
-        // Measured from the display it is on, whatever its workspace's display was: here
-        // the left panel.
-        #expect(s.floatingFrame(CGRect(x: -1920, y: 540, width: 400, height: 300), movingTo: builtIn.area)
-                == CGRect(x: 200, y: 1571, width: 400, height: 300))
-        // Off every display it keeps its offset and fits inside.
-        #expect(s.floatingFrame(CGRect(x: 9000, y: 9000, width: 400, height: 300), movingTo: builtIn.area)
-                == CGRect(x: 1312, y: 1762, width: 400, height: 300))
+        _ = s.add(10); _ = s.float(10)
+        _ = s.add(50, to: "5"); _ = s.float(50)
+        _ = s.add(60, to: "6"); _ = s.float(60)
+        #expect(s.shownFloatingWindows.sorted() == [10, 50])
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        // 10 on the main panel is home; 50 there too, and it goes to the left panel at the
+        // same place; 60's workspace is hidden, so it is left alone.
+        #expect(s.floatingFrames(at: [10: onMain, 50: onMain, 60: onMain]) == [50: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        // As after move-node-to-monitor: 10 now belongs on the left panel.
+        _ = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: false, wrapAround: false, window: 10))
+        #expect(s.floatingFrames(at: [10: onMain]) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        // Onto a smaller display it keeps its relative place and stays inside, measured from
+        // the display it is on.
+        _ = s.perform(.moveNodeToMonitor(.number(3), focusFollowsWindow: false, wrapAround: false, window: 10))
+        #expect(s.floatingFrames(at: [10: CGRect(x: 960, y: 540, width: 400, height: 300)])
+                == [10: CGRect(x: 956, y: 1571, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)])
+                == [10: CGRect(x: 200, y: 1571, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)])[10]?.size == builtIn.area.size)
+        // A window off every display, as a concealed one reads, stays.
+        #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)]).isEmpty)
     }
 
     @Test func focusAcrossMonitorsCrossesAtTheEdgeOnly() {
@@ -357,9 +360,43 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.workspaces["6"]!.tree == "h[60]" && s.workspace(of: 61) == "3")
         #expect(s.workspaces["7"]!.floating == [70] && s.isParked(71) && s.workspace(of: 71) == "7")
         #expect(s.workspaces["1"]!.root.windows == [10])
-        #expect(s.shownWorkspaces == ["5", "2", "8"])
+        // Each display shows what it showed before the laptop profile, and the focus stays.
+        #expect(s.shownWorkspaces == ["7", "2", "8"])
         _ = s.unpark([71], follow: nil)
         #expect(s.workspaces["7"]!.tree == "h[71]")
+    }
+
+    @Test func aMergedWorkspaceComesBackAsItWas() {
+        var s = desk()
+        _ = s.perform(.workspace(.named("6")))
+        _ = s.add(60); _ = s.add(61)
+        s.adopt(61)
+        _ = s.add(62)
+        s.adopt(62)
+        _ = s.perform(.joinWith(.left))
+        s.adopt(60)
+        _ = s.perform(.resize(.width, by: 300))
+        s.adopt(62)
+        _ = s.add(63, to: "6")
+        #expect(s.workspaces["6"]!.tree == "h[60 v[61 62 63]]")
+        let frames = s.frames(of: "6")
+        let laptop = ["1", "2", "3", "4", "5"]
+        s.reconfigure(names: laptop, monitors: [builtIn], assigned: Dictionary(uniqueKeysWithValues: laptop.map { ($0, 3) }),
+                      merge: ["6": "1"])
+        #expect(s.workspaces["1"]!.root.windows == [60, 61, 62, 63])
+        // Meanwhile 60 minimizes, 61 closes and 63 moves to 3.
+        _ = s.park([60])
+        _ = s.remove(61)
+        _ = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 63))
+        s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
+        // 6 is back on the left panel with its tree, shares and focus, less the window that
+        // closed and the one that moved, and 60 still parked where it stood.
+        #expect(s.shownWorkspaces == ["6", "1", "8"])
+        #expect(s.workspaces["6"]!.tree == "h[62]" && s.isParked(60) && s.workspace(of: 63) == "3")
+        #expect(s.workspaces["6"]!.focusedWindow == 62)
+        _ = s.unpark([60], follow: nil)
+        #expect(s.workspaces["6"]!.tree == "h[60 62]")
+        #expect(s.frames(of: "6")[60] == frames[60])
     }
 
     @Test func aFlapMovesTheMergedWindowsBackAtOnce() {
@@ -479,11 +516,15 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var concealed: Set<WindowID> = []
     var nextWindow: WindowID = 1
 
+    // The frames the app has written, as the plans and the resyncs give them.
+    var written: [WindowID: CGRect] = [:]
+
     func carryOut(_ plan: Session.Plan?) {
         guard let plan else { return }
         #expect(Set(plan.show).isDisjoint(with: plan.hide), "seed \(seed)")
         concealed.subtract(plan.show)
         concealed.formUnion(plan.hide)
+        written.merge(plan.frames) { _, new in new }
     }
 
     for step in 0..<3000 {
@@ -502,7 +543,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             if Int.random(in: 0..<4, using: &random) == 0 { carryOut(s.float(nextWindow)) }
             carryOut(plan)
             nextWindow += 1
-        case 4: if let window { carryOut(s.remove(window)); concealed.remove(window) }
+        case 4: if let window { carryOut(s.remove(window)); concealed.remove(window); written[window] = nil }
         case 5: if let window { carryOut(s.park([window])) }
         case 6: if let window { carryOut(s.unpark([window], follow: Bool.random(using: &random) ? window : nil)) }
         case 7: if let window, let home = s.workspace(of: window), s.isShown(home) { s.adopt(window) }
@@ -524,9 +565,15 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             var connected = displays.filter { _ in Bool.random(using: &random) }
             if connected.isEmpty { connected = [displays.randomElement(using: &random)!] }
             assigned = profile.assigned.filter { _, id in connected.contains { $0.id == id } }
+            let before = s.monitors
             s.reconfigure(names: profile.names, monitors: connected, assigned: assigned, merge: profile.merge)
             concealed = Set(s.names.filter { !s.isShown($0) }.flatMap { s.windows(of: $0) })
                 .union(concealed.filter { s.isParked($0) })
+            // As Controller.apply: the shown workspaces are laid out, and the hidden ones too
+            // when the displays changed.
+            for name in s.names where s.isShown(name) || s.monitors != before {
+                written.merge(s.frames(of: name)) { _, new in new }
+            }
         }
 
         let shown = s.shownWorkspaces
@@ -536,7 +583,10 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             let display = s.monitor(of: name).id
             #expect(assigned[name] == nil || assigned[name] == display, "seed \(seed) step \(step): \(name) on \(display)")
             let area = s.monitor(of: name).area
-            #expect(s.frames(of: name).values.allSatisfy { area.contains($0) }, "seed \(seed) step \(step): \(name) off its display")
+            for window in s.workspaces[name]!.root.windows {
+                #expect(written[window].map(area.contains) == true,
+                        "seed \(seed) step \(step) operation \(operation): \(window) of \(name) off its display")
+            }
         }
         for name in s.names {
             for window in s.windows(of: name) {

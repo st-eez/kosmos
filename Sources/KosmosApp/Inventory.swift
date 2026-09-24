@@ -87,6 +87,8 @@ final class Inventory {
     /// than those events, so it skips them. Nil when no sweep is running.
     private var touchedDuringSweep: Set<UInt32>?
     private var swept = false
+    /// The windows the first sweep found, which were there before Kosmos launched.
+    private var atLaunch: Set<UInt32> = []
     private(set) var missedByEvents = 0
 
     /// WindowServer tracking needs no permission and starts at once.
@@ -124,6 +126,9 @@ final class Inventory {
         guard let row = windows[id] else { return false }
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
+
+    /// Whether the first sweep found the window: it was there before Kosmos launched.
+    func wasThereAtLaunch(_ id: UInt32) -> Bool { atLaunch.contains(id) }
 
     /// Whether the window is minimized, as Accessibility read it with the window's other
     /// facts and as each minimize report since says.
@@ -436,6 +441,7 @@ final class Inventory {
             spacesChanged = false
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
+        if !swept { atLaunch = seen }
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false

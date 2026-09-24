@@ -30,15 +30,10 @@ public struct Session: Sendable {
         public var frames: [WindowID: CGRect] = [:]
         /// The window to make key, or nil to leave focus alone.
         public var focus: KeyWindow?
-        /// Floating windows that change display, with the area of the display each goes to.
-        /// The layout gives them no frame, so the app moves each with `floatingFrame`.
-        public var floatingMoves: [WindowID: CGRect] = [:]
 
         public init() {}
 
-        public var isEmpty: Bool {
-            show.isEmpty && hide.isEmpty && frames.isEmpty && focus == nil && floatingMoves.isEmpty
-        }
+        public var isEmpty: Bool { show.isEmpty && hide.isEmpty && frames.isEmpty && focus == nil }
     }
 
     /// In the order `next` and `prev` walk, as the profile lists them.
@@ -61,9 +56,15 @@ public struct Session: Sendable {
     private var parkedConcealed: Set<WindowID> = []
     /// The smallest size each window accepted, as frames read back after writes show.
     private(set) var minimums: [WindowID: CGSize] = [:]
-    /// Windows a profile moved out of a workspace it left out, by that workspace. They go
-    /// back when a profile lists it again, unless they moved since.
+    /// Workspaces a profile left out, as they were: their trees, shares and focus order. A
+    /// profile that lists one again gets it back with its windows still merged.
+    private var mergedAway: [String: Workspace] = [:]
+    /// Windows a profile moved out of a workspace it left out, by that workspace. A window
+    /// the user moves or closes leaves it, and its workspace comes back without it.
     private var merged: [WindowID: String] = [:]
+    /// The workspace a display showed before it left, or before a profile left that
+    /// workspace out, for when it shows one again.
+    private var shownBefore: [DisplayID: String] = [:]
 
     /// `assigned` maps workspaces to the ids of `monitors`. The first workspace has the focus.
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
@@ -129,17 +130,13 @@ public struct Session: Sendable {
         precondition(!newNames.isEmpty, "a session needs a workspace")
         precondition(!newMonitors.isEmpty, "a session needs a display")
         let focusedBefore = focusedDisplay
-        for name in newNames where workspaces[name] == nil { workspaces[name] = Workspace() }
-        for name in names {
-            for window in allWindows(of: name) {
-                if let origin = merged[window], newNames.contains(origin) {
-                    merged[window] = nil
-                    carry(window, to: origin)
-                }
-            }
+        for name in newNames where workspaces[name] == nil {
+            let area = newMonitors.first { $0.id == newAssigned[name] }?.area ?? newMonitors[0].area
+            workspaces[name] = mergedAway.removeValue(forKey: name).map { restored($0, as: name, in: area) } ?? Workspace()
         }
         for name in names where !newNames.contains(name) {
             let target = merge[name].flatMap { newNames.contains($0) ? $0 : nil } ?? newNames[0]
+            mergedAway[name] = workspaces[name]
             for window in allWindows(of: name) {
                 carry(window, to: target)
                 if merged[window] == nil { merged[window] = name }
@@ -160,6 +157,31 @@ public struct Session: Sendable {
         return workspace.root.windows + workspace.floating + workspace.parked.map(\.window)
     }
 
+    /// A workspace a profile left out, `saved` as it was, back with the windows still merged
+    /// out of it. Each takes the state it has now: parked or not, tiled or floating. The
+    /// others, which the user moved or closed meanwhile, leave it. `area` is where it is
+    /// laid out, for windows returning to a tree that changed.
+    private mutating func restored(_ saved: Workspace, as name: String, in area: CGRect) -> Workspace {
+        var workspace = saved
+        let returning = Set(merged.filter { $0.value == name }.keys)
+        for window in saved.root.windows + saved.floating + saved.parked.map(\.window) where !returning.contains(window) {
+            workspace.remove(window)
+        }
+        for window in returning {
+            let current = workspaces[home[window]!]!
+            let parked = current.parked.first { $0.window == window }
+            let floating = parked?.floating ?? current.floating.contains(window)
+            _ = workspaces[home[window]!]!.remove(window)
+            if workspace.parked.contains(where: { $0.window == window }) { workspace.unpark([window], in: area, gaps: Gaps()) }
+            if floating, !workspace.floating.contains(window) { workspace.float(window) }
+            if !floating, workspace.floating.contains(window) { workspace.tile(window, in: area, gaps: Gaps()) }
+            if parked != nil { workspace.park(window) }
+            home[window] = name
+            merged[window] = nil
+        }
+        return workspace
+    }
+
     /// Moves a window to the end of another workspace, tiled, floating or parked as it was.
     private mutating func carry(_ window: WindowID, to name: String) {
         let source = home[window]!
@@ -176,11 +198,13 @@ public struct Session: Sendable {
     }
 
     /// Shows `focus` on its display and focuses it. Every other display keeps its workspace
-    /// where that may stay, and a display left with none shows the first workspace assigned
-    /// to it, else the first free hidden one. A free `focus` that no display shows goes to
-    /// `near`, else to the main display.
+    /// where that may stay, and a display left with none shows the workspace it showed
+    /// before, if that may show there, else the first workspace assigned to it, else the
+    /// first free hidden one. A free `focus` that no display shows goes to `near`, else to
+    /// the main display.
     private mutating func arrange(focusing focus: String, near: DisplayID?) {
         let ids = Set(monitors.map(\.id))
+        for (id, name) in shown where !ids.contains(id) || workspaces[name] == nil { shownBefore[id] = name }
         shown = shown.filter { id, name in ids.contains(id) && workspaces[name] != nil && (assigned[name] ?? id) == id }
         let main = monitors.first { $0.frame.origin == .zero } ?? monitors[0]
         let display = assigned[focus] ?? displayShowing(focus) ?? near.flatMap { ids.contains($0) ? $0 : nil } ?? main.id
@@ -188,7 +212,12 @@ public struct Session: Sendable {
         shown[display] = focus
         for monitor in monitors where shown[monitor.id] == nil {
             let hidden = names.filter { !isShown($0) }
-            shown[monitor.id] = hidden.first { assigned[$0] == monitor.id } ?? hidden.first { assigned[$0] == nil }
+            // What it showed before, once that may show here again.
+            let before = shownBefore[monitor.id].flatMap { name in
+                hidden.contains(name) && (assigned[name] ?? monitor.id) == monitor.id ? name : nil
+            }
+            if before != nil { shownBefore[monitor.id] = nil }
+            shown[monitor.id] = before ?? hidden.first { assigned[$0] == monitor.id } ?? hidden.first { assigned[$0] == nil }
         }
         focusedWorkspace = focus
     }
@@ -517,7 +546,6 @@ public struct Session: Sendable {
                                entering: Direction? = nil) -> Plan {
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
-        let from = monitor(of: source).id
         let floating = workspaces[source]!.floating.contains(window)
         _ = workspaces[source]!.remove(window)
         merged[window] = nil
@@ -543,16 +571,38 @@ public struct Session: Sendable {
         }
         plan.frames.merge(frames(of: source)) { current, _ in current }
         plan.frames.merge(frames(of: name)) { current, _ in current }
-        let to = monitor(of: name)
-        if floating, to.id != from { plan.floatingMoves[window] = to.area }
         return plan
+    }
+
+    /// The floating windows of the shown workspaces, which `floatingFrames` checks.
+    public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
+
+    /// Where the floating windows of shown workspaces go that sit on a display showing
+    /// another workspace: onto their workspace's display, at the same place relative to the
+    /// display areas, as AeroSpace's layoutFloatingWindow moves them. Any change can leave a
+    /// floating window there: a move to another display, a rule, a display change. A window
+    /// whose center is on no display, as a concealed one, is left where it is (DESIGN.md,
+    /// section 5.13).
+    /// - Parameter frames: where the windows are now.
+    public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+        var targets: [WindowID: CGRect] = [:]
+        for name in shownWorkspaces {
+            let home = monitor(of: name)
+            for window in workspaces[name]!.floating {
+                guard let frame = frames[window] else { continue }
+                let center = CGPoint(x: frame.midX, y: frame.midY)
+                guard let under = monitors.first(where: { $0.frame.contains(center) }), under.id != home.id else { continue }
+                targets[window] = floatingFrame(frame, movingTo: home.area)
+            }
+        }
+        return targets
     }
 
     /// Where a floating window at `frame` goes on the display whose area is `area`: at the
     /// same place relative to the area of the display under its center, scaled with the
-    /// areas, as AeroSpace moves floating windows between monitors, and kept inside `area`.
-    /// Off every display, it keeps its offset and size as they fit.
-    public func floatingFrame(_ frame: CGRect, movingTo area: CGRect) -> CGRect {
+    /// areas, and kept inside `area`. Off every display, it keeps its offset and size as they
+    /// fit.
+    func floatingFrame(_ frame: CGRect, movingTo area: CGRect) -> CGRect {
         let center = CGPoint(x: frame.midX, y: frame.midY)
         let from = monitors.first { $0.frame.contains(center) }?.area ?? area
         guard from.width > 0, from.height > 0 else { return frame }

@@ -65,16 +65,26 @@ import Testing
         #expect(setup.workspaceDisplays == ["5": 5, "6": 5, "7": 5, "8": 3, "9": 3, "0": 3])
     }
 
-    @Test func displaysNoProfileKnowsKeepTheProfile() throws {
+    /// Steve's rule: an unrecognized display keeps the profile, as apply-profile.sh did.
+    @Test func eachDisplaySetGivesSteveTheProfileAeroSpaceGaveHim() throws {
         let config = try config()
-        let projector = Display(id: 9, name: "Projector", frame: CGRect(x: 1512, y: 0, width: 1920, height: 1080))
+        let projector = Display(id: 9, name: "Projector", frame: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
+        let va24e = Display(id: 5, name: "ASUS VA24E", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        // The laptop alone.
+        #expect(config.setup(for: [builtIn], keeping: "home").profile == "laptop")
+        // The laptop and a display no profile knows keep the profile that applies.
         #expect(config.setup(for: [builtIn, projector], keeping: "home").profile == "home")
         #expect(config.setup(for: [builtIn, projector], keeping: "laptop").profile == "laptop")
         #expect(config.setup(for: [projector], keeping: "office").profile == "office")
-        // At launch the file has no profile without `when`, so the base config applies.
-        #expect(config.setup(for: [builtIn, projector]).profile == nil)
-        // A profile that fits wins over the one that applies.
-        #expect(config.setup(for: [builtIn], keeping: "home").profile == "laptop")
+        // At launch nothing applies yet, and the profile without `when` does.
+        #expect(config.setup(for: [builtIn, projector]).profile == "laptop")
+        // The twins, with or without a display no profile knows.
+        #expect(config.setup(for: [builtIn, asusMain, asusLeft], keeping: "laptop").profile == "home")
+        #expect(config.setup(for: [builtIn, asusMain, asusLeft, projector], keeping: "laptop").profile == "home")
+        // The office's ASUS alone, and one twin unplugged.
+        #expect(config.setup(for: [builtIn, va24e], keeping: "home").profile == "office-va24e")
+        #expect(config.setup(for: [builtIn, asusMain], keeping: "home").profile == "single")
+        #expect(config.setup(for: [builtIn, asusLeft], keeping: "home").profile == "single")
     }
 
     @Test func laptop() throws {

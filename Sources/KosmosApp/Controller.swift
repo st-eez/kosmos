@@ -95,6 +95,7 @@ final class Controller {
         rules = setup.rules
         profile = setup.profile
         self.barDisplays = barDisplays
+        let displaysBefore = session.monitors
         session.reconfigure(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays,
                             merge: setup.mergeWorkspaces)
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
@@ -104,9 +105,14 @@ final class Controller {
             """)
         // macOS can move windows while the session is locked or the displays sleep, and
         // moves those of a display that leaves; the ledger would take them for placed. Each
-        // window's frame is written again, as its workspace is shown. Floating windows have
-        // no layout frame and stay where they are.
+        // window's frame is written again, as its workspace is shown.
         ledger = FrameLedger()
+        // When the displays changed, hidden workspaces are laid out on theirs now: a
+        // concealed window left on a display that is gone would come back off screen from
+        // recovery.
+        if managing, !sessionLocked, session.monitors != displaysBefore {
+            for name in session.names where !session.isShown(name) { writeFrames(session.frames(of: name)) }
+        }
         resync()
     }
 
@@ -212,7 +218,9 @@ final class Controller {
     private func place(_ id: WindowID, pid: pid_t, ruled: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = ruled ? rules.first { $0.matches(appID: app.bundleID, appName: app.name) } : nil
-        let center = inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        // A window there at launch joins the workspace of the display under it; a later one
+        // joins the focused workspace, as in AeroSpace (DESIGN.md, section 5.13).
+        let center = inventory.wasThereAtLaunch(id) ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
         var plan = session.add(id, to: rule?.workspace, at: center)
         if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
         if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
@@ -582,7 +590,7 @@ final class Controller {
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
-        moveFloating(plan.floatingMoves)
+        bringFloatingHome()
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
             show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
@@ -625,6 +633,8 @@ final class Controller {
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
                 guard generation == self.switchGeneration else { return }
                 self.requestFocus(self.intent, movePointer: movePointer, fromCommand: fromCommand)
+                // Revealed now, the floating windows can be seen where they are.
+                self.bringFloatingHome()
             }
         }
         publishState()
@@ -634,14 +644,15 @@ final class Controller {
         String(format: "%.3f", Double(duration.components.attoseconds) / 1e15 + Double(duration.components.seconds) * 1000)
     }
 
-    /// Floating windows whose workspace changed display go to the same place on the new
-    /// display's area, from where WindowServer last saw them.
-    private func moveFloating(_ moves: [WindowID: CGRect]) {
-        var targets: [WindowID: CGRect] = [:]
-        for (id, area) in moves {
-            if let frame = inventory.windows[id]?.frame { targets[id] = session.floatingFrame(frame, movingTo: area) }
-        }
-        writeFrames(targets)
+    /// Floating windows of shown workspaces that sit on a display showing another workspace
+    /// go to their workspace's display, from where WindowServer has them now
+    /// (Session.floatingFrames). A concealed one reads as off every display and waits for
+    /// its reveal.
+    private func bringFloatingHome() {
+        let windows = session.shownFloatingWindows
+        guard !windows.isEmpty else { return }
+        let frames = Dictionary(SkyLight.rows(windows).map { ($0.id, $0.frame) }) { first, _ in first }
+        writeFrames(session.floatingFrames(at: frames))
     }
 
     private func writeFrames(_ targets: [WindowID: CGRect]) {

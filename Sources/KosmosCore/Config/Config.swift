@@ -136,11 +136,10 @@ public struct WindowRule: Equatable, Sendable {
 /// config's value.
 public struct Profile: Equatable, Sendable {
     public var name: String
-    /// Monitor names that must all be connected. A profile without any applies only when no
-    /// profile with them does, at launch (`Config.setup(for:)`).
+    /// Monitor names that must all be connected. A profile without any applies to the
+    /// built-in display alone, and at launch when no other profile applies
+    /// (`Config.setup(for:)`).
     public var when: [String] = []
-    /// No display other than the `when` monitors may be connected.
-    public var only = false
     public var workspaces: [String]?
     public var workspaceMonitors: [String: [String]]?
     /// Where the windows of a workspace this profile leaves out go, by workspace name.
@@ -169,10 +168,11 @@ public struct Setup: Equatable, Sendable {
 
 extension Config {
     /// The profile that applies (DESIGN.md, sections 5.8 and 5.13): the one `forced` names,
-    /// as the `profile` command asks for, else the first whose `when` holds. Displays that no
-    /// profile's `when` fits keep `active`, the profile that applies now, as Steve's
-    /// `apply-profile.sh` kept its profile for displays it did not know. With no active
-    /// profile, as at launch, the first profile without `when` applies, else the base config.
+    /// as the `profile` command asks for, else the first whose `when` monitors are all
+    /// connected, else, for the built-in display alone, the first without `when`. Other
+    /// displays keep `active`, the profile that applies now, as Steve's `apply-profile.sh`
+    /// kept its profile for displays it did not know. With none active, as at launch, the
+    /// first profile without `when` applies, else the base config.
     public func setup(for displays: [Display], profile forced: String? = nil, keeping active: String? = nil) -> Setup {
         let tiled = Monitor.arranged(displays.map { Monitor(id: $0.id, frame: $0.frame, area: $0.area, gaps: gaps(on: $0)) })
         let byID = Dictionary(displays.map { ($0.id, $0) }) { first, _ in first }
@@ -180,15 +180,12 @@ extension Config {
         func firstDisplay(_ monitor: String) -> DisplayID? {
             monitors[monitor].flatMap { match in displays.first(where: match.matches)?.id }
         }
-        func holds(_ profile: Profile) -> Bool {
-            guard !profile.when.isEmpty, profile.when.allSatisfy({ firstDisplay($0) != nil }) else { return false }
-            return !profile.only || displays.allSatisfy { display in
-                profile.when.contains { monitors[$0]?.matches(display) == true }
-            }
-        }
         func named(_ name: String?) -> Profile? { name.flatMap { name in profiles.first { $0.name == name } } }
-        let profile = named(forced) ?? profiles.first(where: holds)
-            ?? (active != nil ? named(active) : profiles.first { $0.when.isEmpty })
+        let fallback = profiles.first { $0.when.isEmpty }
+        let builtInAlone = displays.count == 1 && displays[0].isBuiltIn
+        let profile = named(forced)
+            ?? profiles.first { !$0.when.isEmpty && $0.when.allSatisfy { firstDisplay($0) != nil } }
+            ?? (builtInAlone ? fallback : nil) ?? named(active) ?? fallback
         let workspaces = profile?.workspaces ?? workspaces
         let assignment = profile?.workspaceMonitors ?? workspaceMonitors
         var workspaceDisplays: [String: DisplayID] = [:]
