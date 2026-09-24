@@ -279,22 +279,48 @@ import Testing
     #expect(after[2]!.width == before[2]!.width - 100)
 }
 
-@Test func resizeRefusesToLeaveLessThanOnePoint() {
+@Test func resizeStopsAtOnePoint() {
     var workspace = Workspace("h[1 2]")
-    #expect(workspace.resize(1, .width, by: 500, in: screen, gaps: Gaps()) == false)
-    #expect(workspace.resize(1, .width, by: -500, in: screen, gaps: Gaps()) == false)
-    #expect(workspace.shares == [0.5, 0.5])
-    #expect(workspace.resize(1, .width, by: 498, in: screen, gaps: Gaps()) == true)
-    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 2)
+    #expect(workspace.resize(1, .width, by: 500, in: screen, gaps: Gaps()) == true)
+    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 1)
+    #expect(workspace.resize(1, .width, by: 100, in: screen, gaps: Gaps()) == false)
+    #expect(workspace.resize(1, .width, by: -1500, in: screen, gaps: Gaps()) == true)
+    let frames = workspace.frames(in: screen, gaps: Gaps())
+    #expect([1, 2].map { frames[$0]!.width } == [1, 999])
 }
 
 @Test func resizeKeepsNestedWindowsAtOnePoint() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     var workspace = Workspace("h[1 v[2 h[3 4]]]")
-    #expect(workspace.resize(1, .width, by: 863, in: display, gaps: Gaps()) == false)
-    #expect(workspace.resize(1, .width, by: 862, in: display, gaps: Gaps()) == true)
+    #expect(workspace.resize(1, .width, by: 900, in: display, gaps: Gaps()) == true)
     let frames = workspace.frames(in: display, gaps: Gaps())
     #expect([2, 3, 4].map { frames[$0]!.width } == [2, 1, 1])
+    #expect(workspace.resize(1, .width, by: 1, in: display, gaps: Gaps()) == false)
+}
+
+@Test func resizeStopsAtAMinimum() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = [WindowID(2): CGSize(width: 740, height: 0)]
+    var workspace = Workspace("h[1 2]")
+    #expect(workspace.resize(1, .width, by: 200, in: display, gaps: Gaps(), minimums: minimums) == true)
+    var frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect([1, 2].map { frames[$0]!.width } == [988, 740])
+    #expect(workspace.resize(1, .width, by: 200, in: display, gaps: Gaps(), minimums: minimums) == false)
+    #expect(workspace.resize(2, .width, by: -50, in: display, gaps: Gaps(), minimums: minimums) == false)
+    #expect(workspace.resize(1, .width, by: -100, in: display, gaps: Gaps(), minimums: minimums) == true)
+    frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect([1, 2].map { frames[$0]!.width } == [888, 840])
+}
+
+@Test func resizeStopsAtANestedMinimumAcross() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = [WindowID(3): CGSize(width: 400, height: 0)]
+    var workspace = Workspace("h[1 v[2 h[3 4]]]")
+    #expect(workspace.resize(1, .width, by: 600, in: display, gaps: Gaps(), minimums: minimums) == true)
+    let frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(frames[3]!.width == 400)
+    #expect(frames[1]!.width > 864)
+    #expect(workspace.resize(1, .width, by: 1, in: display, gaps: Gaps(), minimums: minimums) == false)
 }
 
 @Test func resizeNeedsSiblingsAlongDimension() {

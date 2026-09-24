@@ -184,7 +184,7 @@ public struct Session: Sendable {
         case .fullscreen:
             guard workspace.toggleFullscreen(window) else { return nil }
         case .resize(let dimension, let amount):
-            guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
+            guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps, minimums: minimums) else { return nil }
         case .balanceSizes:
             workspace.balanceSizes()
         case .flattenWorkspaceTree:

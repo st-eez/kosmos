@@ -3,8 +3,10 @@ import Testing
 @testable import KosmosCore
 
 /// Runs random operations and checks after each one that the workspace is sound, that a
-/// failed operation changed nothing, that a move moved the window, and that the frames
-/// tile the display rectangle without overlapping.
+/// failed operation changed nothing, and that a move moved the window. A third of the
+/// windows have minimum sizes. Frames by weight tile the display rectangle without
+/// overlapping, and frames with the minimums stay inside it. When the minimums fit, every
+/// window gets its minimum and none overlap.
 @Test(arguments: 1...8 as ClosedRange<UInt64>)
 func randomOperationsKeepTheInvariants(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -12,6 +14,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
     var nextWindow: WindowID = 1
     let gaps = Gaps(inner: 8, outer: Insets(top: 30, left: 8, bottom: 8, right: 8))
     let area = CGRect(x: 8, y: 30, width: 984, height: 562)
+    var minimums: [WindowID: CGSize] = [:]
 
     func attempt(_ operation: (inout Workspace) -> Bool) {
         let before = workspace.detailed
@@ -37,6 +40,9 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 0..<6:
             if known.count < 12 {
                 workspace.insert(nextWindow)
+                if Int.random(in: 0..<3, using: &random) == 0 {
+                    minimums[nextWindow] = CGSize(width: Int.random(in: 0...400, using: &random), height: Int.random(in: 0...300, using: &random))
+                }
                 nextWindow += 1
             }
         case 6: attempt { $0.remove(window) }
@@ -70,7 +76,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 26..<29:
             let dimension = [ResizeDimension.width, .height, .smart].randomElement(using: &random)!
             let amount = CGFloat(Int.random(in: -300...300, using: &random))
-            attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps) }
+            attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps, minimums: minimums) }
         case 29: attempt { $0.toggleFullscreen(window) }
         case 30: workspace.balanceSizes()
         case 31: workspace.flattenWorkspaceTree()
@@ -91,15 +97,17 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         }
 
         #expect(workspace.validate().isEmpty, "seed \(seed)")
-        let frames = workspace.frames(in: screen, gaps: gaps)
+        let frames = workspace.frames(in: screen, gaps: gaps, minimums: minimums)
         #expect(Set(frames.keys) == Set(workspace.root.windows), "seed \(seed)")
         guard workspace.fullscreenWindow == nil else { continue }
-        let values = Array(frames.values)
-        for (index, frame) in values.enumerated() {
-            #expect(frame.width >= 0 && frame.height >= 0 && area.contains(frame), "seed \(seed)")
-            for other in values[(index + 1)...] {
-                let overlap = frame.intersection(other)
-                #expect(overlap.isNull || overlap.width * overlap.height == 0, "seed \(seed)")
+        #expect(frames.values.allSatisfy { $0.width >= 0 && $0.height >= 0 && area.contains($0) }, "seed \(seed)")
+        #expect(tiles(workspace.tileFrames(in: screen, gaps: gaps)), "seed \(seed)")
+        let least = leastSize(of: workspace.root, minimums, gap: gaps.inner)
+        if least.width <= area.width, least.height <= area.height {
+            #expect(tiles(frames), "seed \(seed)")
+            for (id, minimum) in minimums {
+                guard let frame = frames[id] else { continue }
+                #expect(frame.width >= minimum.width && frame.height >= minimum.height, "seed \(seed)")
             }
         }
     }
@@ -167,4 +175,35 @@ func keepsOnePoint(_ before: [WindowID: CGRect], _ after: [WindowID: CGRect], re
         let floor = before[id].map { CGSize(width: min(1, $0.width), height: min(1, $0.height)) } ?? CGSize(width: 1, height: 1)
         return frame.width >= floor.width && frame.height >= floor.height
     }
+}
+
+/// Whether no two frames overlap.
+func tiles(_ frames: [WindowID: CGRect]) -> Bool {
+    let values = Array(frames.values)
+    return values.indices.allSatisfy { index in
+        values[(index + 1)...].allSatisfy { other in
+            let overlap = values[index].intersection(other)
+            return overlap.isNull || overlap.width * overlap.height == 0
+        }
+    }
+}
+
+/// The least size a container needs for each window in it to get its minimum: its
+/// children side by side along its orientation with whole point gaps between them, and
+/// the largest of them across.
+func leastSize(of container: Container, _ minimums: [WindowID: CGSize], gap: CGFloat) -> CGSize {
+    let sizes = container.children.map { child in
+        switch child.kind {
+        case .window(let id):
+            let minimum = minimums[id] ?? .zero
+            return CGSize(width: minimum.width.rounded(.up), height: minimum.height.rounded(.up))
+        case .container(let nested):
+            return leastSize(of: nested, minimums, gap: gap)
+        }
+    }
+    let gaps = gap.rounded(.down) * CGFloat(max(0, sizes.count - 1))
+    let widths = sizes.reduce(0) { $0 + $1.width }, heights = sizes.reduce(0) { $0 + $1.height }
+    return container.orientation == .horizontal
+        ? CGSize(width: widths > 0 ? widths + gaps : 0, height: sizes.map(\.height).max() ?? 0)
+        : CGSize(width: sizes.map(\.width).max() ?? 0, height: heights > 0 ? heights + gaps : 0)
 }

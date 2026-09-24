@@ -234,6 +234,15 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.setMinimum(9, CGSize(width: 10, height: 10)).isEmpty)   // unknown window
 }
 
+@Test func resizeStopsAtAnObservedMinimum() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(1)
+    _ = s.setMinimum(2, CGSize(width: 400, height: 0))
+    #expect(s.perform(.resize(.width, by: 300))?.frames[2]!.width == 400)
+    #expect(s.perform(.resize(.width, by: 50)) == nil)
+}
+
 @Test func removingAWindowForgetsItsMinimum() {
     var s = session()
     _ = s.add(1)

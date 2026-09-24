@@ -112,11 +112,15 @@ extension Workspace {
     /// from its siblings in proportion to their shares. For a dimension across the
     /// window's container, the nearest ancestor inside a container along the dimension
     /// resizes. `rect` and `gaps` are the ones `frames` gets, to turn points into shares.
-    /// Returns false when the change would leave a window under one point along the
-    /// dimension, as i3 does. That counts windows nested in a squeezed sibling, and lets a
-    /// window already under one point stay there.
+    ///
+    /// The change stops where it would take a window along the dimension below its entry
+    /// in `minimums`, or below one point without one, counting windows nested in a squeezed
+    /// sibling. A window already under its limit may stay there. i3 refuses a resize past
+    /// such a limit. Stopping at the limit does as much as the key press can, so repeated
+    /// presses reach the limit exactly, and the weights never ask for less than a window
+    /// takes. Returns false when nothing could change.
     @discardableResult
-    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
+    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Bool {
         guard let path = root.path(to: window) else { return false }
         let orientation = switch dimension {
             case .width: Orientation.horizontal
@@ -128,19 +132,42 @@ extension Workspace {
         let children = root[parent].children
         let usable = usableLength(of: parent, in: rect, gaps: gaps)
         guard children.count > 1, usable > 0 else { return false }
-        let old = children[index].weight
-        let new = old + amount / usable
-        let scale = (1 - new) / (1 - old)
-        guard new > 0, scale > 0 else { return false }
-        var resized = self
-        for sibling in children.indices {
-            resized.root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
-        }
-        resized.normalize()
         let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height
+        func limit(_ id: WindowID) -> CGFloat {
+            let minimum = minimums[id].map { orientation == .horizontal ? $0.width : $0.height } ?? 0
+            return max(1, minimum.rounded(.up))
+        }
         let before = tileFrames(in: rect, gaps: gaps)
-        guard resized.tileFrames(in: rect, gaps: gaps).allSatisfy({ length($0.value) >= min(1, length(before[$0.key]!)) }) else { return false }
-        self = resized
+        // The workspace after a change of `points`, or nil when that takes a window below
+        // its limit.
+        func resized(by points: CGFloat) -> Workspace? {
+            let old = children[index].weight
+            let new = old + points / usable
+            let scale = (1 - new) / (1 - old)
+            guard new > 0, scale > 0 else { return nil }
+            var resized = self
+            for sibling in children.indices {
+                resized.root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
+            }
+            resized.normalize()
+            let kept = resized.tileFrames(in: rect, gaps: gaps).allSatisfy { id, frame in
+                length(frame) >= min(limit(id), length(before[id]!))
+            }
+            return kept ? resized : nil
+        }
+        var result = resized(by: amount)
+        if result == nil {
+            // The most whole points toward `amount` that keep every window at its limit.
+            let sign: CGFloat = amount < 0 ? -1 : 1
+            var fits: CGFloat = 0, fails = abs(amount).rounded(.up)
+            while fails - fits > 1 {
+                let middle = ((fits + fails) / 2).rounded(.down)
+                if resized(by: middle * sign) != nil { fits = middle } else { fails = middle }
+            }
+            result = fits > 0 ? resized(by: fits * sign) : nil
+        }
+        guard let result else { return false }
+        self = result
         edits += 1
         check()
         return true

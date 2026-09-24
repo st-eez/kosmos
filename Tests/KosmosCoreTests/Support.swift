@@ -55,6 +55,12 @@ extension Workspace {
         frames(in: rect, gaps: gaps, minimums: [:])
     }
 
+    /// `resize` with no minimums.
+    @discardableResult
+    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
+        resize(window, dimension, by: amount, in: rect, gaps: gaps, minimums: [:])
+    }
+
     /// `unpark` on `screen` with no gaps, which only matter for stale hints.
     mutating func unpark(_ windows: [WindowID]) {
         unpark(windows, in: screen, gaps: Gaps())
