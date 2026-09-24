@@ -128,9 +128,9 @@ final class Inventory {
     private func setFullscreen(_ id: UInt32, _ state: Bool?) {
         guard let state, windows[id] != nil else { return }
         let changed = state ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil
-        guard changed else { return }
+        guard changed, isManaged(id) else { return }
         inventoryLog.info("\(id) \(state ? "entered" : "left", privacy: .public) native fullscreen")
-        if isManaged(id) { onFullscreenChange?(id, state) }
+        onFullscreenChange?(id, state)
     }
 
     /// Whether the window left the screen within `limit`: it closed, or was ordered out as
