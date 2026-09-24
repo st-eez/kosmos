@@ -54,13 +54,22 @@
 (* the worker posts after it does. For a background app the queue posts   *)
 (* the key record that activates it. Each side records the echo only       *)
 (* right before its own call that changes the key window. Reports come as  *)
-(* the implementation takes them: an app's focus notification, stamped    *)
-(* when sent, and the activation read, which runs on the app's worker and  *)
-(* reads whatever window the app has by then. A background app can change  *)
-(* its own focused window (AllowBackground, and a raise landing there when *)
-(* RaiseReports). ActFrontCheck, LateNoteCheck, RaiseTimeout,              *)
-(* BackgroundRaise and SplitRules = "d1be665" each run a rule the          *)
-(* implementation had, for configs that fail as expected.                  *)
+(* the implementation takes them. An app's focus notification reaches its  *)
+(* observer callback some time after the change (NoteDelay). The           *)
+(* activation read runs on the app's worker, queued when the main thread   *)
+(* notices the activation, also some time after it happens (NoticeDelay),  *)
+(* and reads whatever window the app has by then. Each report is stamped,  *)
+(* and checked against the front app and the hidden windows, when its      *)
+(* callback or notice runs. Both run before the user's next input, and an  *)
+(* app's callbacks run before its activation read. A notification from an  *)
+(* app Kosmos activated waits for that activation's read (HoldNotes), and  *)
+(* a notice records that its app had already lost the front to Kosmos's    *)
+(* activation (NoticeCheck). A background app can change its own focused   *)
+(* window (AllowBackground, and a raise landing there when RaiseReports).  *)
+(* ActFrontCheck, LateNoteCheck, RaiseTimeout, BackgroundRaise and         *)
+(* SplitRules = "d1be665" each run a rule the implementation had, and      *)
+(* turning off HoldNotes or NoticeCheck, or on NoteFollows or              *)
+(* ReassertTakes, a rule the spec had, for configs that fail as expected.  *)
 (*                                                                         *)
 (* Workspaces are laid out while hidden, so a switch writes no frames and  *)
 (* frames are not modelled.                                                *)
@@ -96,13 +105,25 @@ CONSTANTS
     BackgroundRaise,\* with SplitQueue, the worker also raises a window of a background app
     LateNoteCheck,  \* with SplitQueue, an app's focus notification is checked against the
                     \* front app when its worker delivers it, not when the app sends it
-    RaiseTimeout    \* with SplitQueue, the worker stops waiting for a busy app's AXRaise,
+    RaiseTimeout,   \* with SplitQueue, the worker stops waiting for a busy app's AXRaise,
                     \* which still lands later
+    NoteDelay,      \* with SplitQueue, an app's focus notification reaches its observer
+                    \* callback after the change, and is stamped and checked there
+    NoticeDelay,    \* with SplitQueue, the main thread notices an app's activation after it
+                    \* happens, and stamps it and queues the activation read then
+    HoldNotes,      \* with SplitQueue, a notification from an app Kosmos activated waits for
+                    \* that activation's read
+    NoticeCheck,    \* with SplitQueue, the main thread notes when an activation it notices
+                    \* has already lost the front to Kosmos's
+    NoteFollows,    \* with SplitQueue, a focus notification of a hidden window is followed too
+    ReassertTakes   \* with SplitQueue, a report Kosmos reasserts over counts as the last one
+                    \* taken for the user's
 
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ SkipOnReport \in BOOLEAN
 ASSUME SplitQueue \in BOOLEAN /\ RaiseReports \in BOOLEAN /\ RaiseKeys \in BOOLEAN
 ASSUME SplitRules \in {"record-at-call", "d1be665"} /\ AllowBackground \in BOOLEAN /\ ActFrontCheck \in BOOLEAN /\ BackgroundRaise \in BOOLEAN /\ LateNoteCheck \in BOOLEAN
-ASSUME RaiseTimeout \in BOOLEAN
+ASSUME RaiseTimeout \in BOOLEAN /\ NoteDelay \in BOOLEAN /\ NoticeDelay \in BOOLEAN /\ HoldNotes \in BOOLEAN /\ NoticeCheck \in BOOLEAN
+ASSUME NoteFollows \in BOOLEAN /\ ReassertTakes \in BOOLEAN
 
 
 NoWin == "none"   \* no key window: Finder fronted without windows
@@ -110,6 +131,7 @@ AppOfX(w) == IF w = NoWin THEN "finder" ELSE AppOf[w]
 WsWins(k) == {w \in Win : WsOf[w] = k}
 Apps == {AppOf[w] : w \in Win}
 NoReq == [r |-> 0]
+NoEv == [w |-> ""]
 
 VARIABLES
     s,        \* the state record
@@ -144,6 +166,11 @@ Init ==
                lastCmdT |-> 0,        \* input position of the latest executed command
                lastWin  |-> "",       \* ghost: target of the latest input if it was a click or Command-Tab
                lastAmb  |-> FALSE,    \* ghost: the activation read of that input found another window
+               lastLost |-> FALSE,    \* ghost: the notification of that input's change inside the
+                                      \* front app ran after another app came front
+               lastMis  |-> FALSE,    \* ghost: a switch changed whether the window of a user's
+                                      \* activation was hidden before the activation was
+                                      \* noticed, and Kosmos has not settled since
                goal     |-> 1,        \* ghost: the workspace the user last asked for
                mq       |-> <<>>,
                bq       |-> <<>>,
@@ -159,10 +186,15 @@ Init ==
                wq       |-> [a \in Apps |-> <<>>],   \* each app worker's jobs
                kr       |-> <<>>,     \* KeyRequest phase by request number
                late     |-> [a \in Apps |-> <<>>],   \* raises a busy app will still land
+               nq       |-> [a \in Apps |-> <<>>],   \* each app's notifications its observer callback
+                                                     \* has not run for yet (NoteDelay)
+               an       |-> <<>>,     \* activations the main thread has not noticed yet (NoticeDelay)
                clk      |-> 0,        \* stamps for records and report deliveries
                lastRep  |-> -1,       \* stamp of the last report taken for the user's
                kact     |-> -1,       \* stamp of Kosmos's latest activation record
-               jdone    |-> {} ]      \* requests whose worker job has finished
+               jdone    |-> {},       \* requests whose worker job has finished
+               held     |-> [a \in Apps |-> NoEv] ]   \* Kosmos: a notification waiting for its
+                                                    \* app's activation read (HoldNotes)
     /\ history = <<>>
 
 Visible == {w \in Win : ~s.hidden[w]}
@@ -174,39 +206,60 @@ Visible == {w \in Win : ~s.hidden[w]}
 \* With SplitQueue a key change is reported by the app's focused window notification, if
 \* that window changed, and by the activation read, if the app came front
 \* (Apps.activated), which runs on the app's worker. The notification is stamped and
-\* checked against the front app when it is sent, as by an observer thread that never
-\* waits on an app; with LateNoteCheck it waits behind the worker's jobs as the activation
-\* read does, and is stamped and checked when the worker delivers it.
-\* `hs` keeps which windows were hidden when the activation happened: whether the window
-\* the read finds was hidden then is judged by the report's stamp.
+\* checked against the front app when it is sent, or with NoteDelay when its observer
+\* callback runs (ObserverPost), on a thread that never waits on an app; with LateNoteCheck
+\* it waits behind the worker's jobs as the activation read does, and is stamped and
+\* checked when the worker delivers it.
+\* `hs` keeps which windows were hidden when the activation was noticed: whether the
+\* window the read finds was hidden then is judged by the report's stamp.
 Item(st, w, at, ts) == [r |-> 0, w |-> w, g |-> 0, front |-> FALSE, st |-> st, t |-> at, ts |-> ts, bg |-> FALSE,
-                        hs |-> [v \in Win |-> FALSE]]
-Note(t, w, at, bg) ==
+                        hs |-> [v \in Win |-> FALSE], ko |-> FALSE]
+\* `o` says where the change came from, for the ghost: a background app's own change
+\* (`bg`), a user's click or Command-Tab (`user`), and a change inside the front app, which
+\* no activation read reports (`lone`).
+Note(t, w, at, o) ==
     IF LateNoteCheck
-    THEN [t EXCEPT !.wq[AppOf[w]] = Append(@, [Item("note", w, at, 0) EXCEPT !.bg = bg])]
+    THEN [t EXCEPT !.wq[AppOf[w]] = Append(@, Item("note", w, at, 0))]
+    ELSE IF NoteDelay
+    THEN [t EXCEPT !.nq[AppOf[w]] = Append(@, [w |-> w, t |-> at, o |-> o])]
     ELSE [t EXCEPT !.evs = Append(@, [w |-> w, act |-> FALSE, t |-> at, i |-> 0, hid |-> t.hidden[w],
-                                      bg |-> bg, ts |-> t.clk]),
+                                      bg |-> o.bg, ts |-> t.clk]),
                    !.clk = t.clk + 1]
-KeyChange(t, w, at) ==
+\* The main thread notices the activation (Apps.activated), stamps it, and queues the read
+\* on the app's worker.
+\* When the main thread notices an activation, the app has already lost the front to an
+\* activation Kosmos recorded (NoticeCheck).
+Overtaken(t, a) ==
+    /\ NoticeCheck /\ AppOfX(t.osFocus) # a
+    /\ \E k \in 1..Len(t.expect) : t.expect[k].kind = "act" /\ AppOfX(t.expect[k].w) = AppOfX(t.osFocus)
+ActItem(t, a, w, at) ==
+    [t EXCEPT !.wq[a] = Append(@, [Item("act", w, at, t.clk) EXCEPT !.hs = t.hidden, !.ko = Overtaken(t, a)]),
+              !.clk = t.clk + 1]
+Notice(t, a, w, at, user) ==
+    IF NoticeDelay THEN [t EXCEPT !.an = Append(@, [a |-> a, w |-> w, t |-> at, user |-> user,
+                                                    ehid |-> w # NoWin /\ t.hidden[w]])]
+    ELSE ActItem(t, a, w, at)
+KeyChangeBy(t, w, at, user) ==
     IF t.osFocus = w THEN t
     ELSE LET a == AppOfX(w)
              activated == AppOfX(t.osFocus) # a
              u == [t EXCEPT !.osFocus = w,
                             !.afocus = IF w = NoWin THEN @ ELSE [@ EXCEPT ![a] = w],
                             !.ne = t.ne + 1]
-         IN IF ~SplitQueue \/ w = NoWin
+         IN IF ~SplitQueue \/ (w = NoWin /\ ~NoticeDelay)
             THEN [u EXCEPT !.evs = Append(@, [w |-> w, act |-> activated, t |-> at, i |-> t.ne + 1,
                                               hid |-> w # NoWin /\ t.hidden[w], bg |-> FALSE, ts |-> t.clk]),
                            !.clk = t.clk + 1]
-            ELSE LET v == IF t.afocus[a] # w THEN Note(u, w, at, FALSE) ELSE u
-                 IN IF activated THEN [v EXCEPT !.wq[a] = Append(@, [Item("act", w, at, v.clk) EXCEPT !.hs = t.hidden]),
-                                                !.clk = v.clk + 1]
-                    ELSE v
+            ELSE IF w = NoWin THEN Notice(u, a, w, at, user)
+            ELSE LET v == IF t.afocus[a] # w THEN Note(u, w, at, [bg |-> FALSE, user |-> user, lone |-> ~activated])
+                          ELSE u
+                 IN IF activated THEN Notice(v, a, w, at, user) ELSE v
+KeyChange(t, w, at) == KeyChangeBy(t, w, at, FALSE)
 
 \* A background app's own focused window changes, and the app reports it as a focus
 \* change through its worker although the key window stays where it is.
 BackgroundFocus(t, w, at) ==
-    Note([t EXCEPT !.afocus[AppOf[w]] = w, !.ne = t.ne + 1], w, at, TRUE)
+    Note([t EXCEPT !.afocus[AppOf[w]] = w, !.ne = t.ne + 1], w, at, [bg |-> TRUE, user |-> FALSE, lone |-> FALSE])
 
 (***************************************************************************)
 (* The switch protocol                                                     *)
@@ -280,14 +333,31 @@ Reassert(t) == Request(t, t.focus, t.gen)
 \* A user activation is adopted. Within the visible workspace it becomes the
 \* focus intent, and is focused again in case a stale request of ours landed
 \* after it. On a hidden workspace Kosmos follows it there.
+\* With SplitQueue, a report Kosmos adopts or follows is the last one taken for the user's;
+\* with ReassertTakes, so is one it reasserts over.
 Adopt(t, ev) ==
     LET w == ev.w
-    IN IF ev.t < t.lastCmdT THEN Reassert(t)   \* happened before the latest command
-       ELSE IF w = NoWin THEN t
+        t0 == IF SplitQueue /\ ReassertTakes THEN [t EXCEPT !.lastRep = ev.ts] ELSE t
+        taken == IF SplitQueue THEN [t EXCEPT !.lastRep = ev.ts] ELSE t
+    IN IF ev.t < t.lastCmdT THEN Reassert(t0)   \* happened before the latest command
+       ELSE IF w = NoWin THEN t0
        ELSE IF WsOf[w] = t.active
-            THEN Request([t EXCEPT !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1], w, t.gen + 1)
-       ELSE IF ev.hid THEN StartSwitch(t, WsOf[w], w)
-       ELSE Reassert(t)   \* visible mid-switch: a re-key, or a click on a window being concealed
+            THEN Request([taken EXCEPT !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1], w, t.gen + 1)
+       \* With SplitQueue only an activation read follows: a focus notification is a change
+       \* inside an app, which only reaches a hidden window if a switch concealed it after the
+       \* change and before the notification's callback.
+       ELSE IF ev.hid /\ (~SplitQueue \/ ev.act \/ NoteFollows) THEN StartSwitch(taken, WsOf[w], w)
+       ELSE Reassert(t0)   \* visible mid-switch: a re-key, or a click on a window being concealed
+
+\* A report older than the last one taken for the user's was overtaken by it.
+UserReport(t, ev) ==
+    IF SplitQueue /\ ev.ts < t.lastRep THEN t
+    ELSE Adopt([t EXCEPT !.seen = IF SplitQueue THEN "" ELSE ev.w], ev)
+
+Holds(t, ev) ==
+    /\ SplitQueue /\ HoldNotes /\ ~ev.act /\ ev.w # NoWin
+    /\ \E k \in 1..Len(t.expect) : t.expect[k].kind = "act" /\ AppOfX(t.expect[k].w) = AppOf[ev.w]
+                                  /\ ev.ts > t.expect[k].ts
 
 \* With record-at-call rules, a report from an app that is not front (`bg`) consumes an echo
 \* it matches, but is no key window report: unmatched it is ignored, and then it does not
@@ -304,7 +374,7 @@ Observe(t, evs) ==
              \* activation. Unless that was Kosmos's own, recorded after this activation,
              \* the later one's report decides, and this one is no key report.
              bg == /\ ev.bg /\ SplitRules = "record-at-call"
-                   /\ (ev.act /\ ~ActFrontCheck => ev.ts > t.kact)
+                   /\ (ev.act /\ ~ActFrontCheck => ev.ts > t.kact /\ ~ev.ko)
              ks == {k \in 1..Len(t.expect) : Matches(ev, t.expect[k])}
              k == CHOOSE k \in ks : \A j \in ks : k <= j
              \* With SplitQueue an activation's echo is its activation read: the app's
@@ -316,15 +386,25 @@ Observe(t, evs) ==
                    ELSE IF SplitQueue THEN [t EXCEPT !.expect = SubSeq(@, 1, k - 1) \o SubSeq(@, k + 1, Len(@)),
                                                      !.seen = ev.w]
                    ELSE [t EXCEPT !.expect = SubSeq(@, k + 1, Len(@)), !.seen = ev.w]
+             a == AppOfX(ev.w)
+             \* The activation read that is the echo of Kosmos's activation settles the
+             \* notification held for its app.
+             settles == SplitQueue /\ ev.act /\ ev.w # NoWin /\ ks # {} /\ ~joins
+             h == IF settles THEN t.held[a] ELSE NoEv
+             t3 == IF settles THEN [t2 EXCEPT !.held[a] = NoEv] ELSE t2
              t1 == IF ks # {}
+                   \* The app's window the read found is the held notification's: the user
+                   \* changed it after Kosmos's activation.
+                   THEN IF h # NoEv /\ h.w = ev.w THEN UserReport(t3, h)
                    \* An echo can land after a newer intent, as a busy app's late raise
                    \* does: the intent is requested again.
-                   THEN IF SplitQueue /\ ~joins /\ ev.w # t2.focus THEN Reassert(t2) ELSE t2
+                   ELSE IF SplitQueue /\ ~joins /\ ev.w # t3.focus THEN Reassert(t3) ELSE t3
                    ELSE IF bg THEN t
-                   \* A report older than the last one taken for the user's was overtaken by it.
-                   ELSE IF SplitQueue /\ ev.ts < t.lastRep THEN t
-                   ELSE Adopt([t EXCEPT !.seen = IF SplitQueue THEN "" ELSE ev.w,
-                                        !.lastRep = IF SplitQueue THEN ev.ts ELSE @], ev)
+                   \* A notification from an app Kosmos activated, before that activation's
+                   \* read: a change the user made after the activation, or one the app made
+                   \* in the background before it, whose callback ran after. The read tells.
+                   ELSE IF Holds(t, ev) THEN [t EXCEPT !.held[a] = ev]
+                   ELSE UserReport(t, ev)
          IN Observe(t1, Tail(evs))
 
 \* A hover focus is a command for a window of the shown workspace: reports of user
@@ -542,25 +622,28 @@ WorkerNote(a) ==
        /\ j.st = "note"
        /\ s' = [s EXCEPT !.wq[a] = Tail(@), !.clk = s.clk + 1,
                          !.evs = Append(@, [w |-> j.w, act |-> FALSE, t |-> j.t, i |-> 0, hid |-> s.hidden[j.w],
-                                            bg |-> IF LateNoteCheck THEN AppOfX(s.osFocus) # a ELSE j.bg,
+                                            bg |-> AppOfX(s.osFocus) # a,
                                             ts |-> s.clk])]
        /\ UNCHANGED history
 
 \* The activation read (Apps.activated): the app's focused window now, stamped when the
 \* activation was noticed on the main thread. With ActFrontCheck it is no key report once
-\* the app is no longer front.
+\* the app is no longer front. The app's observer callbacks for the changes it reads have
+\* run: the read waits for main's notice and a round trip to the app, and each callback
+\* only stamps, checks and posts.
 WorkerAct(a) ==
     LET j == Head(s.wq[a])
         w == s.afocus[a]
     IN /\ SplitQueue
        /\ s.wq[a] # <<>>
        /\ j.st = "act"
+       /\ s.nq[a] = <<>>
        /\ s' = [s EXCEPT !.wq[a] = Tail(@),
                          \* ghost: the read finds another window than the activation keyed, as when
                          \* Kosmos keyed that app again before the read ran; if the activation was
                          \* the user's, no report says what they chose, and it makes no claim
                          !.lastAmb = @ \/ (w # j.w /\ j.w = s.lastWin),
-                         !.evs = Append(@, [w |-> w, act |-> TRUE, t |-> j.t, i |-> 0, hid |-> j.hs[w],
+                         !.evs = Append(@, [w |-> w, act |-> TRUE, t |-> j.t, i |-> 0, hid |-> j.hs[w], ko |-> j.ko,
                                             bg |-> AppOfX(s.osFocus) # a, ts |-> j.ts])]
        /\ UNCHANGED history
 
@@ -578,6 +661,36 @@ WorkerKey(a) ==
 Worker(a) == WorkerStart(a) \/ WorkerRead(a) \/ WorkerRaise(a) \/ WorkerLand(a) \/ WorkerKey(a)
              \/ WorkerNote(a) \/ WorkerAct(a) \/ LateLand(a)
 
+\* The app's observer callback runs for its oldest notification: stamped now, and marked
+\* when the app is not front now.
+ObserverPost(a) ==
+    LET n == Head(s.nq[a])
+        bg == AppOfX(s.osFocus) # a
+    IN /\ SplitQueue
+       /\ s.nq[a] # <<>>
+       /\ s' = [s EXCEPT !.nq[a] = Tail(@), !.clk = s.clk + 1,
+                         !.evs = Append(@, [w |-> n.w, act |-> FALSE, t |-> n.t, i |-> 0, hid |-> s.hidden[n.w],
+                                            bg |-> bg, ts |-> s.clk]),
+                         \* ghost: the user's change inside the front app is reported after another
+                         \* app came front; nothing tells it from a background app's own change
+                         !.lastLost = @ \/ (bg /\ n.o.user /\ n.o.lone /\ n.w = s.lastWin)]
+       /\ UNCHANGED history
+
+\* Finder's read of no window is not modelled: it reports with the notice.
+ActNotice ==
+    LET n == Head(s.an)
+        t == [s EXCEPT !.an = Tail(@)]
+    IN /\ SplitQueue
+       /\ s.an # <<>>
+       /\ s' = IF n.w = NoWin
+               THEN [t EXCEPT !.evs = Append(@, [w |-> NoWin, act |-> TRUE, t |-> n.t, i |-> 0, hid |-> FALSE, ko |-> Overtaken(s, "finder"),
+                                                 bg |-> AppOfX(s.osFocus) # "finder", ts |-> s.clk]),
+                              !.clk = s.clk + 1]
+               \* ghost: a switch revealed or concealed the window the user activated before
+               \* the notice; whether it was hidden is judged by the notice's stamp
+               ELSE [ActItem(t, n.a, n.w, n.t) EXCEPT !.lastMis = @ \/ (n.user /\ s.hidden[n.w] # n.ehid)]
+       /\ UNCHANGED history
+
 PostReports ==
     /\ s.evs # <<>>
     /\ s' = [s EXCEPT !.mq = Append(@, Job("report", 0, 0, s.evs, 0)), !.evs = <<>>]
@@ -590,32 +703,46 @@ Fallback ==
     /\ \E v \in (Visible \cup {NoWin}) \ {s.osFocus} : s' = KeyChange(s, v, Len(history))
     /\ UNCHANGED history
 
+\* Observer callbacks and activation notices only stamp, check and post, so each runs
+\* before the user's next input.
+Noticed == s.an = <<>> /\ \A a \in Apps : s.nq[a] = <<>>
+
+Quiescent == s.mq = <<>> /\ s.bq = <<>> /\ s.fq = <<>> /\ s.evs = <<>> /\ s.an = <<>>
+             /\ s.fcur = NoReq /\ \A a \in Apps : s.wq[a] = <<>> /\ s.late[a] = <<>> /\ s.nq[a] = <<>>
+
+\* A misjudged activation can decide what later inputs lead to until Kosmos settles.
+Misjudged == s.lastMis /\ ~Quiescent
+
 \* A user activation of a window a switch is about to conceal makes no claim.
 Claim(w) == IF WsOf[w] = s.goal \/ s.hidden[w] THEN w ELSE ""
 Goal(w) == IF s.hidden[w] THEN WsOf[w] ELSE s.goal
 
 Command ==
     /\ Len(history) < MaxEvents
+    /\ Noticed
     /\ \E k \in Workspaces :
          /\ s' = [s EXCEPT !.mq = Append(@, Job("input", k, 0, <<>>, Len(history) + 1)),
-                           !.lastWin = "", !.lastAmb = FALSE, !.goal = k]
+                           !.lastWin = "", !.lastAmb = FALSE, !.lastLost = FALSE, !.lastMis = Misjudged, !.goal = k]
          /\ history' = Append(history, k)
 
 Click ==
     /\ AllowClicks
     /\ Len(history) < MaxEvents
+    /\ Noticed
     /\ \E w \in Visible \ {s.osFocus} :
-         /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = Claim(w), !.atop[AppOf[w]] = w,
-                                                            !.lastAmb = FALSE]
+         /\ s' = [KeyChangeBy(s, w, Len(history) + 1, TRUE) EXCEPT !.lastWin = Claim(w), !.atop[AppOf[w]] = w,
+                                                                   !.lastAmb = FALSE, !.lastLost = FALSE, !.lastMis = Misjudged]
          /\ history' = Append(history, -1)
 
 CmdTab ==
     /\ AllowCmdTab
     /\ Len(history) < MaxEvents
+    /\ Noticed
     /\ \E w \in Win :
          /\ AppOf[w] # AppOfX(s.osFocus)
-         /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = Claim(w), !.goal = Goal(w),
-                                                            !.atop[AppOf[w]] = w, !.lastAmb = FALSE]
+         /\ s' = [KeyChangeBy(s, w, Len(history) + 1, TRUE) EXCEPT !.lastWin = Claim(w), !.goal = Goal(w),
+                                                                   !.atop[AppOf[w]] = w, !.lastAmb = FALSE,
+                                                                   !.lastLost = FALSE, !.lastMis = Misjudged]
          /\ history' = Append(history, -2)
 
 \* The pointer comes to rest in a visible window. Focus follows mouse never moves the
@@ -623,9 +750,10 @@ CmdTab ==
 Hover ==
     /\ AllowHover
     /\ Len(history) < MaxEvents
+    /\ Noticed
     /\ \E w \in Visible :
          /\ s' = [s EXCEPT !.mq = Append(@, Job("hover", w, 0, <<>>, Len(history) + 1)), !.lastWin = Claim(w),
-                           !.lastAmb = FALSE]
+                           !.lastAmb = FALSE, !.lastLost = FALSE, !.lastMis = Misjudged]
          /\ history' = Append(history, -3)
 
 \* A background app changes its own focused window, as when it opens a window, without
@@ -639,26 +767,24 @@ UserBackground ==
          /\ s' = BackgroundFocus(s, w, Len(history) + 1)
          /\ history' = Append(history, -4)
 
-Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports
-            \/ FocusStart \/ FocusDecide \/ FocusKey \/ \E a \in Apps : Worker(a)
+Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports \/ ActNotice
+            \/ FocusStart \/ FocusDecide \/ FocusKey \/ \E a \in Apps : Worker(a) \/ ObserverPost(a)
 
 Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab \/ Hover \/ UserBackground
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
-                              /\ WF_vars(ExecFocus) /\ WF_vars(PostReports)
+                              /\ WF_vars(ExecFocus) /\ WF_vars(PostReports) /\ WF_vars(ActNotice)
                               /\ WF_vars(FocusStart) /\ WF_vars(FocusDecide) /\ WF_vars(FocusKey)
-                              /\ \A a \in Apps : WF_vars(Worker(a))
+                              /\ \A a \in Apps : WF_vars(Worker(a)) /\ WF_vars(ObserverPost(a))
 
 (***************************************************************************)
 (* Properties                                                              *)
 (***************************************************************************)
-Quiescent == s.mq = <<>> /\ s.bq = <<>> /\ s.fq = <<>> /\ s.evs = <<>>
-             /\ s.fcur = NoReq /\ \A a \in Apps : s.wq[a] = <<>> /\ s.late[a] = <<>>
 
 \* The screen shows Kosmos's workspace and macOS keys Kosmos's focus.
 Converged == Visible = WsWins(s.active) /\ s.osFocus = s.focus
 
-ConvergesWhenQuiet == Quiescent => Converged
+ConvergesWhenQuiet == Quiescent => Converged /\ \A a \in Apps : s.held[a] = NoEv
 
 RECURSIVE LastCommand(_)
 LastCommand(h) ==   \* 0 when a click or Command-Tab came after the last command
@@ -669,7 +795,10 @@ LastCommand(h) ==   \* 0 when a click or Command-Tab came after the last command
 HonorsLastCommand == Quiescent /\ LastCommand(history) # 0 => s.active = LastCommand(history)
 
 \* A click or Command-Tab after the last command wins, unless it makes no claim.
-HonorsLastActivation == Quiescent /\ s.lastWin # "" /\ ~s.lastAmb => s.focus = s.lastWin
+HonorsLastActivation == Quiescent /\ s.lastWin # "" /\ ~s.lastAmb /\ ~s.lastLost /\ ~s.lastMis => s.focus = s.lastWin
+
+\* Without exempting a click lost to a callback that ran after Kosmos activated another app.
+HonorsLastClick == Quiescent /\ s.lastWin # "" /\ ~s.lastAmb /\ ~s.lastMis => s.focus = s.lastWin
 
 \* Windows of two workspaces are never visible together.
 NoMixedFrame == \E k \in Workspaces : Visible \subseteq WsWins(k)
@@ -689,6 +818,7 @@ Cur(g, c) == g # 0 /\ g = c
 ViewQ(q, c) == [n \in 1..Len(q) |-> [q[n] EXCEPT !.g = Cur(q[n].g, c)]]
 StateView == <<[s EXCEPT !.sw = 0, !.gen = 0,
                          !.mq = ViewQ(s.mq, s.sw), !.bq = ViewQ(s.bq, s.sw), !.fq = ViewQ(s.fq, s.gen),
+                         !.fcur = IF @ = NoReq THEN @ ELSE [@ EXCEPT !.g = Cur(@, s.gen)],
                          !.wq = [a \in Apps |-> ViewQ(s.wq[a], s.gen)]],
                history>>
 
@@ -698,5 +828,6 @@ TraceView == [history |-> history, active |-> s.active, focus |-> s.focus,
               bq |-> [n \in 1..Len(s.bq) |-> s.bq[n].op],
               fq |-> s.fq, expect |-> s.expect, evs |-> s.evs, seen |-> s.seen,
               afocus |-> s.afocus, atop |-> s.atop, fcur |-> s.fcur, wq |-> s.wq, kr |-> s.kr, late |-> s.late,
+              nq |-> s.nq, an |-> s.an, clk |-> s.clk, kact |-> s.kact, held |-> s.held,
               lastWin |-> s.lastWin, goal |-> s.goal, lastRep |-> s.lastRep, hidden |-> s.hidden]
 =============================================================================

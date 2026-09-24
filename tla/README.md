@@ -42,39 +42,50 @@ Java 11 or newer is required.
 
 The `split-` configs run a focus request as the steps the implementation takes
 (`SplitQueue`): the focus queue's, the target app worker's, the app's AXRaise landing
-later, the app's focus notification, and the activation read, which runs on the app's
-worker and reads the app's focused window whenever it runs. The queue's 30 ms wait can run
-out for the busy app (`BusyApp`, app A unless named `busyb`). A raise in a background app
-is reported as a focus change, or not in the `quiet` configs (`RaiseReports`). AXRaise
-alone keys a window inside the front app, or needs the key record after it in the `nokey`
-configs (`RaiseKeys`). In the `background` configs background apps also change their own
-focused window (`AllowBackground`). The `user` configs check what `user` checks, the
-`hover` ones what `hover` checks, and `commands` what `commands` checks; `settles` checks
-liveness.
+later, the app's focus notification, whose observer callback runs some time after the
+change (`NoteDelay`), and the activation read, which runs on the app's worker and reads
+the app's focused window whenever it runs. The queue's 30 ms wait can run out for the busy
+app (`BusyApp`, app A unless named `busyb`). A raise in a background app is reported as a
+focus change, or not in the `quiet` configs (`RaiseReports`). AXRaise alone keys a window
+inside the front app, or needs the key record after it in the `nokey` configs
+(`RaiseKeys`). In the `background` configs background apps also change their own focused
+window (`AllowBackground`). In the `notice` configs the main actor also notices an
+activation some time after it happens (`NoticeDelay`); they run two inputs, because with
+three `split-user-notice` had reached 190 million states and a 21 GB queue when it was
+stopped. The `user` configs check what `user` checks, the `hover` ones what `hover`
+checks, and `commands` what `commands` checks; `settles` checks liveness.
 
 | Config | Result | States | Config | Result | States |
 | --- | --- | --- | --- | --- | --- |
-| `split-commands` | pass | 107,142 | `split-commands-nokey` | pass | 105,685 |
-| `split-commands-quiet` | pass | 105,462 | `split-commands-nokey-quiet` | pass | 103,986 |
-| `split-user` | pass | 5,761,524 | `split-user-nokey` | pass | 5,995,624 |
-| `split-user-quiet` | pass | 5,507,397 | `split-user-nokey-quiet` | pass | 5,773,103 |
-| `split-user-busyb` | pass | 3,883,449 | `split-user-busyb-nokey` | pass | 4,161,848 |
-| `split-user-busyb-quiet` | pass | 3,798,536 | `split-user-busyb-nokey-quiet` | pass | 4,074,315 |
-| `split-user-background` | pass | 5,985,318 | `split-user-background-nokey` | pass | 6,223,920 |
-| `split-user-background-quiet` | pass | 5,730,703 | | | |
-| `split-hover` | pass | 9,163,984 | `split-hover-nokey` | pass | 9,480,149 |
-| `split-hover-quiet` | pass | 8,709,564 | `split-hover-nokey-quiet` | pass | 9,074,760 |
-| `split-hover-settles` | pass | 9,163,898 | `split-hover-nokey-settles` | pass | 9,479,847 |
+| `split-commands` | pass | 144,449 | `split-commands-nokey` | pass | 143,171 |
+| `split-commands-quiet` | pass | 143,795 | `split-commands-nokey-quiet` | pass | 139,887 |
+| `split-user` | pass | 26,483,189 | `split-user-nokey` | pass | 32,732,432 |
+| `split-user-quiet` | pass | 23,013,579 | `split-user-nokey-quiet` | pass | 25,852,901 |
+| `split-user-busyb` | pass | 15,356,417 | `split-user-busyb-nokey` | pass | 18,941,317 |
+| `split-user-busyb-quiet` | pass | 14,032,779 | `split-user-busyb-nokey-quiet` | pass | 16,230,473 |
+| `split-user-background` | pass | 27,313,512 | `split-user-background-nokey` | pass | 33,586,205 |
+| `split-user-background-quiet` | pass | 23,843,303 | | | |
+| `split-hover` | pass | 33,100,616 | `split-hover-nokey` | pass | 39,714,822 |
+| `split-hover-quiet` | pass | 29,372,015 | `split-hover-nokey-quiet` | pass | 32,419,066 |
+| `split-hover-settles` | pass | 33,100,616 | `split-hover-nokey-settles` | not rerun | |
+| `split-user-notice` | pass | 1,122,536 | `split-user-background-notice` | pass | 1,191,179 |
+| `split-hover-notice` | pass | 1,207,265 | | | |
 
-Each of these runs one rule the implementation had, and fails as expected (change 12):
+Each of these runs one rule the implementation had, or one the spec had, and fails as
+expected (changes 12 and 13):
 
 | Config | The rule | Result | States |
 | --- | --- | --- | --- |
-| `split-user-actcheck` | an activation read counts only while its app is front (`ActFrontCheck`) | fails, expected | 86,784 |
-| `split-user-latenote` | a focus notification is stamped and checked when the worker delivers it (`LateNoteCheck`) | fails, expected | 865,807 |
-| `split-user-timeout` | the worker gives up on a busy app's AXRaise, which still lands (`RaiseTimeout`) | fails, expected | 5,379,113 |
-| `split-user-bgraise` | the worker also raises a window of a background app (`BackgroundRaise`) | fails, expected | 4,706,703 |
-| `split-user-d1be665` | robust's rules at d1be665 (`SplitRules`), which change 11 replaced | fails, expected | 1,412,358 |
+| `split-user-actcheck` | an activation read counts only while its app is front (`ActFrontCheck`) | fails, expected | 66,161 |
+| `split-user-latenote` | a focus notification is stamped and checked when the worker delivers it (`LateNoteCheck`) | fails, expected | 2,030,522 |
+| `split-user-timeout` | the worker gives up on a busy app's AXRaise, which still lands (`RaiseTimeout`) | fails, expected | 79,296,272 |
+| `split-user-bgraise` | the worker also raises a window of a background app (`BackgroundRaise`) | fails, expected | 17,281,852 |
+| `split-user-d1be665` | robust's rules at d1be665 (`SplitRules`), which change 11 replaced | fails, expected | 1,358,622 |
+| `split-user-background-nohold` | a notification from an app Kosmos activated is taken before that activation's read (`HoldNotes` off) | fails, expected | 16,924,620 |
+| `split-user-reasserttakes` | a report Kosmos reasserts over counts as the last one taken for the user's (`ReassertTakes`) | fails, expected | 160,329 |
+| `split-user-notefollows` | a notification of a hidden window is followed (`NoteFollows`) | fails, expected | 3,155,026 |
+| `split-user-notice-nocheck` | a late notice does not note that its app lost the front to Kosmos's activation (`NoticeCheck` off) | fails, expected | 10,335 |
+| `split-user-lostclick` | the last activation wins, without exempting a click lost to a late callback (`HonorsLastClick`) | fails, expected | 1,827,398 |
 
 `skip-on-report` records how Kosmos worked before the focus queue checked the key window
 (change 8 below). The other three expected failures record trade-offs:
@@ -199,3 +210,39 @@ change that removed it:
     One case is left: when Kosmos keys an app again before that app's activation read
     runs, the read finds Kosmos's window, and no report says which window the user
     activated. The spec exempts it with a ghost (`lastAmb`) and DESIGN.md 5.4 records it.
+13. **Callbacks after the change.** An app's observer callback runs some time after the
+    change it reports, and stamps it and checks the front app and the window's hiddenness
+    then (`NoteDelay`). The main actor likewise notices an activation some time after it
+    happens (`NoticeDelay`). Both run before the user's next input, and an app's
+    callbacks run before its activation read, but Kosmos's own steps can run in between.
+    That found:
+    - A background app changed its focused window, Kosmos's older request brought the
+      app front, and the change's callback then found the app front. Kosmos adopted the
+      stale window over the user's later Command-Tab (`split-user-background-nohold`). A
+      notification from an app Kosmos activated now waits for that activation's read,
+      and stands only if the read finds its window.
+    - The notification of a Command-Tab to a hidden window ends in Kosmos requesting its
+      intent again. Counted as the last report taken for the user's, it dropped the
+      activation read, stamped earlier, that would have followed the Command-Tab
+      (`split-user-reasserttakes`). Only a report Kosmos adopts or follows counts now.
+    - A click on a window being concealed had its callback run after the conceal, so the
+      window looked hidden, and Kosmos followed it back to the old workspace over the
+      user's next click (`split-user-notefollows`). Only an activation read follows now.
+    - With notices late, Kosmos's older request recorded and made its activation after
+      the user's Command-Tab and before the main actor noticed the Command-Tab. The read,
+      stamped after Kosmos's record, looked overtaken by the user and was dropped
+      (`split-user-notice-nocheck`). The notice now records that its app had already
+      lost the front to an activation Kosmos recorded, and such a read stands.
+
+    Two more cases are left, exempted with ghosts and recorded in DESIGN.md 5.4. A click
+    inside the front app is lost when a request Kosmos made before it activates another
+    app before the click's callback runs (`lastLost`; `split-user-lostclick` checks
+    without the exemption). A switch that reveals or conceals a window between the user's
+    activation of it and the main actor's notice makes the notice misjudge whether it
+    was hidden (`lastMis`, kept until Kosmos settles, since the wrong follow decides what
+    later inputs lead to).
+
+    The state view also treats the generation of the request the focus queue is running
+    as current or stale now, as it does for queued requests. Before, a stale and a current
+    running request could share a view, so TLC could skip behaviors; every `split-` config
+    was run again with it.

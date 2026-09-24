@@ -147,11 +147,14 @@ off the main thread).
 
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
-- Every report names the key window. For an app activation, the app's worker reads the
-  app's focused window, stamped when the main actor noticed the activation. An app's
-  focused window notification is stamped, and checked against the front process, on an
-  observer thread that never waits behind the worker's calls into the app. Hotkeys and
-  socket commands are stamped on receipt.
+- Every report names the key window. For an app activation, the main actor notices the
+  activation and stamps it, and the app's worker reads the app's focused window. An app's
+  focused window notification is stamped, and checked against the front process, in a
+  callback on an observer thread that never waits behind the worker's calls into the app.
+  The callback only stamps, checks and posts, so it runs before the user's next input and
+  before the app's activation read, which waits for the main actor and a round trip to the
+  app. It still runs after the change, and Kosmos can key or hide windows in between.
+  Hotkeys and socket commands are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
     app alone would take a Command-Tab to another window of that app for an echo. The
@@ -164,16 +167,28 @@ off the main thread).
     intent is requested again.
   - A report from an app that is not the front process consumes an echo it matches and is
     otherwise ignored: background apps report windows they open. An activation read of
-    an app that lost the front is ignored too, unless Kosmos recorded an activation after
-    it: then the user's activation beat Kosmos's older request and stands.
-  - A report stamped before the last report taken as the user's was overtaken by it.
+    an app that lost the front is ignored too, unless Kosmos's activation overtook it:
+    Kosmos recorded an activation after the read's stamp, or, when the main actor noticed
+    the activation, the app had already lost the front to an app Kosmos had recorded an
+    activation for. Then the user's activation beat Kosmos's older request and stands.
+  - A notification from an app Kosmos activated, received before that activation's read,
+    waits for the read. It stands if the read finds its window: the user changed the
+    app's window after Kosmos's activation. Otherwise it is dropped: the app changed its
+    focused window in the background, and the callback ran after Kosmos brought the app
+    front.
+  - A report stamped before the last report Kosmos adopted or followed was overtaken by
+    it. A report that only made Kosmos request its intent again does not count: the
+    notification of a Command-Tab to a hidden window ends that way, and the activation
+    read, stamped earlier, still has to follow it.
   - A click or Command-Tab received before the latest command is stale. The command wins,
     and its focus is requested again.
   - A window on Kosmos's current workspace becomes the focus intent and is requested
     again, in case an older request of Kosmos's landed after the user's change.
-  - A window that was hidden at the report's stamp was reached with Command-Tab, and
+  - An activation read of a window that was hidden at its stamp was a Command-Tab, and
     Kosmos follows it to its workspace. Hiding keeps when each window was last revealed,
-    because a later switch can reveal it before the report is classified.
+    because a later switch can reveal it before the report is classified. A notification
+    never follows: a change inside an app reaches a hidden window only when a switch
+    concealed it between the change and the callback.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again.
@@ -194,9 +209,16 @@ off the main thread).
     fronts the app meanwhile.
   - Neither side records for the other's call (change 11). When a newer command for
     another workspace is already queued, the older one lays out but doesn't focus.
-- When Kosmos keys an app again before that app's activation read runs, the read finds
-  Kosmos's window, and nothing tells which window the user activated: a Command-Tab to a
-  window of that app is then lost. The TLA+ spec exempts this case (change 12).
+- Three races leave Kosmos nothing to tell the cases apart, and the TLA+ spec exempts
+  them (changes 12 and 13):
+  - Kosmos keys an app again before that app's activation read runs. The read finds
+    Kosmos's window, and a Command-Tab to another window of that app is lost.
+  - A request Kosmos made before the user's click inside the front app activates another
+    app before the click's callback runs. The callback finds another app in front, as
+    for a background app's own change, and the click is lost.
+  - A switch reveals or conceals a window between the user's activation of it and the
+    main actor's notice. Kosmos can then follow a click on a window being concealed, or
+    lose a Command-Tab to a hidden window.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 
