@@ -39,10 +39,15 @@ final class Controller {
     var focusFollowsMouse = FocusFollowsMouse() {
         didSet {
             hoverGeneration += 1
-            pointer.configure(enabled: focusFollowsMouse.enabled, pause: focusFollowsMouse.pauseKey)
+            if focusFollowsMouse.enabled, pointer == nil {
+                pointer = PointerTap { [weak self] window in self?.pointerEntered(window) }
+            }
+            pointer?.configure(enabled: focusFollowsMouse.enabled, pause: focusFollowsMouse.pauseKey)
         }
     }
-    private lazy var pointer = PointerTap { [weak self] window in self?.pointerEntered(window) }
+    /// Created when focus follows mouse is first turned on: creating the tap may ask for
+    /// Input Monitoring.
+    private var pointer: PointerTap?
     /// Bumped when the pointer enters a window and at every other focus change, so a hover
     /// whose dwell ends after either leaves focus alone.
     private var hoverGeneration = 0
@@ -334,7 +339,7 @@ final class Controller {
         guard !focusFollowsMouse.ignores(appID: app.bundleID, appName: app.name) else { return }
         Task {
             try? await Task.sleep(for: Self.dwell)
-            guard generation == hoverGeneration, !pointer.paused,
+            guard generation == hoverGeneration, pointer?.paused != true,
                   session.isVisible(window),
                   let frame = inventory.windows[window]?.frame, let location = CGEvent(source: nil)?.location,
                   Self.inside(frame, location) else { return }

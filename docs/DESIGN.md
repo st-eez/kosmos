@@ -253,12 +253,13 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - Pointer movement arrives through a listen-only event tap on its own thread, at the
   annotated session location, for mouse moved events only. A pointer at rest costs nothing,
   and the tap is off while focus follows mouse is. AutoRaise polls 20 times a second.
-- On macOS 27 a tap created by a process with no grant receives nothing: side by side for
-  several minutes of use, a tap run under the terminal's grants received about 5,800
-  movements and one run as its own responsible process received none, with no error and
-  no prompt. Accessibility is expected to be enough, as it is for the taps of Hammerspoon
-  and AltTab, which ask for no Input Monitoring. Kosmos logs whether Input Monitoring is
-  granted and when the first event arrives, which settles it.
+- On macOS 27, creating a listen-only tap for mouse moved events alone made macOS ask a
+  process without Input Monitoring for it ("would like to receive keystrokes from any
+  application"), and that tap received nothing, while the same tap under the terminal's
+  grants received about 5,800 movements in the same minutes. Whether Kosmos's
+  Accessibility grant is enough is open until a live test settles it. The tap is created
+  only when focus follows mouse is first turned on, and Kosmos logs whether Input
+  Monitoring is granted and when the first event arrives.
 - Each event names the window under the pointer, as WindowServer's own hit test found it
   (`kCGMouseEventWindowUnderMousePointer`, filled in at the annotated location). Kosmos
   takes that window only when its model has it as a tiled or floating window of the shown
@@ -271,7 +272,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   window is raised over fullscreen video, as AeroSpace's focus follows mouse did.
 - The pointer must move at least 2 pt from where it last counted, holding the pause key
   (Control) pauses focus follows mouse, and chosen apps are ignored: the settings an
-  AutoRaise user has today. Nothing is focused while a mouse button is down, because a
+  AutoRaise user has today. The pause key is read from each movement's flags, so the tap
+  takes no keyboard events. Nothing is focused while a mouse button is down, because a
   movement with a button down is a drag event, which the tap does not receive.
 - Keying leaves the stacking order alone (section 2), so a floating window is raised with
   AXRaise on its app's worker before it is keyed. Tiled windows are only keyed.

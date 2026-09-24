@@ -15,9 +15,10 @@ private let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: 
 /// the main actor. Only mouse moved events are tapped: a movement with a button down is a
 /// drag, so nothing is focused while a button is down.
 ///
-/// A tap created without a grant stays silent on macOS 27. Kosmos's Accessibility grant is
-/// expected to cover it, as it does for other listen-only taps; the log says when the
-/// first event arrives.
+/// On macOS 27 creating even this mouse-only tap asked a process without Input Monitoring
+/// for it, and the tap stayed silent. Whether Kosmos's Accessibility grant is enough is
+/// not known yet, so the tap is created only when focus follows mouse is first turned on.
+/// The log says whether Input Monitoring is granted and when the first event arrives.
 final class PointerTap: Sendable {
     private let executor = RunLoopExecutor(name: "kosmos.pointer")
     /// Set once in `init`.
@@ -25,6 +26,8 @@ final class PointerTap: Sendable {
     private let gate = Mutex(PointerGate())
     private let enabled = Atomic<Bool>(false)
     private let pauseFlags = Atomic<UInt64>(0)
+    /// Whether the pause key was held at the latest movement.
+    private let pausedAtLastMovement = Atomic<Bool>(false)
     private let heard = Atomic<Bool>(false)
     private let entered: @MainActor (UInt32) -> Void
 
@@ -48,10 +51,8 @@ final class PointerTap: Sendable {
         pointerLog.notice("pointer tap created; Input Monitoring granted: \(CGPreflightListenEventAccess())")
     }
 
-    /// Whether the pause key is held now.
-    var paused: Bool {
-        CGEventSource.flagsState(.combinedSessionState).rawValue & pauseFlags.load(ordering: .relaxed) != 0
-    }
+    /// Whether the pause key was held at the latest movement, from that event's flags.
+    var paused: Bool { pausedAtLastMovement.load(ordering: .relaxed) }
 
     /// Turns the tap on or off, with the modifier that pauses focus follows mouse.
     func configure(enabled on: Bool, pause: KeyCombo.Modifiers) {
@@ -78,6 +79,7 @@ final class PointerTap: Sendable {
         if !heard.exchange(true, ordering: .relaxed) { pointerLog.notice("pointer tap receiving events") }
         let window = UInt32(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer))
         let paused = event.flags.rawValue & pauseFlags.load(ordering: .relaxed) != 0
+        pausedAtLastMovement.store(paused, ordering: .relaxed)
         guard gate.withLock({ $0.admit(event.location, over: window, paused: paused) }) else { return }
         let entered = self.entered
         DispatchQueue.main.async { MainActor.assumeIsolated { entered(window) } }

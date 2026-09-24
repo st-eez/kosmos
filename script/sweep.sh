@@ -3,6 +3,9 @@
 # Each stub is a bundle of its own, so macOS counts it as a separate app, holding the
 # probe's own executable signed like Kosmos (script/bundle.sh). The probe runs the
 # executables directly, and they quit when it exits.
+#
+# Both probes activate the stub apps and take keyboard focus while they run: `sweep` for
+# about four minutes, `raise` for about five seconds. Run them when nobody is typing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -45,4 +48,5 @@ done
 # Running a stub can register it with Launch Services; take the entries out again.
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 trap 'for app in "${stubs[@]}"; do "$lsregister" -u "$app" 2>/dev/null || true; done' EXIT
+echo "kosmos-probe $probe takes keyboard focus until it finishes."
 "$bin/kosmos-probe" "$probe" "${stubs[@]}"
