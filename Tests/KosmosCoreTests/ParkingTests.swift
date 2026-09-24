@@ -131,6 +131,16 @@ func unparkInAnyOrderRestoresTheTree(parking: [WindowID], unparking: [WindowID])
     #expect(workspace.shares == [0.25, 0.25, 0.5])
 }
 
+@Test func staleRestoreWrapsOnlyItsSiblings() {
+    var workspace = Workspace("h[1 v[2 h[3 4]] 5]")
+    workspace.park(2)
+    #expect(workspace.tree == "h[1 3 4 5]")
+    workspace.move(4, .right)
+    #expect(workspace.tree == "h[1 3 5 4]")
+    workspace.unpark([2])
+    #expect(workspace.tree == "h[1 v[2 3] 5 4]")
+}
+
 @Test func unparkRebuildsContainerBelowRoot() {
     var workspace = Workspace("h[1 v[2:1 h[3 4]:3]]")
     workspace.park(2)

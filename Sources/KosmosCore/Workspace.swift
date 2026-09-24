@@ -363,21 +363,27 @@ extension Workspace {
         let share = level.slots[level.index].weight / present.reduce(0) { $0 + level.slots[$1].weight }
         let earlier = present.last { $0 < level.index }
 
+        func children(_ slot: Int) -> [Int] {
+            level.slots[slot].windows.intersection(tiled).map { root.path(to: $0)![depth] }
+        }
+        // The child holding the nearest earlier sibling, else the nearest later one.
+        let anchor = earlier.map { children($0).max()! } ?? children(present.first { $0 > level.index }!).min()!
+
         if container.orientation == level.orientation {
-            // Beside the nearest earlier sibling, else before the nearest later one, with
-            // its share of the space the siblings hold.
-            func children(_ slot: Int) -> [Int] {
-                level.slots[slot].windows.intersection(tiled).map { root.path(to: $0)![depth] }
-            }
-            let index = earlier.map { children($0).max()! + 1 } ?? children(present.first { $0 > level.index }!).min()!
+            // Beside the anchor, with its share of the space the siblings hold.
+            let index = earlier == nil ? anchor : anchor + 1
             let held = holders.reduce(0) { $0 + container.children[$1].weight }
             for holder in holders {
                 root[parent].children[holder].weight /= 1 + share
             }
             root[parent].children.insert(Node(kind: .window(hint.window), weight: held * share / (1 + share)), at: index)
         } else {
-            // The old container collapsed into the siblings: rebuild it around them.
-            let run = holders.min()!...holders.max()!
+            // The old container collapsed into the siblings: rebuild it around them. Once
+            // other commands moved windows between the siblings, only the group next to the
+            // nearest one goes in, never windows that were not siblings.
+            var run = anchor...anchor
+            while holders.contains(run.lowerBound - 1) { run = (run.lowerBound - 1)...run.upperBound }
+            while holders.contains(run.upperBound + 1) { run = run.lowerBound...(run.upperBound + 1) }
             let siblings = run.count == 1 ? container.children[run.lowerBound].kind
                 : .container(makeContainer(container.orientation, Array(container.children[run])))
             var nodes = [Node(kind: siblings, weight: 1)]
