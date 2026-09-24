@@ -134,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let setup = config.setup(for: displays)
         controller.reconfigure(gaps: displays.first.map { ConfigFile.gaps(config, on: $0) } ?? Gaps(), rules: setup.rules)
         controller.mouseFollowsFocus = config.mouseFollowsFocus
+        controller.focusFollowsMouse = config.focusFollowsMouse
         controller.profile = setup.profile
         var messages = loaded.errors + loaded.warnings
         if setup.workspaces != controller.workspaceNames {

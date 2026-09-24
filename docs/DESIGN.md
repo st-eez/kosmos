@@ -238,33 +238,58 @@ off the main thread).
 Kosmos replaces AutoRaise for hover focus. AutoRaise needed a local patch to key the
 hovered window instead of the app's most recent one; Kosmos's focus path already does.
 
-- The window under the pointer becomes key as soon as the pointer enters it, through the
-  same exact-window path as a focus command, as Hyprland's `follow_mouse = 1` does.
-  Tiled windows never overlap, so only focus moves; a floating window is also raised.
-- Instant focus has one cost on macOS that it lacks on Linux: focusing another app's
-  window activates the app, and activations cost macOS's app usage daemons CPU (section
-  2). Sweeping the pointer across several windows activates each of them. AutoRaise waits
-  for the pointer to rest on a window for about 100 ms to avoid that. Kosmos starts
-  without a delay, measures a sweep's CPU and daemon activity, and adds the shortest dwell
-  that the measurement justifies, if any.
-- The pointer must move at least 2 pt to count, holding Control pauses it, and chosen apps
-  are ignored: the settings an AutoRaise user has today.
-- Kosmos finds the window under the pointer in its own model: floating windows first, then
-  the shown workspace's tiled frames, which never overlap. Moving the pointer queries no
-  window list.
-- Pointer movement arrives through a listen-only event tap on its own thread, so a pointer
-  at rest costs nothing. AutoRaise polls 20 times a second.
-- Nothing is raised while a mouse button is down, while the front app is in native
-  fullscreen (AeroSpace's focus follows mouse raised tiled windows over fullscreen video),
-  over a window Kosmos does not manage (menus, the bar, panels), or during Mission Control.
-- A hover focus counts as a command: the session adopts the window, and its focus
-  request's echo is consumed like any other.
+- The window under the pointer becomes key once the pointer has rested in it for 50 ms,
+  through the same exact-window path as a focus command. Hyprland's `follow_mouse = 1`
+  focuses at once, but on macOS keying another app's window activates the app, which costs
+  about 94 ms of CPU outside Kosmos (section 2). A sweep across five windows of different
+  apps keys four apps with no dwell and one with a dwell longer than the time the pointer
+  spends in each window, so each window passed through costs about as much CPU again as
+  the one the pointer stops in.
+- 50 ms is the delay AutoRaise runs with on the development Mac (`delay=2` at
+  `pollMillis=50`), whose raise comes one poll after the poll that finds the window, 50 to
+  100 ms after the pointer enters it. Kosmos times the dwell from the movement event, so a
+  hover takes 50 ms plus the focus call. How long a real sweep stays in each window was not
+  measured; if the menu bar still names each app a sweep crosses, the dwell is too short.
+- Pointer movement arrives through a listen-only event tap on its own thread, at the
+  annotated session location, for mouse moved events only. A pointer at rest costs nothing,
+  and the tap is off while focus follows mouse is. AutoRaise polls 20 times a second.
+- On macOS 27 a tap created by a process with no grant receives nothing: side by side for
+  several minutes of use, a tap run under the terminal's grants received about 5,800
+  movements and one run as its own responsible process received none, with no error and
+  no prompt. Accessibility is expected to be enough, as it is for the taps of Hammerspoon
+  and AltTab, which ask for no Input Monitoring. Kosmos logs whether Input Monitoring is
+  granted and when the first event arrives, which settles it.
+- Each event names the window under the pointer, as WindowServer's own hit test found it
+  (`kCGMouseEventWindowUnderMousePointer`, filled in at the annotated location). Kosmos
+  takes that window only when its model has it as a tiled or floating window of the shown
+  workspace. Moving the pointer queries no window list, and the stacking of overlapping
+  floating windows, or of tiled windows held at a minimum size, is WindowServer's answer;
+  a hit test of the model's frames would need a stacking order the model does not keep.
+- The same check keeps focus where it is over anything else: menus, the bar, panels and
+  dialogs, the Dock, and Mission Control's windows (not yet seen live). On a native
+  fullscreen Space the only window under the pointer is the fullscreen one, so no tiled
+  window is raised over fullscreen video, as AeroSpace's focus follows mouse did.
+- The pointer must move at least 2 pt from where it last counted, holding the pause key
+  (Control) pauses focus follows mouse, and chosen apps are ignored: the settings an
+  AutoRaise user has today. Nothing is focused while a mouse button is down, because a
+  movement with a button down is a drag event, which the tap does not receive.
+- Keying leaves the stacking order alone (section 2), so a floating window is raised with
+  AXRaise on its app's worker before it is keyed. Tiled windows are only keyed.
+- A hover focus counts as a command: reports received before it are stale, the session
+  adopts the window, and its focus request's echo is consumed like any other. The TLA+
+  spec checks hover with the other inputs ([tla/](../tla/README.md), `hover` and
+  `hover-settles`).
 - The pointer follows focus the other way too. A command that focuses a window moves the
-  pointer to its center unless the pointer is already inside it, and so does Command-Tab
-  to a window that is not under the pointer. A click always happens under the pointer, so
-  it never moves it.
-- `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
-  the command `focus-follows-mouse on|off|toggle` switches it at run time.
+  pointer to its center unless the pointer is already over it, and so does Command-Tab to
+  a window that is not under the pointer. A click happens over the window or its resize
+  region, a few points past the frame, which counts as over it, so a click never moves the
+  pointer. A hover focus never moves the pointer.
+- `focus-follows-mouse = true` turns it on, with `focus-follows-mouse-pause-key` and
+  `focus-follows-mouse-ignore-apps`, which match an app's bundle identifier or name; the
+  command `focus-follows-mouse on|off|toggle` switches it until the next config load.
+- Left out: moving the pointer off an open menu onto a window focuses that window and
+  closes the menu; a menu tracking signal would keep it open. The dwell is a constant
+  until a user needs another one.
 
 ### 5.12 Other tools
 

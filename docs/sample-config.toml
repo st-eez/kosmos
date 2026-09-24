@@ -9,9 +9,14 @@
 # arguments of the CLI, which follow AeroSpace's.
 
 config-version = 1
-# Move the pointer into the focused window after a keyboard focus change. AutoRaise stays
-# the hover engine; Kosmos has no focus follows mouse.
+# Move the pointer into a window that a command or Command-Tab focused.
 mouse-follows-focus = true
+# Focus the window the pointer rests in, in place of AutoRaise. Holding the pause key
+# stops it, and the pointer leaves the listed apps alone, matched by bundle identifier or
+# name. These are AutoRaise's disableKey and ignoreApps settings.
+focus-follows-mouse = true
+focus-follows-mouse-pause-key = 'ctrl'
+focus-follows-mouse-ignore-apps = ['Google Chrome for Testing']
 
 # Workspace names, in order. A profile may replace the list.
 workspaces = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
@@ -63,8 +68,6 @@ outer-per-monitor = { builtin = { top = 5 } }
 #   ctrl-alt-shift-left and right, next and previous workspace on the focused monitor;
 #   ctrl-alt-shift-up, down, 1, 2 and 3, move the window to another monitor;
 #   ctrl-alt-h, w, l and s, force a profile until the displays change.
-# AeroSpace's ctrl-alt-a swapped focus follows mouse and AutoRaise. Kosmos has no focus
-# follows mouse, so AutoRaise stays on and the binding is gone.
 
 # Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys).
 alt-left = 'focus left'
@@ -131,6 +134,8 @@ ctrl-alt-down = 'join-with down'
 ctrl-alt-j = 'layout tiles horizontal vertical'
 ctrl-alt-r = 'flatten-workspace-tree'
 ctrl-alt-c = 'reload-config'
+# AeroSpace's ctrl-alt-a swapped its focus follows mouse and AutoRaise.
+ctrl-alt-a = 'focus-follows-mouse toggle'
 
 # Window rules. The first rule that matches a new window applies, and Kosmos warns about a
 # rule an earlier one hides. app-id matches the bundle identifier; app-name matches names

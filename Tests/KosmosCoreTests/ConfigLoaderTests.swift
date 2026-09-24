@@ -56,6 +56,40 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(load("gaps = 10").diagnostics == ["3:8: error: gaps: expected a table, found an integer"])
     }
 
+    @Test func focusFollowsMouse() throws {
+        let config = try #require(load("""
+            focus-follows-mouse = true
+            focus-follows-mouse-pause-key = 'alt'
+            focus-follows-mouse-ignore-apps = ['Google Chrome for Testing', 'com.apple.Notes']
+            """).config)
+        var expected = FocusFollowsMouse()
+        expected.enabled = true
+        expected.pauseKey = .alt
+        expected.ignoreApps = ["Google Chrome for Testing", "com.apple.Notes"]
+        #expect(config.focusFollowsMouse == expected)
+        // Off by default, paused by Control.
+        #expect(try #require(load("").config).focusFollowsMouse == FocusFollowsMouse())
+        #expect(FocusFollowsMouse().pauseKey == .ctrl)
+    }
+
+    @Test func focusFollowsMouseMistakes() {
+        #expect(load("""
+            focus-follows-mouse = 'on'
+            focus-follows-mouse-pause-key = 'ctl'
+            focus-follows-mouse-ignore-apps = ['Numi', '', 3]
+            focus-follow-mouse = true
+            """).diagnostics == [
+            "3:23: error: focus-follows-mouse: expected true or false, found a string",
+            "4:33: error: focus-follows-mouse-pause-key: expected cmd, ctrl, alt or shift; did you mean 'ctrl'?",
+            "5:44: error: focus-follows-mouse-ignore-apps[1]: the string is empty",
+            "5:48: error: focus-follows-mouse-ignore-apps[2]: expected a string, found an integer",
+            "6:1: error: focus-follow-mouse: unknown key; did you mean 'focus-follows-mouse'?",
+        ])
+        #expect(load("focus-follows-mouse-pause-key = 'ctrl-alt'").diagnostics == [
+            "3:33: error: focus-follows-mouse-pause-key: expected cmd, ctrl, alt or shift",
+        ])
+    }
+
     @Test func gapsCannotBeNegative() {
         #expect(load("[gaps]\ninner = -1").diagnostics == ["4:9: error: gaps.inner: gaps cannot be negative"])
     }

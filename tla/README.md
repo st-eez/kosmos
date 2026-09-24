@@ -5,7 +5,8 @@
 actor, the bridge queue that reveals and conceals windows through the holding Space, and
 the focus queue. macOS sits between them: it keys the requested window and reports every
 key window change to the main actor later. The user issues workspace commands, clicks
-visible windows and uses Command-Tab.
+visible windows, uses Command-Tab, and rests the pointer in visible windows for focus
+follows mouse, which Kosmos handles as a command for that window.
 
 [MC.tla](MC.tla) fixes a small topology: workspace 1 holds w1 and w2, workspace 2 holds
 w3, and workspace 3 is empty. App A owns w1 and w3, app B owns w2. Each configuration
@@ -28,6 +29,8 @@ Java 11 or newer is required.
 | `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 95,984 |
 | `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 95,984 |
 | `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 95,464 |
+| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 156,404 |
+| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 156,404 |
 | `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 331,012 |
 | `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 2,740,410 |
 | `mixed` | commands, reveal first | no mixed frame | fails, expected | 97 |
@@ -76,3 +79,7 @@ Each change below started as a counterexample from TLC.
    The state space never closed. Only Command-Tab reaches a hidden window, so Kosmos now
    follows a report into another workspace only if the window was hidden when it became
    key.
+
+A hover counts as a command because of a counterexample of the same kind as change 1:
+with the hover unstamped, a click made before the hover but reported after it was
+adopted, and focus left the window the pointer rested in.

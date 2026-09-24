@@ -50,6 +50,17 @@ public struct Session: Sendable {
         return workspace.root.windows + workspace.floating
     }
 
+    /// Whether the window is tiled or floating on the shown workspace. A parked window is
+    /// left to macOS.
+    public func isVisible(_ window: WindowID) -> Bool {
+        home[window] == visible && windows(of: visible).contains(window)
+    }
+
+    /// Whether the window floats, and so can overlap others.
+    public func isFloating(_ window: WindowID) -> Bool {
+        home[window].map { workspaces[$0]!.floating.contains(window) } ?? false
+    }
+
     public func frames(of name: String) -> [WindowID: CGRect] {
         workspaces[name]?.frames(in: display, gaps: gaps, minimums: minimums) ?? [:]
     }
@@ -155,8 +166,8 @@ public struct Session: Sendable {
                   !workspaces[source]!.parked.contains(where: { $0.window == window }),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
-        case .reloadConfig, .mode:
-            return nil   // the app reloads the config or switches hotkeys
+        case .reloadConfig, .mode, .focusFollowsMouse:
+            return nil   // the app reloads the config, switches hotkeys or sets hover focus
         default:
             return performOnFocused(command)
         }
@@ -191,7 +202,7 @@ public struct Session: Sendable {
             workspace.balanceSizes()
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
-        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode:
+        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusFollowsMouse:
             return nil
         }
         workspaces[visible] = workspace

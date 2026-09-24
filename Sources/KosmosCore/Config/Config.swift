@@ -1,8 +1,9 @@
 /// A checked config file. `Config.load` builds one, and every monitor, workspace and mode
 /// name in it is defined. docs/sample-config.toml is Steve's AeroSpace setup in this schema.
 public struct Config: Equatable, Sendable {
-    /// Move the mouse pointer into the focused window after a keyboard focus change.
+    /// Move the mouse pointer into a window that a command or Command-Tab focused.
     public var mouseFollowsFocus = false
+    public var focusFollowsMouse = FocusFollowsMouse()
     public var workspaces: [String] = []
     /// Display matchers by the name the rest of the config uses for them.
     public var monitors: [String: MonitorMatch] = [:]
@@ -15,6 +16,25 @@ public struct Config: Equatable, Sendable {
     public var rules: [WindowRule] = []
     /// Display profiles in file order. The first whose monitors are all connected applies.
     public var profiles: [Profile] = []
+}
+
+/// Focus moves to the window the pointer enters (DESIGN.md, section 5.11).
+public struct FocusFollowsMouse: Equatable, Sendable {
+    public var enabled = false
+    /// Holding this modifier pauses focus follows mouse.
+    public var pauseKey: KeyCombo.Modifiers = .ctrl
+    /// Apps whose windows the pointer never focuses, each named by its bundle identifier or
+    /// its name.
+    public var ignoreApps: [String] = []
+
+    public init() {}
+
+    /// Whether the pointer leaves focus alone over windows of this app. Names match ignoring
+    /// case.
+    public func ignores(appID: String?, appName: String?) -> Bool {
+        let names = [appID, appName].compactMap { $0?.lowercased() }
+        return ignoreApps.contains { names.contains($0.lowercased()) }
+    }
 }
 
 /// A connected display, as the app reads it.

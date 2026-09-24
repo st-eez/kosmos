@@ -27,6 +27,9 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
         (["flatten-workspace-tree"], .flattenWorkspaceTree),
         (["reload-config"], .reloadConfig),
         (["mode", "resize"], .mode("resize")),
+        (["focus-follows-mouse", "on"], .focusFollowsMouse(.on)),
+        (["focus-follows-mouse", "off"], .focusFollowsMouse(.off)),
+        (["focus-follows-mouse", "toggle"], .focusFollowsMouse(.toggle)),
     ]
     for (arguments, command) in cases {
         #expect(Command.parse(arguments) == .success(command), "\(arguments)")
@@ -37,7 +40,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     for arguments in [[], ["focus"], ["focus", "sideways"], ["resize", "smart", "100"], ["resize", "smart", "+0"],
                       ["fullscreen", "--no-outer-gaps"], ["layout", "accordion"], ["move-node-to-workspace"],
                       ["workspace", "1", "2"], ["exec-and-forget", "true"], ["mode"], ["mode", "a", "b"],
-                      ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"]] {
+                      ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"],
+                      ["focus-follows-mouse"], ["focus-follows-mouse", "true"], ["focus-follows-mouse", "on", "off"]] {
         guard case .failure = Command.parse(arguments) else {
             Issue.record("accepted \(arguments)")
             continue
@@ -259,4 +263,25 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(7, to: "3")
     _ = s.perform(.workspace(.named("3")))
     #expect(s.focused == 7)
+}
+
+@Test func focusFollowsMouseIsForTheApp() {
+    var s = session()
+    _ = s.add(1)
+    #expect(s.perform(.focusFollowsMouse(.toggle)) == nil)
+}
+
+@Test func onlyTiledAndFloatingWindowsOfTheShownWorkspaceAreVisible() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2)
+    _ = s.add(3)
+    _ = s.add(4, to: "2")
+    _ = s.float(2)
+    _ = s.park(3)
+    #expect(s.isVisible(1) && s.isVisible(2))
+    #expect(!s.isVisible(3))   // parked
+    #expect(!s.isVisible(4))   // another workspace
+    #expect(!s.isVisible(9))   // unknown
+    #expect(s.isFloating(2) && !s.isFloating(1) && !s.isFloating(4))
 }

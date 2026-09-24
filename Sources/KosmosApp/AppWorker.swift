@@ -92,6 +92,14 @@ actor AppWorker {
 
     var windowIDs: [UInt32] { Array(elements.keys) }
 
+    /// Puts the window in front of the windows it overlaps. Keying a window through the focus
+    /// path leaves the stacking order alone (`kosmos-probe raise`).
+    func raise(_ id: UInt32) {
+        guard let element = elements[id] else { return }
+        let error = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        if error != .success { log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)") }
+    }
+
     func focusedWindow() -> UInt32? {
         guard let element = copy(app, kAXFocusedWindowAttribute).map({ $0 as! AXUIElement }) else { return nil }
         return track(element)

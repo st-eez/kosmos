@@ -16,6 +16,10 @@
 (* performs. An echo is a report of a requested window received after the  *)
 (* request; key changes carry a sequence number (`i`) for that.            *)
 (*                                                                         *)
+(* Focus follows mouse: when the pointer rests in a window WindowServer    *)
+(* shows, Kosmos focuses it if it is a window of Kosmos's shown workspace. *)
+(* A hover focus counts as a command.                                      *)
+(*                                                                         *)
 (* Any other report is the user's (a click or Command-Tab). A report of a  *)
 (* user activation that happened before the latest command is stale: the   *)
 (* command wins and its focus is requested again. Each user input and each *)
@@ -48,6 +52,7 @@ CONSTANTS
     MaxEvents,      \* bound on user inputs
     AllowClicks,    \* the user may click a visible window
     AllowCmdTab,    \* the user may Command-Tab to any other app's window
+    AllowHover,     \* the pointer may rest in a visible window (focus follows mouse)
     AllowFallback,  \* macOS may re-key when the key window is hidden (not observed)
     RevealFirst,    \* a switch reveals the incoming windows before concealing the outgoing
     Coalesce        \* a resumed command does not focus while a newer command is queued
@@ -60,10 +65,11 @@ WsWins(k) == {w \in Win : WsOf[w] = k}
 
 VARIABLES
     s,        \* the state record
-    history   \* user inputs: k = `workspace k`, -1 = click, -2 = Command-Tab
+    history   \* user inputs: k = `workspace k`, -1 = click, -2 = Command-Tab, -3 = hover
 
 vars == <<s, history>>
 
+\* `ws` holds the window for a hover job.
 Job(kind, ws, g, evs, t) == [kind |-> kind, ws |-> ws, g |-> g, evs |-> evs, t |-> t]
 Op(op, k, g) == [op |-> op, k |-> k, g |-> g]   \* k: workspace revealed, or kept visible by a conceal
 FocusOp(w, g) == [w |-> w, g |-> g]
@@ -171,8 +177,18 @@ Observe(t, evs) ==
                    ELSE Adopt(t, ev)
          IN Observe(t1, Tail(evs))
 
+\* A hover focus is a command for a window of the shown workspace: reports of user
+\* activations before it are stale, and it is requested like any focus. A window of
+\* another workspace, visible only mid-switch, leaves focus alone.
+RunHover(t, x) ==
+    LET w == x.ws
+    IN IF WsOf[w] # t.active THEN t
+       ELSE [t EXCEPT !.lastCmdT = x.t, !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1,
+                      !.fq = Append(@, FocusOp(w, t.gen + 1))]
+
 RunJob(t, x) ==
     CASE x.kind = "input"  -> RunCommand(t, x)
+      [] x.kind = "hover"  -> RunHover(t, x)
       [] x.kind = "resume" -> Resume(t, x)
       [] x.kind = "report" -> Observe(t, x.evs)
 
@@ -242,9 +258,18 @@ CmdTab ==
          /\ s' = [KeyChange(s, w, Len(history) + 1) EXCEPT !.lastWin = Claim(w), !.goal = Goal(w)]
          /\ history' = Append(history, -2)
 
+\* The pointer comes to rest in a visible window. Focus follows mouse never moves the
+\* key window by itself; Kosmos's hover job does.
+Hover ==
+    /\ AllowHover
+    /\ Len(history) < MaxEvents
+    /\ \E w \in Visible :
+         /\ s' = [s EXCEPT !.mq = Append(@, Job("hover", w, 0, <<>>, Len(history) + 1)), !.lastWin = Claim(w)]
+         /\ history' = Append(history, -3)
+
 Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports
 
-Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab
+Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab \/ Hover
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
                               /\ WF_vars(ExecFocus) /\ WF_vars(PostReports)

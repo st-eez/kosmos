@@ -32,8 +32,20 @@ final class Controller {
     let managing: Bool
     /// Window rules, first match wins.
     var rules: [WindowRule] = []
-    /// Move the pointer into a window that a command focused.
+    /// Move the pointer into a window that a command or Command-Tab focused.
     var mouseFollowsFocus = false
+    /// The config's settings; the `focus-follows-mouse` command changes `enabled` until the
+    /// next load.
+    var focusFollowsMouse = FocusFollowsMouse() {
+        didSet {
+            hoverGeneration += 1
+            pointer.configure(enabled: focusFollowsMouse.enabled, pause: focusFollowsMouse.pauseKey)
+        }
+    }
+    private lazy var pointer = PointerTap { [weak self] window in self?.pointerEntered(window) }
+    /// Bumped when the pointer enters a window and at every other focus change, so a hover
+    /// whose dwell ends after either leaves focus alone.
+    private var hoverGeneration = 0
     /// The active display profile, for the bar.
     var profile: String?
     var publish: (@MainActor (Data) -> Void)?
@@ -82,9 +94,17 @@ final class Controller {
         case .success where !managing:
             // Changing the model without moving windows would leave the two apart.
             return (1, "observing only while another window manager runs")
+        case .success(.focusFollowsMouse(let change)):
+            switch change {
+            case .on: focusFollowsMouse.enabled = true
+            case .off: focusFollowsMouse.enabled = false
+            case .toggle: focusFollowsMouse.enabled.toggle()
+            }
+            return (0, "")
         case .success(let command):
+            hoverGeneration += 1
             reports.commandExecuted(receivedAt: received)
-            if let plan = session.perform(command) { execute(plan, since: received, fromCommand: true) }
+            if let plan = session.perform(command) { execute(plan, since: received, movePointer: mouseFollowsFocus) }
             return (0, "")
         }
     }
@@ -137,12 +157,17 @@ final class Controller {
             case .reassert:
                 requestFocus(intent)
             case .adopt(let window):
+                hoverGeneration += 1
                 session.adopt(window)
                 touch(window)
+                // Command-Tab to a window away from the pointer brings the pointer along. A
+                // click happens inside the window, which leaves the pointer where it is.
+                if mouseFollowsFocus { centerPointer(on: window) }
                 publishState()
             case .follow(let window):
+                hoverGeneration += 1
                 touch(window)
-                execute(session.follow(window))
+                execute(session.follow(window), movePointer: mouseFollowsFocus)
             }
         case .minimized(let id, true):
             execute(session.park(id))
@@ -182,8 +207,9 @@ final class Controller {
 
     private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
 
-    /// `since` is when the command arrived, for the switch timing log.
-    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
+    /// `since` is when the command arrived, for the switch timing log. `movePointer` moves the
+    /// pointer into the window the plan focuses.
+    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, movePointer: Bool = false) {
         guard managing, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
         var show = plan.show, hide = plan.hide
@@ -192,7 +218,6 @@ final class Controller {
             hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
             needsResync = false
         }
-        let movePointer = fromCommand && mouseFollowsFocus
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(intent, movePointer: movePointer) }
         } else {
@@ -278,8 +303,55 @@ final class Controller {
     /// as AeroSpace's `move-mouse window-lazy-center` does.
     private func centerPointer(on window: WindowID) {
         guard let frame = SkyLight.rows([window]).first?.frame, !frame.isEmpty,
-              let pointer = CGEvent(source: nil)?.location, !frame.contains(pointer) else { return }
+              let pointer = CGEvent(source: nil)?.location, !Self.inside(frame, pointer) else { return }
         CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
+    }
+
+    /// Whether the pointer is over the window with this frame. A window's resize region
+    /// reaches a few points past its frame, and a click there activates the window too.
+    private static func inside(_ frame: CGRect, _ pointer: CGPoint) -> Bool {
+        frame.insetBy(dx: -8, dy: -8).contains(pointer)
+    }
+
+    // MARK: Focus follows mouse
+
+    /// How long the pointer rests in a window before the window takes focus. Keying a window
+    /// of another app costs macOS's app usage daemons, the menu bar and the app about 94 ms
+    /// of CPU, so a window the pointer only passes through should not take focus (DESIGN.md,
+    /// sections 2 and 5.11).
+    private static let dwell: Duration = .milliseconds(50)
+
+    /// The pointer moved into `window`, the window WindowServer found under it (DESIGN.md,
+    /// section 5.11). Only a tiled or floating window of the shown workspace takes focus.
+    /// Anything else under the pointer, such as a menu, the bar, a panel or Mission
+    /// Control, leaves focus alone.
+    private func pointerEntered(_ window: WindowID) {
+        hoverGeneration += 1
+        let generation = hoverGeneration
+        guard session.isVisible(window), let pid = owner[window],
+              window != session.focused || key != .window(window) else { return }
+        let app = inventory.appIdentity(pid)
+        guard !focusFollowsMouse.ignores(appID: app.bundleID, appName: app.name) else { return }
+        Task {
+            try? await Task.sleep(for: Self.dwell)
+            guard generation == hoverGeneration, !pointer.paused,
+                  session.isVisible(window),
+                  let frame = inventory.windows[window]?.frame, let location = CGEvent(source: nil)?.location,
+                  Self.inside(frame, location) else { return }
+            // Keying a window leaves the stacking order alone, so a floating window, which can
+            // overlap others, is raised first.
+            if session.isFloating(window), let worker = inventory.worker(pid) {
+                await worker.raise(window)
+                guard generation == hoverGeneration else { return }
+            }
+            // A hover focus is a command (tla/Kosmos.tla): reports received before it are
+            // stale, and its echo is consumed. It never moves the pointer.
+            controllerLog.debug("hover focus \(window)")
+            reports.commandExecuted(receivedAt: .now)
+            session.adopt(window)
+            requestFocus(.window(window))
+            publishState()
+        }
     }
 
     private func touch(_ window: WindowID) {
