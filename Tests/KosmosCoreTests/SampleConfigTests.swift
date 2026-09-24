@@ -21,9 +21,9 @@ import Testing
 
     @Test func loadsWithoutDiagnostics() throws {
         let config = try config()
-        // AeroSpace's 64 bindings less ctrl-alt-a, which swapped focus follows mouse and AutoRaise.
+        // AeroSpace's 64 bindings, less ctrl-alt-a and the 11 that wait on multi-monitor commands.
         #expect(config.modes.keys.sorted() == ["main"])
-        #expect(config.modes["main"]?.count == 63)
+        #expect(config.modes["main"]?.count == 52)
         #expect(config.rules.count == 18)
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "laptop"])
         #expect(config.gaps.inner == 10)

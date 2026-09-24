@@ -2,13 +2,11 @@
 # laptop in ~/Projects/Personal/dotfiles/aerospace/.config/aerospace/). One file replaces
 # the four profile files, set-profile.sh, apply-profile.sh and migrate-to-laptop.sh.
 #
-# Kosmos checks the whole file before it applies any of it. `kosmos check` prints each
-# problem with its line, column and key. Unknown keys and wrong types are errors.
+# Kosmos checks the whole file before it applies any of it, and reports each problem with
+# its line, column and key. Unknown keys, wrong types and invalid commands are errors.
 #
-# Commands in bindings use the CLI grammar, as a string or as an array of arguments. The
-# config keeps them as written, and Kosmos's command parser checks them when the file
-# loads. The command names below follow the research note on configuration and change
-# with the command grammar.
+# A binding's command is a string of words split at whitespace, or an array of arguments,
+# with the command names and arguments of the CLI, which follow AeroSpace's.
 
 config-version = 1
 start-at-login = true
@@ -57,30 +55,37 @@ outer = { top = 35, left = 10, bottom = 10, right = 10 }
 # put windows 10 points under the bar, as on the other sides.
 outer-per-monitor = { builtin = { top = 5 } }
 
-# Bindings of the main mode, the mode Kosmos starts in. Another mode is another table,
-# such as [mode.resize.binding], entered with a command. Kosmos pushes every change to
+# Bindings of the main mode, the mode Kosmos starts in. Kosmos pushes every change to
 # SketchyBar itself, so no binding runs `sketchybar --trigger`.
 [mode.main.binding]
-# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys).
-alt-left = 'focus left --across-monitors'
-alt-right = 'focus right --across-monitors'
-alt-up = 'focus up --across-monitors'
-alt-down = 'focus down --across-monitors'
-alt-h = 'focus left --across-monitors'
-alt-l = 'focus right --across-monitors'
-alt-k = 'focus up --across-monitors'
-alt-j = 'focus down --across-monitors'
+# Bindings that wait on multi-monitor support in the command parser:
+#   focus across monitors (AeroSpace's --boundaries all-monitors-outer-frame);
+#   alt-shift-<direction> moving the window onto the next monitor at the edge;
+#   ctrl-alt-shift-left and right, next and previous workspace on the focused monitor;
+#   ctrl-alt-shift-up, down, 1, 2 and 3, move the window to another monitor;
+#   ctrl-alt-h, w, l and s, force a profile until the displays change.
+# AeroSpace's ctrl-alt-a swapped focus follows mouse and AutoRaise. Kosmos has no focus
+# follows mouse, so AutoRaise stays on and the binding is gone.
 
-# Move the window within its monitor, and onto the next monitor at the edge. This replaces
-# the bash chain of move, move-node-to-monitor and move-mouse.
-alt-shift-left = 'move left --or-monitor --follow'
-alt-shift-right = 'move right --or-monitor --follow'
-alt-shift-up = 'move up --or-monitor --follow'
-alt-shift-down = 'move down --or-monitor --follow'
-alt-shift-h = 'move left --or-monitor --follow'
-alt-shift-l = 'move right --or-monitor --follow'
-alt-shift-k = 'move up --or-monitor --follow'
-alt-shift-j = 'move down --or-monitor --follow'
+# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys).
+alt-left = 'focus left'
+alt-right = 'focus right'
+alt-up = 'focus up'
+alt-down = 'focus down'
+alt-h = 'focus left'
+alt-l = 'focus right'
+alt-k = 'focus up'
+alt-j = 'focus down'
+
+# Move the window within its workspace.
+alt-shift-left = 'move left'
+alt-shift-right = 'move right'
+alt-shift-up = 'move up'
+alt-shift-down = 'move down'
+alt-shift-h = 'move left'
+alt-shift-l = 'move right'
+alt-shift-k = 'move up'
+alt-shift-j = 'move down'
 
 # Switch workspace. On the laptop profile, 6 to 0 do not exist and these keys do nothing.
 alt-1 = 'workspace 1'
@@ -95,23 +100,25 @@ alt-9 = 'workspace 9'
 alt-0 = 'workspace 0'
 
 # Move the window to a workspace and follow it.
-alt-shift-1 = 'move-to-workspace 1 --follow'
-alt-shift-2 = 'move-to-workspace 2 --follow'
-alt-shift-3 = 'move-to-workspace 3 --follow'
-alt-shift-4 = 'move-to-workspace 4 --follow'
-alt-shift-5 = 'move-to-workspace 5 --follow'
-alt-shift-6 = 'move-to-workspace 6 --follow'
-alt-shift-7 = 'move-to-workspace 7 --follow'
-alt-shift-8 = 'move-to-workspace 8 --follow'
-alt-shift-9 = 'move-to-workspace 9 --follow'
-alt-shift-0 = 'move-to-workspace 0 --follow'
+alt-shift-1 = 'move-node-to-workspace --focus-follows-window 1'
+alt-shift-2 = 'move-node-to-workspace --focus-follows-window 2'
+alt-shift-3 = 'move-node-to-workspace --focus-follows-window 3'
+alt-shift-4 = 'move-node-to-workspace --focus-follows-window 4'
+alt-shift-5 = 'move-node-to-workspace --focus-follows-window 5'
+alt-shift-6 = 'move-node-to-workspace --focus-follows-window 6'
+alt-shift-7 = 'move-node-to-workspace --focus-follows-window 7'
+alt-shift-8 = 'move-node-to-workspace --focus-follows-window 8'
+alt-shift-9 = 'move-node-to-workspace --focus-follows-window 9'
+alt-shift-0 = 'move-node-to-workspace --focus-follows-window 0'
 
-alt-tab = 'workspace next --wrap'
-alt-shift-tab = 'workspace prev --wrap'
-ctrl-alt-tab = 'workspace back-and-forth'
+# Next and previous wrap around.
+alt-tab = 'workspace next'
+alt-shift-tab = 'workspace prev'
+ctrl-alt-tab = 'workspace-back-and-forth'
 
 alt-t = 'layout floating tiling'
-alt-f = 'fullscreen --no-outer-gaps'
+# A fullscreen window covers the display without outer gaps.
+alt-f = 'fullscreen'
 alt-equal = 'resize smart +100'
 alt-minus = 'resize smart -100'
 alt-shift-equal = 'resize smart +50'
@@ -122,26 +129,9 @@ ctrl-alt-right = 'join-with right'
 ctrl-alt-up = 'join-with up'
 ctrl-alt-down = 'join-with down'
 
-# Move the window to the next workspace on its monitor. AeroSpace needed a pipe from
-# list-workspaces for this.
-ctrl-alt-shift-left = 'move-to-workspace prev --on-monitor focused --wrap --follow'
-ctrl-alt-shift-right = 'move-to-workspace next --on-monitor focused --wrap --follow'
-ctrl-alt-shift-up = 'move-to-monitor up --wrap --follow'
-ctrl-alt-shift-down = 'move-to-monitor down --wrap --follow'
-ctrl-alt-shift-1 = 'move-to-monitor 1 --follow'
-ctrl-alt-shift-2 = 'move-to-monitor 2 --follow'
-ctrl-alt-shift-3 = 'move-to-monitor 3 --follow'
-
 ctrl-alt-j = 'layout tiles horizontal vertical'
 ctrl-alt-r = 'flatten-workspace-tree'
-ctrl-alt-c = 'reload'
-# Profiles follow the connected displays. These force one until the displays change.
-ctrl-alt-h = 'profile home'
-ctrl-alt-w = 'profile office'
-ctrl-alt-l = 'profile laptop'
-ctrl-alt-s = 'profile single'
-# AeroSpace's ctrl-alt-a swapped focus follows mouse and AutoRaise. Kosmos has no focus
-# follows mouse, so AutoRaise stays on and the binding is gone.
+ctrl-alt-c = 'reload-config'
 
 # Window rules. The first rule that matches a new window applies, and Kosmos warns about a
 # rule an earlier one hides. app-id matches the bundle identifier; app-name matches names
