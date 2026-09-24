@@ -242,6 +242,11 @@ off the main thread).
   the second click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.
   An expectation whose echo arrived while the session was locked is never consumed, since
   reports are not classified then, so a resync forgets every pending one.
+- The focus queue never names a concealed window (tla/Kosmos.tla, ExecFocus). A request for
+  a window Hiding held concealed when the request was made still supersedes older requests,
+  and then keys nothing; the switch that reveals the window requests focus once its barrier
+  confirms the reveal. The concealment is the one known on the main actor at the request,
+  since Hiding's ledger lives on the bridge queue.
 - When a newer command for another workspace is already queued, the older one lays out but
   doesn't focus.
 - The private path has a kill switch with two triggers. Once off, it stays off across

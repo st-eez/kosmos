@@ -35,12 +35,17 @@ final class FocusQueue: Sendable {
     /// private call falls back to with a record of its own, lets the app choose. `dropped`
     /// gets the stamp when the calls fail. Recording when the request is made failed TLC: a
     /// request still queued took a click on its window for its echo.
-    func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, generation: UInt64,
+    ///
+    /// `concealed` says the target window was concealed when the request was made: the queue
+    /// never names a concealed window, and the switch that reveals it requests focus once its
+    /// barrier confirms the reveal.
+    func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
+                 generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ exact: Bool) -> Void,
                  dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
-            guard isCurrent() else { return }
+            guard isCurrent(), !concealed else { return }
             let front = kosmos_front_pid() == pid
             if privately {
                 let request = SharedKeyRequest(performing: { stamp in Self.onMain { performing(stamp, true) } },

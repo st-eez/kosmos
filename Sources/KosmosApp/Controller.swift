@@ -338,8 +338,9 @@ final class Controller {
             pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
         }
         guard let pid else { return }
+        let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
-                           generation: focusQueue.newGeneration(),
+                           concealed: concealed, generation: focusQueue.newGeneration(),
                            performing: { [weak self] stamp, exact in self?.performing(target, pid: pid, exact: exact, at: stamp) },
                            dropped: { [weak self] stamp in
                                self?.reports.requestDropped(target, at: stamp)
