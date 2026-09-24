@@ -172,10 +172,29 @@ off the main thread).
 - Hidden windows keep their ordinary Space membership and gain holding membership, so
   Command-Tab still selects the right window. Only an app's other concealed windows lose
   ordinary membership.
+- A reveal removes the window from the holding Space. A window with no other Space at
+  the time of the reveal is first added to an ordinary one, exclusively; that add strips
+  only managed Spaces, and the holding Space is not one, so the removal is still needed.
+  The add goes first because a window removed from its only Space lands on the active
+  Space, which can be a native fullscreen one (`kosmos-probe reveal`).
+- A window leaves the holding Space only once its add landed. The add's return says only
+  that it was sent, so a barrier after the adds, about 1.3 ms and only in a batch that
+  adds, and a read of each added window's Spaces come before the removals. The read
+  compares the window's Spaces with the displays' ordinary Spaces, whether or not the
+  window's Space list names fullscreen Spaces. A window whose add did not land stays in
+  the holding Space, so the batch fails its confirmation and recovery adds it again.
+- The barrier at the end confirms that each revealed window left the holding Space.
+- A window with no ordinary Space goes to the main display's current Space, else to the
+  Space it had before its first hide if that still exists, else to the main display's
+  first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
+  one is on screen.
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
-- Recovery empties each recorded Space, sends stranded windows to their display's current
-  Space, destroys the Spaces and clears the record. Every step can safely run twice.
+- Recovery adds each window without an ordinary Space to the current Space of the display
+  under it, or to the Space a reveal would choose, then empties each recorded Space,
+  destroys the Spaces and clears the record. It removes an added window from a recorded
+  Space only once the add landed, and keeps the record while a window is left there. Every
+  step can safely run twice.
 
 ### 5.4 Focus
 
@@ -208,8 +227,9 @@ off the main thread).
   request records nothing, and a failed call forgets its record. Recording when the
   request was made failed TLC's `user` config. The user clicked w2, and Kosmos requested
   w2 again. Before the queue ran that request, the user clicked w1 and then w2, the second
-  click on w2 was taken for the queued request's echo, and Kosmos stayed on w1. When a newer command
-  for another workspace is already queued, the older one lays out but doesn't focus.
+  click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.
+- When a newer command for another workspace is already queued, the older one lays out but
+  doesn't focus.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
   - A crash guard. A byte in a file mapped shared is set during each private call and
@@ -241,6 +261,16 @@ off the main thread).
   the app, or activate Finder alone for an empty workspace. The app picks its key window, so
   the spec's assumption that the requested window becomes key no longer holds, and a wrong
   window is adopted like the user's choice.
+- Open item: a switch requested while a native fullscreen Space is on screen. The private
+  path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
+  00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
+  until the user swiped 3.4 s later (WindowServer's SetManagedDisplayCurrentSpace log).
+  AeroSpace focuses with the public `NSRunningApplication.activate` on one monitor, which
+  lets the Dock switch to the Space that holds the window. The plan is that when the main
+  display's current Space is not ordinary and the target is a window, the focus queue
+  follows the private call with that public activation. An empty workspace would still
+  leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
+  fullscreen Space, which takes over the screen.
 
 ### 5.5 Tree
 

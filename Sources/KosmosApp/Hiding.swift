@@ -123,8 +123,7 @@ private final class HidingStore: @unchecked Sendable {
         }
         // A Space that no longer exists holds nothing and leaves the record.
         let read = SpaceMembers.read(onFile.spaces)
-        guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) },
-                                                  hasOrdinarySpace: Self.hasOrdinarySpace) else { return false }
+        guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) }) else { return false }
         state = onFile
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }
@@ -140,21 +139,36 @@ private final class HidingStore: @unchecked Sendable {
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
-        for (from, windows) in batch.removals {
+        // Adds land before any removal is sent: a window removed from its only Space lands on
+        // whichever Space is active, which can be a native fullscreen one. The add's return
+        // says only that it was sent, so a barrier and a read confirm it, about 1.3 ms, and
+        // the displays are read, up to 7 ms on the development Mac, only in a batch that adds.
+        var removals = batch.removals
+        if !batch.adds.isEmpty {
+            let displays = Displays.current()
+            let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
+            var destinations: [UInt64: [UInt32]] = [:]
+            for window in batch.adds {
+                guard let destination = displays.ordinarySpace(original: original[window]) else { return false }
+                destinations[destination, default: []].append(window)
+            }
+            for (destination, windows) in destinations {
+                var ids = windows
+                kosmos_add_windows(destination, &ids, ids.count, true)
+            }
+            guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
+            removals = batch.removals(landed: displays.isInOrdinarySpace)
+        }
+        for (from, windows) in removals {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
-        }
-        if !batch.moves.isEmpty {
-            guard let destination = Displays.current().mainCurrentSpace else { return false }
-            var ids = batch.moves
-            kosmos_add_windows(destination, &ids, ids.count, true)
         }
         var ids = batch.keep
         kosmos_add_windows(space, &ids, ids.count, false)
         ids = batch.strip
         kosmos_add_windows(space, &ids, ids.count, true)
         // One barrier after every operation of the batch: the bridge runs them in order.
-        let touched = Set(batch.mustBeIn.values).union(batch.mustHaveLeft.values)
+        let touched = Set(batch.mustBeIn.values).union(batch.removals.keys)
         guard let any = touched.first else { return true }
         guard kosmos_barrier(any) else { return false }
         var members: [UInt64: Set<UInt32>] = [:]
@@ -164,7 +178,7 @@ private final class HidingStore: @unchecked Sendable {
             members[space] = Set(list)
         }
         let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
-        let shown = batch.mustHaveLeft.allSatisfy { !members[$0.value]!.contains($0.key) }
+        let shown = batch.removals.allSatisfy { space, windows in windows.allSatisfy { !members[space]!.contains($0) } }
         guard hidden && shown else { return false }
         ledger.commit(batch, into: space)
         return true
@@ -227,6 +241,10 @@ private final class HidingStore: @unchecked Sendable {
 
     func recoverOutcome() -> Recovery.Outcome { recover() }
 
+    /// Whether the window has a Space besides the holding Space, which the list leaves out,
+    /// so a removal from the holding Space leaves it where it was. Any listed Space counts, a
+    /// native fullscreen one included: an add to an ordinary Space would take the window out
+    /// of it.
     private static func hasOrdinarySpace(_ window: UInt32) -> Bool {
         !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
     }
