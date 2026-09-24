@@ -20,15 +20,20 @@ fi
 dist=.build/dist
 app=$dist/Kosmos.app
 rm -rf "$dist"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$dist/bin"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Library/LaunchAgents" "$dist/bin"
 sed "s/VERSION/$version/g" Resources/Info.plist > "$app/Contents/Info.plist"
+# The launch at login agent, registered through SMAppService.
+cp Resources/io.github.st-eez.kosmos.plist "$app/Contents/Library/LaunchAgents/"
 cp "$bin/KosmosApp" "$app/Contents/MacOS/Kosmos"
 cp "$bin/kosmos-guardian" "$app/Contents/Helpers/kosmos-guardian"
-cp "$bin/kosmos" "$dist/bin/kosmos"
+# The app carries its own CLI, which script/install.sh links, so an installed app and the
+# CLI on the PATH always come from one build.
+cp "$bin/kosmos" "$app/Contents/Helpers/kosmos"
 
 sign() { codesign --force --options runtime --timestamp=none --sign "$identity" "$@"; }
 sign --identifier io.github.st-eez.kosmos.guardian "$app/Contents/Helpers/kosmos-guardian"
+sign --identifier io.github.st-eez.kosmos.cli "$app/Contents/Helpers/kosmos"
 sign "$app"
-sign --identifier io.github.st-eez.kosmos.cli "$dist/bin/kosmos"
+cp "$app/Contents/Helpers/kosmos" "$dist/bin/kosmos"
 codesign --verify --strict "$app"
 echo "Built Kosmos $version in $dist, signed by $identity"

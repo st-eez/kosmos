@@ -1,5 +1,6 @@
 import AppKit
 import KosmosIPC
+import ServiceManagement
 
 /// A static menu bar icon. It changes only when Kosmos's state changes, never during a
 /// command, because a status item that changes width makes the menu bar lay itself out
@@ -42,6 +43,46 @@ final class StatusItem: NSObject, NSMenuDelegate {
         for problem in problems.prefix(8) { menu.addItem(withTitle: problem, action: nil, keyEquivalent: "") }
         if problems.count > 8 { menu.addItem(withTitle: "and \(problems.count - 8) more in the log", action: nil, keyEquivalent: "") }
         menu.addItem(.separator())
+        menu.addItem(launchAtLoginItem())
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Kosmos", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
+
+    /// Shows SMAppService's status as it is when the menu opens.
+    private func launchAtLoginItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        item.target = self
+        switch LaunchAtLogin.service.status {
+        case .enabled:
+            item.state = .on
+            if LaunchAtLogin.isAgent { item.subtitle = "Turning it off quits Kosmos" }
+        case .requiresApproval:
+            item.state = .mixed
+            item.subtitle = "Needs approval in Login Items"
+            item.action = #selector(openLoginItems)
+        default:
+            break
+        }
+        return item
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = LaunchAtLogin.service
+        do {
+            if service.status == .enabled {
+                let agent = LaunchAtLogin.isAgent
+                try service.unregister()
+                // launchd kills the agent's process. Quitting restores hidden windows in
+                // process, and the guardian restores them if the kill comes first.
+                if agent { NSApp.terminate(nil) }
+            } else {
+                try service.register()
+            }
+        } catch {
+            log.error("launch at login: \(error.localizedDescription, privacy: .public)")
+        }
+        if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+    }
+
+    @objc private func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
 }
