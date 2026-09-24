@@ -75,6 +75,8 @@ actor AppWorker {
     /// Registers the app's observer and reads its current windows, then reports `answering`.
     /// Returns false when the app does not answer Accessibility yet.
     func start() -> Bool {
+        // The launch retries and the probe can both get here.
+        guard !started else { return true }
         if observer == nil {
             var created: AXObserver?
             guard AXObserverCreate(pid, { _, element, notification, refcon in
