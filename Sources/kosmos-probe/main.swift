@@ -31,8 +31,12 @@
 //                                   the prohibited activation policy, switched twice. strip
 //                                   or keep conceals the selected tab in a holding Space
 //                                   first, as Kosmos does, to see whether deselecting it
-//                                   drops that membership. Accessibility focus changes
-//                                   print only when the terminal is trusted.
+//                                   drops that membership. Each event prints the tab's
+//                                   frame: tab B joins at another size, and the selected
+//                                   tab's frame changes 0.3 s before a switch, then just
+//                                   before one.
+//                                   Accessibility focus changes print only when the
+//                                   terminal is trusted.
 //   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
 //                                   out of the holding Space, and where does a window
 //                                   removed from its only Space land? Its window is
@@ -476,13 +480,27 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
         return window
     }
     let first = window("kosmos-probe tab A"), second = window("kosmos-probe tab B")
+    // B starts at another size, to see whether joining the group gives it A's frame.
+    second.setFrame(NSRect(x: -4000, y: -4000, width: 420, height: 260), display: false)
     first.orderFrontRegardless()
     first.addTabbedWindow(second, ordered: .above)
     second.orderFrontRegardless()
     print("\(first.windowNumber) \(second.windowNumber)")
     let say = { (text: String) in print(String(format: "%.1f child: ", uptime()) + text) }
+    // A frame written to the selected tab alone, as Kosmos writes one: does the next tab
+    // selected come in with it?
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+        say("B's frame set to 520x330")
+        second.setFrame(NSRect(x: -4100, y: -4100, width: 520, height: 330), display: false)
+    }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("select A"); first.tabGroup?.selectedWindow = first }
     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { say("select B"); first.tabGroup?.selectedWindow = second }
+    // A frame set on the selected tab just before the switch, in the same turn.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        say("B's frame set to 600x360, then select A")
+        second.setFrame(NSRect(x: -4200, y: -4200, width: 600, height: 360), display: false)
+        first.tabGroup?.selectedWindow = first
+    }
     DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { exit(0) }
     app.run()
     exit(0)
@@ -515,7 +533,9 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
             let offset = id >= 1325 ? 8 : 0
             let window: UInt32 = bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : 0
             guard tabWindows.contains(window) else { return }
-            print(String(format: "%.1f event %d tab %@", uptime(), id, window == tabWindows[0] ? "A" : "B"))
+            // The frame the inventory reads when this event reaches it.
+            let frame = SkyLight.rows([window]).first.map { "\($0.frame)" } ?? "no row"
+            print(String(format: "%.1f event %d tab %@ frame %@", uptime(), id, window == tabWindows[0] ? "A" : "B", frame))
         }, id, nil)
     }
     var watched = tabWindows
@@ -551,7 +571,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
         let parts = zip(["A", "B"], tabWindows).map { name, id in
             let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
             let held = space != 0 ? ", in holding \(inSpace(id, space))" : ""
-            return "\(name) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)" + held
+            return "\(name) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") frame \(rows[id].map { "\($0.frame)" } ?? "none") Spaces \(spaces)" + held
         }
         print(String(format: "%.1f ", uptime()) + step + ": " + parts.joined(separator: ", "))
     }
@@ -566,7 +586,8 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { state("B selected") }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { state("after select A") }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { state("after select B") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { state("after select B") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.9) { state("after the frame change and select A") }
     DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { finish() }
     app.run()
     exit(0)
