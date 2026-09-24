@@ -64,6 +64,19 @@ final class Hiding {
         }
     }
 
+    /// Forgets windows that left the holding Space on their own, as a native tab does when
+    /// it is deselected (kosmos-probe tabs). The ledger would otherwise take the tab for
+    /// concealed when it is selected again, and a batch would fail to find it there. The
+    /// record forgets it too, or recovery would add the deselected tab to a Space.
+    func forget(_ windows: [UInt32]) {
+        let store = self.store
+        bridge.async {
+            store.forget(windows)
+            let concealed = store.concealed
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.concealed = concealed } }
+        }
+    }
+
     /// Restores every concealed window, as when hiding stops for good.
     func restoreAll() {
         let store = self.store
@@ -182,6 +195,14 @@ private final class HidingStore: @unchecked Sendable {
         guard hidden && shown else { return false }
         ledger.commit(batch, into: space)
         return true
+    }
+
+    func forget(_ windows: [UInt32]) {
+        guard load() else { return }
+        ledger.forget(windows)
+        guard var next = state, next.windows.contains(where: { windows.contains($0.id) }) else { return }
+        next.windows.removeAll { windows.contains($0.id) }
+        if record.publish(next) { state = next }
     }
 
     /// Records the holding Space before any window enters it, and each window before its

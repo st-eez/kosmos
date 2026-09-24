@@ -77,6 +77,12 @@ public struct ConcealLedger: Equatable, Sendable {
         return batch
     }
 
+    /// Drops windows that left their concealing Space on their own, as a native tab does
+    /// when it is deselected (kosmos-probe tabs).
+    public mutating func forget(_ windows: [UInt32]) {
+        for window in windows { entries[window] = nil }
+    }
+
     /// Records a batch once it is confirmed.
     public mutating func commit(_ batch: Batch, into space: UInt64) {
         for window in batch.removals.values.joined() { entries[window] = nil }

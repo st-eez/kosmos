@@ -29,13 +29,12 @@ final class Controller {
     private var fullscreenParked: Set<WindowID> = []
     /// Windows parked because their app ordered them out and kept them.
     private var closedByApp: Set<WindowID> = []
-    /// Switches between native tabs, and the deselected tabs: out of the session, each a
-    /// hidden member of the place its group's selected tab holds.
+    /// Switches between native tabs, and the tabs that hold no place.
     private var tabSwitches = TabSwitches()
-    private var tabs: Set<WindowID> = []
-    /// Tabs selected before Kosmos admitted them, as a new tab is: the tab whose place each
-    /// takes once admitted. Only admitted windows take places.
-    private var pendingTabs: [WindowID: WindowID] = [:]
+    private var tabs = TabGroups()
+    /// The last key report of a window with no place, decided again if a tab switch gives
+    /// that window a place: macOS can report the new tab key before the switch pairs.
+    private var unplacedKey: KeyReport?
     /// The key window macOS last reported.
     private var key: KeyWindow?
     /// A report whose verdict waits for the departure of the window key before it
@@ -139,8 +138,11 @@ final class Controller {
             owner[id] = pid
             // A deselected tab waits as a hidden member. A tab selected before now, as a new
             // tab is, takes its group's place.
-            if tabs.contains(id) { return }
-            if let old = pendingTabs.removeValue(forKey: id), tabSwitched(from: old, to: id) { return }
+            switch tabs.admitting(id) {
+            case .hidden: return
+            case .takes(let old): if tabSwitched(from: old, to: id) { return }
+            case .own: break
+            }
             let app = inventory.appIdentity(pid)
             let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
@@ -175,9 +177,7 @@ final class Controller {
         hiddenApps[pid]?.removeAll { $0 == id }
         fullscreenParked.remove(id)
         closedByApp.remove(id)
-        tabs.remove(id)
-        pendingTabs[id] = nil
-        pendingTabs = pendingTabs.filter { $0.value != id }
+        tabs.forget(id)
         ledger.forget(id)
         execute(session.remove(id))
     }
@@ -207,12 +207,12 @@ final class Controller {
         if let change = tabSwitches.ordered(id, in: orderedIn, app: pid, at: at), tabSwitched(from: change.old, to: change.new) {
             return
         }
-        guard orderedIn, tabs.contains(id) || closedByApp.contains(id) else { return }
+        guard orderedIn, tabs.hidden.contains(id) || closedByApp.contains(id) else { return }
         after(TabSwitches.window) { controller in
             guard controller.inventory.windows[id]?.orderedIn == true else { return }
             if controller.closedByApp.remove(id) != nil {
                 controller.returned([id], follow: id, at: at)
-            } else if controller.tabs.remove(id) != nil {
+            } else if controller.tabs.detached(id) {
                 controller.execute(controller.session.add(id))
             }
         }
@@ -223,22 +223,34 @@ final class Controller {
     /// (DESIGN.md, section 5.5). A tab not admitted yet takes the place once it is. False
     /// when `old` holds no place.
     private func tabSwitched(from old: WindowID, to new: WindowID) -> Bool {
-        // A new tab deselected before Kosmos admitted it never took its place.
-        if pendingTabs.removeValue(forKey: old) != nil { tabs.insert(old) }
-        guard owner[new] != nil else {
-            guard session.workspace(of: old) != nil, !session.isParked(old) else { return false }
-            pendingTabs[new] = old
-            return true
+        switch tabs.switched(from: old, to: new, admitted: owner[new] != nil, placed: session.workspace(of: old) != nil) {
+        case .none: return false
+        case .pending: return true
+        case .replace: break
         }
         guard let plan = session.replace(old, with: new) else { return false }
         controllerLog.info("tab \(new) replaces \(old)")
-        tabs.remove(new)
+        tabs.replaced(old, with: new)
         // Parked as closed by its app, as a window Merge All Windows made a tab.
         closedByApp.remove(new)
-        tabs.insert(old)
+        // A switch inside a native fullscreen group: the new tab is the one in fullscreen.
+        if fullscreenParked.remove(old) != nil { fullscreenParked.insert(new) }
+        // A deselected tab leaves every Space, the holding Space too (kosmos-probe tabs), and
+        // the tab selected lands on its ordinary Space, whatever Kosmos had concealed: the
+        // plan conceals it afresh when its place is on a hidden workspace.
+        hiding.forget([old, new])
         ledger.forget(new)
         if key == .window(old) { key = .window(new) }
         execute(plan)
+        // macOS reported the new tab key before it had a place. It is the user's or the
+        // app's choice, followed if the place is on a hidden workspace; the window key
+        // before it is the tab deselected, which did not depart. A tab in native fullscreen
+        // is key in its own Space, as any parked window.
+        if let report = unplacedKey, report.key == .window(new), !session.isParked(new) {
+            unplacedKey = nil
+            decide(KeyReport(key: report.key, received: report.received, previous: report.previous,
+                             concealed: session.workspace(of: new) != session.visible, miss: .none), keyLeft: .stayed)
+        }
         return true
     }
 
@@ -333,7 +345,13 @@ final class Controller {
             }
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
-            if let id, session.workspace(of: id) == nil || session.isParked(id) { return }
+            // A tab with no place yet is decided when it takes one.
+            if let id, session.workspace(of: id) == nil || session.isParked(id) {
+                unplacedKey = session.workspace(of: id) == nil
+                    ? KeyReport(key: reported, received: report.received, previous: previous, concealed: false, miss: miss) : nil
+                return
+            }
+            unplacedKey = nil
             if held.holds(reported, repeated: repeated) { return }
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4).

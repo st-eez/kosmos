@@ -123,10 +123,10 @@ extension Workspace {
         return true
     }
 
-    /// Puts `new` where `old` stands, tiled or floating, with its share, focus stamp and
-    /// fullscreen state: native tabs share one place. Restore hints, those of a floating
-    /// `old` and those that count `old` among their neighbours, name `new` instead. False when `old` is not tiled or floating here,
-    /// or `new` is already here.
+    /// Puts `new` where `old` stands, tiled, floating or parked, with its share, focus stamp
+    /// and fullscreen state: native tabs share one place. Restore hints, those of `old` and
+    /// those that count `old` among their neighbours, name `new` instead. False when `old`
+    /// is not here, or `new` is.
     @discardableResult
     mutating func replace(_ old: WindowID, with new: WindowID) -> Bool {
         guard !contains(new) else { return false }
@@ -134,6 +134,8 @@ extension Workspace {
             root[path.dropLast()].children[path.last!].kind = .window(new)
         } else if let index = floating.firstIndex(of: old) {
             floating[index] = new
+        } else if let index = parked.firstIndex(where: { $0.window == old }) {
+            parked[index] = Parked(window: new, floating: parked[index].floating)
         } else {
             return false
         }

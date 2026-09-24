@@ -90,3 +90,38 @@ private let t0 = ContinuousClock.now
     #expect(tabs.ordered(5, in: false, app: 100, at: t0 + .milliseconds(340)).map { [$0.old, $0.new] } == [5, 4])
     #expect(tabs.ordered(6, in: true, app: 100, at: t0 + .milliseconds(350)) == nil)
 }
+
+// Only an admitted window takes a place (review of 5107ed0, (a) and (d)).
+
+@Test func aTabSelectedBeforeItsAdmissionTakesThePlaceOnceAdmitted() {
+    var tabs = TabGroups()
+    // Cmd-T: the new tab 7 is selected before Kosmos reads its Accessibility role.
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: true) == .pending)
+    #expect(tabs.admitting(7) == .takes(2))
+    #expect(tabs.switched(from: 2, to: 7, admitted: true, placed: true) == .replace)
+    tabs.replaced(2, with: 7)
+    #expect(tabs.hidden == [2])
+    #expect(tabs.admitting(9) == .own)   // a window that took no tab's place
+}
+
+@Test func aTabDeselectedBeforeItsAdmissionStaysAHiddenMember() {
+    var tabs = TabGroups()
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: true) == .pending)
+    // Back to tab 2 before 7's admission: 7 never took the place.
+    #expect(tabs.switched(from: 7, to: 2, admitted: true, placed: false) == .none)
+    #expect(tabs.admitting(7) == .hidden)
+    // A switch from a tab that holds no place, as one destroyed first, places nothing.
+    #expect(tabs.switched(from: 3, to: 4, admitted: true, placed: false) == .none)
+}
+
+@Test func aHiddenMemberDraggedOutOrGoneLeavesTheGroup() {
+    var tabs = TabGroups()
+    tabs.replaced(2, with: 7)
+    #expect(tabs.detached(2) && !tabs.detached(2))
+    tabs.replaced(7, with: 8)
+    _ = tabs.switched(from: 8, to: 9, admitted: false, placed: true)   // 9 pending on 8
+    tabs.forget(8)
+    #expect(tabs.admitting(9) == .own)
+    tabs.forget(7)
+    #expect(tabs.hidden.isEmpty)
+}

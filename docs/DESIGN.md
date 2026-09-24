@@ -270,6 +270,18 @@ off the main thread).
     tabs do. The incoming tab takes the outgoing tab's place, share, focus and workspace,
     with no reflow and no follow, and gets that place's frame. The outgoing tab leaves
     the session, a hidden member of the place.
+  - A deselected tab leaves every Space, the holding Space too, whether Kosmos stripped
+    its ordinary Space or kept it, and selected again it lands on its ordinary Space
+    (`kosmos-probe tabs strip` and `keep`). A switch forgets the deselected tab in the
+    concealment ledger and the recovery record, and conceals the selected tab again when
+    its place is on a hidden workspace.
+  - A switch inside a native fullscreen group swaps the parked tab: the new tab is the one
+    in fullscreen, and returns to the place when the group leaves fullscreen. A tab learns
+    its own minimum; a fullscreen tab's would fill the display.
+  - macOS can report the new tab key before the switch pairs, when the tab has no place.
+    Kosmos decides that report again once the tab takes its place, and follows it to a
+    place on a hidden workspace. The window key before it is the deselected tab, which
+    did not depart.
   - Only an admitted window takes a place. A new tab, and a tab selected for the first
     time, which Accessibility reports created then, take the place once Kosmos admits
     them, and a tab deselected before that stays a hidden member.

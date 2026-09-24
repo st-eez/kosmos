@@ -112,11 +112,13 @@ public struct Session: Sendable {
     /// Native tabs share one place. `new`, the tab just selected, takes the place of `old`,
     /// the tab it replaces, with its share, focus and workspace, and `old` leaves the
     /// session (DESIGN.md, section 5.5). A tab Kosmos already placed as a window of its
-    /// own, tiled or parked, as after Merge All Windows, leaves that place. The plan has
-    /// the frames, and conceals `new` when its place is on a hidden workspace. Nil, and
-    /// nothing changes, when `old` holds no tiled or floating place.
+    /// own, tiled or parked, as after Merge All Windows, leaves that place. A parked `old`,
+    /// as the tab in native fullscreen, leaves `new` parked in its stead. `new` learns its
+    /// own minimum: a fullscreen tab's would fill the display. The plan has the frames, and
+    /// conceals a tiled `new` when its place is on a hidden workspace. Nil, and nothing
+    /// changes, when `old` holds no place.
     public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
-        guard old != new, let name = home[old], !isParked(old) else { return nil }
+        guard old != new, let name = home[old] else { return nil }
         var changed: Set<String> = [name]
         if let current = home.removeValue(forKey: new) {
             _ = workspaces[current]!.remove(new)
@@ -126,11 +128,11 @@ public struct Session: Sendable {
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
         home[new] = name
-        minimums[new] = minimums[new] ?? minimums[old]
         minimums[old] = nil
+        parkedConcealed.remove(old)
         var plan = Plan()
         for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
-        if name != visible { plan.hide = [new] }
+        if name != visible, !isParked(new) { plan.hide = [new] }
         return plan
     }
 

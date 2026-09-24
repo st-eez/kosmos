@@ -99,31 +99,3 @@ public enum DepartureFocus: Equatable, Sendable {
         return .afterKeyReport
     }
 }
-
-/// Switches between native tabs, told from windows that come and go (DESIGN.md, section
-/// 5.5). AppKit orders the deselected tab's window out: it keeps its id and leaves every
-/// Space (kosmos-probe tabs), and WindowServer tags it as it tags a window its app ordered
-/// out (alt-tab's measurements on macOS 26). A switch posts 1325 for the incoming tab, 816
-/// and 1326 for the outgoing, then 815 for the incoming, within 0.2 ms (kosmos-probe tabs,
-/// macOS 27). Closing a tab can destroy it instead, before or after the next tab arrives.
-public struct TabSwitches: Sendable {
-    /// Two changes this close form one switch. The yabai forks that follow tabs pair within
-    /// 250 ms.
-    public static let window: Duration = .milliseconds(250)
-    /// Each app's last change of order not yet paired.
-    private var last: [Int32: (window: WindowID, orderedIn: Bool, at: ContinuousClock.Instant)] = [:]
-
-    public init() {}
-
-    /// A window of `app` was ordered in, or ordered out or destroyed. Returns the switch it
-    /// completes: `old`, the tab ordered out or destroyed, and `new`, the tab ordered in.
-    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, app: Int32,
-                                 at now: ContinuousClock.Instant) -> (old: WindowID, new: WindowID)? {
-        if let prior = last[app], prior.orderedIn != orderedIn, prior.window != window, now - prior.at <= Self.window {
-            last[app] = nil
-            return orderedIn ? (prior.window, window) : (window, prior.window)
-        }
-        last[app] = (window, orderedIn, now)
-        return nil
-    }
-}

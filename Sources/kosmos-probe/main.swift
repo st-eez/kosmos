@@ -25,10 +25,14 @@
 //                                   during a minimize's animation.
 //                                   The window belongs to an accessory app, which Kosmos
 //                                   does not manage.
-//   kosmos-probe tabs               Does WindowServer order out the deselected window of a
+//   kosmos-probe tabs [strip|keep]  Does WindowServer order out the deselected window of a
 //                                   native tab group, and which Spaces keep it? Two tabs of
 //                                   its own, invisible and off every display, in an app with
-//                                   the prohibited activation policy, switched twice.
+//                                   the prohibited activation policy, switched twice. strip
+//                                   or keep conceals the selected tab in a holding Space
+//                                   first, as Kosmos does, to see whether deselecting it
+//                                   drops that membership. Accessibility focus changes
+//                                   print only when the terminal is trusted.
 //   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
 //                                   out of the holding Space, and where does a window
 //                                   removed from its only Space land? Its window is
@@ -68,13 +72,13 @@ case "fullscreen": fullscreen()
 case "departures-window": departuresWindow()
 case "departures": departures()
 case "tabs-window": tabsWindow()
-case "tabs": tabs()
+case "tabs": tabs(conceal: arguments.dropFirst().first)
 case "hidden-window": showHiddenWindow()
 case "reveal": reveal()
 case "displays": displays()
 case "secure-input": secureInput()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs | reveal | displays | secure-input")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input")
     exit(2)
 }
 
@@ -464,7 +468,7 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
 
 nonisolated(unsafe) var tabWindows: [UInt32] = []
 
-@MainActor func tabs() -> Never {
+@MainActor func tabs(conceal: String?) -> Never {
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
@@ -494,19 +498,54 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     }
     var watched = tabWindows
     SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
-    /// Each tab's order and Spaces as the inventory reads them.
+    // The child's focused window as Accessibility reports it, only when trusted: the probe
+    // never asks for the permission.
+    var observer: AXObserver?
+    if AXIsProcessTrusted(), AXObserverCreate(child.processIdentifier, { _, element, _, _ in
+        var id: UInt32 = 0
+        _ = _AXUIElementGetWindow(element, &id)
+        print(String(format: "%.1f AX focused window tab %@", uptime(), id == tabWindows[0] ? "A" : id == tabWindows[1] ? "B" : "\(id)"))
+    }, &observer) == .success, let observer {
+        AXObserverAddNotification(observer, AXUIElementCreateApplication(child.processIdentifier),
+                                  kAXFocusedWindowChangedNotification as CFString, nil)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        print("Accessibility trusted: focus changes print (none while the child cannot be key)")
+    } else {
+        print("Accessibility not trusted: no focus changes")
+    }
+    // Conceal the selected tab as Kosmos does, stripping its ordinary Space or keeping it.
+    var space: UInt64 = 0
+    if conceal == "strip" || conceal == "keep" {
+        space = kosmos_holding_create()
+        var ids = [tabWindows[1]]
+        kosmos_add_windows(space, &ids, 1, conceal == "strip")
+        _ = kosmos_barrier(space)
+        print("B concealed (\(conceal!)) in holding Space \(space)")
+    }
+    /// Each tab's order and Spaces as the inventory reads them, and holding membership.
     func state(_ step: String) {
         let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(tabWindows).map { ($0.id, $0) })
+        if space != 0 { _ = kosmos_barrier(space) }
         let parts = zip(["A", "B"], tabWindows).map { name, id in
             let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
-            return "\(name) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)"
+            let held = space != 0 ? ", in holding \(inSpace(id, space))" : ""
+            return "\(name) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)" + held
         }
         print(String(format: "%.1f ", uptime()) + step + ": " + parts.joined(separator: ", "))
+    }
+    func finish() -> Never {
+        if space != 0 {
+            var ids = tabWindows
+            _ = kosmos_remove_windows(space, &ids, Int(ids.count))
+            _ = kosmos_space_destroy(space)
+        }
+        child.terminate()
+        exit(0)
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { state("B selected") }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { state("after select A") }
     DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { state("after select B") }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { child.terminate(); exit(0) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { finish() }
     app.run()
     exit(0)
 }
