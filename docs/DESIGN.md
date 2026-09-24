@@ -190,28 +190,31 @@ off the main thread).
 
 - Create the holding Space once per session, and record its id in the durable record
   before the first window enters it.
-- Each app's most recently used window, the one it last reported key, keeps its ordinary
-  Space membership when concealed and gains holding membership, whether or not the app
-  has a window on the shown workspace. Command-Tab and a Dock click then key it, and
-  Kosmos follows it to its workspace, as macOS does without Kosmos. The app's other
-  concealed windows lose ordinary membership, so macOS keys no other hidden window.
-  Command-backtick cycles through the app's windows on screen, and when the key window
-  closes, AppKit keys no hidden window in its place. This is the AeroSpace fork's np4
-  rule, which passed all eight selection cases on three displays (fork
-  NATIVE-WINDOW-ELIGIBILITY-TRIAL.md). Keeping every concealed window's ordinary Space
-  (np3) let macOS key a concealed window on the current display in place of the app's
-  last key window on another display.
-- When an app reports another window key, its concealed windows change membership in a
-  bridge job of their own, outside any switch. That window gets an ordinary Space back if
-  it is concealed without one, and the app's other concealed windows lose theirs. An app
-  that has reported no key window since Kosmos started is asked for its focused window.
-- The rule keeps the key window out of reveals that add. Adding an app's key window to
-  the current Space makes WindowServer move the key window and the menu bar ("acquiring
-  menu bar for key/main window move"), and a batch's final barrier waited 3 to 30 ms for
-  it. On 2026-09-24, the 8 switches that revealed a concealed key window this way took 5.9
-  to 33.2 ms, median 9.1, and the 24 other switches 0.7 to 5.0 ms, median 2.7. For a
-  window that is not key, the add and a barrier took 0.8 ms at the median and the removal
-  0.7 ms.
+- Every concealed window keeps its ordinary Space membership and gains holding
+  membership, so every reveal is a removal from the holding Space. On one display,
+  Command-Tab and a Dock click key the app's most recently used window, which AppKit keys
+  on activation, concealed or not, and Kosmos follows it to its workspace, as macOS does
+  without Kosmos. The AeroSpace fork kept every concealed window's ordinary Space in its
+  np3 trial and its forward selection cases passed (fork NATIVE-WINDOW-SELECTION-TRIAL.md).
+  Two costs follow. Command-backtick cycles through the app's concealed windows too, and
+  Kosmos follows each one. When the key window closes, AppKit can key a concealed window
+  of the app, and the departure rule keeps Kosmos's workspace (section 5.4).
+- Stripping costs switch time. An add of a window to an ordinary Space makes
+  WindowManager.app, which runs the bridged operations, rebuild its window model, and the
+  batch's later operations and its barrier wait behind that work. An add of the app's key
+  window also makes WindowServer move the key window and the menu bar ("acquiring menu
+  bar for key/main window move"). On 2026-09-24, the 8 switches that revealed a stripped
+  key window took 5.9 to 33.2 ms, median 9.1. Stripping only the app's other windows (the
+  fork's np4 rule) still revealed a stripped window in every switch between two
+  workspaces with one window of an app each, 2.6 to 23.8 ms. The 24 switches without an
+  add took 0.7 to 5.0 ms, median 2.7.
+- Open item: several displays. Keeping every concealed window's ordinary Space failed
+  one of the fork's np3 cases on three displays: macOS keyed a concealed window on the
+  current display in place of the app's last key window on another display (fork
+  NATIVE-WINDOW-ELIGIBILITY-TRIAL.md). With several displays, Kosmos should strip a
+  concealed window whose app's most recently used window is shown on another display, and
+  change it when that window moves. Commit a0f9e6d on branch switch has the tracking of
+  each app's most recently used window and the membership job it needs.
 - A reveal removes the window from the holding Space. A window with no other Space at
   the time of the reveal is first added to an ordinary one, exclusively; that add strips
   only managed Spaces, and the holding Space is not one, so the removal is still needed.
@@ -229,7 +232,7 @@ off the main thread).
   trip.
 - A batch is confirmed when the Spaces it touched show each revealed window out of them
   and each concealed window in them. Kosmos reads them directly, on its own connection,
-  every 0.1 ms for up to 3 ms, and only then sends the barrier and reads once more. A
+  every 0.1 ms for up to 10 ms, and only then sends the barrier and reads once more. A
   direct read never shows an operation at once (0 in 60 tries on the development Mac),
   but it shows it as soon as WindowServer applied it: 0.47 ms at the median for a window
   that is not key, against 0.50 ms for the barrier. The barrier goes through

@@ -185,11 +185,11 @@ Each change below started as a counterexample from TLC.
     - A miss reported after Kosmos had followed the window was adopted as the user's
       choice. A miss is retried on any workspace.
 
-    The model does not rely on which window Command-Tab lands on. Kosmos keeps ordinary
-    Space membership only for each app's most recently used window, concealed or not, so
-    Command-Tab lands on that window, which can be hidden (`Controller.concealment`, the
-    AeroSpace fork's np4 rule, DESIGN 5.3). CmdTab lets it land on any window of the app,
-    that one included, and Open covers a hidden window keyed some other way.
+    The model does not rely on which window Command-Tab lands on. Kosmos keeps every
+    concealed window's ordinary Space membership on one display, so Command-Tab lands on
+    the app's most recently used window, which can be hidden (DESIGN 5.3). CmdTab lets it
+    land on any window of the app, that one included, and Open covers a hidden window
+    keyed some other way, as by Command-backtick.
 13. **Departures with no report of the next key window.** A departure of Kosmos's focus
     waited for macOS's report of the next key window, which need not come
     (`quiet-unbounded`). The wait now ends with a bound, and the departure focuses.

@@ -12,9 +12,10 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 /// never races a batch still in flight.
 @MainActor
 final class Hiding {
-    /// How a window leaves the screen. An app's most recently used window keeps its ordinary
-    /// Space membership so Command-Tab still picks it; the app's other concealed windows
-    /// lose it.
+    /// How a window leaves the screen. Every concealed window keeps its ordinary Space on
+    /// one display; exclusive waits for several displays, where a window whose app's most
+    /// recently used window is shown on another display should lose it (DESIGN.md, section
+    /// 5.3).
     typealias Conceal = ConcealLedger.Kind
 
     /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
@@ -92,14 +93,6 @@ final class Hiding {
             let concealed = store.concealed
             DispatchQueue.main.async { MainActor.assumeIsolated { self.concealed = concealed } }
         }
-    }
-
-    /// Leaves `keep` the one concealed window of `windows`, an app's windows, with an
-    /// ordinary Space, after the app keyed it. Runs as its own bridge job, never inside a
-    /// switch's batch, and needs no barrier: a reveal reads the membership it finds.
-    func keepOrdinary(_ keep: UInt32, of windows: [UInt32]) {
-        let store = self.store
-        bridge.async { store.keepOrdinary(keep, of: windows) }
     }
 
     /// Restores every concealed window, as when hiding stops for good.
@@ -251,25 +244,7 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// How long a batch reads the Spaces directly before it sends the barrier.
-    private static let readBound: Duration = .milliseconds(3)
-
-    func keepOrdinary(_ keep: UInt32, of windows: [UInt32]) {
-        guard load() else { return }
-        let change = ledger.membership(of: windows, keep: keep, hasOrdinarySpace: Self.hasOrdinarySpace)
-        // An add that keeps the concealing Space: the window stays concealed.
-        if !change.restore.isEmpty {
-            let original = state!.windows.first { $0.id == keep }?.originalSpace
-            if let destination = Displays.current().ordinarySpace(original: original) {
-                var ids = change.restore
-                kosmos_add_windows(destination, &ids, ids.count, false)
-            }
-        }
-        // An exclusive add to the Space that already conceals them takes their ordinary one.
-        for (space, windows) in change.strip {
-            var ids = windows
-            kosmos_add_windows(space, &ids, ids.count, true)
-        }
-    }
+    private static let readBound: Duration = .milliseconds(10)
 
     func forget(_ windows: [UInt32]) {
         guard load() else { return }

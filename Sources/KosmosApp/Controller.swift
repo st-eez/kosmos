@@ -24,11 +24,6 @@ final class Controller {
     private var owner: [WindowID: pid_t] = [:]
     /// Window ids by most recent focus, newest last.
     private var recent: [WindowID] = []
-    /// Each app's window as the app last reported it key: its most recently used window,
-    /// which keeps its ordinary Space while concealed (DESIGN.md, section 5.3).
-    private var appKey: [pid_t: WindowID] = [:]
-    /// Apps asked for their key window because they have not reported one.
-    private var askingKey: Set<pid_t> = []
     /// The windows each hidden app had tiled or floating, parked until it is unhidden.
     private var hiddenApps: [pid_t: [WindowID]] = [:]
     /// Windows parked while they are in native fullscreen.
@@ -208,7 +203,6 @@ final class Controller {
     private func managedChanged(_ id: WindowID, pid: pid_t, _ managed: Bool) {
         if managed {
             owner[id] = pid
-            if appKey[pid] == nil { askKey(pid) }
             // A deselected tab waits as a hidden member. A tab selected before now, as a new
             // tab is, takes its group's place.
             switch tabs.admitting(id) {
@@ -423,7 +417,6 @@ final class Controller {
             // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe). It leaves the
             // kill switch's count alone: a raise's report says nothing about the key record.
             guard !sessionLocked else { return }
-            if let id { keyedByApp(id) }
             _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
@@ -431,7 +424,6 @@ final class Controller {
             let repeated = key == reported
             key = reported
             guard !sessionLocked else { return }   // resync requests the intent again
-            if let id { keyedByApp(id) }
             // macOS's report of the next key window, which a departure waited for. Kosmos's
             // own echo is not it: a window keyed during a minimize's animation leaves macOS
             // nothing to key when it ends, so the wait runs to its bound and focuses.
@@ -619,7 +611,9 @@ final class Controller {
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
-            hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome, timing in
+            // Every concealed window keeps its ordinary Space (DESIGN.md, section 5.3).
+            let kinds = Dictionary(uniqueKeysWithValues: hide.map { ($0, Hiding.Conceal.keepOrdinary) })
+            hiding.apply(show: show, hide: kinds) { [weak self] outcome, timing in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)
@@ -660,44 +654,6 @@ final class Controller {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
             inventory.worker(pid)?.enqueueFrames(batch)
         }
-    }
-
-    /// Each app's most recently used window keeps its ordinary Space membership when it is
-    /// concealed, whether or not the app has a window on the shown workspace, so Command-Tab
-    /// and a Dock click go to it. Every other concealed window loses it, so macOS keys no
-    /// other hidden window (the AeroSpace fork's np4 rule; DESIGN.md, section 5.3).
-    private func concealment(of windows: [WindowID]) -> [WindowID: Hiding.Conceal] {
-        var kinds: [WindowID: Hiding.Conceal] = [:]
-        for (pid, group) in Dictionary(grouping: windows, by: { owner[$0] ?? 0 }) {
-            let used = mostRecentlyUsed(by: pid)
-            for window in group { kinds[window] = window == used ? .keepOrdinary : .exclusive }
-        }
-        return kinds
-    }
-
-    /// The window the app last reported key, else the one of its windows Kosmos focused last.
-    private func mostRecentlyUsed(by pid: pid_t) -> WindowID? {
-        if let window = appKey[pid], owner[window] == pid { return window }
-        return mostRecent(owner.filter { $0.value == pid }.map(\.key))
-    }
-
-    /// Asks an app that has reported no key window since Kosmos started for its focused
-    /// window, the one Command-Tab would key.
-    private func askKey(_ pid: pid_t) {
-        guard askingKey.insert(pid).inserted else { return }
-        Task {
-            let window = await inventory.worker(pid)?.focusedWindow() ?? nil
-            askingKey.remove(pid)
-            if appKey[pid] == nil, let window { keyedByApp(window) }
-        }
-    }
-
-    /// An app reported `window` key: it becomes the app's most recently used window, and
-    /// the app's concealed windows change membership to match, off the switch path.
-    private func keyedByApp(_ window: WindowID) {
-        guard let pid = owner[window], appKey[pid] != window else { return }
-        appKey[pid] = window
-        hiding.keepOrdinary(window, of: owner.filter { $0.value == pid }.map(\.key))
     }
 
     /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:

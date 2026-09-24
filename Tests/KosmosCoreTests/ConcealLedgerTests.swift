@@ -119,14 +119,3 @@ private struct Memberships {
     let batch = ledger.batch(show: [], hide: [1: .exclusive], into: 9, hasOrdinarySpace: { _ in true })
     #expect(batch.strip == [1] && batch.mustBeIn == [1: 9])
 }
-
-/// An app keyed window 2: it keeps an ordinary Space while concealed, and the app's other
-/// concealed windows lose theirs. A shown window changes nothing.
-@Test func theAppsKeyWindowIsTheOneConcealedWindowWithAnOrdinarySpace() {
-    let old: UInt64 = 7
-    let ledger = ConcealLedger(entries: [1: holding, 2: holding, 3: old, 4: holding])
-    let change = ledger.membership(of: [1, 2, 3, 4, 5], keep: 2, hasOrdinarySpace: { $0 == 1 || $0 == 3 || $0 == 5 })
-    #expect(change.restore == [2])
-    #expect(change.strip == [holding: [1], old: [3]])   // 4 has none already, 5 is shown
-    #expect(ledger.membership(of: [1, 2], keep: 1, hasOrdinarySpace: { $0 == 1 }) == ([], [:]))
-}

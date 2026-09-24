@@ -77,24 +77,6 @@ public struct ConcealLedger: Equatable, Sendable {
         return batch
     }
 
-    /// The changes that leave `keep` the one window of `windows` with an ordinary Space while
-    /// concealed, when an app keys another window (DESIGN.md, section 5.3): `keep` gets one
-    /// back if it lost it, and the others lose theirs in the Space that conceals them. Only
-    /// windows the ledger holds change; a revealed window keeps its Space.
-    public func membership(of windows: [UInt32], keep: UInt32,
-                           hasOrdinarySpace: (UInt32) -> Bool) -> (restore: [UInt32], strip: [UInt64: [UInt32]]) {
-        var restore: [UInt32] = [], strip: [UInt64: [UInt32]] = [:]
-        for window in windows {
-            guard let held = entries[window] else { continue }
-            if window == keep {
-                if !hasOrdinarySpace(window) { restore.append(window) }
-            } else if hasOrdinarySpace(window) {
-                strip[held, default: []].append(window)
-            }
-        }
-        return (restore, strip)
-    }
-
     /// Drops windows that left their concealing Space on their own, as a native tab does
     /// when it is deselected (kosmos-probe tabs).
     public mutating func forget(_ windows: [UInt32]) {
