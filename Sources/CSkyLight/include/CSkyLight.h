@@ -34,3 +34,5 @@ extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);
 
 // The WindowServer id of an Accessibility window element.
 extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
+
+#include "KosmosBridge.h"

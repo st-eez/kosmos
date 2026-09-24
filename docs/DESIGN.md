@@ -33,6 +33,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | A shell hook that notifies a status bar launches 3 to 8 processes per switch; a direct Mach message costs 1 to 4 µs | Push state to the bar from inside the manager |
 | Option-only Carbon hotkeys stop while another app holds Secure Input, for example a password prompt | Surface Secure Input, and test which modifiers survive it |
 | Pixel-based container weights produce wrong and negative sizes | Store fractions |
+| After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read confirms a switch, where the fork polled |
 
 ## 3. Primitive decisions
 
