@@ -17,6 +17,13 @@ final class Hiding {
     /// lose it.
     typealias Conceal = ConcealLedger.Kind
 
+    /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
+    /// preparing and sending its operations, the final barrier with its reads, and the way
+    /// back to the main actor.
+    struct Timing: Sendable {
+        var queued = Duration.zero, sent = Duration.zero, confirmed = Duration.zero, returned = Duration.zero
+    }
+
     enum Outcome: Sendable {
         case confirmed
         /// Without a ready guardian nothing is concealed; windows were only revealed.
@@ -47,19 +54,25 @@ final class Hiding {
 
     /// Reveals `show`, then conceals `hide`, then reads the barrier, on the bridge queue.
     /// Concealing needs a ready guardian; revealing does not.
-    func apply(show: [UInt32], hide: [UInt32: Conceal], done: @escaping @MainActor (Outcome) -> Void) {
+    func apply(show: [UInt32], hide: [UInt32: Conceal], done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady
         let hide = canConceal ? hide : [:]
         let store = self.store
+        let submitted = ContinuousClock.now
         bridge.async {
+            let started = ContinuousClock.now
             let confirmed = store.apply(show: show, hide: hide)
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
+            let finished = ContinuousClock.now
+            let sent = store.sent ?? finished
+            var timing = Timing(queued: started - submitted, sent: sent - started, confirmed: finished - sent)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    timing.returned = .now - finished
                     self.concealed = concealed
                     if let outcome { self.report(outcome) }
-                    done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed)
+                    done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
                 }
             }
         }
@@ -125,6 +138,8 @@ private final class HidingStore: @unchecked Sendable {
     private var ledger = ConcealLedger()
     /// Whether the record on file and the ledger it implies are loaded.
     private var loaded = false
+    /// When the last batch had sent its operations, before its final barrier.
+    private(set) var sent: ContinuousClock.Instant?
 
     init(record: RecordFile) { self.record = record }
 
@@ -157,14 +172,18 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     func apply(show: [UInt32], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
+        sent = nil
         guard load() else { return false }
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
-        // Adds land before any removal is sent: a window removed from its only Space lands on
-        // whichever Space is active, which can be a native fullscreen one. The add's return
-        // says only that it was sent, so a barrier and a read confirm it, about 1.3 ms, and
-        // the displays are read, up to 7 ms on the development Mac, only in a batch that adds.
+        // Adds go before removals: a window removed from its only Space lands on whichever
+        // Space is active. While a display shows one that is not ordinary, such as native
+        // fullscreen, the removals also wait for the adds to land; the add's return says only
+        // that it was sent, so a barrier and a read confirm it. With an ordinary Space on every
+        // display, a removal after an add that did not land still leaves the window on one,
+        // so the removals go at once. The displays are read, up to 7 ms on the development
+        // Mac, only in a batch that adds.
         var removals = batch.removals
         if !batch.adds.isEmpty {
             let displays = Displays.current()
@@ -178,8 +197,10 @@ private final class HidingStore: @unchecked Sendable {
                 var ids = windows
                 kosmos_add_windows(destination, &ids, ids.count, true)
             }
-            guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
-            removals = batch.removals(landed: displays.isInOrdinarySpace)
+            if !displays.showOrdinarySpaces {
+                guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
+                removals = batch.removals(landed: displays.isInOrdinarySpace)
+            }
         }
         for (from, windows) in removals {
             var ids = windows
@@ -189,6 +210,7 @@ private final class HidingStore: @unchecked Sendable {
         kosmos_add_windows(space, &ids, ids.count, false)
         ids = batch.strip
         kosmos_add_windows(space, &ids, ids.count, true)
+        sent = .now
         // One barrier after every operation of the batch: the bridge runs them in order.
         let touched = Set(batch.mustBeIn.values).union(batch.removals.keys)
         guard let any = touched.first else { return true }

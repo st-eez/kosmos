@@ -619,14 +619,16 @@ final class Controller {
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
-            hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome in
+            hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome, timing in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
                     switch to \(self.session.visible, privacy: .public): \(show.count) shown, \(hide.count) hidden, \
-                    before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms, \
+                    before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms \
+                    (queued \(Self.ms(timing.queued), privacy: .public), sent \(Self.ms(timing.sent), privacy: .public), \
+                    confirmed \(Self.ms(timing.confirmed), privacy: .public), back \(Self.ms(timing.returned), privacy: .public)), \
                     total \(Self.ms(total), privacy: .public) ms, \(String(describing: outcome), privacy: .public)
                     """)
                 switch outcome {
