@@ -27,8 +27,6 @@ final class Controller {
     private var hiddenApps: [pid_t: [WindowID]] = [:]
     /// Windows parked while they are in native fullscreen.
     private var fullscreenParked: Set<WindowID> = []
-    /// Windows parked because their app ordered them out and kept them.
-    private var closedByApp: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
     /// A report whose verdict waits for the departure of the window key before it
@@ -63,7 +61,6 @@ final class Controller {
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
-        inventory.onOrderedOut = { [weak self] id, out, at in self?.orderedOutChanged(id, out, at: at) }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
     }
 
@@ -152,7 +149,6 @@ final class Controller {
             recent.removeAll { $0 == id }
             hiddenApps[pid]?.removeAll { $0 == id }
             fullscreenParked.remove(id)
-            closedByApp.remove(id)
             ledger.forget(id)
             execute(session.remove(id))
         }
@@ -170,20 +166,6 @@ final class Controller {
             // macOS restores the frame it had; write the tile's frame again all the same.
             ledger.forget(id)
             returned([id], follow: id, at: since)
-        }
-    }
-
-    /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
-    /// parks as a minimized window does, and when the app orders it in again it returns to
-    /// its place and Kosmos follows it there. Removing it would lose its place, and the
-    /// inventory would not admit it again, since it stays managed.
-    private func orderedOutChanged(_ id: WindowID, _ out: Bool, at received: ContinuousClock.Instant) {
-        if out {
-            guard session.workspace(of: id) != nil, !session.isParked(id) else { return }
-            closedByApp.insert(id)
-            depart([id])
-        } else if closedByApp.remove(id) != nil {
-            returned([id], follow: id, at: received)
         }
     }
 

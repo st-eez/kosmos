@@ -256,11 +256,12 @@ off the main thread).
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
-  - A window its app orders out and keeps, as a closed NSWindowController window, parks
-    as a minimized one does, and returns when the app orders it in again. Kosmos takes a
-    window still ordered out a second later for none of the other reasons as one. A
-    conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
-    fullscreen transition.
+  - Open item: a window its app orders out and keeps, as a closed NSWindowController
+    window, keeps its tile, empty, until WindowServer destroys it, and so does a
+    deselected native tab, as in AeroSpace. A rule that parked a window still ordered out
+    a second later for no known reason also parked and unparked every deselected tab on
+    each switch, since WindowServer tags both alike (`kosmos-probe tabs`). Branch `tabs`
+    brings that rule back with tab switches handled.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first
