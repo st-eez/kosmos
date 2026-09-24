@@ -129,13 +129,13 @@ off the main thread).
   on 2026-09-24, over a day of use and live tests. It counted none of its corrections,
   which it logged only at debug or info level.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
-  2026-09-24, 60 changes of an invisible or off screen window posted nothing while no other
-  app's window came or went. In three runs while other apps' windows came and went, 12 of
-  18 changes posted 815 as the new level landed, 10 of them 808 too. The inventory reads a
-  window's row again on either, and otherwise at the window's next move, resize, reorder,
-  order change or Space change, or at the next sweep, which logs the change as missed by
-  events. A visible window's level change is unmeasured, as the probe keeps its window
-  invisible.
+  2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
+  other app's window came or went. In three runs while other apps' windows came and went,
+  12 of 18 changes posted 815 as the new level landed, 10 of them 808 too. The inventory
+  reads a window's row again on either, and otherwise at the window's next move, resize,
+  reorder, order change or Space change, or at the next sweep, which logs the change as
+  missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
+  level change is unmeasured, as the probe keeps its window invisible.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
