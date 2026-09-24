@@ -116,17 +116,18 @@ import Testing
         let answer = try #require(try connection.readFrame(deadline: .now + .seconds(5)))
         #expect(try Response(decoding: answer) == Response())
 
-        // The client stops reading. Each frame is far larger than the socket buffers, so frame 1
-        // stays in the middle of its write, and each later frame replaces the one waiting.
+        // The client stops reading. Each frame is far larger than the socket buffers, so the
+        // first frame written stays in the middle of its write, and each later frame replaces
+        // the one waiting. Which frame is first depends on when the server finishes writing the
+        // subscribe response: frame 1 waits too if the response is still in flight.
         let count = 10
         let padding = String(repeating: "x", count: 256 << 10)
         for seq in 1...count {
             test.server.publish(Array(#"{"pad":"\#(padding)","seq":\#(seq)}"#.utf8))
         }
-        let expected = [1, count]
 
         var received: [Int] = []
-        while received.count < expected.count {
+        while received.last != count {
             let body = try #require(try connection.readFrame(deadline: .now + .seconds(5)))
             guard case .object(let members) = try JSON(parsing: body), case .int(let seq) = members["seq"] else {
                 Issue.record("a frame without seq")
@@ -134,7 +135,8 @@ import Testing
             }
             received.append(seq)
         }
-        #expect(received == expected)
+        // At most the frame that was in flight, then the newest.
+        #expect(received.count <= 2)
         // The subscriber is still connected, with nothing more to read.
         #expect(throws: IPCError.timedOut) { _ = try connection.readFrame(deadline: .now + .milliseconds(200)) }
     }

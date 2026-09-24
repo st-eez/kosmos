@@ -17,7 +17,7 @@ private let signature: OSType = 0x4B53_4D53
 /// Presses arrive on the main thread through the event dispatcher and go straight to the
 /// handler, which should only enqueue a command.
 @MainActor
-final class Hotkeys {
+final class Hotkeys: NSObject {
     struct Problem: Equatable, CustomStringConvertible {
         var mode: String
         /// The binding's combination as the config writes it.
@@ -44,6 +44,7 @@ final class Hotkeys {
         self.handler = handler
         self.layoutProblems = layoutProblems
         layout = Self.currentLayout()
+        super.init()
         var pressedEvent = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
             var id = EventHotKeyID()
@@ -59,10 +60,12 @@ final class Hotkeys {
         }, 1, &pressedEvent, Unmanaged.passRetained(self).toOpaque(), nil)
         if status != noErr { hotkeysLog.error("InstallEventHandler failed: \(status)") }
 
-        let layoutChanged = Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String)
-        DistributedNotificationCenter.default().addObserver(forName: layoutChanged, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.layoutChanged() }
-        }
+        // AppKit holds distributed notifications for an app that is not active unless they
+        // are delivered immediately. Kosmos is active only while onboarding shows.
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(layoutChanged),
+            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil, suspensionBehavior: .deliverImmediately)
     }
 
     /// Replaces every mode's bindings, as after a config load, and activates mode main. The
@@ -166,7 +169,7 @@ final class Hotkeys {
         return problems
     }
 
-    private func layoutChanged() {
+    @objc private func layoutChanged() {
         let current = Self.currentLayout()
         guard current != layout else { return }
         layout = current
@@ -208,21 +211,29 @@ private func carbonModifiers(_ modifiers: KeyCombo.Modifiers) -> UInt32 {
     return UInt32(flags)
 }
 
-/// The process holding Secure Input, which a password field turns on. AeroSpace users report
-/// Option bindings going dead while a password manager holds it (hotkeys research, section 2).
-struct SecureInput: Equatable {
+/// The process holding Secure Input, which a password field turns on. While it is on, some
+/// bindings stop (DESIGN.md, section 5.6).
+struct SecureInput: Equatable, CustomStringConvertible {
     /// The process WindowServer names. When a process with no windows of its own turns Secure
     /// Input on, WindowServer names the frontmost app instead (measured on macOS 27 with a
     /// command line probe).
     var pid: pid_t?
     var appName: String?
 
-    /// Nil while Secure Input is off. The check costs under 0.1 µs (measured), and naming the
-    /// holder, which copies the session dictionary, runs only while Secure Input is on.
+    /// Nil while Secure Input is off. Naming the holder, which copies the session dictionary,
+    /// runs only while Secure Input is on.
     static func current() -> SecureInput? {
         guard IsSecureEventInputEnabled() else { return nil }
         let session = CGSessionCopyCurrentDictionary() as? [String: Any]
         let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
         return SecureInput(pid: pid, appName: pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName })
+    }
+
+    var description: String {
+        switch (appName, pid) {
+        case let (name?, pid?): "\(name) (pid \(pid))"
+        case let (nil, pid?): "pid \(pid)"
+        default: "an unnamed process"
+        }
     }
 }

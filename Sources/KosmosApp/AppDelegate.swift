@@ -2,6 +2,7 @@ import AppKit
 import KosmosCore
 import KosmosIPC
 import KosmosRecovery
+import KosmosSkyLight
 import os
 
 let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "app")
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyProblems: [String] = []
     private var hidingProblem: String?
     private var hiding: Hiding?
+    private var secureInput: SecureInput?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
@@ -61,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusItem = StatusItem()
         self.statusItem = statusItem
+        SkyLight.watchSecureInput { [weak self] in self?.secureInputChanged() }
+        secureInputChanged()
         // WindowServer tracking needs no permission, so it starts before the Accessibility grant.
         inventory.start()
         if AXIsProcessTrusted() {
@@ -167,6 +171,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateProblems() {
         statusItem?.problems = configProblems + hotkeyProblems + (hidingProblem.map { [$0] } ?? [])
+    }
+
+    /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
+    /// polls, so this never runs inside a switch, though an app that holds Secure Input only
+    /// while active makes it run right after one (DESIGN.md, section 5.6).
+    ///
+    /// Ceiling: a second holder's enable, or a release while another holder remains, sends no
+    /// event, so the named holder can be stale until Secure Input turns off and on. Reading
+    /// the holder again when the status menu opens would keep the menu current.
+    private func secureInputChanged() {
+        let current = SecureInput.current()
+        guard current != secureInput else { return }
+        secureInput = current
+        log.notice("secure input \(current.map { "on, held by \($0)" } ?? "off", privacy: .public)")
+        statusItem?.secureInput = current
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.

@@ -31,7 +31,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Every focus change makes an app frontmost, which costs macOS's app-usage daemons about 80% of one core at four switches per second | Skip activations that change nothing and coalesce bursts |
 | A SwiftUI menu bar label cost 6 to 10 ms of main-thread time per switch. A label that changes width makes macOS 27's MenuBarAgent lay out the whole menu bar, about 60 ms of CPU per switch | A static status item that is never written during a switch |
 | A shell hook that notifies a status bar launches 3 to 8 processes per switch; a direct Mach message costs 1 to 4 µs | Push state to the bar from inside the manager |
-| Option-only Carbon hotkeys stop while another app holds Secure Input, for example a password prompt | Surface Secure Input, and test which modifiers survive it |
+| Some Carbon hotkeys stop while any app holds Secure Input, for example in a password prompt (`kosmos-probe secure-input`, section 5.6) | Show Secure Input and its holder |
 | Pixel-based container weights produce wrong and negative sizes | Store fractions |
 | After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read confirms a switch, where the fork polled |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
@@ -184,9 +184,47 @@ off the main thread).
 
 - Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
   at 8 µs per call.
-- Secure Input (a password field in any app) blocks Option-only hotkeys. Kosmos shows when
-  Secure Input is active and which app holds it. A probe will show whether bindings that
-  include Control or Command still work.
+- Secure Input (a password field in any app) stops some hotkeys. `kosmos-probe
+  secure-input` registers ten test hotkeys, and its window asks for a real press of each
+  with Secure Input off and with its own password field focused. A hotkey that fires
+  consumes the key; one that does not lets the key reach the probe's window. With real
+  presses on the development Mac's keyboard:
+  - hotkeys whose modifiers are Option or Option and Shift stopped on Y and comma;
+  - Option on Space, Return and Delete still fired;
+  - every hotkey with Control or Command fired.
+- An earlier version of the probe posted synthetic presses, which gave the same answer in
+  three runs. They also covered keys a laptop lacks (keypad 1 stopped; Page Down, F13 and
+  keypad Enter fired) and Secure Input held by another, windowless process, which made no
+  difference. They are no stand-in on their own: built from the HID state, every hotkey
+  on a character key missed even with Secure Input off, and a press that no hotkey takes
+  types into whichever app is in front.
+- Kosmos states the rule as Option or Option and Shift on a letter, digit or punctuation
+  key. That rule is inferred from Y, comma and keypad 1: the other keys were not each
+  tested, and Space types a character too, yet its Option hotkey fired. By that rule, 34
+  of the sample config's 52 bindings stop (alt and alt-shift on letters, digits, equal and
+  minus), and the ctrl-alt bindings keep working. Tab and the arrows cannot be tested
+  while Kosmos runs, because it holds them; like Return and Delete, they should keep
+  working.
+- WindowServer sends event 752 when Secure Input turns on and 753 when it turns off,
+  whichever process changes it, and 753 when the last holder exits (measured September 24,
+  2026 with throwaway programs that turned it on and off from other processes). Kosmos
+  registers both on its own connection, then reads `IsSecureEventInputEnabled` and names
+  the holder from the session dictionary. Nothing polls. The handler runs on the main
+  actor when an event arrives, never inside a switch, though it can run right after one:
+  an app that holds Secure Input only while it is active, such as Terminal with Secure
+  Keyboard Entry, turns it off and on as a switch leaves or enters its workspace, and the
+  status item image changes with it. Checks on app activation or focus reports would
+  miss a password field focused inside the active app.
+- The events follow the session's state. With two holders, the second enable and a
+  release while the other remains send no event, so the named holder can be stale until
+  Secure Input turns off and on again.
+- While Secure Input is on, the status item shows a lock, names the holder and says which
+  bindings wait, and the log records each change. For a holder with no windows of its own,
+  WindowServer names the frontmost app instead. Showing it in the bar, for a Mac that hides
+  the menu bar, is a later option: the snapshot can gain a field without a new version.
+- A reload does not warn about bindings that stop. They stop only while Secure Input is
+  on, and the sample config binds 34 of them on purpose by the rule above, so the warning
+  would come with every reload.
 
 ### 5.7 IPC and bar
 
@@ -216,9 +254,12 @@ off the main thread).
 
 ### 5.9 Status item and onboarding
 
-- The status item is a static template icon at square length. Its image changes only for
-  three states: paused, Accessibility missing, and config error.
-  - A test asserts that switches write nothing to it.
+- The status item is a static template icon at square length. Its image shows one of
+  four states: running, Accessibility missing, Secure Input on, and problems (config
+  errors, hotkeys that could not be registered, and hiding that stopped).
+  - Nothing inside a switch writes to it, though a Secure Input change can swap its image
+    right after one (section 5.6). No test checks that yet; the work counts in section 6
+    are meant to.
   - Kosmos keeps running when the user removes the item.
 - Onboarding is an Accessibility window. Launch at login uses `SMAppService` with a
   `KeepAlive` agent, and config errors appear in one AppKit panel.
