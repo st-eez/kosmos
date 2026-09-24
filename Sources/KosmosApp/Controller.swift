@@ -674,7 +674,8 @@ final class Controller {
     /// it follows a miss, which the kill switch then counts once.
     private func requestFocus(_ target: KeyWindow, movePointer: Bool = false, fromCommand: Bool = false,
                               retry: Bool = false) {
-        guard !sessionLocked else { return }
+        // While observing, the other window manager owns focus too.
+        guard managing, !sessionLocked else { return }
         // Focusing a desktop window takes the user out of a fullscreen Space: only a command
         // does that, not a window closing or hiding behind it, nor an unhide that conceals
         // windows.
