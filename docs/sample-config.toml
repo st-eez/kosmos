@@ -5,11 +5,10 @@
 # Kosmos checks the whole file before it applies any of it, and reports each problem with
 # its line, column and key. Unknown keys, wrong types and invalid commands are errors.
 #
-# A binding's command is a string of words split at whitespace, or an array of arguments,
-# with the command names and arguments of the CLI, which follow AeroSpace's.
+# A binding's command is a string of words split at whitespace, with the command names and
+# arguments of the CLI, which follow AeroSpace's.
 
 config-version = 1
-start-at-login = true
 # Move the pointer into the focused window after a keyboard focus change. AutoRaise stays
 # the hover engine; Kosmos has no focus follows mouse.
 mouse-follows-focus = true

@@ -1,7 +1,6 @@
 /// A checked config file. `Config.load` builds one, and every monitor and workspace name in
 /// it is defined. docs/sample-config.toml is Steve's AeroSpace setup in this schema.
 public struct Config: Equatable, Sendable {
-    public var startAtLogin = false
     /// Move the mouse pointer into the focused window after a keyboard focus change.
     public var mouseFollowsFocus = false
     public var workspaces: [String] = []

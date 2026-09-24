@@ -12,9 +12,8 @@ extension Config {
         }
         var decoder = ConfigDecoder()
         let config = decoder.config(root)
-        let diagnostics = decoder.diagnostics.enumerated()
-            .sorted { ($0.element.position, $0.offset) < ($1.element.position, $1.offset) }
-            .map(\.element)
+        // The sort is stable, so problems at one position keep the order they were found in.
+        let diagnostics = decoder.diagnostics.sorted { $0.position < $1.position }
         return (diagnostics.contains { $0.severity == .error } ? nil : config, diagnostics)
     }
 }
@@ -33,7 +32,7 @@ private struct ConfigDecoder {
         let path = ValuePath()
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
-            "config-version", "start-at-login", "mouse-follows-focus", "workspaces", "monitors",
+            "config-version", "mouse-follows-focus", "workspaces", "monitors",
             "workspace-monitor", "gaps", "mode", "rule", "profile",
         ])
         var config = Config()
@@ -44,9 +43,6 @@ private struct ConfigDecoder {
             }
         } else {
             fail("missing key 'config-version'; set it to 1", at: start, path)
-        }
-        if let entry = root["start-at-login"] {
-            config.startAtLogin = boolean(entry.value, path.key(entry.key)) ?? false
         }
         if let entry = root["mouse-follows-focus"] {
             config.mouseFollowsFocus = boolean(entry.value, path.key(entry.key)) ?? false
@@ -235,24 +231,15 @@ private struct ConfigDecoder {
         return modes
     }
 
-    /// A command's arguments, from a string of words or an array, after `Command.parse`
-    /// accepts them. A string splits at whitespace and has no quoting, so an argument that
-    /// contains a space needs the array form.
+    /// A command's arguments, after `Command.parse` accepts them. The string splits at
+    /// whitespace with no quoting; no command takes an argument that contains a space.
     private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> [String]? {
-        var arguments: [String] = []
-        switch value.kind {
-        case .string:
-            guard let line = string(value, path) else { return nil }
-            arguments = line.split(whereSeparator: \.isWhitespace).map(String.init)
-        case .array(let items):
-            for (index, item) in items.enumerated() {
-                if let argument = string(item, path.index(index)) { arguments.append(argument) }
-            }
-            guard arguments.count == items.count else { return nil }
-        default:
-            fail("expected a command as a string or an array of arguments, found \(kindName(value))", at: value.position, path)
+        guard case .string = value.kind else {
+            fail("expected a command as a string, found \(kindName(value))", at: value.position, path)
             return nil
         }
+        guard let line = string(value, path) else { return nil }
+        let arguments = line.split(whereSeparator: \.isWhitespace).map(String.init)
         if case .failure(let error) = Command.parse(arguments) {
             fail(error.message, at: value.position, path)
             return nil

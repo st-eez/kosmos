@@ -15,7 +15,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(result.diagnostics.isEmpty)
         let config = try #require(result.config)
         #expect(config.workspaces == ["1", "2", "3"])
-        #expect(!config.startAtLogin)
+        #expect(!config.mouseFollowsFocus)
         #expect(config.gaps == GapSettings())
         #expect(config.modes.isEmpty && config.rules.isEmpty && config.profiles.isEmpty)
     }
@@ -48,8 +48,8 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     }
 
     @Test func wrongTypesNameTheKeyPath() {
-        #expect(load("start-at-login = 'yes'\n[gaps]\ninner = '10'\nouter = { top = true }").diagnostics == [
-            "3:18: error: start-at-login: expected true or false, found a string",
+        #expect(load("mouse-follows-focus = 'yes'\n[gaps]\ninner = '10'\nouter = { top = true }").diagnostics == [
+            "3:23: error: mouse-follows-focus: expected true or false, found a string",
             "5:9: error: gaps.inner: expected an integer, found a string",
             "6:17: error: gaps.outer.top: expected an integer, found a boolean",
         ])
@@ -116,14 +116,15 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         let body = """
         [mode.main.binding]
         alt-h = 'focus left'
-        alt-shift-1 = ['move-node-to-workspace', '--focus-follows-window', '1']
+        alt-shift-1 = 'move-node-to-workspace --focus-follows-window 1'
         alt-equal = "  resize\tsmart   +100 "
+        alt-r = 'balance-sizes'
         [mode.resize.binding]
-        esc = 'balance-sizes'
+        esc = 'fullscreen'
         """
         let config = try #require(load(body).config)
         let main = try #require(config.modes["main"])
-        #expect(main.map(\.key) == ["alt-h", "alt-shift-1", "alt-equal"])
+        #expect(main.map(\.key) == ["alt-h", "alt-shift-1", "alt-equal", "alt-r"])
         #expect(main[0].arguments == ["focus", "left"])
         #expect(main[1].arguments == ["move-node-to-workspace", "--focus-follows-window", "1"])
         // A string splits at any run of whitespace.
@@ -142,6 +143,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         alt-k = ''
         alt-l = []
         alt-m = 3
+        alt-n = '   '
         [mode.'two words'.binding]
         [mode.x]
         bindings = {}
@@ -151,10 +153,11 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "5:1: error: mode.main.binding.opt-h: 'opt' is not a modifier; use cmd, ctrl, alt or shift; did you mean 'alt'?",
             "7:1: error: mode.main.binding.shift-alt-j: 'shift-alt-j' is the same combination as 'alt-shift-j' on line 6",
             "8:9: error: mode.main.binding.alt-k: the string is empty",
-            "9:9: error: mode.main.binding.alt-l: no command",
-            "10:9: error: mode.main.binding.alt-m: expected a command as a string or an array of arguments, found an integer",
-            "11:7: error: mode.\"two words\": mode names cannot be empty or contain whitespace",
-            "13:1: error: mode.x.bindings: unknown key; did you mean 'binding'?",
+            "9:9: error: mode.main.binding.alt-l: expected a command as a string, found an array",
+            "10:9: error: mode.main.binding.alt-m: expected a command as a string, found an integer",
+            "11:9: error: mode.main.binding.alt-n: no command",
+            "12:7: error: mode.\"two words\": mode names cannot be empty or contain whitespace",
+            "14:1: error: mode.x.bindings: unknown key; did you mean 'binding'?",
         ])
     }
 
@@ -163,7 +166,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         [mode.main.binding]
         alt-h = 'focus left'
         alt-j = 'fcous down'
-        alt-k = ['resize', 'smart', '100']
+        alt-k = 'resize smart 100'
         """
         let result = load(body)
         #expect(result.config == nil)
