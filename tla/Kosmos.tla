@@ -118,9 +118,9 @@ VARIABLES
 vars == <<s, history>>
 
 Job(kind, ws, g, evs, t) == [kind |-> kind, ws |-> ws, g |-> g, evs |-> evs, t |-> t]
-\* k: the workspace revealed, or kept visible by a conceal. skip: the windows
-\* Kosmos knew had left when it planned the switch, which it leaves out.
-\* k: the workspace each display shows once the switch is done.
+\* k: the workspace each display shows once the switch is done, which a reveal
+\* shows and a conceal keeps visible. skip: the windows Kosmos knew had left when
+\* it planned the switch, which it leaves out.
 Op(op, k, g, skip) == [op |-> op, k |-> k, g |-> g, skip |-> skip]
 FocusOp(w, g) == [w |-> w, g |-> g]
 
