@@ -199,9 +199,9 @@ off the main thread).
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
-    window goes back, and Kosmos stays where the command took it. A return from fullscreen
-    is stamped at the window's first Space event, not at the 1325 that ends the
-    transition.
+    window goes back, Kosmos stays where the command took it, and it requests the
+    command's focus again. A return from fullscreen is stamped at the window's first
+    Space event, not at the 1325 that ends the transition.
   - A window in native fullscreen moves to a Space of its own, and Accessibility has no
     notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
     later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).

@@ -174,9 +174,13 @@ final class Controller {
 
     /// Windows back from minimizing, hiding or fullscreen return to their places, and Kosmos
     /// follows `follow` to its workspace. A command received after the return wins, as over
-    /// a stale Command-Tab (DESIGN.md, section 5.5; tla/Kosmos.tla, Rejoin).
+    /// a stale Command-Tab, and its focus is requested again: macOS keyed the returning
+    /// window (DESIGN.md, section 5.5; tla/Kosmos.tla, Rejoin).
     private func returned(_ windows: [WindowID], follow: WindowID?, at stamp: ContinuousClock.Instant) {
-        execute(session.unpark(windows, follow: reports.isStale(stamp) ? nil : follow))
+        let stale = reports.isStale(stamp)
+        var plan = session.unpark(windows, follow: stale ? nil : follow)
+        if stale { plan.focus = intent }
+        execute(plan)
     }
 
     /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). macOS keys another
