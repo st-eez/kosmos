@@ -243,8 +243,15 @@ off the main thread).
     macOS re-keys after the key window is concealed, and the receipt order of hotkeys and
     activation reports;
   - discovery notifications, minimum sizes, and Secure Input.
+- **Work counts.** Each command counts its AX calls, SkyLight calls, main-actor jobs and
+  status item writes, and tests assert them. Counts are deterministic where milliseconds
+  are noisy. Instructions retired per switch, from the CPU counters, are the lab metric;
+  they are checked against wall-clock time once, as the claude.ai team did when it made
+  its app faster (https://claude.dev/blog/how-we-made-claude-ai-faster/).
+- **Budget.** Kosmos's own work in a switch fits in one frame at 120 Hz, 8.3 ms.
 - **Hardware trials** cover timing, CPU and multi-monitor, because a virtual machine's
-  graphics timing is not representative.
+  graphics timing is not representative. Signposts mark each phase of a switch, and each
+  build is compared at the 75th and 95th percentiles.
 
 ## 7. Milestones
 

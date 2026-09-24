@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func start() {
+        inventory.startAccessibility()
         log.info("started")
     }
 }

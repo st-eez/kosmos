@@ -13,6 +13,10 @@ private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category
 @MainActor
 final class Inventory {
     private(set) var windows: [UInt32: WindowRow] = [:]
+    /// Accessibility facts for windows whose app's worker knows them.
+    private var ax: [UInt32: AXWindowInfo] = [:]
+    private(set) var focused: UInt32?
+    private lazy var apps = Apps { [weak self] report in self?.handle(report) }
     private var watchPending = false
     private var sweepTimer: Timer?
     /// Windows that events changed while a sweep was running. The sweep's snapshot is older
@@ -21,6 +25,7 @@ final class Inventory {
     private var swept = false
     private(set) var missedByEvents = 0
 
+    /// WindowServer tracking needs no permission and starts at once.
     func start() {
         SkyLight.subscribe { [weak self] event in self?.handle(event) }
         let center = NSWorkspace.shared.notificationCenter
@@ -33,6 +38,64 @@ final class Inventory {
             MainActor.assumeIsolated { self?.sweep() }
         }
         sweep()
+    }
+
+    /// Starts the per-app Accessibility workers. Needs the Accessibility grant.
+    func startAccessibility() {
+        apps.start()
+        for (id, row) in windows where isCandidate(row) { readAX(id, pid: row.pid) }
+    }
+
+    /// A window is managed when it is a candidate and Accessibility calls it a standard
+    /// window. Dialog and popup heuristics come with tiling.
+    func isManaged(_ id: UInt32) -> Bool {
+        guard let row = windows[id] else { return false }
+        return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
+    }
+
+    private func handle(_ report: AXReport) {
+        switch report.kind {
+        case .windowCreated(let id):
+            refresh(id)
+        case .windowDestroyed(let id):
+            // AX alone never removes a window; WindowServer decides.
+            refresh(id)
+        case .focusedWindowChanged(let id):
+            guard id != focused else { return }
+            focused = id
+            let name = appName(report.pid)
+            if let id {
+                inventoryLog.info("focus \(id) \(name, privacy: .public) managed \(self.isManaged(id))")
+            } else {
+                inventoryLog.info("focus none \(name, privacy: .public)")
+            }
+        case .minimized(let id, let minimized):
+            inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
+            if let row = windows[id] { readAX(id, pid: row.pid) }
+        case .titleChanged:
+            break
+        }
+    }
+
+    private func readAX(_ id: UInt32, pid: pid_t) {
+        guard let worker = apps.worker(pid) else { return }
+        Task {
+            let info = await worker.info(id)
+            setAX(id, info)
+        }
+    }
+
+    private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
+        guard windows[id] != nil else { return }
+        let wasManaged = isManaged(id)
+        ax[id] = info
+        if isManaged(id) != wasManaged {
+            inventoryLog.info("""
+                \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
+                \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
+                role \(info?.role ?? "-", privacy: .public) subrole \(info?.subrole ?? "-", privacy: .public)
+                """)
+        }
     }
 
     private func handle(_ event: WindowServerEvent) {
@@ -64,6 +127,7 @@ final class Inventory {
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
         if old.map(isCandidate) != isCandidate(row) {
+            if isCandidate(row) { readAX(row.id, pid: row.pid) }
             inventoryLog.info("""
                 \(row.id) \(self.isCandidate(row) ? "is" : "is not", privacy: .public) a candidate: pid \(row.pid) \
                 \(self.appName(row.pid), privacy: .public) level \(row.level) parent \(row.parent)
@@ -76,6 +140,7 @@ final class Inventory {
     private func remove(_ id: UInt32, reason: StaticString) {
         touchedDuringSweep?.insert(id)
         guard windows.removeValue(forKey: id) != nil else { return }
+        ax[id] = nil
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
     }
