@@ -68,6 +68,16 @@
 //                                   accessory apps with small windows at the bottom right, which
 //                                   a running Kosmos leaves alone. The probe takes keyboard focus
 //                                   while it runs and hands it back at the end.
+//   kosmos-probe level [onscreen|opaque]  Does WindowServer report a change of a window's
+//                                   level? A window of its own, invisible and off every
+//                                   display, in an app with the prohibited activation policy,
+//                                   goes to the floating level and back three times. onscreen
+//                                   puts it in a corner of the main display, still invisible;
+//                                   opaque gives it full alpha off every display. Every
+//                                   SkyLight notification from 750 to 1799 is registered, and
+//                                   the window is watched. Prints every event in time order
+//                                   with the level changes, then counts the events of other ids
+//                                   near a change and at other times.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -91,7 +101,7 @@ case "departures-window": departuresWindow()
 case "departures": departures()
 case "tabs-window": tabsWindow()
 case "tabs": tabs(conceal: arguments.dropFirst().first)
-case "hidden-window": showHiddenWindow()
+case "hidden-window": showHiddenWindow(levels: arguments.dropFirst().first == "levels")
 case "reveal": reveal()
 case "displays": displays()
 case "secure-input": secureInput()
@@ -99,8 +109,9 @@ case "ax-child": axChild()
 case "ax-timeout": axTimeout()
 case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
 case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
+case "level": levels()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] | level [onscreen|opaque]")
     exit(2)
 }
 
@@ -120,16 +131,31 @@ default:
 }
 
 /// An invisible window off every display, in an app that can never be the front process.
-/// Prints its window id and stays until killed.
-@MainActor func showHiddenWindow() -> Never {
+/// Prints its window id and stays until killed. With `levels`, the window goes to the
+/// floating level and back three times, a second apart, printing the uptime just before each
+/// change and the new level, and the app exits 7.5 s after it started. `onscreen` puts the
+/// window in a corner of the main display, still invisible, and `opaque` leaves it off every
+/// display at full alpha.
+@MainActor func showHiddenWindow(levels: Bool) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 60, height: 60),
+    let origin = CommandLine.arguments.contains("onscreen") ? NSScreen.main?.visibleFrame.origin ?? .zero : NSPoint(x: -4000, y: -4000)
+    let window = NSWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 60, height: 60)),
                           styleMask: [.borderless], backing: .buffered, defer: false)
-    window.alphaValue = 0
+    window.alphaValue = CommandLine.arguments.contains("opaque") ? 1 : 0
     window.ignoresMouseEvents = true
     window.orderFrontRegardless()
     print(window.windowNumber)
+    if levels {
+        for (step, level) in [NSWindow.Level.floating, .normal, .floating, .normal, .floating, .normal].enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(step + 1)) {
+                let before = uptime()
+                window.level = level
+                print(String(format: "%.3f level %d", before, level.rawValue))
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { exit(0) }
+    }
     app.run()
     exit(0)
 }
@@ -1081,4 +1107,93 @@ final class FocusNotes: @unchecked Sendable {
     if !raiseTimes.isEmpty {
         print(String(format: "  AXRaise: median %.2f ms, max %.2f ms over %d raises", percentile(raiseTimes, 0.5), percentile(raiseTimes, 1), raiseTimes.count))
     }
+}
+
+nonisolated(unsafe) var levelEvents: [(id: UInt32, at: Double, payload: [UInt8])] = []
+/// Each change: when the child asked for it, and when WindowServer first read the new level.
+nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)] = []
+
+@MainActor func levels() -> Never {
+    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    // The switch at the top runs before main.swift's globals below it are initialized.
+    levelEvents = []
+    levelSteps = []
+    let start = uptime()
+    // Registered before the child starts, so the window's creation shows too. In the reverse
+    // engineered CGSInternal headers, the ids below 750 include input events, which the probe
+    // leaves alone.
+    let ids: Range<UInt32> = 750..<1800
+    var registered = 0
+    for id in ids {
+        let result = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let at = uptime()
+            let payload = data == nil ? [] : [UInt8](UnsafeRawBufferPointer(start: data, count: length))
+            DispatchQueue.main.async { levelEvents.append((id, at, payload)) }
+        }, id, nil)
+        if result == .success { registered += 1 }
+    }
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["hidden-window", "levels"] + CommandLine.arguments.dropFirst(2)
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    let window = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
+    var watched = [window]
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, 1)
+    print("window \(window), pid \(child.processIdentifier); \(registered) of \(ids.count) notifications registered")
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let data = handle.availableData
+        guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let fields = line.split(separator: " ")   // "<uptime> level <level>"
+            guard fields.count == 3, let at = Double(fields[0]), let level = Int32(fields[2]) else { continue }
+            // AppKit sends the level to WindowServer after the setter returns.
+            var landed: Double?
+            while landed == nil, uptime() - at < 500 {
+                if SkyLight.rows([window]).first?.level == level { landed = uptime() } else { usleep(500) }
+            }
+            let text = "child sets level \(level); WindowServer reads it "
+                + (landed.map { String(format: "%.1f ms later", $0 - at) } ?? "not within 500 ms")
+            let step = (at: at, landed: landed ?? at, text: text)
+            DispatchQueue.main.async { levelSteps.append(step) }
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+        reportLevels(window, start: start)
+        exit(0)
+    }
+    app.run()
+    exit(0)
+}
+
+/// The events that name the window, in time order with the level changes, then the events
+/// of other ids that came from a change's request to 100 ms after WindowServer read it,
+/// against how many came at other times.
+@MainActor func reportLevels(_ window: UInt32, start: Double) {
+    var timeline = levelSteps.map { (at: $0.at, text: $0.text) }
+    var others: [(id: UInt32, at: Double)] = []
+    for event in levelEvents {
+        let offsets = stride(from: 0, to: event.payload.count - 3, by: 4).filter { offset in
+            event.payload.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) } == window
+        }
+        let bytes = event.payload.prefix(32).map { String(format: "%02x", $0) }.joined()
+        guard !offsets.isEmpty else {
+            others.append((event.id, event.at))
+            timeline.append((event.at, "  event \(event.id), not naming the window, payload \(bytes)"))
+            continue
+        }
+        timeline.append((event.at, "event \(event.id), \(event.payload.count) bytes, window id at offset \(offsets), payload \(bytes)"))
+    }
+    for entry in timeline.sorted(by: { $0.at < $1.at }) { print(String(format: "%8.1f ms ", entry.at - start) + entry.text) }
+    print("events of other ids, by whether they came from a request to 100 ms after WindowServer read the level (\(levelSteps.count) changes):")
+    for (id, events) in Dictionary(grouping: others, by: \.id).sorted(by: { $0.key < $1.key }) {
+        let near = events.filter { event in levelSteps.contains { event.at >= $0.at && event.at <= $0.landed + 100 } }.count
+        print("  event \(id): \(near) near a change, \(events.count - near) at other times")
+    }
+    if others.isEmpty { print("  none") }
 }
