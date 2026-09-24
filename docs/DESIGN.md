@@ -238,6 +238,14 @@ off the main thread).
   destroys the Spaces and clears the record. It removes an added window from a recorded
   Space only once the add landed, and keeps the record while a window is left there. Every
   step can safely run twice.
+- Open item: which concealed windows keep ordinary membership is decided as each is
+  concealed. With several displays, an app whose most recently used window is shown on
+  another display must have its concealed windows stripped, or macOS keys one of them on
+  the current display over that window, the failure the AeroSpace fork's np3 trials hit
+  (section 5.13). When that window moves to another display later, the app's windows
+  concealed before keep the membership they had until they are concealed again. The
+  per-app tracking and the membership job outside switches of commit a0f9e6d (branch
+  `switch`) would update them, if the desk shows the case.
 
 ### 5.4 Focus
 
@@ -765,7 +773,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   `layoutFloatingWindow` moves it. That covers a move to another display, a rule that
   sends a new window to a workspace another display shows, and a display change. Kosmos
   reads the windows' frames from WindowServer when it checks. A window whose center is on
-  no display, as a concealed one reads, is left for the check after its reveal.
+  no display, as a concealed one reads, is left for the check after its reveal. The read
+  waits on WindowServer, which is busy committing right after a switch, so it runs only
+  while a shown workspace has a floating window, and never between a keypress and its
+  batch or its focus request. The log gives each read's time, to measure at the desk.
 - An app keeps ordinary Space membership for a concealed window only while no display
   shows a window of it, since macOS prefers an eligible window on the current display over
   the app's key window on another display (the AeroSpace fork's NativeWindowStash).

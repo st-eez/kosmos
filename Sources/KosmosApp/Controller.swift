@@ -595,7 +595,6 @@ final class Controller {
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
-        bringFloatingHome()
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
             show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
@@ -605,6 +604,7 @@ final class Controller {
         let movePointer = fromCommand && mouseFollowsFocus
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(intent, movePointer: movePointer, fromCommand: fromCommand) }
+            bringFloatingHome()
         } else {
             placedHidden.subtract(show)   // their workspace is shown
             switchGeneration += 1
@@ -638,7 +638,9 @@ final class Controller {
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
                 guard generation == self.switchGeneration else { return }
                 self.requestFocus(self.intent, movePointer: movePointer, fromCommand: fromCommand)
-                // Revealed now, the floating windows can be seen where they are.
+                // Revealed now, the floating windows can be seen where they are. A switch
+                // checks only here, after its focus request, and a stale switch's reveal is
+                // checked by the switch that replaced it.
                 self.bringFloatingHome()
             }
         }
@@ -652,12 +654,17 @@ final class Controller {
     /// Floating windows of shown workspaces that sit on a display showing another workspace
     /// go to their workspace's display, from where WindowServer has them now
     /// (Session.floatingFrames). A concealed one reads as off every display and waits for
-    /// its reveal.
+    /// its reveal. The read waits on WindowServer, so it runs only with a floating window
+    /// shown, and never before a switch's batch is sent or its focus requested; the log
+    /// gives each read's time, for the desk.
     private func bringFloatingHome() {
         let windows = session.shownFloatingWindows
         guard !windows.isEmpty else { return }
+        let start = ContinuousClock.now
         let frames = Dictionary(SkyLight.rows(windows).map { ($0.id, $0.frame) }) { first, _ in first }
-        writeFrames(session.floatingFrames(at: frames))
+        let targets = session.floatingFrames(at: frames)
+        controllerLog.info("floating check: \(windows.count) windows read in \(Self.ms(ContinuousClock.now - start), privacy: .public) ms, \(targets.count) moved")
+        writeFrames(targets)
     }
 
     private func writeFrames(_ targets: [WindowID: CGRect]) {
