@@ -14,6 +14,21 @@ public struct ConcealLedger: Equatable, Sendable {
         /// After the batch: each window to hide and the Space it must be in.
         public var mustBeIn: [UInt32: UInt64] = [:]
 
+        /// The Spaces the batch changes, which its confirmation reads.
+        public var touched: Set<UInt64> { Set(mustBeIn.values).union(removals.keys) }
+
+        /// Whether `members`, the windows each touched Space holds, show the batch done: each
+        /// revealed window out of the Space that concealed it, whatever other Space it is in,
+        /// and each window to hide in its Space. A Space `members` leaves out proves nothing.
+        public func isDone(members: [UInt64: Set<UInt32>]) -> Bool {
+            let hidden = mustBeIn.allSatisfy { members[$0.value]?.contains($0.key) == true }
+            let shown = removals.allSatisfy { space, windows in
+                guard let held = members[space] else { return false }
+                return windows.allSatisfy { !held.contains($0) }
+            }
+            return hidden && shown
+        }
+
         /// The removals to send once the adds are confirmed. An added window leaves the
         /// concealing Space only if `landed` says its add took: removed from its only Space,
         /// it would land on the active Space, which can be a native fullscreen one. Left

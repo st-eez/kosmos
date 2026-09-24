@@ -163,18 +163,16 @@ private final class HidingStore: @unchecked Sendable {
     /// before), and whether its confirmation needed the barrier (nil if it read nothing).
     func apply(show: [UInt32], hide: [UInt32]) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?) {
         guard let (batch, sent) = send(show: show, hide: hide) else { return (false, nil, nil) }
-        let touched = Set(batch.mustBeIn.values).union(batch.removals.keys)
+        let touched = batch.touched
         guard let any = touched.first else { return (true, sent, nil) }
-        /// Whether the touched Spaces show the batch done. A failed read proves nothing.
+        /// Whether the touched Spaces show the batch done. A failed read leaves its Space out,
+        /// which proves nothing.
         func done() -> Bool {
             var members: [UInt64: Set<UInt32>] = [:]
             for space in touched {
-                guard let list = kosmos_space_windows(space) as? [UInt32] else { return false }
-                members[space] = Set(list)
+                if let list = kosmos_space_windows(space) as? [UInt32] { members[space] = Set(list) }
             }
-            let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
-            let shown = batch.removals.allSatisfy { space, windows in windows.allSatisfy { !members[space]!.contains($0) } }
-            return hidden && shown
+            return batch.isDone(members: members)
         }
         // Reads on Kosmos's own connection show the operations once WindowServer applied
         // them, usually within a millisecond. A bridged read also waits behind
