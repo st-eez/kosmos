@@ -1,4 +1,5 @@
 import AppKit
+import KosmosIPC
 import KosmosRecovery
 import os
 
@@ -14,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let guardian = Guardian()
     private var signalSources: [DispatchSourceSignal] = []
     private var controller: Controller?
+    private var server: IPCServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -33,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         handleTerminationSignals()
         guardian.start()
+        startServer()
 
         let statusItem = StatusItem()
         self.statusItem = statusItem
@@ -47,7 +50,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        server?.stop()
         if let record { log.notice("quit recovery: \(String(describing: Recovery.run(file: record)), privacy: .public)") }
+    }
+
+    /// The socket starts after the instance lock, which rules out a live server at its path.
+    private func startServer() {
+        do {
+            server = try IPCServer(socketPath: kosmosSocketPath(), log: { message in
+                log.notice("ipc: \(message, privacy: .public)")
+            }) { [weak self] arguments in
+                self?.respond(to: arguments, received: .now) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
+            }
+        } catch {
+            log.error("socket not started: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func respond(to arguments: [String], received: ContinuousClock.Instant) -> Response {
+        switch arguments {
+        case ["ping"]: return Response(stdout: "pong")
+        case ["version"]: return Response(stdout: kosmosVersion)
+        default:
+            guard let controller else {
+                return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission")
+            }
+            let result = controller.run(arguments, received: received)
+            return result.code == 0 ? Response(stdout: result.text) : Response(exitCode: result.code, stderr: "kosmos: " + result.text)
+        }
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
@@ -72,8 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Two tiling window managers would fight over every window.
         let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
         let managing = !otherManager || ProcessInfo.processInfo.environment["KOSMOS_MANAGE"] == "1"
-        controller = Controller(inventory: inventory, hiding: Hiding(record: record, guardian: guardian),
-                                names: (1...9).map(String.init), managing: managing)
+        let controller = Controller(inventory: inventory, hiding: Hiding(record: record, guardian: guardian),
+                                    names: (1...9).map(String.init), managing: managing)
+        controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
+        self.controller = controller
         inventory.startAccessibility()
         log.notice("started, \(managing ? "managing windows" : "observing only: AeroSpace is running", privacy: .public)")
     }

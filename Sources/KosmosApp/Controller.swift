@@ -38,9 +38,26 @@ final class Controller {
 
     /// Runs one command. Returns the exit code and the text for the CLI.
     func run(_ arguments: [String], received: ContinuousClock.Instant) -> (code: Int32, text: String) {
+        switch arguments {
+        case ["list-workspaces"]:
+            return (0, session.names.map { $0 == session.visible ? "\($0) *" : $0 }.joined(separator: "\n"))
+        case ["list-windows"]:
+            let lines = session.names.flatMap { name in
+                session.windows(of: name).map { id in
+                    let app = owner[id].flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName } ?? "?"
+                    return "\(id) \(name) \(app)\(id == session.focused ? " *" : "")"
+                }
+            }
+            return (0, lines.joined(separator: "\n"))
+        default:
+            break
+        }
         switch Command.parse(arguments) {
         case .failure(let error):
             return (1, error.message)
+        case .success where !managing:
+            // Changing the model without moving windows would leave the two apart.
+            return (1, "observing only while another window manager runs")
         case .success(let command):
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) { execute(plan) }
