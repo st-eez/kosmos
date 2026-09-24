@@ -292,7 +292,9 @@ off the main thread).
     Kosmos decides that report again once the tab takes its place, and follows it to a
     place on a hidden workspace. The window key before it is the deselected tab, which
     did not depart. A report that comes after the tab took a place on a hidden workspace,
-    before its conceal landed, counts as one of a concealed window too.
+    before its conceal completed, is followed at once the same way. That lasts only until
+    the conceal completes, the workspace is shown, or another tab replaces it, so a later
+    re-key of the tab mid-switch still loses to the switch.
   - Only an admitted window takes a place. A new tab, and a tab selected for the first
     time, which Accessibility reports created then, take the place once Kosmos admits
     them, and a tab deselected before that stays a hidden member and passes its claim on,

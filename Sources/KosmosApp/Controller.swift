@@ -35,9 +35,10 @@ final class Controller {
     /// The last key report of a window with no place, decided again if a tab switch gives
     /// that window a place: macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
-    /// Tabs a switch placed on a hidden workspace before their conceal landed. macOS keyed
-    /// such a tab by the user's or the app's choice, so its report counts as one of a
-    /// concealed window, followed as a Command-Tab is.
+    /// Tabs a switch placed on a hidden workspace, until the batch that conceals them
+    /// completes, their workspace is shown, or another tab replaces them. macOS keyed such a
+    /// tab by the user's or the app's choice, so its report counts as one of a concealed
+    /// window, and the tab deselected before it did not depart: it is followed at once.
     private var placedHidden: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
@@ -242,6 +243,7 @@ final class Controller {
         case .replace(let holder): old = holder
         }
         guard let plan = session.replace(old, with: new) else { return false }
+        placedHidden.remove(old)
         if plan.hide.contains(new) { placedHidden.insert(new) }
         controllerLog.info("tab \(new) replaces \(old)")
         tabs.replaced(old, with: new)
@@ -372,10 +374,10 @@ final class Controller {
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
             // it left too.
-            let keyLeft: Departure = previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed
+            let placed = id.map { placedHidden.remove($0) != nil } ?? false
+            let keyLeft: Departure = placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed
             decide(KeyReport(key: reported, received: report.received, previous: previous,
-                             concealed: id.map { hiding.isConcealed($0) || placedHidden.remove($0) != nil } ?? false,
-                             miss: miss), keyLeft: keyLeft)
+                             concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -513,12 +515,14 @@ final class Controller {
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(intent, movePointer: movePointer, fromCommand: fromCommand) }
         } else {
+            placedHidden.subtract(show)   // their workspace is shown
             switchGeneration += 1
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
             hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome in
                 guard let self else { return }
+                self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
