@@ -141,6 +141,12 @@ off the main thread).
   reorder, order change or Space change, or at the next sweep, which logs the change as
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
   level change is unmeasured, as the probe keeps its window invisible.
+- Open item: every switch posts 815 about twice for every watched window, including
+  windows of apps the switch never touched, such as Wispr Flow, Activity Monitor and
+  Ghostty: 640 of them in 40 switches, with 82 of 808 (`kosmos-probe events`, 2026-09-24).
+  Each one reads its window's row synchronously on the main thread, about 0.8 ms a switch
+  (33 of about 66 busy main thread samples). One query for every window named in a run
+  loop turn would cut that if it ever matters.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
@@ -250,6 +256,20 @@ off the main thread).
   that is not key, against 0.50 ms for the barrier, which also waits behind
   WindowManager.app. WindowServer applies a batch's operations in order, so a window
   seen out of the holding Space implies the add sent before its removal.
+- A batch's completion and the focus request after it run on the main actor, so work
+  queued there delays both. Live on 2026-09-24, 40 alternating switches between two
+  workspaces of one window each: the main actor was busy for 6 to 10 ms after about 1
+  switch in 10, and a sample found about 290 busy main thread samples. Most were
+  LaunchServices calls asking whether a window's app is regular, at every window event and
+  at every row of the 3 s sweep that build still ran, and WindowServer reads that waited
+  on the switch's Space transaction. With each app's activation policy read once, the
+  departure of the window key before a report read only when its verdict needs it, and the
+  pointer's target frame read on the focus queue (commit 53dc6af), the same test measured
+  1.81 ms from keypress to the end at the median, 2.21 ms at p90 and 2.50 ms at most, none
+  over 8.3 ms, and the completion waited at most 0.39 ms for the main actor. Before, the
+  medians were 3.1 to 3.9 ms and the maximum 15.5 ms. The busy main thread samples fell to
+  about 66, half of them the window reads in the open item on 815 in section 5.1. A switch
+  starts no sweep: `kosmos-probe events` saw no 1327, 1328 or 1401 in 40 switches.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
   else to that display's first ordinary Space. A display missing from WindowServer's Space
