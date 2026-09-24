@@ -30,6 +30,8 @@ final class Hiding {
 
     var isAvailable: Bool { guardian.isReady }
 
+    func isConcealed(_ window: UInt32) -> Bool { concealed[window] != nil }
+
     /// Reveals `show`, then conceals `hide`, then reads the barrier, all on the bridge
     /// queue. `done` gets true when a membership check confirms the whole batch. On
     /// failure every concealed window is restored and the batch must be retried.

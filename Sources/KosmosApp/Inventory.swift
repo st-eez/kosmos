@@ -18,6 +18,12 @@ final class Inventory {
     private var ax: [UInt32: AXWindowInfo] = [:]
     private(set) var focused: UInt32?
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
+    /// A window became managed (true) or stopped being managed (false).
+    var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
+    /// Focus, minimize and frame reports, after the inventory has seen them.
+    var onReport: (@MainActor (AXReport) -> Void)?
+
+    func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
     private var watchPending = false
     private var sweepTimer: Timer?
     /// Windows that events changed while a sweep was running. The sweep's snapshot is older
@@ -62,13 +68,15 @@ final class Inventory {
             // AX alone never removes a window; WindowServer decides.
             refresh(id)
         case .focusedWindowChanged(let id):
-            guard id != focused else { return }
-            focused = id
-            let name = appName(report.pid)
-            if let id {
-                inventoryLog.info("focus \(id) \(name, privacy: .public) managed \(self.isManaged(id))")
-            } else {
-                inventoryLog.info("focus none \(name, privacy: .public)")
+            // Repeats still go to the controller, which counts echoes.
+            if id != focused {
+                focused = id
+                let name = appName(report.pid)
+                if let id {
+                    inventoryLog.info("focus \(id) \(name, privacy: .public) managed \(self.isManaged(id))")
+                } else {
+                    inventoryLog.info("focus none \(name, privacy: .public)")
+                }
             }
         case .minimized(let id, let minimized):
             inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
@@ -76,6 +84,7 @@ final class Inventory {
         case .titleChanged, .framesApplied:
             break
         }
+        onReport?(report)
     }
 
     private func readAX(_ id: UInt32, pid: pid_t) {
@@ -87,10 +96,11 @@ final class Inventory {
     }
 
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
-        guard windows[id] != nil else { return }
+        guard let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)
         ax[id] = info
         if isManaged(id) != wasManaged {
+            onManagedChange?(id, pid, isManaged(id))
             inventoryLog.info("""
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
@@ -140,8 +150,10 @@ final class Inventory {
 
     private func remove(_ id: UInt32, reason: StaticString) {
         touchedDuringSweep?.insert(id)
-        guard windows.removeValue(forKey: id) != nil else { return }
+        let wasManaged = isManaged(id)
+        guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
+        if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
     }

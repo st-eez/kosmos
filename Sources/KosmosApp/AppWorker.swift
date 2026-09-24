@@ -97,6 +97,12 @@ actor AppWorker {
         return track(element)
     }
 
+    /// Queues frame writes from any thread, in the order of the calls. A Task per batch
+    /// could run an older batch last and leave a stale frame.
+    nonisolated func enqueueFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
+        executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
+    }
+
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
     /// gets only its newest target.
     func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {

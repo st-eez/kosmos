@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inventory = Inventory()
     private let guardian = Guardian()
     private var signalSources: [DispatchSourceSignal] = []
+    private var controller: Controller?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -67,7 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func start() {
+        guard let record else { return }
+        // Two tiling window managers would fight over every window.
+        let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
+        let managing = !otherManager || ProcessInfo.processInfo.environment["KOSMOS_MANAGE"] == "1"
+        controller = Controller(inventory: inventory, hiding: Hiding(record: record, guardian: guardian),
+                                names: (1...9).map(String.init), managing: managing)
         inventory.startAccessibility()
-        log.info("started")
+        log.notice("started, \(managing ? "managing windows" : "observing only: AeroSpace is running", privacy: .public)")
     }
 }

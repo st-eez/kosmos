@@ -32,6 +32,12 @@ final class RunLoopExecutor: SerialExecutor, @unchecked Sendable {
         CFRunLoopWakeUp(runLoop)
     }
 
+    /// Runs a block on the thread, in order with the actor's jobs and other blocks.
+    func perform(_ block: @escaping @Sendable () -> Void) {
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopWakeUp(runLoop)
+    }
+
     func asUnownedSerialExecutor() -> UnownedSerialExecutor {
         UnownedSerialExecutor(ordinary: self)
     }
