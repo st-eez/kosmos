@@ -60,6 +60,12 @@ extension Workspace {
     mutating func joinWith(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let target = neighbor(of: window, direction) else { return false }
         let parent = target.dropLast(), index = target.last!
+        // Joining a sibling keeps the pair's combined space for the new container, so the
+        // other siblings keep their sizes and joining back out restores them exactly. Taking
+        // only the target's share gave the window's share to every sibling, and each join
+        // and unjoin grew the others.
+        let path = root.path(to: window)!
+        let carried = path.dropLast() == parent ? root[parent].children[path.last!].weight : 0
         let joined: Container
         switch root[parent].children[index].kind {
         case .container(let container):
@@ -68,9 +74,9 @@ extension Workspace {
             joined = makeContainer(root[parent].orientation.opposite, [Node(kind: .window(other), weight: 1)])
             root[parent].children[index].kind = .container(joined)
         }
-        let path = root.path(to: window)!
         root[path.dropLast()].children.remove(at: path.last!)
         let joinedPath = root.path(toContainer: joined.id)![...]
+        root[joinedPath.dropLast()].children[joinedPath.last!].weight += carried
         root[joinedPath].insert(.window(window), at: direction.isForward ? 0 : root[joinedPath].children.count)
         normalize()
         edits += 1
