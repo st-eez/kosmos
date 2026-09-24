@@ -235,9 +235,6 @@ private struct ConfigDecoder {
                         targets.append((target, binding.value.position, bindingPath))
                     case .profile(let target):
                         profileTargets.append((target, binding.value.position, bindingPath))
-                    case .focusMonitor(.named(let monitor), _), .moveNodeToMonitor(.named(let monitor), _, _, _),
-                         .moveWorkspaceToMonitor(.named(let monitor), _):
-                        checkMonitor((monitor, binding.value.position, bindingPath))
                     default:
                         break
                     }

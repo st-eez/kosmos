@@ -373,10 +373,9 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(config.setup(for: [builtIn], profile: "nowhere").profile == "laptop")
     }
 
-    @Test func monitorsCarryTheirGapsAndNamesInDisplayOrder() throws {
+    @Test func monitorsCarryTheirGapsInDisplayOrder() throws {
         let setup = try config().setup(for: [builtIn, main, left])
         #expect(setup.monitors.map(\.id) == [1, 2, 3])
-        #expect(setup.monitors.map(\.names) == [["asus", "left"], ["asus", "main"], ["builtin"]])
         #expect(setup.monitors.map(\.gaps.outer.top) == [35, 35, 5])
         #expect(setup.monitors[2].area == builtIn.frame)
     }

@@ -12,15 +12,12 @@ public struct Monitor: Equatable, Sendable {
     /// The visible frame, without the menu bar and the Dock: where windows tile.
     public var area: CGRect
     public var gaps: Gaps
-    /// The names from the config's `[monitors]` that match the display.
-    public var names: [String]
 
-    public init(id: DisplayID, frame: CGRect, area: CGRect? = nil, gaps: Gaps = Gaps(), names: [String] = []) {
+    public init(id: DisplayID, frame: CGRect, area: CGRect? = nil, gaps: Gaps = Gaps()) {
         self.id = id
         self.frame = frame
         self.area = area ?? frame
         self.gaps = gaps
-        self.names = names
     }
 }
 
@@ -50,7 +47,6 @@ extension Monitor {
         case .next: return step(monitors, by: 1)
         case .previous: return step(monitors, by: -1)
         case .number(let number): return monitors.indices.contains(number - 1) ? monitors[number - 1] : nil
-        case .named(let name): return monitors.first { $0.names.contains(name) }
         case .direction(let direction):
             let beside = { (other: Monitor) in
                 other.frame.minY < current.frame.maxY && current.frame.minY < other.frame.maxY

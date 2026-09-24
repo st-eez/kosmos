@@ -72,12 +72,13 @@ final class Controller {
     /// requests no focus and takes no command; `resync` catches up (DESIGN.md, section 5.1).
     private var sessionLocked: Bool { inventory.sessionLocked }
 
-    init(inventory: Inventory, hiding: Hiding, names: [String], setup: Setup,
-         barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
+    init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
-        session = Session(names: names, monitors: setup.monitors, assigned: setup.workspaceDisplays)
+        session = Session(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays)
+        rules = setup.rules
+        profile = setup.profile
         self.barDisplays = barDisplays
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
@@ -87,25 +88,26 @@ final class Controller {
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
     }
 
-    /// Applies a config, or the displays after they change: the profile's workspaces and
-    /// rules, and each display with its gaps (DESIGN.md, section 5.13). Then every window is
-    /// concealed or revealed again, and each workspace's frames are written again as it is
-    /// shown, since macOS moves the windows of a display that leaves.
-    /// `resync`: false for the first apply at launch, before the inventory has admitted
-    /// anything, which must not front Finder for an empty session.
-    func apply(_ setup: Setup, names: [String], barDisplays: [DisplayID: BarSnapshot.Display], resync: Bool = true) {
+    /// Applies a config reload, an unlock, a wake or a display change: the profile's
+    /// workspaces and rules, and each display with its gaps (DESIGN.md, sections 5.1 and
+    /// 5.13), then resyncs every window.
+    func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
         rules = setup.rules
         profile = setup.profile
         self.barDisplays = barDisplays
-        session.reconfigure(names: names, monitors: setup.monitors, assigned: setup.workspaceDisplays,
+        session.reconfigure(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays,
                             merge: setup.mergeWorkspaces)
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
         controllerLog.notice("""
             profile \(setup.profile ?? "base", privacy: .public), workspace on each display \
             \(shown.joined(separator: ", "), privacy: .public), focused \(self.session.focusedWorkspace, privacy: .public)
             """)
+        // macOS can move windows while the session is locked or the displays sleep, and
+        // moves those of a display that leaves; the ledger would take them for placed. Each
+        // window's frame is written again, as its workspace is shown. Floating windows have
+        // no layout frame and stay where they are.
         ledger = FrameLedger()
-        if resync { self.resync() } else { publishState() }
+        resync()
     }
 
     /// Why the private focus path is off, for the status item, or nil while it is on.
@@ -162,11 +164,10 @@ final class Controller {
         }
     }
 
-    /// After an unlock, a wake while unlocked or a display change, once the displays are
-    /// read again (`apply`): lays the shown workspaces out on their areas as they are now,
-    /// conceals and reveals every window again, requests the focus intent and publishes the
-    /// state. Other workspaces are laid out when they are shown.
-    func resync() {
+    /// Lays the shown workspaces out on their areas as they are now, conceals and reveals
+    /// every window again, requests the focus intent and publishes the state. Other
+    /// workspaces are laid out when they are shown.
+    private func resync() {
         guard managing else { return publishState() }
         // Reports received before now are older than the focus this asks for again, and an
         // echo in flight at the lock was dropped with the other reports while locked.
@@ -175,10 +176,6 @@ final class Controller {
         var plan = Session.Plan()
         let shown = session.shownWorkspaces
         for name in shown { plan.frames.merge(session.frames(of: name)) { current, _ in current } }
-        // macOS can move windows while the session is locked or the displays sleep, and the
-        // ledger would take them for placed: every tiled window of the shown workspaces is
-        // written again. Floating windows have no layout frame and stay where they are.
-        for id in plan.frames.keys { ledger.forget(id) }
         plan.show = shown.flatMap { session.windows(of: $0) }
         plan.hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
         plan.focus = intent
@@ -639,10 +636,10 @@ final class Controller {
 
     /// Floating windows whose workspace changed display go to the same place on the new
     /// display's area, from where WindowServer last saw them.
-    private func moveFloating(_ moves: [WindowID: Session.FloatingMove]) {
+    private func moveFloating(_ moves: [WindowID: CGRect]) {
         var targets: [WindowID: CGRect] = [:]
-        for (id, move) in moves {
-            if let frame = inventory.windows[id]?.frame { targets[id] = move.moved(frame) }
+        for (id, area) in moves {
+            if let frame = inventory.windows[id]?.frame { targets[id] = session.floatingFrame(frame, movingTo: area) }
         }
         writeFrames(targets)
     }

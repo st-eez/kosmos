@@ -29,15 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hiding: Hiding?
     private var secureInput: SecureInput?
     /// The config that applies, for display changes.
-    private var config = Config()
+    private var config = Config.defaults
     /// The profile `profile` applied, until the displays change or the config reloads.
     private var forcedProfile: String?
     /// The displays read last, to tell a change of displays from one of their areas.
     private var displayIDs: Set<DisplayID> = []
-    /// Numbers the display change notifications, so a burst gets one response.
-    private var displayChanges = 0
+    /// The response to the last display change notification, which a newer one replaces,
+    /// so a burst gets one.
+    private var displayChange: DispatchWorkItem?
     private var screensAsleep = false
-    private static let defaultWorkspaces = (1...9).map(String.init)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
@@ -158,10 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Reads the displays and applies the profile for them, or the one `profile` applied
     /// while they stay the same. Displays no profile fits keep the profile that applies
-    /// (DESIGN.md, section 5.13). `resync`: conceal, reveal and focus
-    /// every window again; the first apply at launch leaves them to the inventory. With no
-    /// display at all, as in the middle of a change, the ones read before stay.
-    private func applyDisplays(resync: Bool = true) {
+    /// (DESIGN.md, section 5.13). With no display at all, as in the middle of a change, the
+    /// ones read before stay.
+    private func applyDisplays() {
         guard let controller else { return }
         let displays = ConfigFile.displays()
         guard !displays.isEmpty else { return log.notice("no displays listed; the ones read before stay") }
@@ -172,8 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             displayIDs = ids
         }
         let setup = config.setup(for: displays, profile: forcedProfile, keeping: controller.profile)
-        controller.apply(setup, names: setup.workspaces.isEmpty ? Self.defaultWorkspaces : setup.workspaces,
-                         barDisplays: ConfigFile.barDisplays(displays), resync: resync)
+        controller.apply(setup, barDisplays: ConfigFile.barDisplays(displays))
     }
 
     /// Displays came or went, moved, or changed their visible areas. A burst gets one
@@ -181,15 +179,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// displays sleep, the resync after the unlock or wake reads them instead: a sleeping
     /// Mac can report its displays gone (DESIGN.md, section 5.13).
     private func screenParametersChanged() {
-        displayChanges += 1
-        let number = displayChanges
-        log.notice("screen parameters changed (\(number)): \(NSScreen.screens.count) displays")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        log.notice("screen parameters changed: \(NSScreen.screens.count) displays")
+        displayChange?.cancel()
+        let apply = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, number == self.displayChanges, !self.inventory.sessionLocked, !self.screensAsleep else { return }
-                self.applyDisplays()
+                guard let self else { return }
+                self.displayChange = nil
+                if !self.inventory.sessionLocked, !self.screensAsleep { self.applyDisplays() }
             }
         }
+        displayChange = apply
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: apply)
     }
 
     /// Applies the config file. With errors the running config stays; at launch there is
@@ -212,7 +212,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configProblems = loaded.errors.isEmpty ? [] : ["Config has errors; \(loaded.source) is running"] + loaded.errors
         self.config = config
         forcedProfile = nil
-        applyDisplays(resync: !atLaunch)
+        // At launch the Controller starts with this setup, and a resync would front Finder
+        // for a session the inventory has not filled yet.
+        if !atLaunch { applyDisplays() }
         controller.mouseFollowsFocus = config.mouseFollowsFocus
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
@@ -283,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Two tiling window managers would fight over every window.
         let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
         let managing = !otherManager || ProcessInfo.processInfo.environment["KOSMOS_MANAGE"] == "1"
-        config = ConfigFile.load(atLaunch: true).config ?? Config()
+        config = ConfigFile.load(atLaunch: true).config ?? .defaults
         // NSScreen can list no display in the middle of a change; the main display stands in.
         let main = CGMainDisplayID()
         var displays = ConfigFile.displays()
@@ -296,8 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateProblems()
         }
         self.hiding = hiding
-        let controller = Controller(inventory: inventory, hiding: hiding,
-                                    names: setup.workspaces.isEmpty ? Self.defaultWorkspaces : setup.workspaces, setup: setup,
+        let controller = Controller(inventory: inventory, hiding: hiding, setup: setup,
                                     barDisplays: ConfigFile.barDisplays(displays), managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
         controller.onFocusProblem = { [weak self] problem in

@@ -18,8 +18,14 @@ public struct Config: Equatable, Sendable {
     /// Display profiles in file order. The first whose `when` holds applies (`setup(for:)`).
     public var profiles: [Profile] = []
 
-    /// No workspaces, bindings, rules or profiles, for when there is no config file.
     public init() {}
+
+    /// What applies with no config file: workspaces 1 to 9, and no bindings, rules or profiles.
+    public static let defaults: Config = {
+        var config = Config()
+        config.workspaces = (1...9).map(String.init)
+        return config
+    }()
 }
 
 /// A connected display, as the app reads it.
@@ -157,8 +163,7 @@ public struct Setup: Equatable, Sendable {
     /// The profile's rules, then the base rules with `mergeWorkspaces` applied to their
     /// workspaces.
     public var rules: [WindowRule]
-    /// The displays as the session tiles them, in the order above, each with its gaps and
-    /// the monitor names that match it.
+    /// The displays as the session tiles them, in the order above, each with its gaps.
     public var monitors: [Monitor]
 }
 
@@ -169,7 +174,9 @@ extension Config {
     /// `apply-profile.sh` kept its profile for displays it did not know. With no active
     /// profile, as at launch, the first profile without `when` applies, else the base config.
     public func setup(for displays: [Display], profile forced: String? = nil, keeping active: String? = nil) -> Setup {
-        let displays = displays.sorted { ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id) }
+        let tiled = Monitor.arranged(displays.map { Monitor(id: $0.id, frame: $0.frame, area: $0.area, gaps: gaps(on: $0)) })
+        let byID = Dictionary(displays.map { ($0.id, $0) }) { first, _ in first }
+        let displays = tiled.map { byID[$0.id]! }
         func firstDisplay(_ monitor: String) -> DisplayID? {
             monitors[monitor].flatMap { match in displays.first(where: match.matches)?.id }
         }
@@ -193,10 +200,6 @@ extension Config {
             var rule = rule
             if let workspace = rule.workspace, let target = merge[workspace] { rule.workspace = target }
             return rule
-        }
-        let tiled = displays.map { display in
-            Monitor(id: display.id, frame: display.frame, area: display.area, gaps: gaps(on: display),
-                    names: monitors.filter { $0.value.matches(display) }.keys.sorted())
         }
         return Setup(profile: profile?.name, workspaces: workspaces, workspaceDisplays: workspaceDisplays,
                      mergeWorkspaces: merge, rules: (profile?.rules ?? []) + baseRules, monitors: tiled)

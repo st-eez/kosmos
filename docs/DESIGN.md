@@ -664,13 +664,13 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     becomes focused, and the workspace that display showed is concealed.
   - `workspace next` and `prev` walk the workspaces of the focused display, as AeroSpace's
     do. `workspace-back-and-forth` returns to the workspace focused before.
-  - `focus-monitor`, `move-node-to-monitor` and `move-workspace-to-monitor` take a
-    direction, `next`, `prev`, a monitor number or a name from `[monitors]`, and
-    `--wrap-around`. `move-node-to-monitor` moves the window to the workspace the target
-    display shows, at the edge it enters by when the target is a direction, and
-    `--focus-follows-window` follows it. `move-workspace-to-monitor` shows the focused
-    workspace on the target display, concealing the workspace there, and the display it
-    left shows another workspace. It refuses an assigned workspace, as AeroSpace does.
+  - `focus-monitor` and `move-node-to-monitor` take a direction, `next`, `prev` or a
+    monitor number, and `--wrap-around`. `move-node-to-monitor` moves the window to the
+    workspace the target display shows, at the edge it enters by when the target is a
+    direction, and `--focus-follows-window` follows it.
+  - Left out until a binding needs them: `move-workspace-to-monitor`, which every
+    workspace of Steve's four profiles would refuse, since each is assigned, and
+    AeroSpace's monitor patterns by name.
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
     display in the direction at the edge of the workspace. `focus` then focuses that
     display's workspace; `move` moves a tiled window there and follows it. With

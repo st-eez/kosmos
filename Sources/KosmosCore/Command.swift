@@ -27,8 +27,6 @@ public enum Command: Equatable, Sendable {
         case previous
         /// Counted from 1, left to right, then top to bottom.
         case number(Int)
-        /// A name from the config's `[monitors]`.
-        case named(String)
     }
 
     public enum Layout: Equatable, Sendable {
@@ -57,7 +55,6 @@ public enum Command: Equatable, Sendable {
     /// Moves the focused window, or the window given with `--window-id`, to the workspace
     /// the display shows.
     case moveNodeToMonitor(MonitorTarget, focusFollowsWindow: Bool, wrapAround: Bool, window: WindowID? = nil)
-    case moveWorkspaceToMonitor(MonitorTarget, wrapAround: Bool)
     /// Applies a display profile from the config until the displays change.
     case profile(String)
 
@@ -154,10 +151,10 @@ public enum Command: Equatable, Sendable {
         case "reload-config": return rest.isEmpty ? .success(.reloadConfig) : usage
         case "mode": return rest.count == 1 ? .success(.mode(rest[0])) : usage
         case "profile": return rest.count == 1 && !rest[0].hasPrefix("-") ? .success(.profile(rest[0])) : usage
-        case "focus-monitor", "move-node-to-monitor", "move-workspace-to-monitor":
+        case "focus-monitor", "move-node-to-monitor":
             let movesNode = name == "move-node-to-monitor"
             let usageText = "usage: \(name) " + (movesNode ? "[--focus-follows-window] [--window-id <id>] " : "")
-                + "[--wrap-around] <left|right|up|down|next|prev|number|monitor name>"
+                + "[--wrap-around] <left|right|up|down|next|prev|number>"
             var follow = false, wrap = false, window: WindowID?, targets: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
@@ -170,29 +167,21 @@ public enum Command: Equatable, Sendable {
                 default: targets.append(word)
                 }
             }
-            guard targets.count == 1, !targets[0].hasPrefix("-") else { return fail(usageText) }
-            let target = monitor(targets[0])
+            guard targets.count == 1, let target = monitor(targets[0]) else { return fail(usageText) }
             // As in AeroSpace, wrapping needs an order to wrap in.
-            switch target {
-            case .number, .named: if wrap { return fail("\(name): --wrap-around needs a direction, next or prev") }
-            case .direction, .next, .previous: break
-            }
-            switch name {
-            case "focus-monitor": return .success(.focusMonitor(target, wrapAround: wrap))
-            case "move-node-to-monitor":
-                return .success(.moveNodeToMonitor(target, focusFollowsWindow: follow, wrapAround: wrap, window: window))
-            default: return .success(.moveWorkspaceToMonitor(target, wrapAround: wrap))
-            }
+            if wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
+            return .success(movesNode ? .moveNodeToMonitor(target, focusFollowsWindow: follow, wrapAround: wrap, window: window)
+                                      : .focusMonitor(target, wrapAround: wrap))
         default: return usage
         }
     }
 
-    private static func monitor(_ target: String) -> MonitorTarget {
+    private static func monitor(_ target: String) -> MonitorTarget? {
         if let direction = direction(target) { return .direction(direction) }
         switch target {
         case "next": return .next
         case "prev": return .previous
-        default: return Int(target).flatMap { $0 > 0 ? MonitorTarget.number($0) : nil } ?? .named(target)
+        default: return Int(target).flatMap { $0 > 0 ? MonitorTarget.number($0) : nil }
         }
     }
 

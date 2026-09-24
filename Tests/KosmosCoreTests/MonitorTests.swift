@@ -5,9 +5,9 @@ import Testing
 // Steve's desk (DESIGN.md, section 5.13): the left panel, the main panel at the origin, and
 // the built-in display below, with 10 point outer gaps.
 private let gaps = Gaps(outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
-private let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), gaps: gaps, names: ["asus-left"])
-private let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps, names: ["asus-main"])
-private let builtIn = Monitor(id: 3, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982), gaps: gaps, names: ["builtin"])
+private let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), gaps: gaps)
+private let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
+private let builtIn = Monitor(id: 3, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982), gaps: gaps)
 private let names = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
 private let home: [String: DisplayID] = ["1": 2, "2": 2, "3": 2, "4": 2, "5": 1, "6": 1, "7": 1, "8": 3, "9": 3, "0": 3]
 
@@ -132,8 +132,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(focusing(.number(1)) == "5")
         #expect(focusing(.number(2)) == nil)   // already focused
         #expect(focusing(.number(4)) == nil)
-        #expect(focusing(.named("builtin")) == "8")
-        #expect(focusing(.named("nowhere")) == nil)
         _ = s.perform(.focusMonitor(.direction(.down), wrapAround: false))
         #expect(s.perform(.focusMonitor(.direction(.up), wrapAround: false)) != nil)
         #expect(s.focusedWorkspace == "1")
@@ -196,13 +194,21 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.add(10)
         _ = s.float(10)
         let plan = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: false, wrapAround: false))!
-        let move = try! #require(plan.floatingMoves[10])
-        #expect(move == Session.FloatingMove(from: main.area, to: left.area))
-        #expect(move.moved(CGRect(x: 100, y: 100, width: 400, height: 300)) == CGRect(x: -1820, y: 100, width: 400, height: 300))
+        #expect(plan.floatingMoves == [10: left.area])
+        // It keeps its place relative to the display it is on, as its center says.
+        #expect(s.floatingFrame(CGRect(x: 100, y: 100, width: 400, height: 300), movingTo: left.area)
+                == CGRect(x: -1820, y: 100, width: 400, height: 300))
         // Onto a smaller display it keeps its relative place and stays inside.
-        let down = Session.FloatingMove(from: main.area, to: builtIn.area)
-        #expect(down.moved(CGRect(x: 1800, y: 900, width: 400, height: 300)) == CGRect(x: 1312, y: 1762, width: 400, height: 300))
-        #expect(down.moved(CGRect(x: 0, y: 0, width: 3000, height: 3000)).size == builtIn.area.size)
+        #expect(s.floatingFrame(CGRect(x: 960, y: 540, width: 400, height: 300), movingTo: builtIn.area)
+                == CGRect(x: 956, y: 1571, width: 400, height: 300))
+        #expect(s.floatingFrame(CGRect(x: 0, y: 0, width: 3000, height: 3000), movingTo: builtIn.area).size == builtIn.area.size)
+        // Measured from the display it is on, whatever its workspace's display was: here
+        // the left panel.
+        #expect(s.floatingFrame(CGRect(x: -1920, y: 540, width: 400, height: 300), movingTo: builtIn.area)
+                == CGRect(x: 200, y: 1571, width: 400, height: 300))
+        // Off every display it keeps its offset and fits inside.
+        #expect(s.floatingFrame(CGRect(x: 9000, y: 9000, width: 400, height: 300), movingTo: builtIn.area)
+                == CGRect(x: 1312, y: 1762, width: 400, height: 300))
     }
 
     @Test func focusAcrossMonitorsCrossesAtTheEdgeOnly() {
@@ -238,31 +244,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         // A floating window stays.
         _ = s.perform(.layout(.toggleFloating))
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
-    }
-
-    @Test func moveWorkspaceToMonitorMovesOnlyAFreeWorkspace() {
-        var s = desk(home.filter { $0.key != "4" })
-        _ = s.add(40, to: "4"); _ = s.add(50, to: "5"); _ = s.add(10)
-        #expect(s.perform(.moveWorkspaceToMonitor(.direction(.left), wrapAround: false)) == nil)   // 1 is assigned
-        _ = s.perform(.workspace(.named("4")))
-        let plan = s.perform(.moveWorkspaceToMonitor(.direction(.left), wrapAround: false))!
-        #expect(s.shownWorkspaces == ["4", "1", "8"])
-        #expect(s.focusedWorkspace == "4" && s.focusedDisplay == 1)
-        // 5 leaves the left panel, and the main panel shows its first workspace again.
-        #expect(plan.hide == [50] && plan.show == [10])
-        #expect(within(plan.frames.filter { $0.key == 40 }, left))
-        #expect(plan.focus == nil)
-    }
-
-    @Test func aWorkspaceSwappedBetweenFreeDisplaysMovesItsFloatingWindowsBack() {
-        var s = Session(names: ["a", "b"], monitors: [main, left])
-        _ = s.add(1); _ = s.float(1)
-        _ = s.add(2, to: "b"); _ = s.float(2)
-        #expect(s.shownWorkspaces == ["b", "a"])
-        let plan = s.perform(.moveWorkspaceToMonitor(.direction(.left), wrapAround: false))!
-        #expect(s.shownWorkspaces == ["a", "b"])
-        #expect(plan.show.isEmpty && plan.hide.isEmpty)
-        #expect(plan.floatingMoves == [1: .init(from: main.area, to: left.area), 2: .init(from: left.area, to: main.area)])
     }
 }
 
@@ -339,6 +320,18 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         s.reconfigure(names: ["a", "b", "c"], monitors: [main], assigned: [:], merge: [:])
         #expect(s.shownWorkspaces == ["b"])
         #expect(s.focusedWorkspace == "b")
+    }
+
+    @Test func aFreeFocusedWorkspaceNoDisplayShowsGoesToTheDisplayFocusedBefore() {
+        var s = Session(names: ["a", "b", "c"], monitors: [main, left])
+        _ = s.perform(.focusMonitor(.direction(.left), wrapAround: false))
+        _ = s.perform(.workspace(.named("c")))   // on the left panel, in place of b
+        #expect(s.shownWorkspaces == ["c", "a"])
+        s.reconfigure(names: ["a", "b"], monitors: [main, left], assigned: [:], merge: ["c": "b"])
+        // c merged into b, which no display showed, and b takes the left panel, focused
+        // before, where the main display would have taken it from a.
+        #expect(s.focusedWorkspace == "b" && s.focusedDisplay == 1)
+        #expect(s.shownWorkspaces == ["b", "a"])
     }
 
     @Test func theLaptopProfileMergesTheWorkspacesItLeavesOut() {
@@ -429,12 +422,10 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
             (["focus-monitor", "left"], .focusMonitor(.direction(.left), wrapAround: false)),
             (["focus-monitor", "--wrap-around", "next"], .focusMonitor(.next, wrapAround: true)),
             (["focus-monitor", "2"], .focusMonitor(.number(2), wrapAround: false)),
-            (["focus-monitor", "asus-main"], .focusMonitor(.named("asus-main"), wrapAround: false)),
             (["move-node-to-monitor", "--wrap-around", "--focus-follows-window", "up"],
              .moveNodeToMonitor(.direction(.up), focusFollowsWindow: true, wrapAround: true)),
             (["move-node-to-monitor", "--window-id", "42", "prev"],
              .moveNodeToMonitor(.previous, focusFollowsWindow: false, wrapAround: false, window: 42)),
-            (["move-workspace-to-monitor", "right"], .moveWorkspaceToMonitor(.direction(.right), wrapAround: false)),
             (["profile", "home"], .profile("home")),
         ]
         for (arguments, command) in cases {
@@ -447,8 +438,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
                           ["move", "left", "--boundaries-action", "wrap-around-all-monitors"],
                           ["move", "left", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "fail"],
                           ["focus-monitor"], ["focus-monitor", "left", "right"], ["focus-monitor", "--wrap-around", "2"],
-                          ["focus-monitor", "--wrap-around", "asus-main"], ["focus-monitor", "--focus-follows-window", "left"],
-                          ["move-workspace-to-monitor", "--window-id", "4", "left"], ["move-node-to-monitor", "--window-id"],
+                          ["focus-monitor", "asus-main"], ["focus-monitor", "0"], ["move-workspace-to-monitor", "left"], ["focus-monitor", "--focus-follows-window", "left"],
+                          ["focus-monitor", "--window-id", "4", "left"], ["move-node-to-monitor", "--window-id"],
                           ["profile"], ["profile", "a", "b"], ["profile", "--help"]] {
             guard case .failure = Command.parse(arguments) else {
                 Issue.record("accepted \(arguments)")
@@ -459,15 +450,12 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 }
 
 @Suite struct DisplayConfigTests {
-    private let header = "config-version = 1\nworkspaces = ['1']\n[monitors]\nmain = { name = 'VG279QE5A' }\n"
-
-    @Test func bindingsNameKnownMonitorsAndProfiles() {
-        let good = Config.load(header + "[mode.main.binding]\nalt-a = 'focus-monitor main'\nalt-b = 'profile p'\n[[profile]]\nname = 'p'\n")
-        #expect(good.diagnostics.isEmpty)
-        let bad = Config.load(header + "[mode.main.binding]\nalt-a = 'move-node-to-monitor mian'\nalt-b = 'profile q'\n[[profile]]\nname = 'p'\n")
+    @Test func bindingsNameKnownProfiles() {
+        let header = "config-version = 1\nworkspaces = ['1']\n[mode.main.binding]\nalt-b = "
+        #expect(Config.load(header + "'profile p'\n[[profile]]\nname = 'p'\n").diagnostics.isEmpty)
+        let bad = Config.load(header + "'profile q'\n[[profile]]\nname = 'p'\n")
         #expect(bad.config == nil)
-        #expect(bad.diagnostics.map(\.message) == ["no monitor named 'mian' under [monitors]; did you mean 'main'?",
-                                                    "no profile named 'q'"])
+        #expect(bad.diagnostics.map(\.message) == ["no profile named 'q'"])
     }
 }
 
@@ -505,7 +493,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         let target: Command.MonitorTarget = [.direction(.left), .direction(.right), .direction(.up), .direction(.down),
                                              .next, .previous, .number(Int.random(in: 1...3, using: &random))].randomElement(using: &random)!
         let wrap = Bool.random(using: &random)
-        let operation = Int.random(in: 0..<24, using: &random)
+        let operation = Int.random(in: 0..<23, using: &random)
         switch operation {
         case 0..<4:
             guard windows.count < 30 else { break }
@@ -525,12 +513,11 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         case 14: carryOut(s.perform(.moveNodeToWorkspace(.named(name), focusFollowsWindow: Bool.random(using: &random), window: window)))
         case 15: carryOut(s.perform(.focusMonitor(target, wrapAround: wrap)))
         case 16: carryOut(s.perform(.moveNodeToMonitor(target, focusFollowsWindow: Bool.random(using: &random), wrapAround: wrap, window: window)))
-        case 17: carryOut(s.perform(.moveWorkspaceToMonitor(target, wrapAround: wrap)))
-        case 18, 19:
+        case 17, 18:
             let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
             let boundaries: Command.Boundaries = wrap ? .allMonitorsWrapping : .allMonitors
             carryOut(s.perform(Bool.random(using: &random) ? .focus(direction, boundaries: boundaries) : .move(direction, boundaries: boundaries)))
-        case 20: carryOut(s.perform(.layout(.toggleFloating)))
+        case 19: carryOut(s.perform(.layout(.toggleFloating)))
         default:
             // A display change or a forced profile, and the resync after it.
             let profile = profiles.randomElement(using: &random)!

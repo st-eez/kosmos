@@ -30,31 +30,14 @@ public struct Session: Sendable {
         public var frames: [WindowID: CGRect] = [:]
         /// The window to make key, or nil to leave focus alone.
         public var focus: KeyWindow?
-        /// Floating windows that change display. The layout gives them no frame, so the app
-        /// moves each to the same place on the new display's area.
-        public var floatingMoves: [WindowID: FloatingMove] = [:]
+        /// Floating windows that change display, with the area of the display each goes to.
+        /// The layout gives them no frame, so the app moves each with `floatingFrame`.
+        public var floatingMoves: [WindowID: CGRect] = [:]
 
         public init() {}
 
         public var isEmpty: Bool {
             show.isEmpty && hide.isEmpty && frames.isEmpty && focus == nil && floatingMoves.isEmpty
-        }
-    }
-
-    /// A floating window's move from one display's area to another's.
-    public struct FloatingMove: Equatable, Sendable {
-        public var from: CGRect
-        public var to: CGRect
-
-        /// `frame` at the same place relative to `to` as it was relative to `from`, scaled with
-        /// the areas and kept inside `to`.
-        public func moved(_ frame: CGRect) -> CGRect {
-            guard from.width > 0, from.height > 0 else { return frame }
-            let size = CGSize(width: min(frame.width, to.width), height: min(frame.height, to.height))
-            let x = to.minX + (frame.minX - from.minX) * to.width / from.width
-            let y = to.minY + (frame.minY - from.minY) * to.height / from.height
-            return CGRect(x: min(max(x, to.minX), to.maxX - size.width), y: min(max(y, to.minY), to.maxY - size.height),
-                          width: size.width, height: size.height).integral
         }
     }
 
@@ -149,7 +132,7 @@ public struct Session: Sendable {
         for name in newNames where workspaces[name] == nil { workspaces[name] = Workspace() }
         for name in names {
             for window in allWindows(of: name) {
-                if let origin = merged[window], origin != name, newNames.contains(origin) {
+                if let origin = merged[window], newNames.contains(origin) {
                     merged[window] = nil
                     carry(window, to: origin)
                 }
@@ -422,12 +405,6 @@ public struct Session: Sendable {
                   let name = shown[monitor.id], name != source else { return nil }
             let entering: Direction? = if case .direction(let direction) = target { direction } else { nil }
             return move(window, from: source, to: name, follow: follow, entering: entering)
-        case .moveWorkspaceToMonitor(let target, let wrap):
-            // An assigned workspace shows only on its display, as in AeroSpace.
-            guard assigned[focusedWorkspace] == nil,
-                  let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrap),
-                  monitor.id != focusedDisplay else { return nil }
-            return moveFocusedWorkspace(to: monitor.id)
         case .reloadConfig, .mode, .profile:
             return nil   // the app reloads the config, switches hotkeys or applies the profile
         default:
@@ -467,7 +444,7 @@ public struct Session: Sendable {
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
         case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusMonitor,
-             .moveNodeToMonitor, .moveWorkspaceToMonitor, .profile:
+             .moveNodeToMonitor, .profile:
             return nil
         }
         workspaces[focusedWorkspace] = workspace
@@ -540,7 +517,7 @@ public struct Session: Sendable {
                                entering: Direction? = nil) -> Plan {
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
-        let from = monitor(of: source).area
+        let from = monitor(of: source).id
         let floating = workspaces[source]!.floating.contains(window)
         _ = workspaces[source]!.remove(window)
         merged[window] = nil
@@ -566,38 +543,23 @@ public struct Session: Sendable {
         }
         plan.frames.merge(frames(of: source)) { current, _ in current }
         plan.frames.merge(frames(of: name)) { current, _ in current }
-        let to = monitor(of: name).area
-        if floating, to != from { plan.floatingMoves[window] = FloatingMove(from: from, to: to) }
+        let to = monitor(of: name)
+        if floating, to.id != from { plan.floatingMoves[window] = to.area }
         return plan
     }
 
-    /// Shows the focused workspace on another display, concealing the workspace there. The
-    /// display it left shows the first workspace assigned to it, else the first free hidden
-    /// one, which can be the one just concealed.
-    private mutating func moveFocusedWorkspace(to display: DisplayID) -> Plan {
-        let name = focusedWorkspace, from = focusedDisplay
-        let areas = (from: monitor(of: name).area, to: monitors.first { $0.id == display }!.area)
-        let replaced = shown[display]
-        shown[display] = name
-        shown[from] = nil
-        let hidden = names.filter { !isShown($0) }
-        let stub = hidden.first { assigned[$0] == from } ?? hidden.first { assigned[$0] == nil }
-        shown[from] = stub
-        var plan = Plan()
-        if let replaced, replaced != stub { plan.hide = windows(of: replaced) }
-        for window in workspaces[name]!.floating {
-            plan.floatingMoves[window] = FloatingMove(from: areas.from, to: areas.to)
-        }
-        if let stub {
-            if stub != replaced { plan.show = windows(of: stub) }
-            plan.frames = frames(of: stub)
-            if stub == replaced {
-                for window in workspaces[stub]!.floating {
-                    plan.floatingMoves[window] = FloatingMove(from: areas.to, to: areas.from)
-                }
-            }
-        }
-        plan.frames.merge(frames(of: name)) { current, _ in current }
-        return plan
+    /// Where a floating window at `frame` goes on the display whose area is `area`: at the
+    /// same place relative to the area of the display under its center, scaled with the
+    /// areas, as AeroSpace moves floating windows between monitors, and kept inside `area`.
+    /// Off every display, it keeps its offset and size as they fit.
+    public func floatingFrame(_ frame: CGRect, movingTo area: CGRect) -> CGRect {
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let from = monitors.first { $0.frame.contains(center) }?.area ?? area
+        guard from.width > 0, from.height > 0 else { return frame }
+        let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
+        let x = area.minX + (frame.minX - from.minX) * area.width / from.width
+        let y = area.minY + (frame.minY - from.minY) * area.height / from.height
+        return CGRect(x: min(max(x, area.minX), area.maxX - size.width), y: min(max(y, area.minY), area.maxY - size.height),
+                      width: size.width, height: size.height).integral
     }
 }
