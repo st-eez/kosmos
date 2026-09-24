@@ -14,7 +14,7 @@
 /// This is the model's RaiseKeys case, where AXRaise alone keys the target inside the front
 /// app. The model's `WorkerKey` step, which records and posts the key record after the raise
 /// when the raise does not key, is left out until `kosmos-probe keying` shows it is needed
-/// (tla/README.md, change 11).
+/// (tla/README.md on the hover branch, change 11).
 public struct KeyRequest<Stamp: Sendable>: Sendable {
     public enum Phase: Equatable, Sendable {
         case pending

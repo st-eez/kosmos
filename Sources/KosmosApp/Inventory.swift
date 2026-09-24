@@ -1,4 +1,5 @@
 import AppKit
+import KosmosCore
 import KosmosSkyLight
 import os
 
@@ -17,6 +18,20 @@ final class Inventory {
     /// Accessibility facts for windows whose app's worker knows them.
     private var ax: [UInt32: AXWindowInfo] = [:]
     private(set) var focused: UInt32?
+    /// Windows in a native fullscreen Space.
+    private(set) var fullscreen: Set<UInt32> = []
+    /// How long a departure counts as just now, for the report of the next key window and
+    /// for focus requests. After a minimize, the next key window was reported 0.73 s after
+    /// Accessibility reported the minimize (the live log with the departures probe).
+    static let departureBound: Duration = .seconds(1)
+    /// When windows left the screen: closed, minimized, or hidden with their app.
+    private var departures = DepartureLog(bound: departureBound)
+    /// When each window's Space membership first changed since its fullscreen state was last
+    /// read. A window leaving fullscreen leaves its Space before it joins the desktop's, and
+    /// its return dates from the first of those events.
+    private var spaceChangedAt: [UInt32: ContinuousClock.Instant] = [:]
+    /// Space queries for fullscreen checks, in the order the events asked for them.
+    private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
     /// A window became managed (true) or stopped being managed (false).
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
@@ -26,6 +41,12 @@ final class Inventory {
     /// sweep runs; the sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to
     /// known windows still apply. The Controller reads it too.
     var sessionLocked = false
+    /// An app hid (true) or came back (false), after the inventory recorded it, and when
+    /// NSWorkspace said so.
+    var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
+    /// A managed window entered (true) or left (false) native fullscreen, and when its Space
+    /// membership started to change.
+    var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -52,6 +73,14 @@ final class Inventory {
             let pid = app.processIdentifier
             MainActor.assumeIsolated { self?.appExited(pid) }
         }
+        for (name, hidden) in [(NSWorkspace.didHideApplicationNotification, true), (NSWorkspace.didUnhideApplicationNotification, false)] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                let pid = app.processIdentifier
+                let received = ContinuousClock.now
+                MainActor.assumeIsolated { self?.appHidden(pid, hidden, at: received) }
+            }
+        }
         sweepTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sweep() }
         }
@@ -70,6 +99,10 @@ final class Inventory {
         guard let row = windows[id] else { return false }
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
+
+    /// Whether the window is minimized, as Accessibility read it with the window's other
+    /// facts and as each minimize report since says.
+    func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
 
     private func handle(_ report: AXReport) {
         switch report.kind {
@@ -95,6 +128,8 @@ final class Inventory {
             }
         case .minimized(let id, let minimized):
             inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
+            ax[id]?.minimized = minimized
+            if minimized, windows[id]?.orderedIn == true { departures.left(id, at: .now) } else if !minimized { departures.returned(id) }
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
@@ -108,6 +143,9 @@ final class Inventory {
         guard let worker = apps.worker(pid) else { return }
         Task {
             let info = await worker.info(id)
+            // Known before the window is managed, so a window that is already fullscreen
+            // is parked at once and never tiled.
+            setFullscreen(id, await fullscreenState(id))
             setAX(id, info)
         }
     }
@@ -116,6 +154,45 @@ final class Inventory {
     private func readIfUnknown(_ id: UInt32) {
         guard ax[id] == nil, let row = windows[id], isCandidate(row) else { return }
         readAX(id, pid: row.pid)
+    }
+
+    /// A native fullscreen window moves to a Space of its own, which SkyLight reports as a
+    /// Space membership change (the fullscreen probe in kosmos-probe). Accessibility has no
+    /// notification for it.
+    private func fullscreenState(_ id: UInt32) async -> Bool? {
+        await withCheckedContinuation { continuation in
+            spaceQueue.async { continuation.resume(returning: Displays.isFullscreen(id)) }
+        }
+    }
+
+    private func setFullscreen(_ id: UInt32, _ state: Bool?) {
+        guard let state, windows[id] != nil else { return }
+        let since = spaceChangedAt.removeValue(forKey: id) ?? .now
+        let changed = state ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil
+        guard changed, isManaged(id) else { return }
+        inventoryLog.info("\(id) \(state ? "entered" : "left", privacy: .public) native fullscreen")
+        onFullscreenChange?(id, state, since)
+    }
+
+    /// Whether the window left the screen within the departure bound: it closed, minimized,
+    /// or hid with its app. WindowServer may have ordered it out in an event not handled
+    /// yet, which counts as now.
+    func leftScreen(_ id: UInt32) -> Bool {
+        if let left = departures.justLeft(id, at: .now) { return left }
+        guard windows[id]?.orderedIn == true else { return false }
+        guard let row = SkyLight.rows([id]).first else { return true }
+        return !row.orderedIn
+    }
+
+
+    /// An app hid or came back. Its windows leave or return with it, and the controller hears
+    /// of it after the record changed.
+    private func appHidden(_ pid: pid_t, _ hidden: Bool, at received: ContinuousClock.Instant) {
+        inventoryLog.info("\(self.appName(pid), privacy: .public) \(hidden ? "hid" : "unhid", privacy: .public)")
+        for (id, row) in windows where row.pid == pid {
+            if !hidden { departures.returned(id) } else if row.orderedIn { departures.left(id, at: .now) }
+        }
+        onAppHidden?(pid, hidden, received)
     }
 
     /// Nil info means the app did not answer; what was known stays (DESIGN.md, section 5.1).
@@ -136,8 +213,14 @@ final class Inventory {
     private func handle(_ event: WindowServerEvent) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
         switch event {
-        case .created(let id), .changed(let id), .spaceMembership(let id):
+        case .created(let id), .changed(let id):
             refresh(id)
+        case .spaceMembership(let id):
+            refresh(id)
+            if let row = windows[id], isCandidate(row) {
+                if spaceChangedAt[id] == nil { spaceChangedAt[id] = .now }
+                Task { setFullscreen(id, await fullscreenState(id)) }
+            }
         case .destroyed(let id):
             remove(id, reason: "destroyed")
         case .spacesChanged:
@@ -161,6 +244,7 @@ final class Inventory {
         guard ownedByRegularApp(row), !sessionLocked || windows[row.id] != nil else { return }
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
+        departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX(row.id, pid: row.pid) }
             inventoryLog.info("""
@@ -178,6 +262,9 @@ final class Inventory {
         let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
+        fullscreen.remove(id)
+        spaceChangedAt[id] = nil
+        if row.orderedIn { departures.left(id, at: .now) }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()

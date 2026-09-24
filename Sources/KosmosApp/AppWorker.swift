@@ -30,7 +30,7 @@ struct AXReport: Sendable {
 struct AXWindowInfo: Sendable {
     let role: String?
     let subrole: String?
-    let minimized: Bool
+    var minimized: Bool
 }
 
 /// Owns one app's Accessibility elements and observer on the app's own thread. It never

@@ -12,6 +12,23 @@
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
+//   kosmos-probe fullscreen [dry]   Which signals report a window entering and leaving
+//                                   native fullscreen, and when: SkyLight Space events, and
+//                                   Displays.isFullscreen after each Space membership event,
+//                                   as the inventory checks it. dry never enters.
+//   kosmos-probe departures         When the key window leaves, which does macOS report
+//                                   first: the window leaving (ordered out or destroyed) or
+//                                   the next key window? Minimizes, closes and hides a
+//                                   window of its own accessory app, with one clock, and
+//                                   minimizes the app's last window, after which macOS may
+//                                   report no key window at all, and keys another window
+//                                   during a minimize's animation.
+//                                   The window belongs to an accessory app, which Kosmos
+//                                   does not manage.
+//   kosmos-probe tabs               Does WindowServer order out the deselected window of a
+//                                   native tab group, and which Spaces keep it? Two tabs of
+//                                   its own, invisible and off every display, in an app with
+//                                   the prohibited activation policy, switched twice.
 //   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
 //                                   out of the holding Space, and where does a window
 //                                   removed from its only Space land? Its window is
@@ -64,6 +81,12 @@ case "survive-kill": surviveKill()
 case "bar": bar()
 case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
+case "fullscreen-window": fullscreenWindow()
+case "fullscreen": fullscreen()
+case "departures-window": departuresWindow()
+case "departures": departures()
+case "tabs-window": tabsWindow()
+case "tabs": tabs()
 case "hidden-window": showHiddenWindow()
 case "reveal": reveal()
 case "displays": displays()
@@ -73,7 +96,7 @@ case "ax-timeout": axTimeout()
 case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
 case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | reveal | displays | secure-input | ax-timeout | keying [rounds]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs | reveal | displays | secure-input | ax-timeout | keying [rounds]")
     exit(2)
 }
 
@@ -269,6 +292,233 @@ func bar() {
     print("recovery of a record naming destroyed Space \(space): \(outcome) in \(String(format: "%.0f", elapsed(start))) ms; record cleared: \(file.read() == nil)")
 }
 
+/// A window that enters native fullscreen 1.5 s after it appears and leaves 4 s later, in
+/// an accessory app. Prints its window id.
+@MainActor func fullscreenWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let window = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 420, height: 300),
+                          styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+    window.collectionBehavior = [.fullScreenPrimary]
+    window.title = "kosmos-probe fullscreen"
+    window.makeKeyAndOrderFront(nil)
+    app.activate()
+    print(window.windowNumber)
+    let dry = CommandLine.arguments.contains("dry")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { print("enter"); if !dry { window.toggleFullScreen(nil) } }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { print("leave"); if !dry { window.toggleFullScreen(nil) } }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 9) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+nonisolated(unsafe) var fullscreenStart = ContinuousClock.now
+nonisolated(unsafe) var probeWindow: UInt32 = 0
+
+@MainActor func fullscreen() -> Never {
+    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["fullscreen-window"] + (CommandLine.arguments.contains("dry") ? ["dry"] : [])
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    probeWindow = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
+    fullscreenStart = .now
+    print("window \(probeWindow), pid \(child.processIdentifier)")
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { print(String(format: "%7.1f ms child: ", elapsed(fullscreenStart)) + text) }
+    }
+    for id: UInt32 in [1325, 1326, 1327, 1328, 1401, 806, 807, 808, 815, 816] {
+        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+            func u32(_ offset: Int) -> UInt32 { bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : 0 }
+            func u64(_ offset: Int) -> UInt64 { bytes.count >= offset + 8 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt64.self) : 0 }
+            switch id {
+            case 1325, 1326:
+                guard u32(8) == probeWindow else { return }
+                print(String(format: "%7.1f ms event %d space %llu", elapsed(fullscreenStart), id, u64(0)))
+                // The check the inventory makes on these events, off the main thread.
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let state = Displays.isFullscreen(probeWindow).map { "\($0)" } ?? "nil (no Space)"
+                    print(String(format: "%7.1f ms   Displays.isFullscreen: ", elapsed(fullscreenStart)) + state)
+                }
+            case 1327, 1328:
+                print(String(format: "%7.1f ms event %d space %llu", elapsed(fullscreenStart), id, u64(0)))
+            case 1401:
+                print(String(format: "%7.1f ms event 1401", elapsed(fullscreenStart)))
+            default:
+                guard u32(0) == probeWindow else { return }
+                print(String(format: "%7.1f ms event %d", elapsed(fullscreenStart), id))
+            }
+        }, id, nil)
+    }
+    var ids = [probeWindow]
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &ids, 1)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+/// Milliseconds since boot, the same in every process.
+func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
+
+/// Two windows of an accessory app. The first is minimized and restored. It is minimized
+/// again while the second is keyed during the animation: does macOS still key a window
+/// when the animation ends? The first is restored and closed. The second, the app's last
+/// window, is minimized and restored: does macOS report any key window then, or does the
+/// app stay front with none? Then the app hides. Each key change is printed with its
+/// uptime.
+@MainActor func departuresWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    func window(_ x: CGFloat, _ title: String) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: x, y: 160, width: 320, height: 220),
+                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = title
+        window.isReleasedWhenClosed = false
+        return window
+    }
+    let other = window(140, "kosmos-probe B"), first = window(500, "kosmos-probe A")
+    other.makeKeyAndOrderFront(nil)
+    first.makeKeyAndOrderFront(nil)
+    app.activate()
+    print("\(first.windowNumber) \(other.windowNumber)")
+    let center = NotificationCenter.default
+    center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
+        let window = note.object as? NSWindow
+        MainActor.assumeIsolated { print(String(format: "%.1f child: key %d", uptime(), window?.windowNumber ?? 0)) }
+    }
+    let say = { (text: String) in print(String(format: "%.1f child: ", uptime()) + text) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("minimize A"); first.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { say("restore A"); first.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { say("minimize A"); first.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { say("key B during the animation"); other.makeKeyAndOrderFront(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { say("restore A"); first.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { say("close A"); first.close() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { say("minimize B, the last window"); other.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) { say("restore B"); other.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10.5) { say("hide app"); app.hide(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+nonisolated(unsafe) var departureWindows: Set<UInt32> = []
+
+@MainActor func departures() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["departures-window"]
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    let ids = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
+    departureWindows = Set(ids)
+    print("windows A \(ids[0]) B \(ids[1]), pid \(child.processIdentifier)")
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { print(text) }
+    }
+    for id: UInt32 in [804, 806, 807, 808, 815, 816, 1325, 1326] {
+        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+            let window: UInt32 = id >= 1325
+                ? (bytes.count >= 12 ? bytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self) : 0)
+                : (bytes.count >= 4 ? bytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self) : 0)
+            guard departureWindows.contains(window) else { return }
+            print(String(format: "%.1f event %d window %d", uptime(), id, window))
+        }, id, nil)
+    }
+    var watched = ids
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    let center = NSWorkspace.shared.notificationCenter
+    for name in [NSWorkspace.didHideApplicationNotification, NSWorkspace.didActivateApplicationNotification,
+                 NSWorkspace.didDeactivateApplicationNotification] {
+        center.addObserver(forName: name, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let short = name.rawValue.replacingOccurrences(of: "NSWorkspace", with: "").replacingOccurrences(of: "ApplicationNotification", with: "")
+            print(String(format: "%.1f workspace %@ %@", uptime(), short, app?.localizedName ?? "?"))
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 13) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+/// Two windows in one native tab group, invisible and off every display. Prints both
+/// window ids, then selects each tab in turn.
+@MainActor func tabsWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    func window(_ title: String) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 300, height: 200),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = title
+        window.tabbingMode = .preferred
+        window.tabbingIdentifier = "kosmos-probe-tabs"
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.isReleasedWhenClosed = false
+        return window
+    }
+    let first = window("kosmos-probe tab A"), second = window("kosmos-probe tab B")
+    first.orderFrontRegardless()
+    first.addTabbedWindow(second, ordered: .above)
+    second.orderFrontRegardless()
+    print("\(first.windowNumber) \(second.windowNumber) tabs \(first.tabbedWindows?.count ?? 0)")
+    let say = { (text: String) in print(text) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        say("select A"); first.tabGroup?.selectedWindow = first
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        say("select B"); first.tabGroup?.selectedWindow = second
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+@MainActor func tabs() {
+    _ = NSApplication.shared
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["tabs-window"]
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    defer { child.terminate() }
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    let text = String(decoding: line, as: UTF8.self)
+    let ids = text.split(whereSeparator: \.isWhitespace).prefix(2).compactMap { UInt32($0) }
+    print("child: " + text.trimmingCharacters(in: .whitespacesAndNewlines))
+    /// Each tab's order and Spaces as the inventory would read them.
+    func state(_ step: String) {
+        let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(ids).map { ($0.id, $0) })
+        let parts = ids.map { id in
+            let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
+            return "\(id) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)"
+        }
+        print(step + ": " + parts.joined(separator: ", "))
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+    state("B selected at start")
+    Thread.sleep(forTimeInterval: 1.0)
+    state("after select A")
+    Thread.sleep(forTimeInterval: 1.0)
+    state("after select B")
+}
+
 @MainActor func reveal() {
     _ = NSApplication.shared   // bridged operations need an AppKit client
     let (child, window) = spawnPanel("hidden-window")
@@ -282,11 +532,13 @@ func bar() {
         _ = kosmos_space_destroy(space)
     }
     print("window \(window), ordinary Space \(desktop), holding Space \(space)")
-    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier.
+    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier,
+    /// and whether WindowServer still reads it ordered in, as the inventory does.
     func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
         _ = kosmos_barrier(space)
         let ordinary = (kosmos_window_spaces(window) as? [UInt64]) ?? [], held = inSpace(window, space)
-        print("\(step): ordinary Spaces \(ordinary), in holding \(held)")
+        let orderedIn = SkyLight.rows([window]).first.map { "\($0.orderedIn)" } ?? "no row"
+        print("\(step): ordinary Spaces \(ordinary), in holding \(held), ordered in \(orderedIn)")
         return (ordinary, held)
     }
     let cycles = 3

@@ -1,5 +1,21 @@
 import CoreGraphics
 
+/// Why a window waits parked when Kosmos admits it, as at launch (DESIGN.md, section 5.5).
+public enum ParkReason: Equatable, Sendable {
+    case fullscreen
+    case minimized
+    case appHidden
+
+    /// Fullscreen comes first: a fullscreen window of a hidden app returns when it leaves
+    /// fullscreen. A minimized window stays minimized when its app unhides, so it is not
+    /// hidden with the app.
+    public static func atAdmission(fullscreen: Bool, minimized: Bool, appHidden: Bool) -> ParkReason? {
+        if fullscreen { return .fullscreen }
+        if minimized { return .minimized }
+        return appHidden ? .appHidden : nil
+    }
+}
+
 /// Every workspace of one display and which one is shown (DESIGN.md, section 4.3). A change
 /// returns a Plan that the app carries out; the Session never talks to macOS.
 public struct Session: Sendable {
@@ -25,6 +41,9 @@ public struct Session: Sendable {
     public private(set) var visible: String
     private var previous: String?
     private var home: [WindowID: String] = [:]
+    /// Parked windows whose workspace was hidden when they parked, so Kosmos had concealed
+    /// them. Switches skip parked windows, so they stay concealed until they return.
+    private var parkedConcealed: Set<WindowID> = []
     /// The smallest size each window accepted, as frames read back after writes show.
     private(set) var minimums: [WindowID: CGSize] = [:]
     public var display: CGRect
@@ -81,6 +100,7 @@ public struct Session: Sendable {
     public mutating func remove(_ window: WindowID) -> Plan {
         guard let name = home.removeValue(forKey: window) else { return Plan() }
         minimums[window] = nil
+        parkedConcealed.remove(window)
         let wasFocused = name == visible && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan()
@@ -89,23 +109,67 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// Minimized, hidden with its app, or in native fullscreen: out of the layout until it
-    /// returns to its place.
-    public mutating func park(_ window: WindowID) -> Plan {
-        guard let name = home[window], workspaces[name]!.park(window) else { return Plan() }
+    /// Minimized, hidden with their app, or in native fullscreen: out of the layout until
+    /// they return to their places. Parked windows take no part in switches, so Kosmos
+    /// neither conceals nor reveals them, and they get no frames. Focus is left to macOS,
+    /// which keys another window itself; asking for one here would pull the screen out of
+    /// a native fullscreen Space.
+    public mutating func park(_ windows: [WindowID]) -> Plan {
+        var changed: Set<String> = []
+        for window in windows {
+            guard let name = home[window], workspaces[name]!.park(window) else { continue }
+            changed.insert(name)
+            if name != visible { parkedConcealed.insert(window) }
+        }
         var plan = Plan()
-        plan.frames = frames(of: name)
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
         return plan
     }
 
-    /// A parked window returns to its own workspace at its saved position.
-    public mutating func unpark(_ window: WindowID) -> Plan {
-        guard let name = home[window] else { return Plan() }
-        workspaces[name]!.unpark([window], in: display, gaps: gaps)
+    /// Parked windows return to their own workspaces at their saved positions, and Kosmos
+    /// follows `follow` there when its workspace is hidden, as it does for Command-Tab
+    /// (DESIGN.md, section 5.5). Following nothing, the shown workspace keeps its focus,
+    /// and an empty one focuses a window returning to it. The other returning windows of
+    /// hidden workspaces are concealed again, and those Kosmos concealed that return to
+    /// the shown workspace are revealed.
+    public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
+        let returning = windows.filter { isParked($0) }
+        let focused = self.focused
+        let changed = Set(returning.map { home[$0]! })
+        for name in changed {
+            workspaces[name]!.unpark(returning.filter { home[$0] == name }, in: display, gaps: gaps)
+        }
         var plan = Plan()
-        plan.frames = frames(of: name)
-        if name != visible { plan.hide = [window] }
+        if let follow, returning.contains(follow), let name = home[follow] {
+            workspaces[name]!.focus(follow)
+            if name != visible { plan = show(name) }
+        } else if let focused {
+            // A returning window focused more recently would take the focus back.
+            workspaces[visible]!.focus(focused)
+        } else if let window = returning.first(where: { home[$0] == visible }) {
+            workspaces[visible]!.focus(window)
+            plan.focus = .window(window)
+        }
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        plan.hide += returning.filter { home[$0] != visible && !plan.hide.contains($0) }
+        plan.show += returning.filter { home[$0] == visible && parkedConcealed.contains($0) && !plan.show.contains($0) }
+        parkedConcealed.subtract(returning)
         return plan
+    }
+
+    /// The window Kosmos follows when an app unhides: the window the app keys, if it hid with
+    /// the app, else the one focused most recently (`fallback`). A managed keyed window that
+    /// did not hide with the app is not followed from the unhide: a minimized one whose Dock
+    /// thumbnail unhid the app follows by its own return, and a fullscreen one keeps macOS
+    /// on its Space (DESIGN.md, section 5.5).
+    public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?) -> WindowID? {
+        guard let keyed, home[keyed] != nil else { return fallback }
+        return windows.contains(keyed) ? keyed : nil
+    }
+
+    public func isParked(_ window: WindowID) -> Bool {
+        guard let name = home[window] else { return false }
+        return workspaces[name]!.parked.contains { $0.window == window }
     }
 
     /// Records a size the window would not go below, from a frame read back after a
@@ -151,8 +215,7 @@ public struct Session: Sendable {
             return show(previous)
         case .moveNodeToWorkspace(let target, let follow, let chosen):
             // A minimized or hidden window stays where it will return to.
-            guard let window = chosen ?? focused, let source = home[window],
-                  !workspaces[source]!.parked.contains(where: { $0.window == window }),
+            guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
         case .reloadConfig, .mode:

@@ -113,7 +113,9 @@ off the main thread).
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole.
   - One AX observer per app: creation, focus, main window, destroy and minimize.
-  - NSWorkspace app lifecycle events, plus a process exit source for each app.
+  - NSWorkspace app lifecycle events, plus a process exit source for each app. The
+    inventory alone observes an app's hide and unhide: it records the departure or return
+    of the app's windows, then passes the event to the controller.
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
@@ -213,11 +215,33 @@ off the main thread).
     and its focus is requested again.
   - A window on Kosmos's current workspace becomes the focus intent and is requested
     again, in case an older request of Kosmos's landed after the user's change.
-  - A window that was hidden when it became key was reached with Command-Tab, and Kosmos
-    follows it to its workspace.
+  - Only the user reaches a window that was hidden when it became key: with Command-Tab,
+    or by opening that window, as `open` on a document, an app's Window menu or the
+    Dock's window list do. Kosmos follows it to its workspace. That excludes the report
+    right after the key window left, when it closed or minimized or its app hid. macOS then keys another window
+    itself, sometimes a concealed one, and Kosmos keeps its workspace and focuses it
+    again. The window key before the report left the screen within the last second if
+    WindowServer ordered it out or destroyed it, Accessibility reported it minimized, or
+    NSWorkspace reported its app hidden.
+  - macOS can key the next app before WindowServer orders a hidden app's windows out, so
+    a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
+    window key before it. A report of another window replaces it. Every held report logs
+    its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
+    happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
+    1, where macOS keyed Ghostty.
+  - Fronting another window of the app that is already key can leave that app's key
+    window in place, and the app reports it again. A report that repeats the key window
+    while Kosmos awaits the echo of its request to that app is such a miss, not the
+    user's choice. The missed request never comes back, so it leaves the expected
+    echoes. Kosmos requests the focus again, once for each requested window; if that
+    misses too, it leaves the key window where macOS put it. This happened live: Kosmos
+    fronted Ghostty for a window of workspace 1, Ghostty reported the window a switch
+    had just concealed on workspace 3, and Kosmos followed it there.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
-    concealed. The switch wins, and its focus is requested again.
+    concealed. The switch wins, and its focus is requested again. After a batch fails,
+    recovery shows every workspace's windows until a switch conceals them again. A
+    click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
 - Skip activation when the target is already key, checked by the focus queue when the
   request runs: the target's app is the front process and its focused window, read on the
   app's worker, is the target. The key window last reported can be older than a request
@@ -250,7 +274,7 @@ off the main thread).
     finds it sent raises nothing.
   - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
     serves only a call that fails.
-  - TLC passes every split config (tla/README.md, change 11): RaiseKeys and RaiseReports
+  - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
     both ways, either app busy with the 30 ms timeout nondeterministic, background apps
     opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
     keys the target inside the front app. Where it does not, the model's WorkerKey step has
@@ -269,6 +293,25 @@ off the main thread).
   since Hiding's ledger lives on the bridge queue.
 - When a newer command for another workspace is already queued, the older one lays out but
   doesn't focus.
+- Every focus request passes one gate: while macOS shows a native fullscreen window's
+  Space, only a command requests focus. The Space counts as shown while its window is
+  key, or a panel or dialog of its app that Kosmos does not manage. Parking the fullscreen
+  window moved Kosmos's focus to a desktop window. Focusing the next one when that window
+  closes or hides, or after an unhide conceals the app's other windows, would take the
+  user out of fullscreen.
+- Never front a window that just left the screen, before Kosmos heard of it: that would
+  unminimize it or unhide its app. The window's departure then focuses its workspace's
+  next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
+  replaced at once too, unless the key window macOS last reported left with it: then
+  macOS's report of the next key window is still on its way and focuses. Focusing earlier
+  could put Kosmos's echo between the departure and that report. When macOS keys no
+  window, the departure focuses, and when no report comes within a second, as when an
+  app keeps no key window after its last window minimizes, the departure focuses then.
+  The second outlasts a minimize, whose next key window macOS reported 0.73 s after the
+  minimize. A window keyed during the animation, by Kosmos or the user, is taken to leave
+  macOS nothing to key when it ends (not measured; the departures probe asks). A click
+  or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
+  its workspace.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
   - A crash guard. A byte in a file mapped shared is set during each private call and
@@ -279,7 +322,8 @@ off the main thread).
     window; inside the front app the raise keys it. A request misses when its app reports
     another of its windows key, and neither an echo of any request nor a report of the
     requested window arrives first, before Kosmos's next request. A background report that
-    consumes the echo leaves the count alone. Five misses in a row turn the
+    consumes the echo leaves the count alone. A miss that Kosmos requests again counts,
+    and the retry counts again if it misses too. Five misses in a row turn the
     path off. On this Mac AXRaise and then the private sequence keyed the right window in 60
     of 60 AutoRaise trials, 9 of them between two windows of the active app, so the miss
     rate is at most about 5% at 95% confidence, and five misses in a row at 5% come once in
@@ -336,9 +380,28 @@ off the main thread).
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
-  workspace at their saved position.
-  - If the user restored one from the Dock, Kosmos follows it to that workspace, as it
-    does for Command-Tab.
+  workspace at their saved position, and Kosmos follows them to that workspace, as it does
+  for Command-Tab. For an app that unhides, it follows the window the app keys if that
+  window hid with the app. A keyed window that returns on its own, as a minimized one does
+  when its Dock thumbnail unhides the app, is followed by its own return. A keyed
+  fullscreen window is not followed, because macOS shows its Space, where a switch fails.
+  With no managed window keyed, Kosmos follows the app's most recently focused window.
+  - Until then the window is parked: switches neither conceal nor reveal it, and it gets
+    no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
+    as at launch, is parked at once on the workspace it joins.
+  - Open item: a window its app orders out and keeps, as a closed NSWindowController
+    window, keeps its tile, empty, until WindowServer destroys it, and so does a
+    deselected native tab, as in AeroSpace. A rule that parked a window still ordered out
+    a second later for no known reason also parked and unparked every deselected tab on
+    each switch, since WindowServer tags both alike (`kosmos-probe tabs`). Branch `tabs`
+    brings that rule back with tab switches handled.
+  - A return received before the latest command is stale, as a Command-Tab is (5.4). The
+    window goes back, Kosmos stays where the command took it, and it requests the
+    command's focus again. A return from fullscreen is stamped at the window's first
+    Space event, not at the 1325 that ends the transition.
+  - A window in native fullscreen moves to a Space of its own, and Accessibility has no
+    notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
+    later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
   - A `summon` command brings a window to the current workspace on purpose.
 
 ### 5.6 Hotkeys and Secure Input
