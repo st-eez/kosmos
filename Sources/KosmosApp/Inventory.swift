@@ -81,6 +81,10 @@ final class Inventory {
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
 
+    /// Whether the window is minimized, as Accessibility read it with the window's other
+    /// facts and as each minimize report since says.
+    func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
+
     private func handle(_ report: AXReport) {
         switch report.kind {
         case .windowCreated(let id):
@@ -101,6 +105,7 @@ final class Inventory {
             }
         case .minimized(let id, let minimized):
             inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
+            ax[id]?.minimized = minimized
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }

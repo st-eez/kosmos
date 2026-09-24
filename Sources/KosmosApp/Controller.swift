@@ -133,13 +133,14 @@ final class Controller {
             let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
             if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
-            // Already in native fullscreen or hidden with its app, as at launch: it waits
-            // parked for its return, with no frame and no concealing. A fullscreen window
-            // of a hidden app returns when it leaves fullscreen, not when the app unhides.
+            // Already minimized, in native fullscreen or hidden with its app, as at launch:
+            // it waits parked for its return, with no frame and no concealing. A minimized or
+            // fullscreen window of a hidden app returns on its own, not when the app unhides.
             let fullscreen = inventory.fullscreen.contains(id)
-            let hidden = !fullscreen && NSRunningApplication(processIdentifier: pid)?.isHidden == true
-            if fullscreen || hidden {
-                if fullscreen { fullscreenParked.insert(id) } else { hiddenApps[pid, default: []].append(id) }
+            let minimized = inventory.isMinimized(id)
+            let hidden = !fullscreen && !minimized && NSRunningApplication(processIdentifier: pid)?.isHidden == true
+            if fullscreen || minimized || hidden {
+                if fullscreen { fullscreenParked.insert(id) } else if hidden { hiddenApps[pid, default: []].append(id) }
                 plan.frames = session.park([id]).frames
                 plan.hide.removeAll { $0 == id }
             }

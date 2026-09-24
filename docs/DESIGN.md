@@ -198,7 +198,8 @@ off the main thread).
   fullscreen window is not followed, because macOS shows its Space, where a switch fails.
   With no managed window keyed, Kosmos follows the app's most recently focused window.
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
-    no frame.
+    no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
+    as at launch, is parked at once on the workspace it joins.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, and Kosmos stays where the command took it. A return from fullscreen
     is stamped at the window's first Space event, not at the 1325 that ends the
