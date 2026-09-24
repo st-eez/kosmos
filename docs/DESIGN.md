@@ -294,9 +294,9 @@ off the main thread).
   - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
     both ways, either app busy with the 30 ms timeout nondeterministic, background apps
     opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
-    keys the target inside the front app. Where it does not, the model's WorkerKey step has
-    the worker record and post the key record after the raise while the request is still
-    current. `kosmos-probe keying`'s "AXRaise alone" order settles which case holds.
+    keys the target inside the front app: it did so in 20 of 20 trials of `kosmos-probe
+    keying` for stacked and side by side windows, where the record alone keyed 0 of 20
+    (September 24, 2026). The model's WorkerKey step, for the other case, is left out.
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
@@ -344,9 +344,10 @@ off the main thread).
     private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
     between two windows of the active app, so the miss rate is at most about 5% at 95%
     confidence, and five misses in a row at 5% come once in about 3 million runs. Those
-    trials raised first and posted a down and up record pair, and Kosmos posts the down
-    alone with no raise; `kosmos-probe keying` measures Kosmos's own sequence. The public path chose the wrong
-    window in 9 of 9 trials, so a false trip costs more than a few late wrong windows
+    trials raised first and posted a down and up record pair. Kosmos's own sequence, the
+    down record alone to a background app, keyed the named window in 20 of 20 trials of
+    `kosmos-probe keying` (September 24, 2026). The public path chose the wrong window in 9
+    of 9 trials, so a false trip costs more than a few late wrong windows
     (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
@@ -354,11 +355,15 @@ off the main thread).
   alone leaves the key window unchanged inside the app that is already frontmost, for
   stacked and side by side windows alike, while AXRaise and then the record keyed the right
   window in every case (`kosmos-probe raise` on the hover branch). A hung app holds only
-  its own worker. `kosmos-probe keying` compares the orders, AXRaise alone included. Its
-  "record only" rows for another app show whether the key record alone brings a
-  background app's window above that app's other windows. yabai raises after its record
-  for that; if the record leaves the window behind, a raise once the app is front has to
-  be modeled first, as a raise in a background app was what failed.
+  its own worker. AXRaise took 0.65 ms at the median and 3.70 ms at most over 120 raises
+  (`kosmos-probe keying`, September 24, 2026).
+- Open item: the key record alone keys a background app's window but leaves it where it
+  was in the window order. It was on top in 0 of 20 trials, behind the windows of the app
+  that was front and of its own app. The record and then AXRaise keyed it and put it on
+  top in 20 of 20, while AXRaise and then the record put it on top in 11 of 20. Tiled
+  windows do not overlap, so this shows with floating windows. yabai raises after its
+  record for this. A raise in a background app is what failed TLC, so the raise after
+  the record waits for the split model.
 - The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
   waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
   a newer command, and Kosmos followed it there (tla/README.md, change 12). A raise that
@@ -371,8 +376,11 @@ off the main thread).
   Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
   off the empty workspace on every switch. Concealing Finder's windows fully instead would
   not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
-  Whether macOS 27 lets a background agent activate itself is unmeasured; Kosmos logs a
-  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app
+  A background accessory app that activated itself became the front process in 0 of 10
+  trials, as activate returned false (`kosmos-probe keying`, September 24, 2026), so on
+  macOS 27 this fallback leaves the previous app front; Kosmos logs the refusal. Open item:
+  another way to key nothing, such as fronting Finder with its hidden windows stripped of
+  their ordinary Space, or a small Kosmos window. The app
   picks its key window, so the spec's assumption that the requested window becomes key no
   longer holds, and a wrong window is adopted like the user's choice. A public request's
   expectation ends at the first report from its app that is no echo, so a click on the
