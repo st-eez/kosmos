@@ -221,3 +221,23 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 2)) == nil)
     #expect(s.workspace(of: 2) == "1")
 }
+
+@Test func observedMinimumsShapeTheLayout() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    let plan = s.setMinimum(2, CGSize(width: 700, height: 100))
+    #expect(plan.frames[1] == CGRect(x: 0, y: 0, width: 300, height: 800))
+    #expect(plan.frames[2] == CGRect(x: 300, y: 0, width: 700, height: 800))
+    #expect(s.setMinimum(2, CGSize(width: 600, height: 50)).isEmpty)   // no larger
+    #expect(s.setMinimum(2, CGSize(width: 600, height: 200)).frames.count == 2)
+    #expect(s.minimums[2] == CGSize(width: 700, height: 200))
+    #expect(s.setMinimum(9, CGSize(width: 10, height: 10)).isEmpty)   // unknown window
+}
+
+@Test func removingAWindowForgetsItsMinimum() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.setMinimum(1, CGSize(width: 900, height: 0))
+    _ = s.remove(1)
+    #expect(s.minimums.isEmpty)
+}

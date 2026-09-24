@@ -92,3 +92,62 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
     #expect(Array(workspace.frames(in: screen, gaps: Gaps()).keys) == [1])
     #expect(Workspace().frames(in: screen, gaps: Gaps()).isEmpty)
 }
+
+// MARK: Minimums
+
+/// Ghostty and Activity Monitor side by side on the built-in display: Activity Monitor
+/// refuses widths under about 740 points.
+@Test func minimumKeepsAWindowWholeAndOnScreen() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = [WindowID(2): CGSize(width: 740, height: 400)]
+    let workspace = Workspace("h[1:7 2:3]")
+    let frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(frames[1] == CGRect(x: 0, y: 0, width: 988, height: 1000))
+    #expect(frames[2] == CGRect(x: 988, y: 0, width: 740, height: 1000))
+    #expect(workspace.shares == [0.7, 0.3])
+    // With room again, the weights apply as the user set them.
+    let wide = workspace.frames(in: CGRect(x: 0, y: 0, width: 3000, height: 1000), gaps: Gaps(), minimums: minimums)
+    #expect([1, 2].map { wide[$0]!.width } == [2100, 900])
+}
+
+@Test func minimumsThatDoNotBindChangeNothing() {
+    let workspace = Workspace("h[1:2 v[2 h[3 4:3]]:3 5]")
+    let minimums = Dictionary(uniqueKeysWithValues: (1...5).map { (WindowID($0), CGSize(width: 20, height: 20)) })
+    let gaps = Gaps(inner: 8, outer: Insets(top: 30, left: 8, bottom: 8, right: 8))
+    #expect(workspace.frames(in: screen, gaps: gaps, minimums: minimums) == workspace.frames(in: screen, gaps: gaps))
+}
+
+@Test func nestedMinimumsWidenTheirContainers() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = [WindowID(3): CGSize(width: 600, height: 0), 4: CGSize(width: 600, height: 0)]
+    let frames = Workspace("h[1 v[2 h[3 4]]]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(frames == [
+        1: CGRect(x: 0, y: 0, width: 528, height: 1000),
+        2: CGRect(x: 528, y: 0, width: 1200, height: 500),
+        3: CGRect(x: 528, y: 500, width: 600, height: 500),
+        4: CGRect(x: 1128, y: 500, width: 600, height: 500),
+    ])
+}
+
+@Test func minimumsCountTheGapsBetweenWindows() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let gaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
+    let frames = Workspace("h[1 2]").frames(in: display, gaps: gaps, minimums: [2: CGSize(width: 900, height: 0)])
+    #expect(frames[1] == CGRect(x: 10, y: 10, width: 798, height: 980))
+    #expect(frames[2] == CGRect(x: 818, y: 10, width: 900, height: 980))
+}
+
+@Test func minimumsThatDoNotFitStayOnScreen() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = Dictionary(uniqueKeysWithValues: (1...3).map { (WindowID($0), CGSize(width: 700, height: 0)) })
+    let frames = Workspace("h[1 2 3]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect([1, 2, 3].map { frames[$0]!.minX } == [0, 576, 1028])
+    #expect(frames.values.allSatisfy { $0.width == 700 && display.contains($0) })
+}
+
+@Test func minimumLargerThanTheScreenIsCutToIt() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let frames = Workspace("v[1 2]").frames(in: display, gaps: Gaps(), minimums: [2: CGSize(width: 2000, height: 2000)])
+    #expect(frames[2] == display)
+    #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 500))
+}

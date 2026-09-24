@@ -25,6 +25,8 @@ public struct Session: Sendable {
     public private(set) var visible: String
     private var previous: String?
     private var home: [WindowID: String] = [:]
+    /// The smallest size each window accepted, as frames read back after writes show.
+    private(set) var minimums: [WindowID: CGSize] = [:]
     public var display: CGRect
     public var gaps: Gaps
 
@@ -49,7 +51,7 @@ public struct Session: Sendable {
     }
 
     public func frames(of name: String) -> [WindowID: CGRect] {
-        workspaces[name]?.frames(in: display, gaps: gaps) ?? [:]
+        workspaces[name]?.frames(in: display, gaps: gaps, minimums: minimums) ?? [:]
     }
 
     // MARK: Windows arriving and leaving
@@ -76,6 +78,7 @@ public struct Session: Sendable {
 
     public mutating func remove(_ window: WindowID) -> Plan {
         guard let name = home.removeValue(forKey: window) else { return Plan() }
+        minimums[window] = nil
         let wasFocused = name == visible && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan()
@@ -100,6 +103,21 @@ public struct Session: Sendable {
         var plan = Plan()
         plan.frames = frames(of: name)
         if name != visible { plan.hide = [window] }
+        return plan
+    }
+
+    /// Records a size the window would not go below, from a frame read back after a
+    /// write. The layout keeps the window at least that large, on each axis the largest
+    /// size recorded. Returns the frames of the window's workspace when the minimum grew,
+    /// else an empty plan.
+    public mutating func setMinimum(_ window: WindowID, _ size: CGSize) -> Plan {
+        guard let name = home[window] else { return Plan() }
+        let old = minimums[window] ?? .zero
+        let new = CGSize(width: max(old.width, size.width), height: max(old.height, size.height))
+        guard new != old else { return Plan() }
+        minimums[window] = new
+        var plan = Plan()
+        plan.frames = frames(of: name)
         return plan
     }
 

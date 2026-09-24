@@ -50,6 +50,11 @@ extension Workspace {
 
     var tree: String { root.description }
 
+    /// `frames` with no minimums.
+    func frames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
+        frames(in: rect, gaps: gaps, minimums: [:])
+    }
+
     /// `unpark` on `screen` with no gaps, which only matter for stale hints.
     mutating func unpark(_ windows: [WindowID]) {
         unpark(windows, in: screen, gaps: Gaps())
