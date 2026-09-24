@@ -26,32 +26,67 @@ public struct TabSwitches: Sendable {
     }
 }
 
-/// Which order changes of candidate windows the controller hears, and when. While the
-/// session is locked no window is admitted or removed, so a tab switch whose other half is
-/// a window created or destroyed then could not pair: the changes of known windows wait for
-/// the unlock sweep too, which reports each window whose order differs from what the
-/// controller last heard (DESIGN.md, section 5.1).
+/// The order changes of candidate windows while the session is locked (DESIGN.md, section
+/// 5.1). No window is admitted or removed then, yet a tab switch can create or destroy one
+/// of its two windows. Every change is held with its time, creations and destroys too, and
+/// reported at the unlock in the order it happened, before any change after it, so switches
+/// pair as they would have unlocked. The sweep after the unlock then admits and removes
+/// windows without reporting their order again.
 public struct HeldOrder: Sendable {
-    /// The order the controller last heard, for windows whose rows were read while locked.
+    public struct Change: Equatable, Sendable {
+        public let window: WindowID
+        public let app: Int32
+        public let orderedIn: Bool
+        public let at: ContinuousClock.Instant
+
+        public init(window: WindowID, app: Int32, orderedIn: Bool, at: ContinuousClock.Instant) {
+            self.window = window
+            self.app = app
+            self.orderedIn = orderedIn
+            self.at = at
+        }
+    }
+
+    private var held: [Change] = []
+    /// The order the controller heard last, or hears at the unlock, for windows whose rows
+    /// were read, or that were removed, while locked. A window's row can say otherwise until
+    /// the sweep after the unlock admits or removes it.
     private var heard: [WindowID: Bool] = [:]
 
     public init() {}
 
-    /// A window's row was read. `was` is its order before, nil for a window seen first,
-    /// which counts as heard ordered out. Returns whether to report its order now.
-    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, was: Bool?, locked: Bool) -> Bool {
+    /// A window's row was read at `now`. `was` is its order before, nil for a window not
+    /// seen before, which counts as ordered out. Returns whether to report its order now;
+    /// while locked a change is held instead.
+    public mutating func ordered(_ window: WindowID, app: Int32, in orderedIn: Bool, was: Bool?,
+                                 at now: ContinuousClock.Instant, locked: Bool) -> Bool {
         let last = heard.removeValue(forKey: window) ?? was ?? false
-        if locked {
-            heard[window] = last
-            return false
-        }
-        return last != orderedIn
+        guard locked else { return last != orderedIn }
+        heard[window] = orderedIn
+        if last != orderedIn { held.append(Change(window: window, app: app, orderedIn: orderedIn, at: now)) }
+        return false
     }
 
-    /// A window is removed: whether to report it ordered out first. A window ordered out
-    /// while locked was still heard ordered in.
-    public mutating func removed(_ window: WindowID, orderedIn: Bool) -> Bool {
-        heard.removeValue(forKey: window) ?? orderedIn
+    /// A window was destroyed at `now`, ordered in or not as its row says. Returns whether
+    /// to report it ordered out now; while locked that is held instead.
+    public mutating func removed(_ window: WindowID, app: Int32, orderedIn: Bool,
+                                 at now: ContinuousClock.Instant, locked: Bool) -> Bool {
+        let last = heard.removeValue(forKey: window) ?? orderedIn
+        guard locked else { return last }
+        heard[window] = false
+        if last { held.append(Change(window: window, app: app, orderedIn: false, at: now)) }
+        return false
+    }
+
+    /// The session is unlocked: the changes held, in the order they happened.
+    public mutating func unlocked() -> [Change] {
+        defer { held = [] }
+        return held
+    }
+
+    /// The sweep after the unlock read every window: what it did not read is gone.
+    public mutating func swept() {
+        heard = [:]
     }
 }
 

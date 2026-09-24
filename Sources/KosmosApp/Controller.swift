@@ -301,6 +301,10 @@ final class Controller {
         case .pending: return true
         case .replace(let holder): old = holder
         }
+        // Parked as closed by its app before the switch took effect, as when the new tab's
+        // admission outlasts the kept rule's second: the place returns for the new tab, which
+        // is on screen. The replace's plan lays the place out, so the unpark's is dropped.
+        if closedByApp.remove(old) != nil { _ = session.unpark([old], follow: nil) }
         guard let plan = session.replace(old, with: new) else { return false }
         placedHidden.remove(old)
         if plan.hide.contains(new) { placedHidden.insert(new) }

@@ -91,41 +91,64 @@ private let t0 = ContinuousClock.now
     #expect(tabs.ordered(6, in: true, app: 100, at: t0 + .milliseconds(350)) == nil)
 }
 
-// Order changes while the session is locked wait for the unlock sweep (review of 8e0db8e).
+// Order changes while the session is locked are held with their times and reported at the
+// unlock (reviews of 8e0db8e and e5e730e).
 
-@Test func anOrderChangeIsReportedOnceAndANewWindowOnlyOrderedIn() {
-    var order = HeldOrder()
-    #expect(order.ordered(1, in: true, was: nil, locked: false) == true)
-    #expect(order.ordered(1, in: true, was: true, locked: false) == false)
-    #expect(order.ordered(1, in: false, was: true, locked: false) == true)
-    #expect(order.ordered(2, in: false, was: nil, locked: false) == false)
+private func change(_ window: WindowID, _ orderedIn: Bool, _ ms: Int) -> HeldOrder.Change {
+    HeldOrder.Change(window: window, app: 100, orderedIn: orderedIn, at: t0 + .milliseconds(ms))
 }
 
-@Test func orderChangesWhileLockedAreReportedByTheFirstReadAfter() {
+@Test func anOrderChangeIsReportedAtOnceWhileUnlocked() {
     var order = HeldOrder()
-    // Tab 1 deselected and tab 2 selected while locked: nothing is reported then.
-    #expect(order.ordered(1, in: false, was: true, locked: true) == false)
-    #expect(order.ordered(2, in: true, was: false, locked: true) == false)
-    // Tab 3 out and back in while locked: it ends as the controller heard it.
-    #expect(order.ordered(3, in: false, was: true, locked: true) == false)
-    #expect(order.ordered(3, in: true, was: false, locked: true) == false)
-    // The unlock sweep reads each row again, unchanged since the lock.
-    #expect(order.ordered(1, in: false, was: false, locked: false) == true)
-    #expect(order.ordered(2, in: true, was: true, locked: false) == true)
-    #expect(order.ordered(3, in: true, was: true, locked: false) == false)
-    #expect(order.ordered(1, in: false, was: false, locked: false) == false)
+    #expect(order.ordered(1, app: 100, in: true, was: nil, at: t0, locked: false) == true)
+    #expect(order.ordered(1, app: 100, in: true, was: true, at: t0, locked: false) == false)
+    #expect(order.ordered(1, app: 100, in: false, was: true, at: t0, locked: false) == true)
+    #expect(order.ordered(2, app: 100, in: false, was: nil, at: t0, locked: false) == false)
+    #expect(order.removed(3, app: 100, orderedIn: true, at: t0, locked: false) == true)
+    #expect(order.removed(4, app: 100, orderedIn: false, at: t0, locked: false) == false)
+    #expect(order.unlocked().isEmpty)
 }
 
-@Test func aRemovedWindowLastHeardOrderedInIsReportedOut() {
+@Test func changesWhileLockedReplayInTheOrderTheyHappenedWithTheirTimes() {
     var order = HeldOrder()
-    #expect(order.removed(1, orderedIn: true) == true)
-    #expect(order.removed(2, orderedIn: false) == false)
-    // Ordered out while locked, then gone: the controller still heard it ordered in.
-    #expect(order.ordered(3, in: false, was: true, locked: true) == false)
-    #expect(order.removed(3, orderedIn: false) == true)
-    // Ordered in while locked, then gone: it was never heard ordered in.
-    #expect(order.ordered(4, in: true, was: false, locked: true) == false)
-    #expect(order.removed(4, orderedIn: true) == false)
+    // The selected tab 1 closes, and tab 2 of its group is selected.
+    #expect(order.removed(1, app: 100, orderedIn: true, at: t0 + .milliseconds(10), locked: true) == false)
+    #expect(order.ordered(2, app: 100, in: true, was: false, at: t0 + .milliseconds(11), locked: true) == false)
+    // Window 3 is created ordered out, and ordered in 400 ms later.
+    #expect(order.ordered(3, app: 100, in: false, was: nil, at: t0 + .milliseconds(20), locked: true) == false)
+    #expect(order.ordered(3, app: 100, in: true, was: nil, at: t0 + .milliseconds(420), locked: true) == false)
+    // Window 4 is ordered out and back in.
+    #expect(order.ordered(4, app: 100, in: false, was: true, at: t0 + .milliseconds(1000), locked: true) == false)
+    #expect(order.ordered(4, app: 100, in: true, was: false, at: t0 + .milliseconds(1100), locked: true) == false)
+    // Window 5 comes and goes before the unlock; window 6 is ordered out, then destroyed.
+    #expect(order.ordered(5, app: 100, in: true, was: nil, at: t0 + .milliseconds(2000), locked: true) == false)
+    #expect(order.removed(5, app: 100, orderedIn: false, at: t0 + .milliseconds(2500), locked: true) == false)
+    #expect(order.ordered(6, app: 100, in: false, was: true, at: t0 + .milliseconds(3000), locked: true) == false)
+    #expect(order.removed(6, app: 100, orderedIn: false, at: t0 + .milliseconds(3100), locked: true) == false)
+    let held = order.unlocked()
+    #expect(held == [change(1, false, 10), change(2, true, 11), change(3, true, 420),
+                     change(4, false, 1000), change(4, true, 1100),
+                     change(5, true, 2000), change(5, false, 2500), change(6, false, 3000)])
+    #expect(order.unlocked().isEmpty)
+    // Paired as they would have been unlocked: only the tab switch of 1 and 2.
+    var tabs = TabSwitches()
+    let switches = held.compactMap { tabs.ordered($0.window, in: $0.orderedIn, app: $0.app, at: $0.at) }
+    #expect(switches.map { [$0.old, $0.new] } == [[1, 2]])
+}
+
+@Test func theSweepAfterTheUnlockReportsNothingTheReplayReported() {
+    var order = HeldOrder()
+    _ = order.removed(1, app: 100, orderedIn: true, at: t0, locked: true)
+    _ = order.ordered(2, app: 100, in: true, was: false, at: t0, locked: true)
+    _ = order.ordered(3, app: 100, in: true, was: nil, at: t0, locked: true)
+    _ = order.unlocked()
+    // It removes 1, reads 2 unchanged since the lock, and admits 3.
+    #expect(order.removed(1, app: 100, orderedIn: true, at: t0, locked: false) == false)
+    #expect(order.ordered(2, app: 100, in: true, was: true, at: t0, locked: false) == false)
+    #expect(order.ordered(3, app: 100, in: true, was: nil, at: t0, locked: false) == false)
+    order.swept()
+    // Later changes are reported again.
+    #expect(order.ordered(2, app: 100, in: false, was: true, at: t0, locked: false) == true)
 }
 
 // Only an admitted window takes a place (review of 5107ed0, (a) and (d)).
