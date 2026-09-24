@@ -13,8 +13,8 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 @MainActor
 final class Hiding {
     /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
-    /// preparing and sending its operations, the final barrier with its reads, and the way
-    /// back to the main actor.
+    /// preparing and sending its operations, confirming them, and the way back to the main
+    /// actor.
     struct Timing: Sendable {
         var queued = Duration.zero, sent = Duration.zero, confirmed = Duration.zero, returned = Duration.zero
         /// The confirmation needed the barrier because direct reads did not show the batch
@@ -179,7 +179,7 @@ private final class HidingStore: @unchecked Sendable {
         // Reads on Kosmos's own connection show the operations once WindowServer applied
         // them, usually within a millisecond. A bridged read also waits behind
         // WindowManager.app, which rebuilds its window model when a window joins or leaves
-        // an ordinary Space, as a stripped window's reveal does. So the batch reads directly
+        // an ordinary Space, as a reveal that adds does. So the batch reads directly
         // for up to readBound, and only then sends the barrier, after which the bridge has
         // run every operation and one read decides.
         let deadline = ContinuousClock.now + Self.readBound

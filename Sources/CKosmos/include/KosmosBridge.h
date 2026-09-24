@@ -12,12 +12,10 @@
 // partial Space destroyed.
 uint64_t kosmos_holding_create(void);
 bool kosmos_space_destroy(uint64_t space);
-// Adds windows to a Space. With exclusive false they keep their other Space memberships:
-// Kosmos conceals each app's selected window that way, so Command-Tab still picks it, and
-// the app's other concealed windows exclusively, or macOS may pick one of them instead
-// (the fork's np4 finding). Exclusive true strips only managed Spaces: a window added
-// exclusively to an ordinary Space stays in the holding Space, which is not managed, until
-// it is removed from it (kosmos-probe reveal).
+// Adds windows to a Space. With exclusive false they keep their other Space memberships,
+// as every window Kosmos conceals does, so Command-Tab still picks it. Exclusive true
+// strips only managed Spaces: a window added exclusively to an ordinary Space stays in the
+// holding Space, which is not managed, until it is removed from it (kosmos-probe reveal).
 bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive);
 // Removes windows from a Space. A window removed from its only Space lands on the active
 // Space (kosmos-probe reveal).

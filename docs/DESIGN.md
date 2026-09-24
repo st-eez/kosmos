@@ -199,15 +199,10 @@ off the main thread).
   Two costs follow. Command-backtick cycles through the app's concealed windows too, and
   Kosmos follows each one. When the key window closes, AppKit can key a concealed window
   of the app, and the departure rule keeps Kosmos's workspace (section 5.4).
-- Stripping costs switch time. An add of a window to an ordinary Space makes
-  WindowManager.app, which runs the bridged operations, rebuild its window model, and the
-  batch's later operations and its barrier wait behind that work. An add of the app's key
-  window also makes WindowServer move the key window and the menu bar ("acquiring menu
-  bar for key/main window move"). On 2026-09-24, the 8 switches that revealed a stripped
-  key window took 5.9 to 33.2 ms, median 9.1. Stripping only the app's other windows (the
-  fork's np4 rule) still revealed a stripped window in every switch between two
-  workspaces with one window of an app each, 2.6 to 23.8 ms. The 24 switches without an
-  add took 0.7 to 5.0 ms, median 2.7.
+- Kosmos strips no window of its ordinary Space, because revealing a stripped window
+  adds it back to an ordinary Space, which makes WindowManager.app rebuild its window
+  model; on 2026-09-24 such switches took 2.6 to 33.2 ms, and switches that only removed
+  windows from the holding Space took 0.7 to 5.0 ms.
 - Open item: several displays. Keeping every concealed window's ordinary Space failed
   one of the fork's np3 cases on three displays: macOS keyed a concealed window on the
   current display in place of the app's last key window on another display (fork
@@ -231,12 +226,9 @@ off the main thread).
   every 0.1 ms for up to 10 ms, and only then sends the barrier and reads once more. A
   direct read never shows an operation at once (0 in 60 tries on the development Mac),
   but it shows it as soon as WindowServer applied it: 0.47 ms at the median for a window
-  that is not key, against 0.50 ms for the barrier. The barrier goes through
-  WindowManager.app, which rebuilds its window model when a window joins or leaves an
-  ordinary Space, as a stripped window's reveal does. On 2026-09-24 the switches that
-  revealed a stripped window took 5 to 16 ms while WindowManager logged that work, for
-  30 to 80 ms after each. WindowServer applies a batch's operations in order, so a
-  window seen out of the holding Space implies the add sent before its removal.
+  that is not key, against 0.50 ms for the barrier, which also waits behind
+  WindowManager.app. WindowServer applies a batch's operations in order, so a window
+  seen out of the holding Space implies the add sent before its removal.
 - A window with no ordinary Space goes to the main display's current Space, else to the
   Space it had before its first hide if that still exists, else to the main display's
   first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
