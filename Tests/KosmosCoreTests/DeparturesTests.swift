@@ -91,6 +91,43 @@ private let t0 = ContinuousClock.now
     #expect(tabs.ordered(6, in: true, app: 100, at: t0 + .milliseconds(350)) == nil)
 }
 
+// Order changes while the session is locked wait for the unlock sweep (review of 8e0db8e).
+
+@Test func anOrderChangeIsReportedOnceAndANewWindowOnlyOrderedIn() {
+    var order = HeldOrder()
+    #expect(order.ordered(1, in: true, was: nil, locked: false) == true)
+    #expect(order.ordered(1, in: true, was: true, locked: false) == false)
+    #expect(order.ordered(1, in: false, was: true, locked: false) == true)
+    #expect(order.ordered(2, in: false, was: nil, locked: false) == false)
+}
+
+@Test func orderChangesWhileLockedAreReportedByTheFirstReadAfter() {
+    var order = HeldOrder()
+    // Tab 1 deselected and tab 2 selected while locked: nothing is reported then.
+    #expect(order.ordered(1, in: false, was: true, locked: true) == false)
+    #expect(order.ordered(2, in: true, was: false, locked: true) == false)
+    // Tab 3 out and back in while locked: it ends as the controller heard it.
+    #expect(order.ordered(3, in: false, was: true, locked: true) == false)
+    #expect(order.ordered(3, in: true, was: false, locked: true) == false)
+    // The unlock sweep reads each row again, unchanged since the lock.
+    #expect(order.ordered(1, in: false, was: false, locked: false) == true)
+    #expect(order.ordered(2, in: true, was: true, locked: false) == true)
+    #expect(order.ordered(3, in: true, was: true, locked: false) == false)
+    #expect(order.ordered(1, in: false, was: false, locked: false) == false)
+}
+
+@Test func aRemovedWindowLastHeardOrderedInIsReportedOut() {
+    var order = HeldOrder()
+    #expect(order.removed(1, orderedIn: true) == true)
+    #expect(order.removed(2, orderedIn: false) == false)
+    // Ordered out while locked, then gone: the controller still heard it ordered in.
+    #expect(order.ordered(3, in: false, was: true, locked: true) == false)
+    #expect(order.removed(3, orderedIn: false) == true)
+    // Ordered in while locked, then gone: it was never heard ordered in.
+    #expect(order.ordered(4, in: true, was: false, locked: true) == false)
+    #expect(order.removed(4, orderedIn: true) == false)
+}
+
 // Only an admitted window takes a place (review of 5107ed0, (a) and (d)).
 
 private let places: Set<WindowID> = [2]

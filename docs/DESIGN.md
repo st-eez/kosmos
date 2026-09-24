@@ -143,6 +143,13 @@ off the main thread).
   locks its screen first.
 - The model can still change while locked, as when a window minimizes or returns, its app
   hides, or a report held before the lock is decided; the resync carries out those plans.
+- Order changes of known windows wait for the unlock sweep as well, since a tab switch
+  (5.5) whose other half is a window created or destroyed while locked could not pair
+  otherwise. The sweep reports each window whose order differs from what the controller
+  last heard, and reads known windows before it removes the ones gone, so a tab selected
+  while locked takes the place of the selected tab closed then. Two switches in one app
+  while locked can pair the wrong tabs; the AXTabs of each incoming tab would tell them
+  apart if that shows up.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
   and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
@@ -396,7 +403,8 @@ off the main thread).
     conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
     fullscreen transition. A deselected tab is not one: it has left the session. While
     the session is locked no window counts as one, as none is removed then: whether the
-    lock screen orders windows out is unmeasured.
+    lock screen orders windows out is unmeasured. The unlock checks every managed window
+    still ordered out again.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first
@@ -425,13 +433,14 @@ off the main thread).
     switch in a tight layout does not reflow to learn it again. A fullscreen tab's would
     fill the display, so a fullscreen switch passes none.
   - macOS can report the new tab key before the switch pairs, when the tab has no place.
-    Kosmos decides that report again once the tab takes its place, as a report of a
-    placed window: the kill switch counts it, and it can answer a public request. It
-    follows the tab to a place on a hidden workspace. The window key before it is the deselected tab, which
-    did not depart. A report that comes after the tab took a place on a hidden workspace,
-    before its conceal completed, is followed at once the same way. That lasts only until
-    the conceal completes, the workspace is shown, or another tab replaces it, so a later
-    re-key of the tab mid-switch still loses to the switch.
+    Kosmos decides that report again once the tab takes its place, as a report of a placed
+    window, with any miss found when it came: the kill switch counts it, and it can answer
+    a public request. It follows the tab to a place on a hidden workspace. The window key
+    before it is the deselected tab, which did not depart. A report that comes after the
+    tab took a place on a hidden workspace, before its conceal completed, is followed at
+    once the same way. That lasts only until the conceal completes, the workspace is
+    shown, or another tab replaces it, so a later re-key of the tab mid-switch still loses
+    to the switch.
   - Only an admitted window takes a place. A new tab, and a tab selected for the first
     time, which Accessibility reports created then, take the place once Kosmos admits
     them, and a tab deselected before that stays a hidden member and passes its claim on,

@@ -26,6 +26,35 @@ public struct TabSwitches: Sendable {
     }
 }
 
+/// Which order changes of candidate windows the controller hears, and when. While the
+/// session is locked no window is admitted or removed, so a tab switch whose other half is
+/// a window created or destroyed then could not pair: the changes of known windows wait for
+/// the unlock sweep too, which reports each window whose order differs from what the
+/// controller last heard (DESIGN.md, section 5.1).
+public struct HeldOrder: Sendable {
+    /// The order the controller last heard, for windows whose rows were read while locked.
+    private var heard: [WindowID: Bool] = [:]
+
+    public init() {}
+
+    /// A window's row was read. `was` is its order before, nil for a window seen first,
+    /// which counts as heard ordered out. Returns whether to report its order now.
+    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, was: Bool?, locked: Bool) -> Bool {
+        let last = heard.removeValue(forKey: window) ?? was ?? false
+        if locked {
+            heard[window] = last
+            return false
+        }
+        return last != orderedIn
+    }
+
+    /// A window is removed: whether to report it ordered out first. A window ordered out
+    /// while locked was still heard ordered in.
+    public mutating func removed(_ window: WindowID, orderedIn: Bool) -> Bool {
+        heard.removeValue(forKey: window) ?? orderedIn
+    }
+}
+
 /// The tabs of native tab groups that hold no place (DESIGN.md, section 5.5): deselected
 /// tabs, hidden members of the place their group's selected tab holds, and tabs selected
 /// before Kosmos admitted them, which take their place once admitted. Only admitted windows

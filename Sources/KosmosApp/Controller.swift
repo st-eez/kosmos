@@ -325,7 +325,7 @@ final class Controller {
             unplacedKey = nil
             placedHidden.remove(new)
             decidePlaced(KeyReport(key: report.key, received: report.received, pid: report.pid, previous: report.previous,
-                                   concealed: session.workspace(of: new) != session.visible, miss: .none), keyLeft: .stayed)
+                                   concealed: session.workspace(of: new) != session.visible, miss: report.miss), keyLeft: .stayed)
         }
         return true
     }

@@ -39,8 +39,16 @@ final class Inventory {
     var onReport: (@MainActor (AXReport) -> Void)?
     /// While the session is locked or switched out, no window is admitted or removed and no
     /// sweep runs; the sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to
-    /// known windows still apply. The Controller reads it too.
-    var sessionLocked = false
+    /// known windows still apply, and their order changes wait for that sweep (HeldOrder).
+    /// The Controller reads it too.
+    var sessionLocked = false {
+        didSet {
+            // No window counted as closed and kept while locked: check each one still out.
+            guard oldValue, !sessionLocked else { return }
+            for (id, row) in windows where !row.orderedIn && isManaged(id) { checkOrderedOut(id) }
+        }
+    }
+    private var heldOrder = HeldOrder()
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
@@ -195,7 +203,7 @@ final class Inventory {
     /// probe), and a minimize, a hide and native fullscreen have their own reports. The
     /// second outlasts a fullscreen transition, which takes a window off its Space for about
     /// 0.5 s. While the session is locked no window counts as closed, as none is removed:
-    /// whether the lock screen orders windows out is unmeasured.
+    /// whether the lock screen orders windows out is unmeasured. The unlock checks again.
     private func checkOrderedOut(_ id: UInt32) {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
@@ -273,7 +281,7 @@ final class Inventory {
         if old == nil { scheduleWatch() }
         departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
         // A new tab can be seen first already ordered in.
-        if old?.orderedIn != row.orderedIn, old != nil || row.orderedIn, isCandidate(row) {
+        if heldOrder.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, locked: sessionLocked), isCandidate(row) {
             onOrderChange?(row.id, row.pid, row.orderedIn, .now)
         }
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
@@ -296,11 +304,9 @@ final class Inventory {
         ax[id] = nil
         fullscreen.remove(id)
         spaceChangedAt[id] = nil
-        if row.orderedIn {
-            departures.left(id, at: .now)
-            // Before the removal, so a tab that replaces this one takes its place.
-            if isCandidate(row) { onOrderChange?(id, row.pid, false, .now) }
-        }
+        if row.orderedIn { departures.left(id, at: .now) }
+        // Before the removal, so a tab that replaces this one takes its place.
+        if heldOrder.removed(id, orderedIn: row.orderedIn), isCandidate(row) { onOrderChange?(id, row.pid, false, .now) }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
@@ -363,12 +369,15 @@ final class Inventory {
             if swept { missedByEvents += 1; inventoryLog.notice("sweep found \(row.id), missed by events") }
             apply(row)
         }
+        // Known windows first: after an unlock, a tab selected while locked is reported
+        // ordered in before the tab it replaced, destroyed while locked, is removed, or that
+        // tab's place would go with it.
+        for row in rows where windows[row.id] != nil { apply(row) }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
             missedByEvents += 1
             inventoryLog.notice("sweep lost \(id), missed by events")
             remove(id, reason: "absent from sweep")
         }
-        for row in rows where windows[row.id] != nil { apply(row) }
         swept = true
     }
 }
