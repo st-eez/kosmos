@@ -97,7 +97,12 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
 
     /// Whether the report would be the echo of a request of Kosmos's.
     public func isEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
-        expected.contains { $0.key == key && $0.requested <= stamp }
+        echo(of: key, receivedAt: stamp) != nil
+    }
+
+    /// The expectation a report echoes: the requested window, reported after the request.
+    private func echo(of key: KeyWindow, receivedAt stamp: Stamp) -> Int? {
+        expected.firstIndex { $0.key == key && $0.requested <= stamp }
     }
 
     /// Consumes the expectation `key` answers, if any. An echo names the requested window and
@@ -106,7 +111,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
     /// Observe).
     public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
-        guard let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) else { return false }
+        guard let index = echo(of: key, receivedAt: stamp) else { return false }
         expected.removeFirst(index + 1)
         if key == retried { retried = nil }
         return true

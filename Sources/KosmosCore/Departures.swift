@@ -85,7 +85,7 @@ public enum DepartureFocus: Equatable, Sendable {
     case now
     /// The key window left too, so macOS keys another window itself, and that report
     /// focuses. Focusing first could put Kosmos's echo between the departure and that
-    /// report. A report that never comes is bounded by the grace.
+    /// report. A report that never comes is bounded by the departure bound.
     case afterKeyReport
 
     /// - Parameters:

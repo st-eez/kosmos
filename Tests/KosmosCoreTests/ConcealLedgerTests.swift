@@ -109,3 +109,13 @@ private struct Memberships {
     server.run(ledger.batch(show: [2], hide: [:], into: holding, hasOrdinarySpace: { _ in false }))
     #expect(server.spaces[2] == [holding])
 }
+
+@Test func aWindowThatLeftTheHoldingSpaceOnItsOwnIsForgotten() {
+    // A native tab deselected while concealed leaves the holding Space (kosmos-probe tabs).
+    var ledger = ConcealLedger(entries: [1: 9, 2: 9])
+    ledger.forget([1])
+    #expect(ledger.entries == [2: 9])
+    // Selected again on a hidden workspace, it is concealed afresh and checked.
+    let batch = ledger.batch(show: [], hide: [1: .exclusive], into: 9, hasOrdinarySpace: { _ in true })
+    #expect(batch.strip == [1] && batch.mustBeIn == [1: 9])
+}

@@ -59,6 +59,18 @@ struct RestoreHint: Sendable {
     let edits: Int
 }
 
+extension RestoreHint {
+    /// The same hint, with `new` standing where `old` stood, as the window it is for or
+    /// among the neighbours.
+    func renaming(_ old: WindowID, to new: WindowID) -> RestoreHint {
+        RestoreHint(window: window == old ? new : window, levels: levels.map { level in
+            Level(orientation: level.orientation, slots: level.slots.map { slot in
+                (slot.windows.contains(old) ? slot.windows.subtracting([old]).union([new]) : slot.windows, slot.weight)
+            }, index: level.index)
+        }, edits: edits)
+    }
+}
+
 extension Workspace {
     /// Whether the window is tiled, floating or parked here.
     func contains(_ window: WindowID) -> Bool {
@@ -107,6 +119,29 @@ extension Workspace {
         stamps[window] = nil
         if fullscreenWindow == window { fullscreenWindow = nil }
         normalize()
+        check()
+        return true
+    }
+
+    /// Puts `new` where `old` stands, tiled, floating or parked, with its share, focus stamp
+    /// and fullscreen state: native tabs share one place. Restore hints, those of `old` and
+    /// those that count `old` among their neighbours, name `new` instead. False when `old`
+    /// is not here, or `new` is.
+    @discardableResult
+    mutating func replace(_ old: WindowID, with new: WindowID) -> Bool {
+        guard !contains(new) else { return false }
+        if let path = root.path(to: old) {
+            root[path.dropLast()].children[path.last!].kind = .window(new)
+        } else if let index = floating.firstIndex(of: old) {
+            floating[index] = new
+        } else if let index = parked.firstIndex(where: { $0.window == old }) {
+            parked[index] = Parked(window: new, floating: parked[index].floating)
+        } else {
+            return false
+        }
+        if let stamp = stamps.removeValue(forKey: old) { stamps[new] = stamp }
+        if fullscreenWindow == old { fullscreenWindow = new }
+        hints = hints.map { $0.renaming(old, to: new) }
         check()
         return true
     }

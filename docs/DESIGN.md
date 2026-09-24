@@ -402,12 +402,13 @@ off the main thread).
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
-  - Open item: a window its app orders out and keeps, as a closed NSWindowController
-    window, keeps its tile, empty, until WindowServer destroys it, and so does a
-    deselected native tab, as in AeroSpace. A rule that parked a window still ordered out
-    a second later for no known reason also parked and unparked every deselected tab on
-    each switch, since WindowServer tags both alike (`kosmos-probe tabs`). Branch `tabs`
-    brings that rule back with tab switches handled.
+  - A window its app orders out and keeps, as a closed NSWindowController window, parks
+    as a minimized one does, and returns when the app orders it in again. Kosmos takes a
+    window still ordered out a second later for none of the other reasons as one. A
+    conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
+    fullscreen transition. A deselected tab is not one: it has left the session. While
+    the session is locked no window counts as one, as none is removed then: whether the
+    lock screen orders windows out is unmeasured.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first
@@ -416,6 +417,50 @@ off the main thread).
     notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
     later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
   - A `summon` command brings a window to the current workspace on purpose.
+- Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
+  id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
+  window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325
+  for the incoming tab, 816 and 1326 for the outgoing, then 815 for the incoming, all
+  within 0.2 ms (`kosmos-probe tabs`, macOS 27). Closing a tab can destroy it instead.
+  - Kosmos pairs the two within 250 ms, in either order, as the yabai forks that follow
+    tabs do. The incoming tab takes the outgoing tab's place, share, focus and workspace,
+    with no reflow and no follow, and gets that place's frame. The outgoing tab leaves
+    the session, a hidden member of the place.
+  - A deselected tab leaves every Space, the holding Space too, whether Kosmos stripped
+    its ordinary Space or kept it, and selected again it lands on its ordinary Space
+    (`kosmos-probe tabs strip` and `keep`). A switch forgets the deselected tab in the
+    concealment ledger and the recovery record, and conceals the selected tab again when
+    its place is on a hidden workspace.
+  - A switch inside a native fullscreen group swaps the parked tab: the new tab is the one
+    in fullscreen, and returns to the place when the group leaves fullscreen.
+  - A tab inherits the minimum of the tab it replaces, since tabs share a size, so a
+    switch in a tight layout does not reflow to learn it again. A fullscreen tab's would
+    fill the display, so a fullscreen switch passes none.
+  - macOS can report the new tab key before the switch pairs, when the tab has no place.
+    Kosmos decides that report again once the tab takes its place, as a report of a
+    placed window: the kill switch counts it, and it can answer a public request. It
+    follows the tab to a place on a hidden workspace. The window key before it is the deselected tab, which
+    did not depart. A report that comes after the tab took a place on a hidden workspace,
+    before its conceal completed, is followed at once the same way. That lasts only until
+    the conceal completes, the workspace is shown, or another tab replaces it, so a later
+    re-key of the tab mid-switch still loses to the switch.
+  - Only an admitted window takes a place. A new tab, and a tab selected for the first
+    time, which Accessibility reports created then, take the place once Kosmos admits
+    them, and a tab deselected before that stays a hidden member and passes its claim on,
+    as when Finder opens several tabs or Command-T is pressed twice.
+  - Closing the selected tab is a switch. When the destroy comes before the next tab, the
+    closed tab's place waits the pairing window for it, if the app has windows ordered
+    out, in native fullscreen too. Closing the group's last tab is a close.
+  - A window ordered in with no tab leaving is back after the pairing window if it is
+    still ordered in. A hidden member dragged out of its group takes a place of its own,
+    parked at once when it is minimized, in native fullscreen or hidden with its app.
+    A window its app had closed and kept returns to its place, and Kosmos follows it, so
+    a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
+    windows that way, and selecting one's tab brings it to the group's place.
+  - Kosmos does not read the AXTabGroup of the selected tab: that read costs a round trip
+    to the app on every switch, and the pairing needs none. Two windows of one app, one
+    leaving and one arriving within 250 ms, read as a switch; if that shows up, the
+    AXTabs of the incoming window would tell the cases apart.
 
 ### 5.6 Hotkeys and Secure Input
 

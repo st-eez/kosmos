@@ -66,3 +66,78 @@ private let t0 = ContinuousClock.now
     #expect(DepartureFocus.decide(focusLeft: true, key: KeyWindow.none, departing: [1], left: none) == .now)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
+
+// Native tabs: a switch orders one window of the app in and another out, in either order.
+
+@Test func aTabSwitchPairsTwoWindowsOfOneAppInEitherOrder() {
+    var tabs = TabSwitches()
+    // Measured order: the incoming tab joins the Space before the outgoing leaves it.
+    #expect(tabs.ordered(2, in: true, app: 100, at: t0) == nil)
+    #expect(tabs.ordered(1, in: false, app: 100, at: t0 + .milliseconds(3)).map { [$0.old, $0.new] } == [1, 2])
+    // The other order, as when the selected tab closes first.
+    #expect(tabs.ordered(2, in: false, app: 100, at: t0 + .seconds(1)) == nil)
+    #expect(tabs.ordered(3, in: true, app: 100, at: t0 + .seconds(1) + .milliseconds(40)).map { [$0.old, $0.new] } == [2, 3])
+}
+
+@Test func windowsThatComeAndGoApartAreNotATabSwitch() {
+    var tabs = TabSwitches()
+    #expect(tabs.ordered(1, in: false, app: 100, at: t0) == nil)
+    #expect(tabs.ordered(2, in: true, app: 100, at: t0 + .milliseconds(300)) == nil)    // too late
+    #expect(tabs.ordered(3, in: false, app: 200, at: t0 + .milliseconds(310)) == nil)   // another app
+    #expect(tabs.ordered(3, in: true, app: 200, at: t0 + .milliseconds(320)) == nil)    // the same window back
+    #expect(tabs.ordered(4, in: true, app: 100, at: t0 + .milliseconds(330)) == nil)    // two in: no switch
+    // The latest change pairs, and once paired the next change starts afresh.
+    #expect(tabs.ordered(5, in: false, app: 100, at: t0 + .milliseconds(340)).map { [$0.old, $0.new] } == [5, 4])
+    #expect(tabs.ordered(6, in: true, app: 100, at: t0 + .milliseconds(350)) == nil)
+}
+
+// Only an admitted window takes a place (review of 5107ed0, (a) and (d)).
+
+private let places: Set<WindowID> = [2]
+private func placed(_ window: WindowID) -> Bool { places.contains(window) }
+
+@Test func aTabSelectedBeforeItsAdmissionTakesThePlaceOnceAdmitted() {
+    var tabs = TabGroups()
+    // Command-T: the new tab 7 is selected before Kosmos reads its Accessibility role.
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed) == .pending)
+    #expect(tabs.admitting(7) == .takes(2))
+    #expect(tabs.switched(from: 2, to: 7, admitted: true, placed: placed) == .replace(2))
+    tabs.replaced(2, with: 7)
+    #expect(tabs.hidden == [2])
+    #expect(tabs.admitting(9) == .own)   // a window that took no tab's place
+}
+
+@Test func aTabDeselectedBeforeItsAdmissionStaysAHiddenMember() {
+    var tabs = TabGroups()
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed) == .pending)
+    // Back to tab 2 before 7's admission: 7 never took the place, and 2 keeps it.
+    #expect(tabs.switched(from: 7, to: 2, admitted: true, placed: placed) == .none)
+    #expect(tabs.admitting(7) == .hidden)
+    // A switch from a tab that holds no place, as one destroyed first, places nothing.
+    #expect(tabs.switched(from: 3, to: 4, admitted: true, placed: placed) == .none)
+}
+
+@Test func aClaimPassesAlongTabsSelectedBeforeTheirAdmission() {
+    var tabs = TabGroups()
+    // Command-T twice, or Finder opening several tabs, before either new tab is admitted.
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed) == .pending)
+    #expect(tabs.switched(from: 7, to: 8, admitted: false, placed: placed) == .pending)
+    #expect(tabs.admitting(7) == .hidden)
+    #expect(tabs.admitting(8) == .takes(2))
+    // Admitted already, the next tab takes the place at once.
+    var admitted = TabGroups()
+    _ = admitted.switched(from: 2, to: 7, admitted: false, placed: placed)
+    #expect(admitted.switched(from: 7, to: 5, admitted: true, placed: placed) == .replace(2))
+}
+
+@Test func aHiddenMemberDraggedOutOrGoneLeavesTheGroup() {
+    var tabs = TabGroups()
+    tabs.replaced(2, with: 7)
+    #expect(tabs.detached(2) && !tabs.detached(2))
+    tabs.replaced(7, with: 8)
+    _ = tabs.switched(from: 8, to: 9, admitted: false, placed: { _ in true })   // 9 pending on 8
+    tabs.forget(8)
+    #expect(tabs.admitting(9) == .own)
+    tabs.forget(7)
+    #expect(tabs.hidden.isEmpty)
+}

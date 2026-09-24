@@ -44,6 +44,13 @@ final class Inventory {
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
+    /// A managed window still ordered out a second after it left, for none of the reasons
+    /// with their own reports: its app closed it and kept it, as NSWindowController does, or
+    /// deselected its native tab.
+    var onKeptOrderedOut: (@MainActor (UInt32) -> Void)?
+    /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
+    /// in (false), and when: what a switch between native tabs is made of.
+    var onOrderChange: (@MainActor (UInt32, pid_t, Bool, ContinuousClock.Instant) -> Void)?
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
@@ -184,6 +191,26 @@ final class Inventory {
         return !row.orderedIn
     }
 
+    /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
+    /// probe), and a minimize, a hide and native fullscreen have their own reports. The
+    /// second outlasts a fullscreen transition, which takes a window off its Space for about
+    /// 0.5 s. While the session is locked no window counts as closed, as none is removed:
+    /// whether the lock screen orders windows out is unmeasured.
+    private func checkOrderedOut(_ id: UInt32) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !self.sessionLocked, let row = self.windows[id], !row.orderedIn, self.isManaged(id), !self.isMinimized(id),
+                  NSRunningApplication(processIdentifier: row.pid)?.isHidden != true,
+                  !self.fullscreen.contains(id) else { return }
+            self.onKeptOrderedOut?(id)
+        }
+    }
+
+    /// Whether the app has a candidate window ordered out besides `window`, as a native tab
+    /// group's deselected tabs are.
+    func hasOrderedOutWindows(_ pid: pid_t, besides window: UInt32) -> Bool {
+        windows.values.contains { $0.pid == pid && $0.id != window && !$0.orderedIn && isCandidate($0) }
+    }
 
     /// An app hid or came back. Its windows leave or return with it, and the controller hears
     /// of it after the record changed.
@@ -245,6 +272,11 @@ final class Inventory {
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
         departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
+        // A new tab can be seen first already ordered in.
+        if old?.orderedIn != row.orderedIn, old != nil || row.orderedIn, isCandidate(row) {
+            onOrderChange?(row.id, row.pid, row.orderedIn, .now)
+        }
+        if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX(row.id, pid: row.pid) }
             inventoryLog.info("""
@@ -264,7 +296,11 @@ final class Inventory {
         ax[id] = nil
         fullscreen.remove(id)
         spaceChangedAt[id] = nil
-        if row.orderedIn { departures.left(id, at: .now) }
+        if row.orderedIn {
+            departures.left(id, at: .now)
+            // Before the removal, so a tab that replaces this one takes its place.
+            if isCandidate(row) { onOrderChange?(id, row.pid, false, .now) }
+        }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
