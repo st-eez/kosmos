@@ -611,9 +611,7 @@ final class Controller {
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
-            // Every concealed window keeps its ordinary Space (DESIGN.md, section 5.3).
-            let kinds = Dictionary(uniqueKeysWithValues: hide.map { ($0, Hiding.Conceal.keepOrdinary) })
-            hiding.apply(show: show, hide: kinds) { [weak self] outcome, timing in
+            hiding.apply(show: show, hide: hide) { [weak self] outcome, timing in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)

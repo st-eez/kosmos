@@ -12,12 +12,6 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 /// never races a batch still in flight.
 @MainActor
 final class Hiding {
-    /// How a window leaves the screen. Every concealed window keeps its ordinary Space on
-    /// one display; exclusive waits for several displays, where a window whose app's most
-    /// recently used window is shown on another display should lose it (DESIGN.md, section
-    /// 5.3).
-    typealias Conceal = ConcealLedger.Kind
-
     /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
     /// preparing and sending its operations, the final barrier with its reads, and the way
     /// back to the main actor.
@@ -57,9 +51,9 @@ final class Hiding {
 
     /// Reveals `show`, then conceals `hide`, then reads the barrier, on the bridge queue.
     /// Concealing needs a ready guardian; revealing does not.
-    func apply(show: [UInt32], hide: [UInt32: Conceal], done: @escaping @MainActor (Outcome, Timing) -> Void) {
+    func apply(show: [UInt32], hide: [UInt32], done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady
-        let hide = canConceal ? hide : [:]
+        let hide = canConceal ? hide : []
         let store = self.store
         let submitted = ContinuousClock.now
         bridge.async {
@@ -169,11 +163,11 @@ private final class HidingStore: @unchecked Sendable {
         return true
     }
 
-    func apply(show: [UInt32], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
+    func apply(show: [UInt32], hide: [UInt32]) -> Bool {
         sent = nil
         guard load() else { return false }
-        let fresh = hide.keys.filter { ledger.entries[$0] == nil }
-        if !fresh.isEmpty, !prepare(fresh) { return false }
+        let fresh = Set(hide).filter { ledger.entries[$0] == nil }
+        if !fresh.isEmpty, !prepare(Array(fresh)) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
         // Adds land before any removal is sent: a window removed from its only Space lands on
         // whichever Space is active, which can be a native fullscreen one. The add's return
@@ -199,10 +193,9 @@ private final class HidingStore: @unchecked Sendable {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
-        var ids = batch.keep
+        // An add that keeps their other Spaces, the ordinary one included.
+        var ids = batch.fresh
         kosmos_add_windows(space, &ids, ids.count, false)
-        ids = batch.strip
-        kosmos_add_windows(space, &ids, ids.count, true)
         sent = .now
         barrierRead = false
         let touched = Set(batch.mustBeIn.values).union(batch.removals.keys)
