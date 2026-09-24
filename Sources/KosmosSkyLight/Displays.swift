@@ -37,8 +37,7 @@ public struct Displays {
     }
 
     private func display(for id: CGDirectDisplayID) -> Display? {
-        guard let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue(),
-              let string = CFUUIDCreateString(nil, uuid) as String? else { return nil }
-        return displays.first { $0.identifier == string } ?? displays.first { $0.identifier == "Main" }
+        guard let uuid = DisplayIdentity.uuid(of: id) else { return nil }
+        return displays.first { $0.identifier == uuid } ?? displays.first { $0.identifier == "Main" }
     }
 }
