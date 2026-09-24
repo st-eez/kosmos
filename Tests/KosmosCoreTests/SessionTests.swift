@@ -436,6 +436,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     // A parked tab, or one that holds no place, changes nothing.
     _ = s.park([1])
     #expect(s.replace(1, with: 5).isEmpty)
+    #expect(s.isParked(1))
     #expect(s.replace(42, with: 5).isEmpty)
     #expect(s.replace(8, with: 8).isEmpty)
 }
@@ -449,4 +450,17 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.unpark([3], follow: nil)
     #expect(s.windows(of: "1") == order.map { $0 == 2 ? 7 : $0 })
     #expect(s.frames(of: "1")[3] == before[3])
+}
+
+@Test func aWindowParkedWhenItBecameATabJoinsItsGroupsPlace() {
+    // Merge All Windows orders 2 out with no tab coming in, and Kosmos parks it as closed
+    // by its app. Selecting its tab later brings it to the group's place.
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(3)
+    _ = s.park([2])
+    let before = s.frames(of: "1"), order = s.windows(of: "1")
+    _ = s.replace(3, with: 2)
+    #expect(!s.isParked(2) && s.workspace(of: 3) == nil)
+    #expect(s.windows(of: "1") == order.map { $0 == 3 ? 2 : $0 })
+    #expect(s.frames(of: "1")[2] == before[3])
 }

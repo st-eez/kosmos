@@ -273,6 +273,8 @@ off the main thread).
   - A new tab, and a tab selected for the first time, which Accessibility reports created
     then, join the place the same way, even when Kosmos admitted them first.
   - Closing the selected tab is a switch. Closing the group's last tab is a close.
+  - Merge All Windows orders the merged windows out with no tab arriving, so they park as
+    windows their app ordered out. Selecting one's tab later brings it to the place.
   - A hidden member ordered in with no tab leaving, as when it is dragged out of its
     group, takes a place of its own after 250 ms.
   - Kosmos does not read the AXTabGroup of the selected tab: that read costs a round trip

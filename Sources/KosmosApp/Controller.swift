@@ -214,6 +214,9 @@ final class Controller {
     /// destroyed first, a tab Kosmos knows takes a place of its own.
     private func tabSwitched(from old: WindowID, to new: WindowID, pid: pid_t) {
         tabs.remove(new)
+        // Parked as closed by its app, as a window Merge All Windows made a tab: the
+        // switch brings it back.
+        closedByApp.remove(new)
         if session.workspace(of: old) != nil, !session.isParked(old) {
             controllerLog.info("tab \(new) replaces \(old)")
             owner[new] = owner[new] ?? pid
