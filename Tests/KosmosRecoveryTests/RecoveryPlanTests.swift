@@ -4,7 +4,7 @@ import Testing
 @Test func windowsWithAnOrdinarySpaceAreRemovedFromTheRecordedSpace() {
     let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
     #expect(plan.removals == [9: [1, 2]])
-    #expect(plan.moves.isEmpty && plan.stuck.isEmpty)
+    #expect(plan.adds.isEmpty && plan.stuck.isEmpty)
 }
 
 @Test func windowsWithoutOneAreAddedToTheirDestinationAndRemoved() {
@@ -12,19 +12,19 @@ import Testing
     // Space; the removal after it takes them out.
     let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
     #expect(plan.removals == [9: [1, 2]])
-    #expect(plan.moves == [5: [2]])
+    #expect(plan.adds == [5: [2]])
     #expect(plan.windows == [1, 2])
 }
 
 @Test func windowsWithNowhereToGoStayConcealed() {
     let plan = RecoveryPlan.make(members: [9: [2]], stranded: [], hasOrdinarySpace: { _ in false }, destination: { _ in nil })
     #expect(plan.stuck == [2])
-    #expect(plan.removals.isEmpty && plan.moves.isEmpty)
+    #expect(plan.removals.isEmpty && plan.adds.isEmpty)
 }
 
-@Test func strandedRecordedWindowsAreMovedOnce() {
+@Test func strandedRecordedWindowsAreAddedOnce() {
     let plan = RecoveryPlan.make(members: [9: [2]], stranded: [2, 3], hasOrdinarySpace: { _ in false }, destination: { _ in 5 })
-    #expect(plan.moves == [5: [2, 3]])
+    #expect(plan.adds == [5: [2, 3]])
     #expect(plan.removals == [9: [2]])   // 3 is in no recorded Space
 }
 
@@ -36,7 +36,7 @@ import Testing
 
 /// A removal after a failed add leaves the window on the active Space, which can be a native
 /// fullscreen one. A window revealed by removal alone may stay on one: it was there.
-@Test func aMovedWindowIsBackOnlyOnAnOrdinarySpace() {
+@Test func anAddedWindowIsBackOnlyOnAnOrdinarySpace() {
     let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
     #expect(plan.unplaced(isOnNoSpace: { _ in false }, isInOrdinarySpace: { _ in false }) == [2])
     #expect(plan.unplaced(isOnNoSpace: { _ in false }, isInOrdinarySpace: { $0 == 2 }).isEmpty)

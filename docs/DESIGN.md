@@ -136,12 +136,13 @@ off the main thread).
 - Hidden windows keep their ordinary Space membership and gain holding membership, so
   Command-Tab still selects the right window. Only an app's other concealed windows lose
   ordinary membership.
-- A reveal removes the window from the holding Space. A window that lost its ordinary
-  Space is first added to one, exclusively; that add strips only managed Spaces, and the
-  holding Space is not one, so the removal is still needed. The add goes first because a
-  window removed from its only Space lands on the active Space, which can be a native
-  fullscreen one (`kosmos-probe reveal`). The barrier then confirms that each revealed
-  window left the holding Space and each added one has an ordinary Space.
+- A reveal removes the window from the holding Space. A window with no other Space at
+  the time of the reveal is first added to an ordinary one, exclusively; that add strips
+  only managed Spaces, and the holding Space is not one, so the removal is still needed.
+  The add goes first because a window removed from its only Space lands on the active
+  Space, which can be a native fullscreen one (`kosmos-probe reveal`).
+  The barrier then confirms that each revealed window left the holding Space and each
+  added one has an ordinary Space.
 - A window with no ordinary Space goes to the main display's current Space, else to the
   Space it had before its first hide if that still exists, else to the main display's
   first ordinary Space. A native fullscreen Space is never chosen, so a switch works while

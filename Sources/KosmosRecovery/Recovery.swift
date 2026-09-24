@@ -30,7 +30,7 @@ public enum Recovery {
             return .staleSession
         }
 
-        // A move Kosmos issued just before it died may still be landing. A Space that no
+        // An operation Kosmos sent just before it died may still be landing. A Space that no
         // longer exists holds nothing and leaves the record.
         let (members, gone) = settledMembers(of: record.spaces)
         let liveSpaces = record.spaces.filter { !gone.contains($0) }
@@ -43,7 +43,7 @@ public enum Recovery {
 
         // Adds before removals: a window removed from its only Space lands on whichever
         // Space is active, which can be a native fullscreen one.
-        for (destination, windows) in plan.moves {
+        for (destination, windows) in plan.adds {
             var ids = windows
             kosmos_add_windows(destination, &ids, ids.count, true)
             _ = kosmos_barrier(destination)
@@ -54,7 +54,7 @@ public enum Recovery {
             _ = kosmos_barrier(space)
         }
 
-        let handled = Set(plan.moves.values.joined()).union(plan.removals.values.joined())
+        let handled = Set(plan.adds.values.joined()).union(plan.removals.values.joined())
         let after = SpaceMembers.read(liveSpaces)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let displays = Displays.current()
@@ -79,8 +79,8 @@ public enum Recovery {
     }
 
     /// Members of each existing Space once two reads 100 ms apart agree, for at most about
-    /// 1 s; past that, the newest read, which the check after the moves backs up. Spaces
-    /// that are gone are listed apart.
+    /// 1 s; past that, the newest read, which the check after the adds and removals backs
+    /// up. Spaces that are gone are listed apart.
     private static func settledMembers(of spaces: [UInt64]) -> (members: [UInt64: [UInt32]], gone: Set<UInt64>) {
         var previous = SpaceMembers.read(spaces)
         let existing = spaces.filter { !previous.gone.contains($0) }

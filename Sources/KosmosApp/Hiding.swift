@@ -123,8 +123,7 @@ private final class HidingStore: @unchecked Sendable {
         }
         // A Space that no longer exists holds nothing and leaves the record.
         let read = SpaceMembers.read(onFile.spaces)
-        guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) },
-                                                  hasOrdinarySpace: Self.hasOrdinarySpace) else { return false }
+        guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) }) else { return false }
         state = onFile
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }
@@ -143,11 +142,11 @@ private final class HidingStore: @unchecked Sendable {
         // Adds before removals: a window removed from its only Space lands on whichever
         // Space is active, which can be a native fullscreen one. Displays are read only for
         // adds: the read took up to 7 ms on the development Mac.
-        let displays = batch.moves.isEmpty ? nil : Displays.current()
+        let displays = batch.adds.isEmpty ? nil : Displays.current()
         if let displays {
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
             var destinations: [UInt64: [UInt32]] = [:]
-            for window in batch.moves {
+            for window in batch.adds {
                 guard let destination = displays.ordinarySpace(original: original[window]) else { return false }
                 destinations[destination, default: []].append(window)
             }
@@ -165,7 +164,7 @@ private final class HidingStore: @unchecked Sendable {
         ids = batch.strip
         kosmos_add_windows(space, &ids, ids.count, true)
         // One barrier after every operation of the batch: the bridge runs them in order.
-        let touched = Set(batch.mustBeIn.values).union(batch.mustHaveLeft.values)
+        let touched = Set(batch.mustBeIn.values).union(batch.removals.keys)
         guard let any = touched.first else { return true }
         guard kosmos_barrier(any) else { return false }
         var members: [UInt64: Set<UInt32>] = [:]
@@ -175,10 +174,10 @@ private final class HidingStore: @unchecked Sendable {
             members[space] = Set(list)
         }
         let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
-        let shown = batch.mustHaveLeft.allSatisfy { !members[$0.value]!.contains($0.key) }
+        let shown = batch.removals.allSatisfy { space, windows in windows.allSatisfy { !members[space]!.contains($0) } }
         // An add that failed, followed by its removal, would leave the window on the active
         // Space, which can be a native fullscreen one.
-        let placed = batch.moves.allSatisfy { displays?.isInOrdinarySpace($0) == true }
+        let placed = batch.adds.allSatisfy { displays?.isInOrdinarySpace($0) == true }
         guard hidden && shown && placed else { return false }
         ledger.commit(batch, into: space)
         return true
