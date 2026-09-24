@@ -43,6 +43,18 @@
 (* a window on the visible workspace starts a new intent and leaves a      *)
 (* switch in flight to resume.                                             *)
 (*                                                                         *)
+(* With SplitQueue, a focus request runs as separate steps of the focus    *)
+(* queue and the target app's worker. The queue reads whether the app is   *)
+(* front and hands the worker a job, then waits for it, or for BusyApp may *)
+(* give up after its 30 ms timeout. The worker skips a stale request or a  *)
+(* window key already, then raises it. Inside the front app only the raise *)
+(* keys a window, so the worker records the echo just before and tells the *)
+(* queue; for a background app the queue records and posts the key record  *)
+(* that activates it, unless the worker is keying it. A raise in a         *)
+(* background app changes only the app's own focused window, which the    *)
+(* app reports as a focus change when RaiseReports. Each side records only *)
+(* right before its own call that changes the key window.                  *)
+(*                                                                         *)
 (* Workspaces are laid out while hidden, so a switch writes no frames and  *)
 (* frames are not modelled.                                                *)
 (***************************************************************************)
@@ -60,14 +72,21 @@ CONSTANTS
     AllowFallback,  \* macOS may re-key when the key window is hidden (not observed)
     RevealFirst,    \* a switch reveals the incoming windows before concealing the outgoing
     Coalesce,       \* a resumed command does not focus while a newer command is queued
-    SkipOnReport    \* main skips a request for the key window macOS last reported (Kosmos
+    SkipOnReport,   \* main skips a request for the key window macOS last reported (Kosmos
                     \* before the focus queue checked the key window)
+    SplitQueue,     \* a focus request runs as the focus queue's and the app worker's steps
+    BusyApp,        \* with SplitQueue, the app whose worker can outlast the queue's wait
+    RaiseReports    \* with SplitQueue, raising a background app's window makes it report
+                    \* a focus change
 
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ SkipOnReport \in BOOLEAN
+ASSUME SplitQueue \in BOOLEAN /\ RaiseReports \in BOOLEAN
 
 NoWin == "none"   \* no key window: Finder fronted without windows
 AppOfX(w) == IF w = NoWin THEN "finder" ELSE AppOf[w]
 WsWins(k) == {w \in Win : WsOf[w] = k}
+Apps == {AppOf[w] : w \in Win}
+NoReq == [r |-> 0]
 
 VARIABLES
     s,        \* the state record
@@ -103,7 +122,14 @@ Init ==
                bq       |-> <<>>,
                fq       |-> <<>>,
                evs      |-> <<>>,     \* key window changes not yet reported
-               expect   |-> <<>> ]    \* focus requests whose echo has not come back
+               expect   |-> <<>>,     \* focus requests whose echo has not come back
+               \* SplitQueue only:
+               afocus   |-> [a \in Apps |-> IF AppOf[f] = a THEN f ELSE CHOOSE w \in Win : AppOf[w] = a],
+                                      \* each app's own focused window, its key window while front
+               fcur     |-> NoReq,    \* the request the focus queue is running
+               wq       |-> [a \in Apps |-> <<>>],   \* each app worker's jobs
+               kr       |-> <<>>,     \* KeyRequest phase by request number
+               jdone    |-> {} ]      \* requests whose worker job has finished
     /\ history = <<>>
 
 Visible == {w \in Win : ~s.hidden[w]}
@@ -115,9 +141,18 @@ Visible == {w \in Win : ~s.hidden[w]}
 KeyChange(t, w, at) ==
     IF t.osFocus = w THEN t
     ELSE [t EXCEPT !.osFocus = w,
+                   !.afocus = IF w = NoWin THEN @ ELSE [@ EXCEPT ![AppOf[w]] = w],
                    !.ne = t.ne + 1,
                    !.evs = Append(@, [w |-> w, act |-> AppOfX(t.osFocus) # AppOfX(w), t |-> at, i |-> t.ne + 1,
-                                      hid |-> w # NoWin /\ t.hidden[w]])]
+                                      hid |-> w # NoWin /\ t.hidden[w], bg |-> FALSE])]
+
+\* A background app's own focused window changes, and the app reports it as a focus
+\* change although the key window stays where it is. Kosmos marks such a report when it
+\* arrives: its app is not the front process.
+BackgroundFocus(t, w, at) ==
+    [t EXCEPT !.afocus[AppOf[w]] = w,
+              !.ne = t.ne + 1,
+              !.evs = Append(@, [w |-> w, act |-> FALSE, t |-> at, i |-> t.ne + 1, hid |-> t.hidden[w], bg |-> TRUE])]
 
 (***************************************************************************)
 (* The switch protocol                                                     *)
@@ -138,7 +173,10 @@ StartSwitch(t, k, target) ==
 \* A focus request from the main actor (Controller.requestFocus).
 Request(t, w, g) ==
     IF SkipOnReport /\ w = t.seen THEN t
-    ELSE [t EXCEPT !.fq = Append(@, [w |-> w, g |-> g])]
+    ELSE [t EXCEPT !.fq = Append(@, [w |-> w, g |-> g, c |-> w # NoWin /\ t.hidden[w]])]
+
+\* The main actor records the echo of a call about to be made (Controller.performing).
+Record(t, w) == [t EXCEPT !.expect = Append(@, [w |-> w, i |-> t.ne + 1])]
 
 RunCommand(t, x) ==
     LET t1 == [t EXCEPT !.lastCmdT = x.t]
@@ -176,15 +214,19 @@ Adopt(t, ev) ==
        ELSE IF ev.hid THEN StartSwitch(t, WsOf[w], w)
        ELSE Reassert(t)   \* visible mid-switch: a re-key, or a click on a window being concealed
 
+\* A report from an app that is not front (`bg`) consumes an echo it matches, but is no
+\* key window report: unmatched it is ignored, and it never counts as the last report.
 RECURSIVE Observe(_, _)
 Observe(t, evs) ==
     IF evs = <<>> THEN t
+    ELSE IF Head(evs).w = t.seen THEN Observe(t, Tail(evs))   \* a repeat of the last report
     ELSE LET ev == Head(evs)
-             t0 == [t EXCEPT !.seen = ev.w]
+             t0 == IF ev.bg THEN t ELSE [t EXCEPT !.seen = ev.w]
              ks == {k \in 1..Len(t0.expect) : Matches(ev, t0.expect[k])}
              t1 == IF ks # {}
                    THEN LET k == CHOOSE k \in ks : \A j \in ks : k <= j
                         IN [t0 EXCEPT !.expect = SubSeq(@, k + 1, Len(@))]
+                   ELSE IF ev.bg THEN t0
                    ELSE Adopt(t0, ev)
          IN Observe(t1, Tail(evs))
 
@@ -228,10 +270,90 @@ ExecBridge ==
 ExecFocus ==
     LET x == Head(s.fq)
         t == [s EXCEPT !.fq = Tail(@)]
-    IN /\ s.fq # <<>>
+    IN /\ ~SplitQueue
+       /\ s.fq # <<>>
        /\ s' = IF x.g # s.gen \/ s.osFocus = x.w \/ (x.w # NoWin /\ s.hidden[x.w]) THEN t
-               ELSE KeyChange([t EXCEPT !.expect = Append(@, [w |-> x.w, i |-> t.ne + 1])], x.w, Len(history))
+               ELSE KeyChange(Record(t, x.w), x.w, Len(history))
        /\ UNCHANGED history
+
+(***************************************************************************)
+(* The focus request in the implementation's steps (SplitQueue)            *)
+(***************************************************************************)
+\* The queue takes a request. A stale one, or one whose window was concealed when it was
+\* requested, does nothing. Finder with no window is keyed at once. Otherwise the queue
+\* reads whether the target's app is front and hands the worker its job.
+FocusStart ==
+    LET x == Head(s.fq)
+        t == [s EXCEPT !.fq = Tail(@)]
+        a == AppOfX(x.w)
+        r == Len(s.kr) + 1
+        front == AppOfX(s.osFocus) = a
+    IN /\ SplitQueue
+       /\ s.fcur = NoReq
+       /\ s.fq # <<>>
+       /\ s' = IF x.g # s.gen \/ x.c THEN t
+               ELSE IF x.w = NoWin THEN IF s.osFocus = NoWin THEN t ELSE KeyChange(Record(t, NoWin), NoWin, Len(history))
+               ELSE [t EXCEPT !.kr = Append(@, "pending"),
+                              !.wq[a] = Append(@, [r |-> r, w |-> x.w, g |-> x.g, front |-> front, st |-> "start"]),
+                              !.fcur = [r |-> r, w |-> x.w, g |-> x.g, front |-> front]]
+       /\ UNCHANGED history
+
+\* The queue stops waiting: the job finished, or, for BusyApp, 30 ms passed. For a front
+\* app it only moves on: inside the front app only the raise keys a window. For a
+\* background app, unless the request went stale, the app came front meanwhile, or the
+\* worker is keying it, the queue records and posts the key record, which activates the
+\* app with the named window.
+FocusDecide ==
+    LET c == s.fcur
+        t == [s EXCEPT !.fcur = NoReq]
+    IN /\ SplitQueue
+       /\ c # NoReq
+       /\ c.r \in s.jdone \/ AppOf[c.w] = BusyApp
+       /\ s' = IF c.front \/ c.g # s.gen \/ AppOfX(s.osFocus) = AppOf[c.w] \/ s.kr[c.r] = "raising" THEN t
+               ELSE [KeyChange(Record(t, c.w), c.w, Len(history)) EXCEPT !.kr[c.r] = "sent"]
+       /\ UNCHANGED history
+
+Finish(t, a, j) == [t EXCEPT !.wq[a] = Tail(@), !.jdone = @ \cup {j.r}]
+
+\* The worker's job starts: a stale request ends.
+WorkerStart(a) ==
+    LET j == Head(s.wq[a])
+    IN /\ SplitQueue
+       /\ s.wq[a] # <<>>
+       /\ j.st = "start"
+       /\ s' = IF j.g # s.gen THEN Finish(s, a, j) ELSE [s EXCEPT !.wq[a][1].st = "read"]
+       /\ UNCHANGED history
+
+\* The worker reads the app's focused window when the queue found the app front: a
+\* stale request, or a window key already, ends.
+WorkerRead(a) ==
+    LET j == Head(s.wq[a])
+    IN /\ SplitQueue
+       /\ s.wq[a] # <<>>
+       /\ j.st = "read"
+       /\ s' = IF j.g # s.gen \/ (j.front /\ s.afocus[a] = j.w) THEN Finish(s, a, j)
+               ELSE [s EXCEPT !.wq[a][1].st = "raise"]
+       /\ UNCHANGED history
+
+\* AXRaise, decided just before under the request's lock. A stale request, or one the
+\* queue has keyed, raises nothing. In the front app the raise keys the window, so the
+\* worker records first and tells the queue it is keying. In a background app the raise
+\* changes only the app's own focused window, reported when RaiseReports, and nothing is
+\* recorded.
+WorkerRaise(a) ==
+    LET j == Head(s.wq[a])
+        t == Finish(s, a, j)
+    IN /\ SplitQueue
+       /\ s.wq[a] # <<>>
+       /\ j.st = "raise"
+       /\ s' = IF j.g # s.gen \/ s.kr[j.r] = "sent" THEN t
+               ELSE IF AppOfX(s.osFocus) = a THEN [KeyChange(Record(t, j.w), j.w, Len(history)) EXCEPT !.kr[j.r] = "raising"]
+               ELSE IF s.afocus[a] = j.w THEN t
+               ELSE IF RaiseReports THEN BackgroundFocus(t, j.w, Len(history))
+               ELSE [t EXCEPT !.afocus[a] = j.w]
+       /\ UNCHANGED history
+
+Worker(a) == WorkerStart(a) \/ WorkerRead(a) \/ WorkerRaise(a)
 
 PostReports ==
     /\ s.evs # <<>>
@@ -281,16 +403,20 @@ Hover ==
          /\ history' = Append(history, -3)
 
 Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports
+            \/ FocusStart \/ FocusDecide \/ \E a \in Apps : Worker(a)
 
 Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab \/ Hover
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
                               /\ WF_vars(ExecFocus) /\ WF_vars(PostReports)
+                              /\ WF_vars(FocusStart) /\ WF_vars(FocusDecide)
+                              /\ \A a \in Apps : WF_vars(Worker(a))
 
 (***************************************************************************)
 (* Properties                                                              *)
 (***************************************************************************)
 Quiescent == s.mq = <<>> /\ s.bq = <<>> /\ s.fq = <<>> /\ s.evs = <<>>
+             /\ s.fcur = NoReq /\ \A a \in Apps : s.wq[a] = <<>>
 
 \* The screen shows Kosmos's workspace and macOS keys Kosmos's focus.
 Converged == Visible = WsWins(s.active) /\ s.osFocus = s.focus
@@ -325,12 +451,14 @@ Settles == []<>Quiescent
 Cur(g, c) == g # 0 /\ g = c
 ViewQ(q, c) == [n \in 1..Len(q) |-> [q[n] EXCEPT !.g = Cur(q[n].g, c)]]
 StateView == <<[s EXCEPT !.sw = 0, !.gen = 0,
-                         !.mq = ViewQ(s.mq, s.sw), !.bq = ViewQ(s.bq, s.sw), !.fq = ViewQ(s.fq, s.gen)],
+                         !.mq = ViewQ(s.mq, s.sw), !.bq = ViewQ(s.bq, s.sw), !.fq = ViewQ(s.fq, s.gen),
+                         !.wq = [a \in Apps |-> ViewQ(s.wq[a], s.gen)]],
                history>>
 
 TraceView == [history |-> history, active |-> s.active, focus |-> s.focus,
               osFocus |-> s.osFocus, visible |-> Visible, sw |-> s.sw, gen |-> s.gen,
               mq |-> [n \in 1..Len(s.mq) |-> s.mq[n].kind],
               bq |-> [n \in 1..Len(s.bq) |-> s.bq[n].op],
-              fq |-> s.fq, expect |-> s.expect, evs |-> s.evs, seen |-> s.seen]
+              fq |-> s.fq, expect |-> s.expect, evs |-> s.evs, seen |-> s.seen,
+              afocus |-> s.afocus, fcur |-> s.fcur, wq |-> s.wq, kr |-> s.kr]
 =============================================================================
