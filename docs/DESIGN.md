@@ -164,8 +164,13 @@ off the main thread).
 - A report that repeats the previous report is dropped. An app activation and the app's
   focused window notification can both report one key change, and a repeat that arrives
   after a newer request would look like the user's and pull focus back.
-- Skip activation when the target is already key and no request is waiting for its echo;
-  while one is, the key window is about to change. When a newer command for another
+- The main actor knows the key window only from reports, which lag, so it requests every
+  focus. The focus queue skips a request whose window is already key when the request
+  runs, judged from the front process and, for a request to the front app, that app's
+  focused window, read on its worker within 30 ms. It records the echo it expects just
+  before each call it makes, so a skipped request leaves nothing that a later click could
+  match
+  ([tla/](../tla/README.md), changes 8 and 9). When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.

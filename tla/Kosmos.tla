@@ -12,9 +12,13 @@
 (*       is dropped when a newer intent exists.                            *)
 (*                                                                         *)
 (* macOS keys exactly the window it is asked to, and reports every key     *)
-(* window change to the main actor later. Kosmos records the focus it      *)
-(* performs. An echo is a report of a requested window received after the  *)
-(* request; key changes carry a sequence number (`i`) for that.            *)
+(* window change to the main actor later. The main actor knows the key     *)
+(* window only from reports (`seen`), which lag, so it requests every      *)
+(* focus. The focus queue checks the real key window when it runs a        *)
+(* request, skips one whose window is already key, and records the echo it *)
+(* expects just before each call it makes. An echo is a report of a        *)
+(* requested window received after that record; key changes carry a       *)
+(* sequence number (`i`) for that.                                         *)
 (*                                                                         *)
 (* Focus follows mouse: when the pointer rests in a window WindowServer    *)
 (* shows, Kosmos focuses it if it is a window of Kosmos's shown workspace. *)
@@ -55,9 +59,11 @@ CONSTANTS
     AllowHover,     \* the pointer may rest in a visible window (focus follows mouse)
     AllowFallback,  \* macOS may re-key when the key window is hidden (not observed)
     RevealFirst,    \* a switch reveals the incoming windows before concealing the outgoing
-    Coalesce        \* a resumed command does not focus while a newer command is queued
+    Coalesce,       \* a resumed command does not focus while a newer command is queued
+    SkipOnReport    \* main skips a request for the key window macOS last reported (Kosmos
+                    \* before the focus queue checked the key window)
 
-ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN
+ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ SkipOnReport \in BOOLEAN
 
 NoWin == "none"   \* no key window: Finder fronted without windows
 AppOfX(w) == IF w = NoWin THEN "finder" ELSE AppOf[w]
@@ -72,7 +78,6 @@ vars == <<s, history>>
 \* `ws` holds the window for a hover job.
 Job(kind, ws, g, evs, t) == [kind |-> kind, ws |-> ws, g |-> g, evs |-> evs, t |-> t]
 Op(op, k, g) == [op |-> op, k |-> k, g |-> g]   \* k: workspace revealed, or kept visible by a conceal
-FocusOp(w, g) == [w |-> w, g |-> g]
 
 InitMru(f) == [k \in Workspaces |->
                  IF k = 1 THEN f ELSE IF WsWins(k) = {} THEN NoWin ELSE CHOOSE w \in WsWins(k) : TRUE]
@@ -88,6 +93,7 @@ Init ==
                hidden   |-> [w \in Win |-> WsOf[w] # 1],   \* WindowServer: in the holding Space
                recorded |-> TRUE,     \* holding Space id published before any hide
                osFocus  |-> f,        \* macOS key window
+               seen     |-> f,        \* Kosmos: the key window macOS last reported
                ne       |-> 0,        \* key changes so far
                shown    |-> 1,        \* WindowServer: workspace of the last executed reveal
                lastCmdT |-> 0,        \* input position of the latest executed command
@@ -97,7 +103,7 @@ Init ==
                bq       |-> <<>>,
                fq       |-> <<>>,
                evs      |-> <<>>,     \* key window changes not yet reported
-               expect   |-> <<>> ]    \* performed focus requests not yet reported
+               expect   |-> <<>> ]    \* focus requests whose echo has not come back
     /\ history = <<>>
 
 Visible == {w \in Win : ~s.hidden[w]}
@@ -129,6 +135,11 @@ StartSwitch(t, k, target) ==
                  !.mru = [mru1 EXCEPT ![k] = target],
                  !.bq = t.bq \o ops \o <<Op("barrier", k, t.sw + 1)>>]
 
+\* A focus request from the main actor (Controller.requestFocus).
+Request(t, w, g) ==
+    IF SkipOnReport /\ w = t.seen THEN t
+    ELSE [t EXCEPT !.fq = Append(@, [w |-> w, g |-> g])]
+
 RunCommand(t, x) ==
     LET t1 == [t EXCEPT !.lastCmdT = x.t]
     IN IF x.ws = t.active THEN t1 ELSE StartSwitch(t1, x.ws, t1.mru[x.ws])
@@ -138,7 +149,7 @@ RunCommand(t, x) ==
 Resume(t, x) ==
     IF x.g # t.sw THEN t
     ELSE IF Coalesce /\ \E n \in 1..Len(t.mq) : t.mq[n].kind = "input" /\ t.mq[n].ws # t.active THEN t
-    ELSE [t EXCEPT !.fq = Append(@, FocusOp(t.focus, t.gen))]
+    ELSE Request(t, t.focus, t.gen)
 
 (***************************************************************************)
 (* Observer reports: echoes and user activations                           *)
@@ -151,7 +162,7 @@ Matches(ev, x) == x.w = ev.w /\ ev.i >= x.i
 
 \* A stale report: focus the current intent again. If a switch is in flight,
 \* this request is dropped while the target is hidden and the resume focuses.
-Reassert(t) == [t EXCEPT !.fq = Append(@, FocusOp(t.focus, t.gen))]
+Reassert(t) == Request(t, t.focus, t.gen)
 
 \* A user activation is adopted. Within the visible workspace it becomes the
 \* focus intent, and is focused again in case a stale request of ours landed
@@ -161,8 +172,7 @@ Adopt(t, ev) ==
     IN IF ev.t < t.lastCmdT THEN Reassert(t)   \* happened before the latest command
        ELSE IF w = NoWin THEN t
        ELSE IF WsOf[w] = t.active
-            THEN [t EXCEPT !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1,
-                           !.fq = Append(@, FocusOp(w, t.gen + 1))]
+            THEN Request([t EXCEPT !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1], w, t.gen + 1)
        ELSE IF ev.hid THEN StartSwitch(t, WsOf[w], w)
        ELSE Reassert(t)   \* visible mid-switch: a re-key, or a click on a window being concealed
 
@@ -170,11 +180,12 @@ RECURSIVE Observe(_, _)
 Observe(t, evs) ==
     IF evs = <<>> THEN t
     ELSE LET ev == Head(evs)
-             ks == {k \in 1..Len(t.expect) : Matches(ev, t.expect[k])}
+             t0 == [t EXCEPT !.seen = ev.w]
+             ks == {k \in 1..Len(t0.expect) : Matches(ev, t0.expect[k])}
              t1 == IF ks # {}
                    THEN LET k == CHOOSE k \in ks : \A j \in ks : k <= j
-                        IN [t EXCEPT !.expect = SubSeq(@, k + 1, Len(@))]
-                   ELSE Adopt(t, ev)
+                        IN [t0 EXCEPT !.expect = SubSeq(@, k + 1, Len(@))]
+                   ELSE Adopt(t0, ev)
          IN Observe(t1, Tail(evs))
 
 \* A hover focus is a command for a window of the shown workspace: reports of user
@@ -183,8 +194,8 @@ Observe(t, evs) ==
 RunHover(t, x) ==
     LET w == x.ws
     IN IF WsOf[w] # t.active THEN t
-       ELSE [t EXCEPT !.lastCmdT = x.t, !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1,
-                      !.fq = Append(@, FocusOp(w, t.gen + 1))]
+       ELSE Request([t EXCEPT !.lastCmdT = x.t, !.focus = w, !.mru[t.active] = w, !.gen = t.gen + 1],
+                    w, t.gen + 1)
 
 RunJob(t, x) ==
     CASE x.kind = "input"  -> RunCommand(t, x)
@@ -210,8 +221,10 @@ ExecBridge ==
                  [] x.op = "barrier" -> [t EXCEPT !.mq = Append(@, Job("resume", 0, x.g, <<>>, 0))]
        /\ UNCHANGED history
 
-\* The focus queue checks the generation before each call. It never names a
-\* hidden window, and skips the call when the target is already key.
+\* The focus queue checks the generation before each call, never names a hidden window,
+\* and skips a request whose window is already key, judged from the real key window
+\* when the request runs. It records the echo it expects just before each call it makes,
+\* so a request it skips leaves no expectation behind.
 ExecFocus ==
     LET x == Head(s.fq)
         t == [s EXCEPT !.fq = Tail(@)]
@@ -319,5 +332,5 @@ TraceView == [history |-> history, active |-> s.active, focus |-> s.focus,
               osFocus |-> s.osFocus, visible |-> Visible, sw |-> s.sw, gen |-> s.gen,
               mq |-> [n \in 1..Len(s.mq) |-> s.mq[n].kind],
               bq |-> [n \in 1..Len(s.bq) |-> s.bq[n].op],
-              fq |-> s.fq, expect |-> s.expect, evs |-> s.evs]
+              fq |-> s.fq, expect |-> s.expect, evs |-> s.evs, seen |-> s.seen]
 =============================================================================

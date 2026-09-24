@@ -4,7 +4,10 @@
 [DESIGN.md](../docs/DESIGN.md), sections 4.3 and 5.4. It models three queues: the main
 actor, the bridge queue that reveals and conceals windows through the holding Space, and
 the focus queue. macOS sits between them: it keys the requested window and reports every
-key window change to the main actor later. The user issues workspace commands, clicks
+key window change to the main actor later, so the main actor knows the key window only
+from reports that lag. It requests every focus; the focus queue checks the real key
+window when it runs a request, skips one whose window is already key, and records the
+echo it expects just before each call. The user issues workspace commands, clicks
 visible windows, uses Command-Tab, and rests the pointer in visible windows for focus
 follows mouse, which Kosmos handles as a command for that window.
 
@@ -25,18 +28,20 @@ Java 11 or newer is required.
 
 | Config | Inputs | Checks | Result | States |
 | --- | --- | --- | --- | --- |
-| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,544 |
-| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 95,984 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 95,984 |
-| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 95,464 |
-| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 156,404 |
-| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 156,404 |
-| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 331,012 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 2,740,410 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 97 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 74 |
+| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 |
+| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 98,785 |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 98,785 |
+| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 98,265 |
+| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 159,788 |
+| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 159,788 |
+| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 3,496,937 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 64 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 54 |
+| `skip-on-report` | commands; main skips the last reported key window | convergence, last command wins | fails, expected | 5,535 |
 
-The three expected failures record trade-offs:
+`skip-on-report` records how Kosmos worked before the focus queue checked the key window
+(change 8 below). The other three expected failures record trade-offs:
 
 - **`mixed` and `conceal-first`.** Revealing first shows windows of both workspaces for
   one bridged operation. Concealing first shows an empty desktop for the same time. Kosmos
@@ -83,3 +88,19 @@ Each change below started as a counterexample from TLC.
 A hover counts as a command because of a counterexample of the same kind as change 1:
 with the hover unstamped, a click made before the hover but reported after it was
 adopted, and focus left the window the pointer rested in.
+
+Two more changes came from TLC after the implementation was checked against the spec:
+
+8. **Skipping on reports.** The main actor skipped a request for the window macOS last
+   reported key. Reports lag: after `workspace 2` then `workspace 1`, the second switch's
+   request for w1 was skipped because the report of w3 had not arrived, and w3 stayed
+   key. Requesting while an echo was due instead recorded an expectation for a request
+   that changed nothing; no report cleared it, and a later click away and back to that
+   window was taken for an echo. Recording no expectation for such a request let it land
+   after a click and be adopted as the user's. The main actor now requests every focus,
+   and the focus queue skips a request whose window is really key when it runs.
+9. **Recording at the call.** With expectations recorded when the main actor requested and
+   forgotten when the queue skipped, the user's click back to a window matched the
+   expectation of a re-request the queue had not run yet, and was taken for an echo. The
+   queue now records each expectation just before its call, so a request it skips leaves
+   nothing to match.
