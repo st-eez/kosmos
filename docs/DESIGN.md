@@ -133,9 +133,9 @@ off the main thread).
 - While locked, the inventory admits and removes no window and runs no sweep, and Kosmos
   writes no frames, runs no hides, requests no focus, ignores focus reports and refuses
   commands. After an unlock, and after a wake while unlocked, the inventory sweeps, and
-  Kosmos reads the main display again, lays the shown workspace out on its area as it is
-  then, conceals and reveals every window again, requests the focus intent and publishes
-  the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
+  Kosmos reads the main display again, writes every tiled window of the shown workspace to
+  its frame on that area whatever the frame ledger holds, conceals and reveals every window
+  again, requests the focus intent and publishes the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
   wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. A wake
   gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
   locks its screen first.

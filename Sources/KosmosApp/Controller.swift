@@ -139,6 +139,10 @@ final class Controller {
         reports.commandExecuted(receivedAt: .now)
         var plan = Session.Plan()
         plan.frames = session.frames(of: session.visible)
+        // macOS can move windows while the session is locked or the displays sleep, and the
+        // ledger would take them for placed: every tiled window of the shown workspace is
+        // written again. Floating windows have no layout frame and stay where they are.
+        for id in plan.frames.keys { ledger.forget(id) }
         plan.show = session.windows(of: session.visible)
         plan.hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
         plan.focus = intent
