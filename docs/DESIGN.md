@@ -175,9 +175,13 @@ off the main thread).
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
-  workspace at their saved position.
-  - If the user restored one from the Dock, Kosmos follows it to that workspace, as it
-    does for Command-Tab.
+  workspace at their saved position, and Kosmos follows them to that workspace, as it does
+  for Command-Tab. For an app that unhides, it follows the window the app keys.
+  - Until then the window is parked: switches neither conceal nor reveal it, and it gets
+    no frame.
+  - A window in native fullscreen moves to a Space of its own, and Accessibility has no
+    notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
+    later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
   - A `summon` command brings a window to the current workspace on purpose.
 
 ### 5.6 Hotkeys and Secure Input

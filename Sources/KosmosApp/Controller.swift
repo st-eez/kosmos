@@ -23,6 +23,10 @@ final class Controller {
     private var owner: [WindowID: pid_t] = [:]
     /// Window ids by most recent focus, newest last.
     private var recent: [WindowID] = []
+    /// The windows each hidden app had tiled or floating, parked until it is unhidden.
+    private var hiddenApps: [pid_t: [WindowID]] = [:]
+    /// Windows parked while they are in native fullscreen.
+    private var fullscreenParked: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
     /// Set after a batch that did not conceal what it should have; the next switch conceals
@@ -45,6 +49,15 @@ final class Controller {
         session = Session(names: names, display: Controller.displayRect(), gaps: gaps)
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
+        inventory.onFullscreenChange = { [weak self] id, entered in self?.fullscreenChanged(id, entered) }
+        let center = NSWorkspace.shared.notificationCenter
+        for (name, hidden) in [(NSWorkspace.didHideApplicationNotification, true), (NSWorkspace.didUnhideApplicationNotification, false)] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                let pid = app.processIdentifier
+                MainActor.assumeIsolated { hidden ? self?.appHidden(pid) : self?.appUnhidden(pid) }
+            }
+        }
     }
 
     /// Runs one command. Returns the exit code and the text for the CLI.
@@ -105,14 +118,59 @@ final class Controller {
             let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
             if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
+            // Already in native fullscreen or hidden with its app, as at launch: it waits
+            // parked for its return, with no frame and no concealing.
+            let hidden = NSRunningApplication(processIdentifier: pid)?.isHidden == true
+            if inventory.fullscreen.contains(id) || hidden {
+                if hidden { hiddenApps[pid, default: []].append(id) } else { fullscreenParked.insert(id) }
+                plan.frames = session.park([id]).frames
+                plan.hide.removeAll { $0 == id }
+            }
             // Reported key before it was managed, as at launch: that report was dropped.
             if inventory.focused == id, session.workspace(of: id) == session.visible { session.adopt(id) }
             execute(plan)
         } else {
             owner[id] = nil
             recent.removeAll { $0 == id }
+            hiddenApps[pid]?.removeAll { $0 == id }
+            fullscreenParked.remove(id)
             ledger.forget(id)
             execute(session.remove(id))
+        }
+    }
+
+    /// A window in native fullscreen is on a Space of its own: parked, Kosmos neither
+    /// conceals it nor writes its frame. When it leaves, it returns to its workspace and
+    /// Kosmos follows it there (DESIGN.md, section 5.5).
+    private func fullscreenChanged(_ id: WindowID, _ entered: Bool) {
+        if entered {
+            guard !session.isParked(id) else { return }
+            fullscreenParked.insert(id)
+            execute(session.park([id]))
+        } else if fullscreenParked.remove(id) != nil {
+            // macOS restores the frame it had; write the tile's frame again all the same.
+            ledger.forget(id)
+            execute(session.unpark([id], follow: id))
+        }
+    }
+
+    /// An app hid its windows: they leave the layout, and switches leave them alone.
+    private func appHidden(_ pid: pid_t) {
+        let windows = owner.filter { $0.value == pid && session.workspace(of: $0.key) != nil && !session.isParked($0.key) }.map(\.key)
+        guard !windows.isEmpty else { return }
+        hiddenApps[pid, default: []] += windows
+        execute(session.park(windows))
+    }
+
+    /// The app is back: its windows return to their places, and Kosmos follows the one the
+    /// app keys, or else its most recently focused one, to its workspace.
+    private func appUnhidden(_ pid: pid_t) {
+        guard let windows = hiddenApps.removeValue(forKey: pid) else { return }
+        Task {
+            let keyed = await inventory.worker(pid)?.focusedWindow()
+            let follow = keyed.flatMap { windows.contains($0) ? $0 : nil }
+                ?? windows.max { (recent.lastIndex(of: $0) ?? -1) < (recent.lastIndex(of: $1) ?? -1) }
+            execute(session.unpark(windows, follow: follow))
         }
     }
 
@@ -121,8 +179,9 @@ final class Controller {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             key = reported
-            // Dialogs and panels are not managed; their focus is theirs.
-            if let id, session.workspace(of: id) == nil { return }
+            // Dialogs and panels are not managed; their focus is theirs. A parked window is
+            // key in its own fullscreen Space, or just before it returns, which follows it.
+            if let id, session.workspace(of: id) == nil || session.isParked(id) { return }
             let verdict = reports.classify(reported, receivedAt: report.received,
                                            onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
                                            wasHidden: id.map(hiding.isConcealed) ?? false)
@@ -141,17 +200,11 @@ final class Controller {
                 execute(session.follow(window))
             }
         case .minimized(let id, true):
-            execute(session.park(id))
+            execute(session.park([id]))
         case .minimized(let id, false):
             // A restored window returns to its own workspace, and Kosmos follows it there
             // (DESIGN.md, section 5.5).
-            var plan = session.unpark(id)
-            if let home = session.workspace(of: id), home != session.visible {
-                let frames = plan.frames
-                plan = session.follow(id)
-                plan.frames.merge(frames) { new, _ in new }
-            }
-            execute(plan)
+            execute(session.unpark([id], follow: id))
         case .framesApplied(let results):
             for result in results {
                 ledger.confirm(result.id, target: result.target, readBack: result.readBack)

@@ -89,23 +89,44 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// Minimized, hidden with its app, or in native fullscreen: out of the layout until it
-    /// returns to its place.
-    public mutating func park(_ window: WindowID) -> Plan {
-        guard let name = home[window], workspaces[name]!.park(window) else { return Plan() }
+    /// Minimized, hidden with their app, or in native fullscreen: out of the layout until
+    /// they return to their places. Parked windows take no part in switches, so Kosmos
+    /// neither conceals nor reveals them, and they get no frames. Focus is left to macOS,
+    /// which keys another window itself; asking for one here would pull the screen out of
+    /// a native fullscreen Space.
+    public mutating func park(_ windows: [WindowID]) -> Plan {
+        var changed: Set<String> = []
+        for window in windows {
+            if let name = home[window], workspaces[name]!.park(window) { changed.insert(name) }
+        }
         var plan = Plan()
-        plan.frames = frames(of: name)
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
         return plan
     }
 
-    /// A parked window returns to its own workspace at its saved position.
-    public mutating func unpark(_ window: WindowID) -> Plan {
-        guard let name = home[window] else { return Plan() }
-        workspaces[name]!.unpark([window], in: display, gaps: gaps)
+    /// Parked windows return to their own workspaces at their saved positions, and Kosmos
+    /// follows `follow` there when its workspace is hidden, as it does for Command-Tab
+    /// (DESIGN.md, section 5.5). The other returning windows of hidden workspaces are
+    /// concealed again.
+    public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
+        let returning = windows.filter { isParked($0) }
+        let changed = Set(returning.map { home[$0]! })
+        for name in changed {
+            workspaces[name]!.unpark(returning.filter { home[$0] == name }, in: display, gaps: gaps)
+        }
         var plan = Plan()
-        plan.frames = frames(of: name)
-        if name != visible { plan.hide = [window] }
+        if let follow, returning.contains(follow), let name = home[follow] {
+            workspaces[name]!.focus(follow)
+            if name != visible { plan = show(name) }
+        }
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        plan.hide += returning.filter { home[$0] != visible && !plan.hide.contains($0) }
         return plan
+    }
+
+    public func isParked(_ window: WindowID) -> Bool {
+        guard let name = home[window] else { return false }
+        return workspaces[name]!.parked.contains { $0.window == window }
     }
 
     /// Records a size the window would not go below, from a frame read back after a

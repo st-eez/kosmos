@@ -142,8 +142,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func parkedWindowsLeaveTheLayoutAndReturn() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    #expect(s.park(2).frames == [1: display])
-    #expect(s.unpark(2).frames.count == 2)
+    #expect(s.park([2]).frames == [1: display])
+    #expect(s.unpark([2], follow: 2).frames.count == 2)
 }
 
 @Test func treeCommandsActOnTheFocusedWindow() {
@@ -217,7 +217,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func minimizedWindowCannotBeMovedIntoATile() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    _ = s.park(2)
+    _ = s.park([2])
     #expect(s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 2)) == nil)
     #expect(s.workspace(of: 2) == "1")
 }
@@ -259,4 +259,75 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(7, to: "3")
     _ = s.perform(.workspace(.named("3")))
     #expect(s.focused == 7)
+}
+
+// MARK: Returning windows (DESIGN.md, section 5.5)
+
+@Test func aReturningWindowTakesKosmosToItsWorkspace() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.park([1])   // minimized on workspace 1
+    _ = s.perform(.workspace(.named("2")))
+    _ = s.add(2)
+    let plan = s.unpark([1], follow: 1)
+    #expect(s.visible == "1")
+    #expect(plan.show == [1])
+    #expect(plan.hide == [2])
+    #expect(plan.focus == .window(1))
+    #expect(plan.frames[1] == display)
+}
+
+@Test func followingAWindowOfTheShownWorkspaceSwitchesNothing() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(1)
+    _ = s.park([2])
+    let plan = s.unpark([2], follow: 2)
+    #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
+    #expect(plan.frames.count == 2)
+    #expect(s.focused == 2)
+}
+
+@Test func aReturningWindowNotFollowedIsConcealedAgain() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.park([1])
+    _ = s.perform(.workspace(.named("2")))
+    let plan = s.unpark([1], follow: nil)
+    #expect(s.visible == "2")
+    #expect(plan.hide == [1])
+    #expect(plan.show.isEmpty)
+}
+
+@Test func anAppsWindowsParkAndReturnTogether() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(3)
+    let before = s.frames(of: "1")
+    #expect(s.park([1, 3]).frames == [2: display])
+    #expect(s.isParked(1) && s.isParked(3) && !s.isParked(2))
+    #expect(s.unpark([3, 1], follow: nil).frames == before)
+    #expect(!s.isParked(1) && !s.isParked(3))
+    #expect(s.unpark([9], follow: 9).isEmpty)
+}
+
+@Test func parkedWindowsSitOutSwitches() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    _ = s.park([1])
+    #expect(s.perform(.workspace(.named("2")))?.hide == [2])
+    #expect(s.perform(.workspace(.named("1")))?.show == [2])
+    #expect(s.unpark([1], follow: nil).hide.isEmpty)
+}
+
+@Test func anAppsWindowsOnOtherHiddenWorkspacesStayConcealed() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(3, to: "3")
+    _ = s.park([1, 3])
+    _ = s.perform(.workspace(.named("2")))
+    _ = s.add(2)
+    let plan = s.unpark([1, 3], follow: 1)
+    #expect(s.visible == "1")
+    #expect(plan.show == [1])
+    #expect(Set(plan.hide) == [2, 3])
 }
