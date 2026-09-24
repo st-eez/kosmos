@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hiding: Hiding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
+        // and quits Kosmos with exit 0 once startup is done. Killed by the signal, Kosmos
+        // would count as crashed, and launch at login would restart it.
+        handleTerminationSignals()
         do {
             // The lock keeps a second Kosmos out and serializes recovery with the guardian,
             // which holds it for up to about a second after a crash.
@@ -35,8 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 acquired = try FileLock(KosmosFiles.lock)
             }
             guard let lock = acquired else {
-                log.error("another Kosmos is running")
-                exit(1)
+                // launchd restarts the login agent after a failed start, which suits a lock the
+                // guardian still holds. While another Kosmos runs, this one exits successfully,
+                // so launchd leaves the agent stopped. The guardian has no bundle identifier.
+                let running = NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.st-eez.kosmos")
+                    .contains { $0 != NSRunningApplication.current }
+                log.error("\(running ? "another Kosmos is running" : "the instance lock is still held", privacy: .public)")
+                exit(running ? 0 : 1)
             }
             instanceLock = lock
             let record = try RecordFile(url: KosmosFiles.record)
@@ -47,7 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.error("\(error.localizedDescription, privacy: .public)")
             exit(1)
         }
-        handleTerminationSignals()
         guardian.start()
         startServer()
 

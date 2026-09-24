@@ -46,10 +46,13 @@ With Xcode 27:
 swift build                 # debug build of every target
 swift test                  # unit tests
 ./script/bundle.sh          # .build/dist/Kosmos.app and .build/dist/bin/kosmos
+./script/install.sh         # /Applications/Kosmos.app and ~/.local/bin/kosmos
 ```
 
 `script/bundle.sh` signs with your first Apple Development certificate, or the identity in
 `KOSMOS_SIGN_IDENTITY`. Keep using the same one: macOS ties the Accessibility grant to it.
+[docs/INSTALL.md](docs/INSTALL.md) covers installing, launch at login, switching from
+AeroSpace and rolling back.
 
 ## What works
 
