@@ -113,11 +113,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if setup.workspaces != controller.workspaceNames {
             log.notice("the workspace list changed; it takes effect when Kosmos restarts")
         }
-        let hotkeys = self.hotkeys ?? Hotkeys { [weak self] binding in
+        let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: logHotkeyProblems) { [weak self] binding in
             _ = self?.respond(to: binding.arguments, received: .now)
         }
         self.hotkeys = hotkeys
-        for problem in hotkeys.load(config.modes) { log.error("hotkey: \(problem.description, privacy: .public)") }
+        logHotkeyProblems(hotkeys.load(config.modes))
         log.notice("config loaded: profile \(setup.profile ?? "base", privacy: .public), \(setup.workspaces.count) workspaces")
         return problems
     }
@@ -160,4 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inventory.startAccessibility()
         log.notice("started, \(managing ? "managing windows" : "observing only: AeroSpace is running", privacy: .public)")
     }
+}
+
+private func logHotkeyProblems(_ problems: [Hotkeys.Problem]) {
+    for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
 }

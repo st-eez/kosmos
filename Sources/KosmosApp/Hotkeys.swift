@@ -33,15 +33,16 @@ final class Hotkeys {
     /// The active mode's bindings on the current layout. A pressed key's command comes from
     /// here, so a key two modes share stays registered across a switch.
     private var table = HotkeyTable([], layout: [:])
-    private var registered: [PhysicalKey: (id: UInt32, ref: EventHotKeyRef)] = [:]
-    private var keysByID: [UInt32: PhysicalKey] = [:]
-    private var lastID: UInt32 = 0
+    private var registered: [PhysicalKey: EventHotKeyRef] = [:]
     private let handler: @MainActor (Binding) -> Void
+    private let layoutProblems: @MainActor ([Problem]) -> Void
 
     /// Installs the Carbon event handler, which keeps this object alive for the process.
-    /// Create one.
-    init(handler: @escaping @MainActor (Binding) -> Void) {
+    /// Create one. `layoutProblems` receives the problems after a keyboard layout change,
+    /// found the way `load` finds them.
+    init(layoutProblems: @escaping @MainActor ([Problem]) -> Void, handler: @escaping @MainActor (Binding) -> Void) {
         self.handler = handler
+        self.layoutProblems = layoutProblems
         layout = Self.currentLayout()
         var pressedEvent = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
@@ -52,8 +53,8 @@ final class Hotkeys {
                   id.signature == signature
             else { return OSStatus(eventNotHandledErr) }
             let hotkeys = Unmanaged<Hotkeys>.fromOpaque(context).takeUnretainedValue()
-            let number = id.id
-            MainActor.assumeIsolated { hotkeys.pressed(number) }
+            let key = PhysicalKey(hotkeyID: id.id)
+            MainActor.assumeIsolated { hotkeys.pressed(key) }
             return noErr
         }, 1, &pressedEvent, Unmanaged.passRetained(self).toOpaque(), nil)
         if status != noErr { hotkeysLog.error("InstallEventHandler failed: \(status)") }
@@ -67,7 +68,6 @@ final class Hotkeys {
     /// Replaces every mode's bindings, as after a config load, and activates mode main. The
     /// problems are bindings macOS also uses as keyboard shortcuts, in any mode, and main's
     /// bindings that could not be registered.
-    @discardableResult
     func load(_ modes: [String: [Binding]]) -> [Problem] {
         self.modes = modes
         mode = "main"
@@ -76,7 +76,6 @@ final class Hotkeys {
 
     /// Activates a mode. Only the keys the two modes do not share are unregistered and
     /// registered. The problems are the mode's bindings that could not be registered.
-    @discardableResult
     func switchMode(to name: String) -> [Problem] {
         guard name == "main" || modes[name] != nil else {
             return [Problem(mode: name, key: "", message: "no mode has this name")]
@@ -114,26 +113,23 @@ final class Hotkeys {
     }
 
     private func register(_ key: PhysicalKey) -> OSStatus {
-        lastID += 1
         var ref: EventHotKeyRef?
-        let status = RegisterEventHotKey(UInt32(key.code), carbonModifiers(key.modifiers),
-                                         EventHotKeyID(signature: signature, id: lastID), GetEventDispatcherTarget(),
-                                         OptionBits(kEventHotKeyExclusive), &ref)
+        let status = RegisterEventHotKey(UInt32(key.code), carbonModifiers(key.modifiers), key.hotkeyID,
+                                         GetEventDispatcherTarget(), OptionBits(kEventHotKeyExclusive), &ref)
         guard status == noErr, let ref else { return status }
-        registered[key] = (lastID, ref)
-        keysByID[lastID] = key
+        registered[key] = ref
         return noErr
     }
 
     private func unregister(_ key: PhysicalKey) {
-        guard let registration = registered.removeValue(forKey: key) else { return }
-        keysByID[registration.id] = nil
-        UnregisterEventHotKey(registration.ref)
+        guard let ref = registered.removeValue(forKey: key) else { return }
+        UnregisterEventHotKey(ref)
     }
 
-    private func pressed(_ id: UInt32) {
-        // A press queued before its key was unregistered finds no key and is dropped.
-        guard let key = keysByID[id], let binding = table.bindings[key] else { return }
+    private func pressed(_ key: PhysicalKey) {
+        // A press queued before a mode switch or unregisterAll took its key out of the table
+        // is dropped.
+        guard let binding = table.bindings[key] else { return }
         handler(binding)
     }
 
@@ -174,7 +170,7 @@ final class Hotkeys {
         let current = Self.currentLayout()
         guard current != layout else { return }
         layout = current
-        for problem in apply() { hotkeysLog.error("\(problem.description, privacy: .public)") }
+        layoutProblems(systemShortcutProblems() + apply())
     }
 
     /// The key code of each character the current ASCII capable layout types without
@@ -200,6 +196,18 @@ final class Hotkeys {
             }
             return layout
         }
+    }
+}
+
+extension PhysicalKey {
+    /// The id Carbon hands back with a press. It holds the key code and the modifiers, so a
+    /// press names its key.
+    var hotkeyID: EventHotKeyID {
+        EventHotKeyID(signature: signature, id: UInt32(code) << 8 | UInt32(modifiers.rawValue))
+    }
+
+    init(hotkeyID id: UInt32) {
+        self.init(code: UInt16(truncatingIfNeeded: id >> 8), modifiers: KeyCombo.Modifiers(rawValue: UInt8(truncatingIfNeeded: id)))
     }
 }
 
