@@ -13,8 +13,11 @@ struct Workspace: Sendable {
     var fullscreenWindow: WindowID?
     /// Oldest first.
     var parked: [Parked] = []
-    /// Where a window that left the tree to float or park returns to.
-    var hints: [WindowID: RestoreHint] = [:]
+    /// Where each window that left the tree to float or park returns to, oldest first.
+    var hints: [RestoreHint] = []
+    /// Counts changes to the tree other than windows leaving, and returning with a fresh
+    /// hint. A hint is fresh when no change came after it.
+    var edits = 0
     /// The clock value of each window's latest focus. Parked windows keep theirs.
     var stamps: [WindowID: UInt64] = [:]
     var clock: UInt64 = 0
@@ -31,20 +34,27 @@ struct Parked: Sendable {
     let floating: Bool
 }
 
-/// Where a window stood in the tree when it left: its container, its index and share
-/// there, and the container's orientation.
+/// Where a window stood in the tree when it left, recorded as the windows it stood among,
+/// which outlive the containers around them.
+///
+/// A hint is taken from the tree with every window that has a fresh hint put back, so a
+/// window that left earlier still counts as a sibling. Windows that leave and return with
+/// no other change to the tree in between come back to the same places and sizes in any
+/// order.
 struct RestoreHint: Sendable {
-    let container: Int
-    let index: Int
-    let fraction: Double
-    let orientation: Orientation
-    /// The sibling before the window, or after it when the window came first.
-    let neighbor: NodeRef?
-}
+    struct Level: Sendable {
+        let orientation: Orientation
+        /// The windows under each child of the container, with the child's share.
+        let slots: [(windows: Set<WindowID>, weight: Double)]
+        /// The child that holds the window.
+        let index: Int
+    }
 
-enum NodeRef: Sendable {
-    case window(WindowID)
-    case container(Int)
+    let window: WindowID
+    /// The window's container first, then each ancestor up to the root.
+    let levels: [Level]
+    /// `Workspace.edits` when the hint was taken.
+    let edits: Int
 }
 
 extension Workspace {
@@ -74,6 +84,7 @@ extension Workspace {
         precondition(!contains(window), "window \(window) is already in the workspace")
         insertAfterMostRecent(window)
         normalize()
+        edits += 1
         check()
     }
 
@@ -82,6 +93,7 @@ extension Workspace {
     mutating func remove(_ window: WindowID) -> Bool {
         if let path = root.path(to: window) {
             root[path.dropLast()].children.remove(at: path.last!)
+            edits += 1
         } else if let index = floating.firstIndex(of: window) {
             floating.remove(at: index)
         } else if let index = parked.firstIndex(where: { $0.window == window }) {
@@ -89,7 +101,7 @@ extension Workspace {
         } else {
             return false
         }
-        hints[window] = nil
+        hints.removeAll { $0.window == window }
         stamps[window] = nil
         if fullscreenWindow == window { fullscreenWindow = nil }
         normalize()
@@ -187,10 +199,13 @@ extension Workspace {
         if let fullscreenWindow, root.path(to: fullscreenWindow) == nil {
             problems.append("fullscreen window \(fullscreenWindow) is not tiled")
         }
-        for window in hints.keys where places[window] == nil || root.path(to: window) != nil {
+        for window in hints.map(\.window) where places[window] == nil || root.path(to: window) != nil {
             problems.append("window \(window) has a restore hint but is tiled or unknown")
         }
-        for entry in parked where !entry.floating && hints[entry.window] == nil {
+        for window in Set(hints.map(\.window)) where hints.count(where: { $0.window == window }) > 1 {
+            problems.append("window \(window) has more than one restore hint")
+        }
+        for entry in parked where !entry.floating && !hints.contains(where: { $0.window == entry.window }) {
             problems.append("parked window \(entry.window) has no restore hint")
         }
         for window in stamps.keys where places[window] == nil {
@@ -267,65 +282,109 @@ extension Workspace {
         root[path.dropLast()].insert(.window(window), at: path.last! + 1)
     }
 
-    /// Takes a tiled window out of the tree and records where it stood.
+    /// Takes a tiled window out of the tree and records where it stood. Its space goes to
+    /// the children of its container that hold its nearest recorded siblings, so the
+    /// windows it shared space with take it back, and give it back when it returns.
     mutating func detach(_ window: WindowID) {
+        let hint = hint(for: window)
+        hints.append(hint)
         let path = root.path(to: window)!
-        let parentPath = path.dropLast(), index = path.last!
-        let parent = root[parentPath]
-        let neighborIndex = index > 0 ? index - 1 : index + 1
-        var neighbor: NodeRef?
-        if parent.children.indices.contains(neighborIndex) {
-            switch parent.children[neighborIndex].kind {
-            case .window(let id): neighbor = .window(id)
-            case .container(let container): neighbor = .container(container.id)
+        let parent = path.dropLast(), index = path.last!
+        let tiled = Set(root.windows).subtracting([window])
+        if let level = hint.levels.first(where: { !present($0, tiled).isEmpty }) {
+            let siblings = present(level, tiled).reduce(into: Set<WindowID>()) { $0.formUnion(level.slots[$1].windows) }
+            let holders = root[parent].children.indices.filter { $0 != index && !siblings.isDisjoint(with: root[parent].children[$0].windows) }
+            let held = holders.reduce(0) { $0 + root[parent].children[$1].weight }
+            let space = root[parent].children[index].weight
+            for holder in holders {
+                root[parent].children[holder].weight *= (held + space) / held
             }
         }
-        hints[window] = RestoreHint(
-            container: parent.id,
-            index: index,
-            fraction: parent.children[index].weight,
-            orientation: parent.orientation,
-            neighbor: neighbor
-        )
-        root[parentPath].children.remove(at: index)
+        root[parent].children.remove(at: index)
         if fullscreenWindow == window { fullscreenWindow = nil }
     }
 
-    /// Puts a window back where its hint says. If its old container still exists, the
-    /// window returns there at its old index and share. If the container collapsed into
-    /// the old neighbor, the neighbor is wrapped in a new container with the old
-    /// orientation, which rebuilds the old container. Without either, the window goes
-    /// after the most recently focused tiled window.
+    /// Puts a window back where its hint says, or after the most recently focused tiled
+    /// window if it has none. Returning with a stale hint, or none, changes the tree like
+    /// an insert.
     mutating func restore(_ window: WindowID) {
-        guard let hint = hints.removeValue(forKey: window) else {
+        guard let index = hints.firstIndex(where: { $0.window == window }) else {
             insertAfterMostRecent(window)
+            edits += 1
             return
         }
-        if let path = root.path(toContainer: hint.container) {
-            let count = root[path[...]].children.count
-            root[path[...]].insert(.window(window), at: min(hint.index, count), fraction: hint.fraction)
+        let hint = hints.remove(at: index)
+        place(hint)
+        if hint.edits != edits { edits += 1 }
+    }
+
+    /// Where the window stands in the tree with every window that has a fresh hint put
+    /// back, newest first, so a window that left earlier still counts as a sibling. Hints
+    /// taken in any order then agree on where each window goes. A stale hint no longer
+    /// matches the tree around it, so it only places its own window.
+    private func hint(for window: WindowID) -> RestoreHint {
+        var whole = self
+        for hint in hints.reversed() where hint.edits == edits {
+            whole.place(hint)
+            whole.normalize()
+        }
+        var path = whole.root.path(to: window)!
+        var levels: [RestoreHint.Level] = []
+        while let index = path.popLast() {
+            let container = whole.root[path[...]]
+            let slots = container.children.map { (windows: Set($0.windows), weight: $0.weight) }
+            levels.append(RestoreHint.Level(orientation: container.orientation, slots: slots, index: index))
+        }
+        return RestoreHint(window: window, levels: levels, edits: edits)
+    }
+
+    /// The slots of `level`, other than the window's own, with windows in `tiled`.
+    private func present(_ level: RestoreHint.Level, _ tiled: Set<WindowID>) -> [Int] {
+        level.slots.indices.filter { $0 != level.index && !level.slots[$0].windows.isDisjoint(with: tiled) }
+    }
+
+    /// Puts the window at the lowest level of its hint where some of its old siblings are
+    /// tiled, or after the most recently focused tiled window when none are.
+    private mutating func place(_ hint: RestoreHint) {
+        let tiled = Set(root.windows)
+        guard let level = hint.levels.first(where: { !present($0, tiled).isEmpty }) else {
+            insertAfterMostRecent(hint.window)
             return
         }
-        let found: [Int]? = switch hint.neighbor {
-            case .window(let id): root.path(to: id)
-            case .container(let id): root.path(toContainer: id)
-            case nil: nil
+        let present = present(level, tiled)
+        let paths = present.flatMap { level.slots[$0].windows.intersection(tiled).map { root.path(to: $0)! } }
+        // The lowest container holding the siblings' windows, and its children that do.
+        var depth = 0
+        while paths.allSatisfy({ $0.count > depth + 1 && $0[depth] == paths[0][depth] }) {
+            depth += 1
         }
-        guard var path = found else {
-            insertAfterMostRecent(window)
-            return
+        let parent = paths[0].prefix(depth), container = root[parent]
+        let holders = Set(paths.map { $0[depth] })
+        let share = level.slots[level.index].weight / present.reduce(0) { $0 + level.slots[$1].weight }
+        let earlier = present.last { $0 < level.index }
+
+        if container.orientation == level.orientation {
+            // Beside the nearest earlier sibling, else before the nearest later one, with
+            // its share of the space the siblings hold.
+            func children(_ slot: Int) -> [Int] {
+                level.slots[slot].windows.intersection(tiled).map { root.path(to: $0)![depth] }
+            }
+            let index = earlier.map { children($0).max()! + 1 } ?? children(present.first { $0 > level.index }!).min()!
+            let held = holders.reduce(0) { $0 + container.children[$1].weight }
+            for holder in holders {
+                root[parent].children[holder].weight /= 1 + share
+            }
+            root[parent].children.insert(Node(kind: .window(hint.window), weight: held * share / (1 + share)), at: index)
+        } else {
+            // The old container collapsed into the siblings: rebuild it around them.
+            let run = holders.min()!...holders.max()!
+            let siblings = run.count == 1 ? container.children[run.lowerBound].kind
+                : .container(makeContainer(container.orientation, Array(container.children[run])))
+            var nodes = [Node(kind: siblings, weight: 1)]
+            nodes.insert(Node(kind: .window(hint.window), weight: share), at: earlier == nil ? 0 : 1)
+            let rebuilt = makeContainer(level.orientation, nodes)
+            let space = container.children[run].reduce(0) { $0 + $1.weight }
+            root[parent].children.replaceSubrange(run, with: [Node(kind: .container(rebuilt), weight: space)])
         }
-        if path.isEmpty {
-            wrapRoot(hint.orientation)
-            path = [0]
-        } else if root[path.dropLast()].orientation != hint.orientation {
-            let parent = path.dropLast(), index = path.last!
-            let wrapper = makeContainer(hint.orientation, [Node(kind: root[parent].children[index].kind, weight: 1)])
-            root[parent].children[index].kind = .container(wrapper)
-            path.append(0)
-        }
-        // A window with an index past 0 came after its neighbor.
-        let index = path.last! + (hint.index > 0 ? 1 : 0)
-        root[path.dropLast()].insert(.window(window), at: index, fraction: hint.fraction)
     }
 }

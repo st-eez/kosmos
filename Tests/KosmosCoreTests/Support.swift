@@ -52,16 +52,33 @@ extension Workspace {
 
     /// Everything a failed operation must leave alone, with weights at full precision.
     var detailed: String {
-        func describe(_ container: Container) -> String {
-            let items = container.children.map { child in
-                switch child.kind {
-                case .window(let id): "\(id):\(child.weight)"
-                case .container(let nested): "\(describe(nested)):\(child.weight)"
+        "\(describe(root) { "\($0)" }) floating \(floating) parked \(parked.map(\.window)) fullscreen \(fullscreenWindow ?? 0)"
+    }
+
+    /// Whether the trees have the same shape and windows, with weights within a billionth.
+    func sameTree(as other: Workspace) -> Bool {
+        func same(_ a: Container, _ b: Container) -> Bool {
+            a.orientation == b.orientation && a.children.count == b.children.count
+                && zip(a.children, b.children).allSatisfy { x, y in
+                    guard abs(x.weight - y.weight) < 1e-9 else { return false }
+                    switch (x.kind, y.kind) {
+                    case (.window(let p), .window(let q)): return p == q
+                    case (.container(let p), .container(let q)): return same(p, q)
+                    default: return false
+                    }
                 }
-            }
-            return (container.orientation == .horizontal ? "h[" : "v[") + items.joined(separator: " ") + "]"
         }
-        return "\(describe(root)) floating \(floating) parked \(parked.map(\.window)) fullscreen \(fullscreenWindow ?? 0)"
+        return same(root, other.root)
+    }
+
+    private func describe(_ container: Container, _ weight: (Double) -> String) -> String {
+        let items = container.children.map { child in
+            switch child.kind {
+            case .window(let id): "\(id):\(weight(child.weight))"
+            case .container(let nested): "\(describe(nested, weight)):\(weight(child.weight))"
+            }
+        }
+        return (container.orientation == .horizontal ? "h[" : "v[") + items.joined(separator: " ") + "]"
     }
 
     /// The weights of the root's children, rounded to thousandths.
@@ -85,5 +102,14 @@ struct SplitMix64: RandomNumberGenerator {
         z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
         z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
         return z ^ (z >> 31)
+    }
+}
+
+func permutations<T>(_ items: [T]) -> [[T]] {
+    guard items.count > 1 else { return [items] }
+    return items.indices.flatMap { index in
+        var rest = items
+        let first = rest.remove(at: index)
+        return permutations(rest).map { [first] + $0 }
     }
 }

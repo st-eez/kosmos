@@ -24,7 +24,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         let known = workspace.root.windows + workspace.floating + workspace.parked.map(\.window)
         let window = known.randomElement(using: &random) ?? 0
         let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
-        switch Int.random(in: 0..<32, using: &random) {
+        switch Int.random(in: 0..<34, using: &random) {
         case 0..<6:
             if known.count < 12 {
                 workspace.insert(nextWindow)
@@ -58,7 +58,21 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
             attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps) }
         case 29: attempt { $0.toggleFullscreen(window) }
         case 30: workspace.balanceSizes()
-        default: workspace.flattenWorkspaceTree()
+        case 31: workspace.flattenWorkspaceTree()
+        default:
+            // Whatever the history, and with stale hints around, windows that leave and
+            // come back in any order change nothing.
+            let tiled = workspace.root.windows
+            guard !tiled.isEmpty, workspace.fullscreenWindow == nil else { break }
+            let before = workspace
+            let leaving = tiled.shuffled(using: &random).prefix(Int.random(in: 1...min(3, tiled.count), using: &random))
+            for window in leaving {
+                if Bool.random(using: &random) { workspace.park(window) } else { workspace.float(window) }
+            }
+            for window in leaving.shuffled(using: &random) {
+                if workspace.floating.contains(window) { workspace.tile(window) } else { workspace.unpark([window]) }
+            }
+            #expect(workspace.sameTree(as: before), "seed \(seed)")
         }
 
         #expect(workspace.validate().isEmpty, "seed \(seed)")
@@ -73,5 +87,46 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
                 #expect(overlap.isNull || overlap.width * overlap.height == 0, "seed \(seed)")
             }
         }
+    }
+}
+
+/// Shapes random trees, then parks or floats a random set of windows in random order and
+/// returns them one at a time in another random order. The tree and every share come back.
+@Test(arguments: 1...20 as ClosedRange<UInt64>)
+func leavingAndReturningInAnyOrderRestoresTheTree(seed: UInt64) {
+    var random = SplitMix64(state: seed)
+    var workspace = Workspace()
+    var nextWindow: WindowID = 1
+    for _ in 0..<40 {
+        for _ in 0..<12 {
+            let tiled = workspace.root.windows
+            let window = tiled.randomElement(using: &random) ?? 0
+            let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
+            switch Int.random(in: 0..<7, using: &random) {
+            case 0, 1:
+                if tiled.count < 10 {
+                    workspace.insert(nextWindow)
+                    nextWindow += 1
+                }
+            case 2: workspace.move(window, direction)
+            case 3: workspace.joinWith(window, direction)
+            case 4: workspace.toggleLayout(window)
+            case 5: workspace.focus(window)
+            default:
+                let amount = CGFloat(Int.random(in: -200...200, using: &random))
+                workspace.resize(window, .smart, by: amount, in: screen, gaps: Gaps())
+            }
+        }
+        let before = workspace
+        let tiled = workspace.root.windows
+        guard !tiled.isEmpty else { continue }
+        let leaving = tiled.shuffled(using: &random).prefix(Int.random(in: 1...tiled.count, using: &random))
+        for window in leaving {
+            if Bool.random(using: &random) { workspace.park(window) } else { workspace.float(window) }
+        }
+        for window in leaving.shuffled(using: &random) {
+            if workspace.floating.contains(window) { workspace.tile(window) } else { workspace.unpark([window]) }
+        }
+        #expect(workspace.sameTree(as: before), "seed \(seed)")
     }
 }

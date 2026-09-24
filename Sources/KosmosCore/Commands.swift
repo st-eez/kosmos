@@ -30,6 +30,7 @@ extension Workspace {
         let path = root.path(to: window)!, otherPath = root.path(to: other)!
         root[path.dropLast()].children[path.last!].kind = .window(other)
         root[otherPath.dropLast()].children[otherPath.last!].kind = .window(window)
+        edits += 1
         check()
         return true
     }
@@ -46,6 +47,7 @@ extension Workspace {
         // A lone window has nowhere to go. Wrapping the root would only flip its orientation.
         guard root.path(to: window) != nil, root.children.count > 1, moveTiled(window, direction) else { return false }
         normalize()
+        edits += 1
         check()
         return true
     }
@@ -71,6 +73,7 @@ extension Workspace {
         let joinedPath = root.path(toContainer: joined.id)![...]
         root[joinedPath].insert(.window(window), at: direction.isForward ? 0 : root[joinedPath].children.count)
         normalize()
+        edits += 1
         check()
         return true
     }
@@ -83,6 +86,7 @@ extension Workspace {
         guard let path = root.path(to: window), root[path.dropLast()].orientation != orientation else { return false }
         root[path.dropLast()].orientation = orientation
         normalize()
+        edits += 1
         check()
         return true
     }
@@ -131,6 +135,7 @@ extension Workspace {
             root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
         }
         normalize()
+        edits += 1
         check()
         return true
     }
@@ -138,6 +143,7 @@ extension Workspace {
     /// Gives every child of every container an equal share.
     mutating func balanceSizes() {
         root.balance()
+        edits += 1
         check()
     }
 
@@ -146,6 +152,7 @@ extension Workspace {
     mutating func flattenWorkspaceTree() {
         let windows = root.windows
         root.children = windows.map { Node(kind: .window($0), weight: 1 / Double(windows.count)) }
+        edits += 1
         check()
     }
 }

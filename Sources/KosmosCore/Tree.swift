@@ -37,6 +37,16 @@ struct Container: Sendable {
     var children: [Node]
 }
 
+extension Node {
+    /// The windows in depth first order.
+    var windows: [WindowID] {
+        switch kind {
+        case .window(let id): [id]
+        case .container(let container): container.windows
+        }
+    }
+}
+
 extension Container: CustomStringConvertible {
     /// The arrangement without weights, for example `h[1 v[2 3]]`.
     var description: String {
@@ -97,27 +107,11 @@ extension Container {
     }
 
     /// The windows in depth first order.
-    var windows: [WindowID] {
-        children.flatMap { child in
-            switch child.kind {
-            case .window(let id): [id]
-            case .container(let container): container.windows
-            }
-        }
-    }
+    var windows: [WindowID] { children.flatMap(\.windows) }
 
-    /// Inserts a child that takes `fraction` of this container once weights are normalized,
-    /// or the mean share of its siblings when `fraction` is nil or not between 0 and 1.
-    mutating func insert(_ kind: Node.Kind, at index: Int, fraction: Double? = nil) {
-        let total = children.reduce(0) { $0 + $1.weight }
-        let weight: Double
-        if children.isEmpty {
-            weight = 1
-        } else if let fraction, fraction > 0, fraction < 1 {
-            weight = total * fraction / (1 - fraction)
-        } else {
-            weight = total / Double(children.count)
-        }
+    /// Inserts a child with the mean share of its siblings.
+    mutating func insert(_ kind: Node.Kind, at index: Int) {
+        let weight = children.isEmpty ? 1 : children.reduce(0) { $0 + $1.weight } / Double(children.count)
         children.insert(Node(kind: kind, weight: weight), at: index)
     }
 

@@ -46,22 +46,109 @@ func unparkRebuildsCollapsedContainer(window: WindowID) {
     #expect(workspace.shares(around: 2) == [0.333, 0.667])
 }
 
-@Test func unparkClampsIndexInChangedContainer() {
+@Test func unparkAfterSiblingClosed() {
     var workspace = Workspace("h[1 2 3]")
     workspace.park(3)
     workspace.remove(2)
     workspace.unpark([3])
     #expect(workspace.tree == "h[1 3]")
-    #expect(workspace.shares == [0.667, 0.333])
+    #expect(workspace.shares == [0.5, 0.5])
+}
+
+@Test func unparkClimbsWhenEverySiblingIsGone() {
+    var workspace = Workspace("h[1:1 v[2 3]:2 4:1]")
+    workspace.park(3)
+    workspace.remove(2)
+    workspace.unpark([3])
+    #expect(workspace.tree == "h[1 3 4]")
+    #expect(workspace.shares == [0.25, 0.5, 0.25])
 }
 
 @Test func unparkFallsBackToFocusedWindow() {
-    var workspace = Workspace("h[1 v[2 3] 4]")
-    workspace.park(3)
-    workspace.remove(2)
-    workspace.focus(1)
-    workspace.unpark([3])
+    var workspace = Workspace("h[1 2]")
+    workspace.park(2)
+    workspace.remove(1)
+    workspace.insert(3)
+    workspace.insert(4)
+    workspace.focus(3)
+    workspace.unpark([2])
+    #expect(workspace.tree == "h[3 2 4]")
+}
+
+@Test func unparkInParkingOrderRestoresTheTree() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    var workspace = Workspace("h[1 2 3]")
+    workspace.park(1)
+    workspace.park(2)
+    workspace.unpark([1])
+    #expect(workspace.tree == "h[1 3]")
+    #expect(workspace.frames(in: display, gaps: Gaps())[1]!.width == 864)
+    workspace.unpark([2])
+    #expect(workspace.tree == "h[1 2 3]")
+    let frames = workspace.frames(in: display, gaps: Gaps())
+    #expect([1, 2, 3].map { frames[$0]!.width } == [576, 576, 576])
+}
+
+@Test func repeatedParkingDoesNotDrift() {
+    var workspace = Workspace("h[1 2 3]")
+    let original = workspace
+    for _ in 0..<50 {
+        workspace.park(1)
+        workspace.park(2)
+        workspace.unpark([1])
+        workspace.unpark([2])
+    }
+    #expect(workspace.sameTree(as: original), "\(workspace.detailed)")
+}
+
+/// Every order of parking three windows, each followed by every order of unparking them
+/// one at a time, gives back the same tree and sizes.
+@Test(arguments: permutations([2, 4, 5]), permutations([2, 4, 5]))
+func unparkInAnyOrderRestoresTheTree(parking: [WindowID], unparking: [WindowID]) {
+    var workspace = Workspace("h[1:2 v[2 h[3 4:3]]:3 5:1]")
+    let original = workspace
+    for window in parking {
+        workspace.park(window)
+    }
+    for window in unparking {
+        workspace.unpark([window])
+    }
+    #expect(workspace.sameTree(as: original), "\(workspace.detailed)")
+}
+
+@Test func staleHintDoesNotSkewLaterReturns() {
+    var workspace = Workspace("h[1 2]")
+    workspace.float(2)
+    workspace.insert(3)
+    let before = workspace
+    for _ in 0..<10 {
+        workspace.park(1)
+        workspace.unpark([1])
+    }
+    #expect(workspace.sameTree(as: before), "\(workspace.detailed)")
+    workspace.tile(2)
+    #expect(workspace.tree == "h[1 2 3]")
+    #expect(workspace.shares == [0.25, 0.25, 0.5])
+}
+
+@Test func unparkRebuildsContainerBelowRoot() {
+    var workspace = Workspace("h[1 v[2:1 h[3 4]:3]]")
+    workspace.park(2)
     #expect(workspace.tree == "h[1 3 4]")
+    workspace.unpark([2])
+    #expect(workspace.tree == "h[1 v[2 h[3 4]]]")
+    #expect(workspace.shares == [0.5, 0.5])
+    #expect(workspace.shares(around: 2) == [0.25, 0.75])
+    #expect(workspace.shares(around: 3) == [0.5, 0.5])
+}
+
+@Test func tileRebuildsContainerBelowRoot() {
+    var workspace = Workspace("h[1 v[h[2 3] 4]]")
+    workspace.float(4)
+    #expect(workspace.tree == "h[1 2 3]")
+    workspace.tile(4)
+    #expect(workspace.tree == "h[1 v[h[2 3] 4]]")
+    #expect(workspace.shares == [0.5, 0.5])
 }
 
 @Test func parkOnlyWindow() {
