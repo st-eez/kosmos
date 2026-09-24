@@ -25,7 +25,7 @@ import Testing
         #expect(config.modes.keys.sorted() == ["main"])
         #expect(config.modes["main"]?.count == 63)
         #expect(config.rules.count == 18)
-        #expect(config.profiles.map(\.name) == ["home", "single", "office", "laptop"])
+        #expect(config.profiles.map(\.name) == ["home", "single", "office", "office-va24e", "laptop"])
         #expect(config.gaps.inner == 10)
     }
 
@@ -55,6 +55,26 @@ import Testing
         let setup = try config().setup(for: [builtIn, ultrawide, asus])
         #expect(setup.profile == "office")
         #expect(setup.workspaceDisplays == ["1": 4, "2": 4, "3": 4, "4": 4, "5": 5, "6": 5, "7": 5, "8": 3, "9": 3, "0": 3])
+    }
+
+    @Test func officeWithTheASUSAlone() throws {
+        let asus = Display(id: 5, name: "ASUS VA24E", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let setup = try config().setup(for: [builtIn, asus])
+        #expect(setup.profile == "office-va24e")
+        // 1 to 4 wait for the ultrawide, so they are free and show on the focused display.
+        #expect(setup.workspaceDisplays == ["5": 5, "6": 5, "7": 5, "8": 3, "9": 3, "0": 3])
+    }
+
+    @Test func displaysNoProfileKnowsKeepTheProfile() throws {
+        let config = try config()
+        let projector = Display(id: 9, name: "Projector", frame: CGRect(x: 1512, y: 0, width: 1920, height: 1080))
+        #expect(config.setup(for: [builtIn, projector], keeping: "home").profile == "home")
+        #expect(config.setup(for: [builtIn, projector], keeping: "laptop").profile == "laptop")
+        #expect(config.setup(for: [projector], keeping: "office").profile == "office")
+        // At launch the file has no profile without `when`, so the base config applies.
+        #expect(config.setup(for: [builtIn, projector]).profile == nil)
+        // A profile that fits wins over the one that applies.
+        #expect(config.setup(for: [builtIn], keeping: "home").profile == "laptop")
     }
 
     @Test func laptop() throws {

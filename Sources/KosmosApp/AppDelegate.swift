@@ -157,7 +157,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Reads the displays and applies the profile for them, or the one `profile` applied
-    /// while they stay the same (DESIGN.md, section 5.13). `resync`: conceal, reveal and focus
+    /// while they stay the same. Displays no profile fits keep the profile that applies
+    /// (DESIGN.md, section 5.13). `resync`: conceal, reveal and focus
     /// every window again; the first apply at launch leaves them to the inventory. With no
     /// display at all, as in the middle of a change, the ones read before stay.
     private func applyDisplays(resync: Bool = true) {
@@ -170,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forcedProfile = nil
             displayIDs = ids
         }
-        let setup = config.setup(for: displays, profile: forcedProfile)
+        let setup = config.setup(for: displays, profile: forcedProfile, keeping: controller.profile)
         controller.apply(setup, names: setup.workspaces.isEmpty ? Self.defaultWorkspaces : setup.workspaces,
                          barDisplays: ConfigFile.barDisplays(displays), resync: resync)
     }

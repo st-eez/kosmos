@@ -316,7 +316,7 @@ private struct ConfigDecoder {
         for (index, item) in items.enumerated() {
             let profilePath = path.index(index)
             guard let fields = table(item, profilePath, allowed: [
-                "name", "when", "workspaces", "workspace-monitor", "merge-workspaces", "rule",
+                "name", "when", "only", "workspaces", "workspace-monitor", "merge-workspaces", "rule",
             ]) else { continue }
             var profile = Profile(name: "")
 
@@ -338,6 +338,14 @@ private struct ConfigDecoder {
                     guard let name = string(monitor, monitorPath) else { continue }
                     checkMonitor((name, monitor.position, monitorPath))
                     profile.when.append(name)
+                }
+            }
+            if let entry = fields["only"] {
+                let onlyPath = profilePath.key(entry.key)
+                profile.only = boolean(entry.value, onlyPath) ?? false
+                if profile.only, profile.when.isEmpty {
+                    fail("only needs a when list: the profile applies when those monitors alone are connected",
+                         at: entry.value.position, onlyPath)
                 }
             }
             if let entry = fields["workspaces"] {
@@ -375,8 +383,16 @@ private struct ConfigDecoder {
             }
             profiles.append((profile, item.position, profilePath))
         }
+        // A profile with `when` holds whenever an earlier one with fewer monitors does, and one
+        // with `only` whenever an earlier one with the same monitors and `only` does. One
+        // without `when` applies only when none with it does, and the first of those wins.
+        func shadows(_ earlier: Profile, _ later: Profile) -> Bool {
+            if earlier.when.isEmpty || later.when.isEmpty { return earlier.when.isEmpty && later.when.isEmpty }
+            if earlier.only { return later.only && Set(earlier.when) == Set(later.when) }
+            return Set(earlier.when).isSubset(of: later.when)
+        }
         for (index, later) in profiles.enumerated() {
-            if let earlier = profiles[..<index].first(where: { Set($0.profile.when).isSubset(of: later.profile.when) }) {
+            if let earlier = profiles[..<index].first(where: { shadows($0.profile, later.profile) }) {
                 warn("this profile never applies: profile '\(earlier.profile.name)' on line \(earlier.position.line) "
                      + "comes first and matches whenever it does", at: later.position, later.path)
             }

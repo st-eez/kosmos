@@ -329,9 +329,22 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(config.setup(for: [main, left]).profile == "home")
         // One panel: its name matches 'asus', and home needs both serials.
         #expect(config.setup(for: [builtIn, main]).profile == "single")
-        // A profile without `when` takes every other set of displays.
+        // With no profile that applies yet, as at launch, a profile without `when` takes
+        // every other set of displays.
         #expect(config.setup(for: [builtIn]).profile == "laptop")
         #expect(config.setup(for: [builtIn, Display(name: "Projector")]).profile == "laptop")
+        // Once one applies, displays no `when` fits keep it.
+        #expect(config.setup(for: [builtIn, Display(name: "Projector")], keeping: "home").profile == "home")
+        // A name the config no longer has leaves the base config.
+        #expect(config.setup(for: [builtIn], keeping: "gone").profile == nil)
+    }
+
+    @Test func onlyAllowsNoOtherDisplay() throws {
+        let result = Config.load(Self.text.replacingOccurrences(of: "when = ['asus']", with: "when = ['asus']\n    only = true"))
+        let config = try #require(result.config)
+        #expect(config.setup(for: [main]).profile == "single")
+        #expect(config.setup(for: [main, builtIn]).profile == "laptop")
+        #expect(config.setup(for: [main, builtIn], keeping: "home").profile == "home")
     }
 
     @Test func workspacesGoToTheFirstConnectedMonitorInTheirList() throws {
@@ -421,6 +434,41 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "11:35: error: profile[1].merge-workspaces.3: workspace '9' is not in this profile's workspaces",
             "12:3: warning: profile[2]: this profile never applies: profile 'p' on line 7 comes first and matches whenever it does",
             "13:8: error: profile[2].name: profile 'p' is already defined at line 8",
+        ])
+    }
+
+    @Test func onlyNeedsWhenAndShadowsOnlyItsOwnSet() {
+        let body = """
+        [monitors]
+        a = { name = 'A' }
+        b = { name = 'B' }
+        [[profile]]
+        name = 'fallback'
+        only = true
+        [[profile]]
+        name = 'a-only'
+        when = ['a']
+        only = true
+        [[profile]]
+        name = 'a-and-b'
+        when = ['a', 'b']
+        [[profile]]
+        name = 'a-only-again'
+        when = ['a']
+        only = true
+        [[profile]]
+        name = 'a'
+        when = ['a']
+        [[profile]]
+        name = 'a-b-only'
+        when = ['b', 'a']
+        only = true
+        """
+        #expect(load(body).diagnostics == [
+            "8:8: error: profile[0].only: only needs a when list: the profile applies when those monitors alone are connected",
+            "16:3: warning: profile[3]: this profile never applies: profile 'a-only' on line 9 comes first and matches whenever it does",
+            // 'a-and-b' holds whenever a and b alone are connected.
+            "23:3: warning: profile[5]: this profile never applies: profile 'a-and-b' on line 13 comes first and matches whenever it does",
         ])
     }
 

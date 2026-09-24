@@ -228,9 +228,11 @@ float = true
 app-name = 'FaceTime'
 float = true
 
-# Display profiles. The first profile whose `when` monitors are all connected applies; one
-# without `when` applies to any displays. A profile changes only the keys it sets, and its
-# rules come before the ones above.
+# Display profiles. The first profile whose `when` monitors are all connected applies, and
+# with `only = true` no other display may be connected. Displays that no profile fits keep
+# the profile that applies, as apply-profile.sh did for displays it did not know; at launch
+# a profile without `when` would apply, and this file has none. A profile changes only the
+# keys it sets, and its rules come before the ones above.
 
 # Both ASUS panels, with or without the lid open. The base config above is this layout.
 [[profile]]
@@ -247,9 +249,17 @@ name = 'office'
 when = ['ultrawide']
 workspace-monitor = { 1 = 'ultrawide', 2 = 'ultrawide', 3 = 'ultrawide', 4 = 'ultrawide', 5 = 'office-asus', 6 = 'office-asus', 7 = 'office-asus', 8 = 'builtin', 9 = 'builtin', 0 = 'builtin' }
 
-# The laptop alone, and any displays the profiles above do not know.
+# The office's ASUS VA24E without the ultrawide gets the same layout.
+[[profile]]
+name = 'office-va24e'
+when = ['office-asus']
+workspace-monitor = { 1 = 'ultrawide', 2 = 'ultrawide', 3 = 'ultrawide', 4 = 'ultrawide', 5 = 'office-asus', 6 = 'office-asus', 7 = 'office-asus', 8 = 'builtin', 9 = 'builtin', 0 = 'builtin' }
+
+# The laptop alone.
 [[profile]]
 name = 'laptop'
+when = ['builtin']
+only = true
 workspaces = ['1', '2', '3', '4', '5']
 workspace-monitor = { 1 = 'builtin', 2 = 'builtin', 3 = 'builtin', 4 = 'builtin', 5 = 'builtin' }
 # Windows on the workspaces this profile leaves out move here, and go back when a profile

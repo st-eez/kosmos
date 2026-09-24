@@ -15,7 +15,7 @@ public struct Config: Equatable, Sendable {
     public var modes: [String: [Binding]] = [:]
     /// Window rules in file order. The first rule that matches a window applies.
     public var rules: [WindowRule] = []
-    /// Display profiles in file order. The first whose monitors are all connected applies.
+    /// Display profiles in file order. The first whose `when` holds applies (`setup(for:)`).
     public var profiles: [Profile] = []
 
     /// No workspaces, bindings, rules or profiles, for when there is no config file.
@@ -130,8 +130,11 @@ public struct WindowRule: Equatable, Sendable {
 /// config's value.
 public struct Profile: Equatable, Sendable {
     public var name: String
-    /// Monitor names that must all be connected. Empty matches any set of displays.
+    /// Monitor names that must all be connected. A profile without any applies only when no
+    /// profile with them does, at launch (`Config.setup(for:)`).
     public var when: [String] = []
+    /// No display other than the `when` monitors may be connected.
+    public var only = false
     public var workspaces: [String]?
     public var workspaceMonitors: [String: [String]]?
     /// Where the windows of a workspace this profile leaves out go, by workspace name.
@@ -160,15 +163,25 @@ public struct Setup: Equatable, Sendable {
 }
 
 extension Config {
-    /// The profile `forced` names, as the `profile` command asks for, else the first whose
-    /// monitors are all connected.
-    public func setup(for displays: [Display], profile forced: String? = nil) -> Setup {
+    /// The profile that applies (DESIGN.md, sections 5.8 and 5.13): the one `forced` names,
+    /// as the `profile` command asks for, else the first whose `when` holds. Displays that no
+    /// profile's `when` fits keep `active`, the profile that applies now, as Steve's
+    /// `apply-profile.sh` kept its profile for displays it did not know. With no active
+    /// profile, as at launch, the first profile without `when` applies, else the base config.
+    public func setup(for displays: [Display], profile forced: String? = nil, keeping active: String? = nil) -> Setup {
         let displays = displays.sorted { ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id) }
         func firstDisplay(_ monitor: String) -> DisplayID? {
             monitors[monitor].flatMap { match in displays.first(where: match.matches)?.id }
         }
-        let profile = forced.flatMap { name in profiles.first { $0.name == name } }
-            ?? profiles.first { $0.when.allSatisfy { firstDisplay($0) != nil } }
+        func holds(_ profile: Profile) -> Bool {
+            guard !profile.when.isEmpty, profile.when.allSatisfy({ firstDisplay($0) != nil }) else { return false }
+            return !profile.only || displays.allSatisfy { display in
+                profile.when.contains { monitors[$0]?.matches(display) == true }
+            }
+        }
+        func named(_ name: String?) -> Profile? { name.flatMap { name in profiles.first { $0.name == name } } }
+        let profile = named(forced) ?? profiles.first(where: holds)
+            ?? (active != nil ? named(active) : profiles.first { $0.when.isEmpty })
         let workspaces = profile?.workspaces ?? workspaces
         let assignment = profile?.workspaceMonitors ?? workspaceMonitors
         var workspaceDisplays: [String: DisplayID] = [:]

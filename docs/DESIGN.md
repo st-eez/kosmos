@@ -532,8 +532,12 @@ off the main thread).
 - A reload parses and validates the whole file, then applies it in one step. Any error
   keeps the running config, and a bad file at login falls back to the last good config.
 - Display profiles are built in and matched by monitor name or serial. The first profile
-  whose monitors are all connected applies, and Kosmos resolves it again when the displays
-  change (section 5.13). Runtime toggles are commands and never rewrite the file.
+  whose `when` monitors are all connected applies; with `only = true`, no other display
+  may be connected. Displays that no profile fits keep the profile that applies, as
+  Steve's `apply-profile.sh` kept its profile for displays it did not know. With no
+  profile applying yet, as at launch, the first profile without `when` applies, else the
+  base config. Kosmos resolves the profile again when the displays change (section 5.13).
+  Runtime toggles are commands and never rewrite the file.
 - A command naming a workspace the active profile leaves out fails with a message, as
   `workspace 6` does on a profile with workspaces 1 to 5. AeroSpace creates a workspace on
   demand; a profile's list is fixed, and its `merge-workspaces` moves the windows of the
@@ -723,17 +727,18 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   focuses that workspace. Kosmos sees such a click only as Finder becoming front with no
   key window, which names no display. The pointer events of focus follows mouse (section
   5.11) could carry the same check.
-- Steve's AeroSpace profiles map onto this model with these differences:
+- Steve's AeroSpace profiles map onto this model, and his config keeps their choices: a
+  second office profile, `office-va24e`, takes the ASUS VA24E alone, and the laptop
+  profile needs the built-in display alone (`only`), so unknown displays keep the profile.
+  These differences stay:
   - Home assigns the twin panels by serial where AeroSpace used monitor numbers, which
     `apply-profile.sh` kept right by placing the panels with BetterDisplay. Kosmos keeps
     workspaces with their panel whatever the arrangement, and places nothing. The twins
     share an EDID UUID, so macOS can swap their places across replugs, and the pointer
     then crosses at the wrong edge until BetterDisplay or System Settings places them.
-  - `apply-profile.sh` chose home for any two VG279QE5A panels and office for either
-    office monitor. Kosmos's home needs both serials, and its office needs the LG
-    ULTRAWIDE, since `when` needs every monitor it lists.
-  - For displays that no profile knows, `apply-profile.sh` kept the profile it had;
-    Kosmos applies the first profile with no `when`, the laptop profile.
+    Whether macOS keeps them in place is for the desk.
+  - `apply-profile.sh` chose home for any two VG279QE5A panels; Kosmos's home needs both
+    serials.
   - `set-profile.sh` lasted until the watcher's next check, at most 120 s; `profile`
     lasts until the displays change.
   - The laptop profile left `alt-6` to `alt-0` unbound, so the keys reached the app;
@@ -746,7 +751,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     (section 5.8);
   - whether a concealed window kept in another display's ordinary Space moves with its
     frame when revealed there;
-  - how many notifications a hotplug posts, and whether the holding Space survives one.
+  - how many notifications a hotplug posts, and whether the holding Space survives one;
+  - whether macOS keeps the twin panels' left and main places across replugs without
+    BetterDisplay, which decides whether a placement step stays.
 
 ## 6. Verification
 
