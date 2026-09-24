@@ -55,7 +55,9 @@ extension BarSnapshot {
     /// computes it (SketchyBar 2.24.0): 1 when it is the only active display, otherwise one more
     /// than its position in WindowServer's managed display list, and 0 when the list lacks it.
     /// Kosmos reads the same list, so its numbers equal SketchyBar's in whatever order
-    /// WindowServer keeps it.
+    /// WindowServer keeps it. Two displays with one UUID would share a number; whether macOS
+    /// gives Steve's twin panels one UUID is part of the pending desk check (DESIGN.md,
+    /// section 5.8).
     /// - Parameters:
     ///   - uuid: the display's UUID (CGDisplayCreateUUIDFromDisplayID).
     ///   - active: how many displays are active (CGGetActiveDisplayList).

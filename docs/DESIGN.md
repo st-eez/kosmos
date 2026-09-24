@@ -205,8 +205,12 @@ off the main thread).
   commands and never rewrite the file.
 - A serial is the EDID alphanumeric serial number, which the display controller publishes
   on the framebuffer that drives the display. CoreDisplay names each display's framebuffer,
-  so identical monitors, whose vendor, model and numeric serial are the same, get their own
-  serials (`kosmos-probe displays`).
+  so identical monitors, whose vendor, model and numeric serial are the same, should get
+  their own serials. On the built-in display `kosmos-probe displays` found the framebuffer
+  and no serial, as expected. The twin check is pending a run at Steve's desk, whose twin
+  VG279QE5A panels share one EDID UUID (dotfiles `aerospace/apply-profile.sh`). That run
+  also shows whether macOS gives the twins one display UUID, which would merge them wherever
+  Kosmos looks a display up by UUID: its bar number and its current Space.
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
   rule shadows a later one.
 

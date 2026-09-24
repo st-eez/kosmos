@@ -218,7 +218,7 @@ func bar() {
 
 @MainActor func displays() {
     let active = DisplayIdentity.active(), managed = DisplayIdentity.managed()
-    print("managed displays (SLSCopyManagedDisplays): \(managed)")
+    print("managed displays (SLSCopyManagedDisplays), \(managed.count) for \(active.count) active: \(managed)")
     let sketchyBar = sketchyBarNumbers()
     for id in active {
         let screen = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }
@@ -235,6 +235,10 @@ func bar() {
         print("  framebuffer \(info["IODisplayLocation"].map { "\($0)" } ?? "none")")
         print("  CoreDisplay DisplaySerialString \(info["DisplaySerialString"].map { "\($0)" } ?? "none")")
     }
+    // Displays that share a UUID share a bar number and a current Space in Kosmos.
+    let shared = Dictionary(grouping: active) { DisplayIdentity.uuid(of: $0) ?? "none" }.filter { $0.value.count > 1 }
+    if shared.isEmpty { print("display UUIDs: \(active.count) distinct") }
+    for (uuid, ids) in shared { print("display UUID \(uuid) is shared by displays \(ids): Kosmos would merge them") }
 }
 
 /// SketchyBar's arrangement id for each display, from `--query displays`, or nil when no bar
