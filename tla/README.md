@@ -66,6 +66,15 @@ what `hover` checks, and `commands` what `commands` checks; `settles` checks liv
 `split-user-d1be665` runs the rules robust had at d1be665 (`SplitRules`), which change 11
 replaced.
 
+The split model assumes an app answers the worker's read of its focused window. When a
+busy app's read could go unanswered and count as "not focused", a request for a window
+already key recorded, raised with no effect, and its record swallowed the user's later
+Command-Tab back to that window (`split-user` and `split-user-quiet`, in a scratch copy).
+Stopping the request instead fails only if the app ignores the read yet answers the
+raise, and raising without a record lets the raise land after a click and be adopted.
+The read and the raise are back-to-back calls on the app's worker, so an unanswered read
+means an unresponsive app, and the request stops.
+
 `skip-on-report` records how Kosmos worked before the focus queue checked the key window
 (change 8 below). The other three expected failures record trade-offs:
 
