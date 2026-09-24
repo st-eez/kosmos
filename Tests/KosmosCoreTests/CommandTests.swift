@@ -45,7 +45,7 @@ import Testing
 
 @Test func focusInDirectionEndsFullscreen() {
     var workspace = Workspace("h[1 2]")
-    workspace.fullscreen(1, true)
+    workspace.toggleFullscreen(1)
     #expect(workspace.focus(.right, from: 1) == 2)
     #expect(workspace.fullscreenWindow == nil)
 }

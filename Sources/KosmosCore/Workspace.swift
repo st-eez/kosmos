@@ -154,16 +154,6 @@ extension Workspace {
         return true
     }
 
-    /// Makes a tiled window cover the display rectangle, or returns it to its tile.
-    @discardableResult
-    public mutating func fullscreen(_ window: WindowID, _ on: Bool) -> Bool {
-        guard root.path(to: window) != nil, (fullscreenWindow == window) != on else { return false }
-        fullscreenWindow = on ? window : nil
-        if on { stamp(window) }
-        check()
-        return true
-    }
-
     /// The broken invariants: those of DESIGN 5.5, plus consistent focus stamps,
     /// fullscreen window and restore hints. Empty when the workspace is sound. Every
     /// mutation checks it in debug builds.

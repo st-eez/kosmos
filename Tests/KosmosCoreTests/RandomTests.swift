@@ -38,16 +38,16 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 12: workspace.focus(window)
         case 13, 14: attempt { $0.focus(direction, from: window) != nil }
         case 15..<20:
-            let before = workspace.frames(in: screen, gaps: Gaps())[window]
+            let before = workspace.frames(in: screen, gaps: Gaps())
             var moved = false
             attempt {
                 moved = $0.move(window, direction)
                 return moved
             }
-            // A fullscreen frame stays put, and random resizes can leave shares that round
-            // to nothing.
-            if moved, workspace.fullscreenWindow != window, let before, !before.isEmpty {
-                #expect(workspace.frames(in: screen, gaps: Gaps())[window] != before, "seed \(seed)")
+            // A fullscreen frame stays put. Random resizes can leave shares that round to
+            // nothing, and passing such a window changes no frame.
+            if moved, workspace.fullscreenWindow != window, before.values.allSatisfy({ !$0.isEmpty }) {
+                #expect(workspace.frames(in: screen, gaps: Gaps())[window] != before[window], "seed \(seed)")
             }
         case 20, 21: attempt { $0.swap(window, direction) }
         case 22, 23: attempt { $0.joinWith(window, direction) }
@@ -56,7 +56,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
             let dimension = [ResizeDimension.width, .height, .smart].randomElement(using: &random)!
             let amount = CGFloat(Int.random(in: -300...300, using: &random))
             attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps) }
-        case 29: attempt { $0.fullscreen(window, Bool.random(using: &random)) }
+        case 29: attempt { $0.toggleFullscreen(window) }
         case 30: workspace.balanceSizes()
         default: workspace.flattenWorkspaceTree()
         }

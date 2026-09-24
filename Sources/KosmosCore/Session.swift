@@ -164,7 +164,7 @@ public struct Session: Sendable {
             let floating = workspace.floating.contains(window)
             guard floating ? workspace.tile(window) : workspace.float(window) else { return nil }
         case .fullscreen:
-            guard workspace.fullscreen(window, workspace.fullscreenWindow != window) else { return nil }
+            guard workspace.toggleFullscreen(window) else { return nil }
         case .resize(let dimension, let amount):
             guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
         case .balanceSizes:

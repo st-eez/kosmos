@@ -93,6 +93,17 @@ extension Workspace {
         return layout(window, root[path.dropLast()].orientation.opposite)
     }
 
+    /// Makes a tiled window cover the display rectangle, taking over from any other
+    /// fullscreen window, or returns it to its tile.
+    @discardableResult
+    public mutating func toggleFullscreen(_ window: WindowID) -> Bool {
+        guard root.path(to: window) != nil else { return false }
+        fullscreenWindow = fullscreenWindow == window ? nil : window
+        if fullscreenWindow == window { stamp(window) }
+        check()
+        return true
+    }
+
     /// Grows the window by `amount` points, or shrinks it when negative, taking the space
     /// from its siblings in proportion to their shares. For a dimension across the
     /// window's container, the nearest ancestor inside a container along the dimension

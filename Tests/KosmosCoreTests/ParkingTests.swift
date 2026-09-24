@@ -95,7 +95,7 @@ func unparkRebuildsCollapsedContainer(window: WindowID) {
 
 @Test func parkEndsFullscreen() {
     var workspace = Workspace("h[1 2]")
-    workspace.fullscreen(1, true)
+    workspace.toggleFullscreen(1)
     workspace.park(1)
     #expect(workspace.fullscreenWindow == nil)
 }
@@ -140,7 +140,7 @@ func unparkRebuildsCollapsedContainer(window: WindowID) {
 
 @Test func floatEndsFullscreen() {
     var workspace = Workspace("h[1 2]")
-    workspace.fullscreen(1, true)
+    workspace.toggleFullscreen(1)
     workspace.float(1)
     #expect(workspace.fullscreenWindow == nil)
 }
@@ -151,30 +151,32 @@ func unparkRebuildsCollapsedContainer(window: WindowID) {
     var workspace = Workspace("h[1 2]")
     let gaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
     let tiled = workspace.frames(in: screen, gaps: gaps)
-    #expect(workspace.fullscreen(1, true) == true)
+    #expect(workspace.toggleFullscreen(1) == true)
     let frames = workspace.frames(in: screen, gaps: gaps)
     #expect(frames[1] == screen)
     #expect(frames[2] == tiled[2])
-    #expect(workspace.fullscreen(1, false) == true)
+    #expect(workspace.toggleFullscreen(1) == true)
     #expect(workspace.frames(in: screen, gaps: gaps) == tiled)
 }
 
 @Test func fullscreenTracksOneWindow() {
-    var workspace = Workspace("h[1 2]")
-    #expect(workspace.fullscreen(1, false) == false)
-    workspace.fullscreen(1, true)
-    #expect(workspace.fullscreen(1, true) == false)
+    var workspace = Workspace("h[1 2 3]")
+    workspace.toggleFullscreen(1)
+    #expect(workspace.fullscreenWindow == 1)
     #expect(workspace.focusedWindow == 1)
-    workspace.fullscreen(2, true)
+    workspace.toggleFullscreen(2)
     #expect(workspace.fullscreenWindow == 2)
-    workspace.float(1)
-    #expect(workspace.fullscreen(1, true) == false)
+    #expect(workspace.focusedWindow == 2)
+    workspace.float(3)
+    #expect(workspace.toggleFullscreen(3) == false)
+    #expect(workspace.toggleFullscreen(9) == false)
+    #expect(workspace.fullscreenWindow == 2)
 }
 
 @Test func focusOnAnotherTiledWindowEndsFullscreen() {
     var workspace = Workspace("h[1 2 3]")
     workspace.float(3)
-    workspace.fullscreen(1, true)
+    workspace.toggleFullscreen(1)
     workspace.focus(1)
     workspace.focus(3)
     #expect(workspace.fullscreenWindow == 1)
