@@ -16,8 +16,9 @@ script/install.sh             # build, install and link
 2. Quits a Kosmos running from `/Applications/Kosmos.app` with SIGTERM, which restores its
    hidden windows, and waits for it and its guardian to exit. A Kosmos running from
    anywhere else, such as a development build, keeps running.
-3. Keeps the copy it replaces as `/Applications/Kosmos-previous.zip` and puts the new build
-   in `/Applications/Kosmos.app`.
+3. Renames the copy it replaces to `/Applications/Kosmos-previous` and puts the new build
+   in `/Applications/Kosmos.app`. Without the `.app` extension, LaunchServices never
+   registers the previous copy.
 4. Links `~/.local/bin/kosmos` to the CLI inside the app, replacing an existing link. The CLI
    must come from the same build as the app, and the link follows the app through a
    rollback. `~/.local/bin` is yours, so the script needs no sudo, and `/opt/homebrew/bin`
@@ -27,7 +28,10 @@ script/install.sh             # build, install and link
    `SMAppService.h` asks for a new registration whenever the agent's executable changes.
 
 `--app-dir` and `--bin-dir` install somewhere else, for example into a temporary directory
-to try the script.
+to try the script, as `script/test-install.sh` does. Outside `/Applications` the script
+leaves launch at login alone: a copy elsewhere has the same bundle identifier and
+certificate, and Background Task Management may report and change the installed copy's
+registration through it.
 
 ## Accessibility
 
@@ -71,6 +75,9 @@ Launch at Login in the Kosmos menu registers the LaunchAgent inside the app,
   Login Items & Extensions is off. Clicking the menu item opens that page.
 - `launchctl bootout gui/$(id -u)/io.github.st-eez.kosmos` stops a crash loop until the
   next login. Turning Kosmos off in Login Items stops it for good.
+- Launch at Login registers the copy you turn it on in. Turned on in a development build
+  in `.build/dist`, it makes launchd start that build at login, and every
+  `script/bundle.sh` replaces its executable. Turn it on in `/Applications/Kosmos.app`.
 
 ## Switching from AeroSpace
 
@@ -105,12 +112,12 @@ Back to AeroSpace, in the reverse order:
    login item when it loads the config.
 
 Back to the previous Kosmos build: `script/install.sh --rollback` swaps
-`Kosmos-previous.zip` into `/Applications/Kosmos.app` and keeps the replaced build as the
-new previous copy, so a second rollback undoes the first.
+`/Applications/Kosmos-previous` and `/Applications/Kosmos.app` by renaming them, so a second
+rollback undoes the first.
 
 ## Uninstalling
 
 `script/install.sh --uninstall` quits Kosmos, unregisters launch at login, and removes
-`/Applications/Kosmos.app`, `Kosmos-previous.zip` and the `kosmos` link if it points into
-the app. The config in `~/.config/kosmos` and the state in
+`/Applications/Kosmos.app`, `/Applications/Kosmos-previous` and the `kosmos` link if it
+points into the app. The config in `~/.config/kosmos` and the state in
 `~/Library/Application Support/Kosmos` stay.
