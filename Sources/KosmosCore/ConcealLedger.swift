@@ -24,6 +24,15 @@ public struct ConcealLedger: Equatable, Sendable {
         public var mustBeIn: [UInt32: UInt64] = [:]
 
         public var fresh: [UInt32] { keep + strip }
+
+        /// The removals to send once the adds are confirmed. An added window leaves the
+        /// concealing Space only if `landed` says its add took: removed from its only Space,
+        /// it would land on the active Space, which can be a native fullscreen one. Left
+        /// there, it fails the batch's confirmation, and recovery adds it again.
+        public func removals(landed: (UInt32) -> Bool) -> [UInt64: [UInt32]] {
+            let failed = Set(adds.filter { !landed($0) })
+            return removals.mapValues { $0.filter { !failed.contains($0) } }
+        }
     }
 
     /// The concealing Space of each concealed window.

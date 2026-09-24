@@ -50,17 +50,33 @@ private let holding: UInt64 = 100
     #expect(ConcealLedger.rebuilt(members: [:]) == ConcealLedger())
 }
 
+@Test func anAddedWindowIsRemovedOnlyOnceItsAddLanded() {
+    let batch = ConcealLedger(entries: [1: holding, 2: holding])
+        .batch(show: [1, 2], hide: [:], into: holding, hasOrdinarySpace: { $0 == 1 })
+    #expect(batch.removals(landed: { _ in true }) == [holding: [1, 2]])
+    #expect(batch.removals(landed: { _ in false }) == [holding: [1]])
+}
+
 /// Space membership as WindowServer changes it (`kosmos-probe reveal`): an exclusive add
-/// strips only managed Spaces, so a window leaves the holding Space by removal alone.
+/// strips only managed Spaces, so a window leaves the holding Space by removal alone, and a
+/// window removed from its only Space lands on the active Space.
 private struct Memberships {
     static let desktop: UInt64 = 5
+    static let fullscreen: UInt64 = 6
     var spaces: [UInt32: Set<UInt64>]
+    var addsLand = true
 
-    /// Carries out a batch in the order Hiding sends it: adds to the desktop, removals,
-    /// then conceals.
+    /// Carries out a batch in the order Hiding sends it: adds to the desktop, the removals
+    /// of windows whose add landed, then conceals.
     mutating func run(_ batch: ConcealLedger.Batch) {
-        for window in batch.adds { spaces[window]!.insert(Self.desktop) }
-        for (space, windows) in batch.removals { for window in windows { spaces[window]!.remove(space) } }
+        if addsLand { for window in batch.adds { spaces[window]!.insert(Self.desktop) } }
+        let removals = batch.removals(landed: { [spaces] in spaces[$0]!.contains(Self.desktop) })
+        for (space, windows) in removals {
+            for window in windows {
+                spaces[window]!.remove(space)
+                if spaces[window]!.isEmpty { spaces[window] = [Self.fullscreen] }   // the active Space
+            }
+        }
         for window in batch.keep { spaces[window]!.insert(holding) }
         for window in batch.strip { spaces[window] = [holding] }
     }
@@ -83,4 +99,13 @@ private struct Memberships {
         ledger.commit(batch, into: holding)
         (shown, hidden) = (hidden, shown)
     }
+}
+
+/// An add that does not land leaves the window concealed, where recovery finds it, instead of
+/// on the active Space, which can be a native fullscreen one.
+@Test func aRevealWhoseAddFailsLeavesTheWindowConcealed() {
+    let ledger = ConcealLedger(entries: [2: holding])
+    var server = Memberships(spaces: [2: [holding]], addsLand: false)
+    server.run(ledger.batch(show: [2], hide: [:], into: holding, hasOrdinarySpace: { _ in false }))
+    #expect(server.spaces[2] == [holding])
 }

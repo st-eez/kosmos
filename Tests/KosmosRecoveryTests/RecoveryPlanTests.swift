@@ -28,6 +28,12 @@ import Testing
     #expect(plan.removals == [9: [2]])   // 3 is in no recorded Space
 }
 
+@Test func anAddedWindowLeavesItsRecordedSpaceOnlyOnceItsAddLanded() {
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
+    #expect(plan.removals(landed: { _ in true }) == [9: [1, 2]])
+    #expect(plan.removals(landed: { _ in false }) == [9: [1]])
+}
+
 @Test func aWindowOnNoSpaceIsNotBack() {
     let plan = RecoveryPlan.make(members: [9: [1]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
     #expect(plan.unplaced(isOnNoSpace: { _ in false }, isInOrdinarySpace: { _ in false }).isEmpty)

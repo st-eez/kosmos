@@ -139,11 +139,13 @@ private final class HidingStore: @unchecked Sendable {
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
-        // Adds before removals: a window removed from its only Space lands on whichever
-        // Space is active, which can be a native fullscreen one. Displays are read only for
-        // adds: the read took up to 7 ms on the development Mac.
-        let displays = batch.adds.isEmpty ? nil : Displays.current()
-        if let displays {
+        // Adds land before any removal is sent: a window removed from its only Space lands on
+        // whichever Space is active, which can be a native fullscreen one. The add's return
+        // says only that it was sent, so a barrier and a read confirm it, about 1.3 ms, and
+        // the displays are read, up to 7 ms on the development Mac, only in a batch that adds.
+        var removals = batch.removals
+        if !batch.adds.isEmpty {
+            let displays = Displays.current()
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
             var destinations: [UInt64: [UInt32]] = [:]
             for window in batch.adds {
@@ -154,8 +156,10 @@ private final class HidingStore: @unchecked Sendable {
                 var ids = windows
                 kosmos_add_windows(destination, &ids, ids.count, true)
             }
+            guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
+            removals = batch.removals(landed: displays.isInOrdinarySpace)
         }
-        for (from, windows) in batch.removals {
+        for (from, windows) in removals {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
@@ -175,11 +179,7 @@ private final class HidingStore: @unchecked Sendable {
         }
         let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
         let shown = batch.removals.allSatisfy { space, windows in windows.allSatisfy { !members[space]!.contains($0) } }
-        // An add that failed, followed by its removal, leaves the window on the active Space,
-        // which can be a native fullscreen one, whatever its Space list names. A window that
-        // closed needs no Space.
-        let placed = batch.adds.allSatisfy { displays?.isInOrdinarySpace($0) == true || SkyLight.rows([$0]).isEmpty }
-        guard hidden && shown && placed else { return false }
+        guard hidden && shown else { return false }
         ledger.commit(batch, into: space)
         return true
     }

@@ -141,11 +141,13 @@ off the main thread).
   only managed Spaces, and the holding Space is not one, so the removal is still needed.
   The add goes first because a window removed from its only Space lands on the active
   Space, which can be a native fullscreen one (`kosmos-probe reveal`).
-- The barrier then confirms that each revealed window left the holding Space, and that
-  each added window still open is in an ordinary Space. An add that failed, followed by
-  its removal, leaves the window on the active Space. The check compares the window's
-  Spaces with the displays' ordinary Spaces, so it catches a window left on a fullscreen
-  Space whether or not the window's Space list names fullscreen Spaces.
+- A window leaves the holding Space only once its add landed. The add's return says only
+  that it was sent, so a barrier after the adds, about 1.3 ms and only in a batch that
+  adds, and a read of each added window's Spaces come before the removals. The read
+  compares the window's Spaces with the displays' ordinary Spaces, whether or not the
+  window's Space list names fullscreen Spaces. A window whose add did not land stays in
+  the holding Space, so the batch fails its confirmation and recovery adds it again.
+- The barrier at the end confirms that each revealed window left the holding Space.
 - A window with no ordinary Space goes to the main display's current Space, else to the
   Space it had before its first hide if that still exists, else to the main display's
   first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
@@ -154,8 +156,9 @@ off the main thread).
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
 - Recovery adds each window without an ordinary Space to the current Space of the display
   under it, or to the Space a reveal would choose, then empties each recorded Space,
-  destroys the Spaces and clears the record. It keeps the record while a window it added
-  and still open is in no ordinary Space. Every step can safely run twice.
+  destroys the Spaces and clears the record. It removes an added window from a recorded
+  Space only once the add landed, and keeps the record while a window is left there. Every
+  step can safely run twice.
 
 ### 5.4 Focus
 

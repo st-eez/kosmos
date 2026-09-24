@@ -45,6 +45,15 @@ struct RecoveryPlan: Equatable {
     /// Every window the plan covers, including the ones with nowhere to go.
     var windows: Set<UInt32> { Set(removals.values.joined()).union(adds.values.joined()).union(stuck) }
 
+    /// The removals to send once the adds are confirmed. An added window leaves its recorded
+    /// Space only if `landed` says its add took: removed from its only Space, it would land
+    /// on the active Space, which can be a native fullscreen one. Left there, it keeps the
+    /// record for another attempt.
+    func removals(landed: (UInt32) -> Bool) -> [UInt64: [UInt32]] {
+        let failed = Set(adds.values.joined().filter { !landed($0) })
+        return removals.mapValues { $0.filter { !failed.contains($0) } }
+    }
+
     /// The windows of the plan, stuck ones included, that are not back: on no Space, or
     /// added and on no ordinary Space, as when an add failed and the removal after it left
     /// the window on a native fullscreen Space. Recovery is complete only when this is empty

@@ -41,14 +41,14 @@ public enum Recovery {
                                      hasOrdinarySpace: { !spaces(of: $0).isEmpty },
                                      destination: { destinationSpace(for: $0, original: original[$0]) })
 
-        // Adds before removals: a window removed from its only Space lands on whichever
-        // Space is active, which can be a native fullscreen one.
+        // Adds land before any removal is sent: a window removed from its only Space lands
+        // on whichever Space is active, which can be a native fullscreen one.
         for (destination, windows) in plan.adds {
             var ids = windows
             kosmos_add_windows(destination, &ids, ids.count, true)
             _ = kosmos_barrier(destination)
         }
-        for (space, windows) in plan.removals {
+        for (space, windows) in plan.removals(landed: Displays.current().isInOrdinarySpace) {
             var ids = windows
             kosmos_remove_windows(space, &ids, ids.count)
             _ = kosmos_barrier(space)
