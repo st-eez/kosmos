@@ -342,6 +342,11 @@ off the main thread).
   branch). yabai and alt-tab raise after the record, an order no probe has checked on
   macOS 27. A slow app's raise lands after the key record, and a hung app holds only its
   own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
+- The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
+  waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
+  a newer command, and Kosmos followed it there (tla/README.md, change 12). A raise that
+  outlasts the 5 s counts as made, so its echo is still recognized. Only a raise the app
+  refuses or fails at once is dropped.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the public
   path on the app's worker: make the window the app's main window, raise it, then activate
   the app. For an empty workspace it activates Kosmos, which holds no workspace window. No

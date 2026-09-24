@@ -45,6 +45,11 @@ actor AppWorker {
     /// app returns kAXErrorCannotComplete 5 ms after its timeout; with none set, macOS 27
     /// waits 1.5 s (`kosmos-probe ax-timeout`).
     static let timeout: Float = 1.0
+    /// How long the worker waits for the app to perform a raise. A raise it stopped waiting
+    /// for still lands when the app gets to it, and can key a window after a newer command
+    /// (tla/README.md, change 12). One that outlasts this counts as made, so its echo is
+    /// still recognized, and its app is backed off. No measurement chose the 5 s.
+    static let raiseTimeout: Float = 5.0
 
     let pid: pid_t
     private let name: String
@@ -227,13 +232,23 @@ actor AppWorker {
         log.notice("\(self.name, privacy: .public) did not answer the focused window read; focus on \(id) stops")
     }
 
-    /// Returns whether the raise went through.
+    /// Raises the window and waits for the app to perform it, for up to `raiseTimeout`.
+    /// Returns false when no raise can land: the app refused it or failed at once, or the
+    /// worker made no call. A raise that timed out can still land and counts as made.
     @discardableResult
     private func raiseWindow(_ id: UInt32) -> Bool {
         guard let element = elements[id] else { return false }
+        AXUIElementSetMessagingTimeout(element, Self.raiseTimeout)
+        defer { AXUIElementSetMessagingTimeout(element, 0) }   // back to the system wide timeout
+        let start = ContinuousClock.now
         let error = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
-        if error != .success, !backoff.backedOff { log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)") }
-        return error == .success
+        let waitedOut = error == .cannotComplete && ContinuousClock.now - start > .seconds(Double(Self.raiseTimeout) / 2)
+        if waitedOut {
+            log.error("\(self.name, privacy: .public) did not perform the raise of \(id) in \(Self.raiseTimeout, format: .fixed(precision: 1)) s; it can still land")
+        } else if error != .success, !backoff.backedOff {
+            log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)")
+        }
+        return error == .success || waitedOut
     }
 
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
