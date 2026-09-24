@@ -112,7 +112,13 @@ public actor IPCServer {
     private func admit(_ fd: Int32) {
         var uid: uid_t = 0
         var gid: gid_t = 0
-        guard getpeereid(fd, &uid, &gid) == 0, uid == allowedUID else {
+        guard getpeereid(fd, &uid, &gid) == 0 else {
+            let error = IPCError.system("getpeereid", errno)
+            log("rejected a client from pid \(peerPID(fd)): \(error.description)")
+            Darwin.close(fd)
+            return
+        }
+        guard uid == allowedUID else {
             log("rejected a client from pid \(peerPID(fd)) with uid \(uid)")
             Darwin.close(fd)
             return
