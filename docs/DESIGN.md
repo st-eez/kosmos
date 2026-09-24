@@ -45,7 +45,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep every 2 to 5 s as a backstop | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
 | Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
-| Focus | Private window-targeted focus in every case: front the process, then post one mouse-down key record far off the window. AXRaise only for windows that can overlap. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
+| Focus | Private window-targeted focus in every case: AXRaise the window on its app's worker, then front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
 | Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
@@ -70,8 +70,8 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Context | Owns | Never does |
 | --- | --- | --- |
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
-| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads | Touch the model directly |
-| Focus queue, serial | Front-process calls and key records, generation checks | Wait on AX |
+| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads, and raises before focus | Touch the model directly |
+| Focus queue, serial | Front-process calls and key records, generation checks | Wait on a worker's raise longer than 30 ms |
 | Bridge queue, serial | Bridged Space operations and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
@@ -204,6 +204,14 @@ off the main thread).
     once in about 3 million runs. The public path chose the wrong window in 9 of 9 trials,
     so a false trip costs more than a few late wrong windows (wm-research focus note,
     section 4). A request with no report neither misses nor clears the count.
+- The private path raises the window with AXRaise on its app's worker before the key
+  record. On macOS 27 the record alone leaves the key window unchanged inside the app that
+  is already frontmost, for stacked and side by side windows alike, while AXRaise and then
+  the record keyed the right window in every case, same app or not (`kosmos-probe raise` on
+  the hover branch). yabai and alt-tab raise after the record, an order no probe has
+  checked on macOS 27. The focus queue waits for the raise at most 30 ms, as the main
+  actor waits on a worker, so a slow app's raise lands after the record and a hung app
+  holds only its own worker. `kosmos-probe keying` compares the three orders.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the public
   path on the app's worker: make the window the app's main window, raise it, then activate
   the app, or activate Finder alone for an empty workspace. The app picks its key window, so

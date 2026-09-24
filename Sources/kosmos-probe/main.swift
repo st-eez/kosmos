@@ -24,6 +24,14 @@
 //                                   child app that is launching, answering and hung. The
 //                                   child is an accessory app with no window, which a running
 //                                   Kosmos ignores. Needs Accessibility for the terminal.
+//   kosmos-probe keying [rounds]    Keys windows of two stub apps three ways: the key record
+//                                   alone, AXRaise then the record (the order Kosmos uses), and
+//                                   the record then AXRaise (yabai and alt-tab). Covers two
+//                                   stacked windows of one app, two side by side, another app,
+//                                   and back into an app whose other window was key. The stubs
+//                                   are accessory apps with small windows at the bottom right,
+//                                   which a running Kosmos leaves alone. The probe takes
+//                                   keyboard focus while it runs and hands it back at the end.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -45,8 +53,10 @@ case "displays": displays()
 case "secure-input": secureInput()
 case "ax-child": axChild()
 case "ax-timeout": axTimeout()
+case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
+case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | displays | secure-input | ax-timeout")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | displays | secure-input | ax-timeout | keying [rounds]")
     exit(2)
 }
 
@@ -381,4 +391,163 @@ func axTimeout() {
     print("after a hang with 10 abandoned requests: \(show(after)); \(String(format: "%.1f", elapsed(start))) ms")
     times = (0..<20).map { _ in read(app).1 }
     print(String(format: "answering again: read median %.3f ms", percentile(times, 0.5)))
+}
+
+/// An accessory app for `keying`, which a running Kosmos leaves alone. Opens a 170 by 90
+/// window for each "left,up" offset from the bottom right corner of the main screen's
+/// visible area, prints the window ids, and exits when its standard input closes.
+@MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    let ids = offsets.enumerated().map { index, offset in
+        let xy = offset.split(separator: ",").compactMap { Double($0) }
+        let window = NSWindow(contentRect: NSRect(x: screen.maxX - 190 - xy[0], y: screen.minY + 20 + xy[1], width: 170, height: 90),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = "kosmos-probe \(name)\(index + 1)"
+        window.isReleasedWhenClosed = false
+        window.orderFrontRegardless()
+        return window.windowNumber
+    }
+    print(ids.map(String.init).joined(separator: " "))
+    Thread.detachNewThread {
+        while !FileHandle.standardInput.availableData.isEmpty {}
+        exit(0)
+    }
+    app.run()
+    exit(0)
+}
+
+struct KeyStub {
+    let name: String
+    let process: Process
+    /// Held open for the stub's lifetime; the stub exits when it closes.
+    let input: Pipe
+    let windows: [UInt32]
+    var pid: pid_t { process.processIdentifier }
+    func label(_ window: UInt32) -> String { windows.firstIndex(of: window).map { "\(name)\($0 + 1)" } ?? String(window) }
+}
+
+func launchKeyStub(_ name: String, _ offsets: [String]) -> KeyStub {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    process.arguments = ["key-stub", name] + offsets
+    let input = Pipe(), output = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    try! process.run()
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) {
+        let chunk = output.fileHandleForReading.availableData
+        guard !chunk.isEmpty else { print("stub \(name) exited"); exit(1) }
+        line.append(chunk)
+    }
+    let ids = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
+    return KeyStub(name: name, process: process, input: input, windows: ids)
+}
+
+/// The window's element in its app, found by window id.
+func windowElement(_ pid: pid_t, _ window: UInt32) -> AXUIElement? {
+    var windows: CFTypeRef?
+    AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &windows)
+    return (windows as? [AXUIElement])?.first { element in
+        var id: UInt32 = 0
+        return _AXUIElementGetWindow(element, &id) == .success && id == window
+    }
+}
+
+/// The app's focused window, which is the key window while the app is frontmost.
+func focusedWindow(of pid: pid_t) -> UInt32? {
+    var focused: CFTypeRef?
+    var id: UInt32 = 0
+    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as CFString, &focused) == .success,
+          let focused, _AXUIElementGetWindow((focused as! AXUIElement), &id) == .success else { return nil }
+    return id
+}
+
+@MainActor func keying(rounds: Int) {
+    _ = NSApplication.shared
+    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+    func wait(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
+    // Focus goes back to this app and window at the end.
+    let before = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    let beforeWindow = before.flatMap(focusedWindow(of:))
+    // A1 and A2 overlap, A3 sits apart, and B1 covers parts of A1 and A2.
+    let a = launchKeyStub("A", ["0,0", "60,40", "300,0"])
+    let b = launchKeyStub("B", ["30,20"])
+    defer {
+        a.process.terminate()
+        b.process.terminate()
+        if let before, let beforeWindow { _ = kosmos_make_key(before, beforeWindow) }
+    }
+    wait(0.5)
+
+    enum Order: String, CaseIterable {
+        case recordOnly = "record only"
+        case raiseFirst = "AXRaise, then record"
+        case raiseAfter = "record, then AXRaise"
+    }
+    var raiseTimes: [Double] = []
+    func focus(_ stub: KeyStub, _ window: UInt32, _ order: Order) {
+        func raise() {
+            guard let element = windowElement(stub.pid, window) else { return print("  no element for \(stub.label(window))") }
+            let start = ContinuousClock.now
+            _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+            raiseTimes.append(elapsed(start))
+        }
+        if order == .raiseFirst { raise() }
+        if !kosmos_make_key(stub.pid, window) { print("  kosmos_make_key failed for \(stub.label(window))") }
+        if order == .raiseAfter { raise() }
+        wait(0.3)
+    }
+    func onTop(_ window: UInt32, over others: [UInt32]) -> Bool {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let order = list.compactMap { ($0[kCGWindowNumber as String] as? Int).map(UInt32.init) }
+        guard let index = order.firstIndex(of: window) else { return false }
+        return others.allSatisfy { (order.firstIndex(of: $0) ?? .max) > index }
+    }
+
+    typealias Target = (stub: KeyStub, window: UInt32)
+    let cases: [(name: String, setup: [Target], target: Target, covers: [UInt32])] = [
+        ("same app, stacked: A2 key, then A1", [(a, a.windows[1])], (a, a.windows[0]), [a.windows[1]]),
+        ("same app, side by side: A1 key, then A3", [(a, a.windows[0])], (a, a.windows[2]), []),
+        ("other app: A1 key, then B1", [(a, a.windows[0])], (b, b.windows[0]), [a.windows[0], a.windows[1]]),
+        ("back into A after A2 was key: A2, B1, then A1", [(a, a.windows[1]), (b, b.windows[0])], (a, a.windows[0]),
+         [a.windows[1], b.windows[0]]),
+    ]
+    var keyed: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
+    for round in 1...rounds {
+        for test in cases {
+            for order in Order.allCases {
+                // Kosmos's order sets up each case; a case whose setup did not key is skipped.
+                for step in test.setup { focus(step.stub, step.window, .raiseFirst) }
+                let last = test.setup.last!
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == last.stub.pid,
+                      focusedWindow(of: last.stub.pid) == last.window else {
+                    print("round \(round), \(test.name), \(order.rawValue): setup did not key \(last.stub.label(last.window)), skipped")
+                    continue
+                }
+                raiseTimes.removeAll()
+                focus(test.target.stub, test.target.window, order)
+                let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == test.target.stub.pid
+                let key = focusedWindow(of: test.target.stub.pid)
+                let isKey = front && key == test.target.window
+                let isOnTop = onTop(test.target.window, over: test.covers)
+                let row = "\(test.name) | \(order.rawValue)"
+                trials[row, default: 0] += 1
+                if isKey { keyed[row, default: 0] += 1 }
+                if isOnTop { raised[row, default: 0] += 1 }
+                let raiseTime = raiseTimes.first.map { String(format: ", AXRaise %.2f ms", $0) } ?? ""
+                print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(front ? "yes" : "no"), "
+                      + "focused \(key.map(test.target.stub.label) ?? "none")), \(isOnTop ? "on top" : "not on top")\(raiseTime)")
+            }
+        }
+    }
+    print("\nsummary, keyed and on top out of the trials run:")
+    for test in cases {
+        for order in Order.allCases {
+            let row = "\(test.name) | \(order.rawValue)"
+            print("  \(row): keyed \(keyed[row] ?? 0)/\(trials[row] ?? 0), on top \(raised[row] ?? 0)/\(trials[row] ?? 0)")
+        }
+    }
 }

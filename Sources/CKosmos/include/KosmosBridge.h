@@ -27,7 +27,8 @@ CFArrayRef kosmos_space_windows(uint64_t space) CF_RETURNS_RETAINED;
 CFArrayRef kosmos_window_spaces(uint32_t window) CF_RETURNS_RETAINED;
 
 // Makes the window key: fronts its process, then posts one mouse-down key record far off
-// every window.
+// every window. Inside the app that is already frontmost the record alone leaves the key
+// window unchanged on macOS 27; the caller raises the window with AXRaise first.
 bool kosmos_make_key(pid_t pid, uint32_t window);
 // Fronts a process with no key window (Finder for an empty workspace).
 bool kosmos_front_without_windows(pid_t pid);

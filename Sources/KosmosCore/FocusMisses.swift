@@ -14,16 +14,16 @@ public struct FocusMisses<Stamp: Comparable & Sendable>: Sendable {
     /// about 3 million runs.
     public static var limit: Int { 5 }
 
-    private var pending: (pid: Int32, requested: Stamp, wrongWindow: Bool)?
+    private var pending: (window: UInt32, pid: Int32, requested: Stamp, wrongWindow: Bool)?
     public private(set) var inARow = 0
 
     public init() {}
 
-    /// Records a private request for a window of app `pid`, and judges the one before it.
+    /// Records a private request for `window` of app `pid`, and judges the one before it.
     /// Returns true when that one was the `limit`th miss in a row.
-    public mutating func willRequest(pid: Int32, at stamp: Stamp) -> Bool {
+    public mutating func willRequest(_ window: UInt32, pid: Int32, at stamp: Stamp) -> Bool {
         if pending?.wrongWindow == true { inARow += 1 }
-        pending = (pid, stamp, false)
+        pending = (window, pid, stamp, false)
         return inARow >= Self.limit
     }
 
@@ -35,11 +35,11 @@ public struct FocusMisses<Stamp: Comparable & Sendable>: Sendable {
     /// A key window report. `echo` is true when the report classifier matched it to one of
     /// Kosmos's requests.
     public mutating func reported(_ key: KeyWindow, pid: Int32, receivedAt stamp: Stamp, echo: Bool) {
-        guard case .window = key else { return }
+        guard case .window(let window) = key else { return }
         if echo {
             inARow = 0
             pending = nil
-        } else if let request = pending, request.pid == pid, request.requested <= stamp {
+        } else if let request = pending, request.pid == pid, request.window != window, request.requested <= stamp {
             pending?.wrongWindow = true
         }
     }

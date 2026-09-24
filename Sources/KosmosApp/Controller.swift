@@ -332,7 +332,7 @@ final class Controller {
         guard let pid else { return }
         let stamp = ContinuousClock.now
         reports.focusRequested(target, at: stamp)
-        if focusQueue.killSwitch.isOn, case .window = target, misses.willRequest(pid: pid, at: stamp) {
+        if focusQueue.killSwitch.isOn, case .window(let id) = target, misses.willRequest(id, pid: pid, at: stamp) {
             focusQueue.killSwitch.turnOff(.wrongWindows)
             controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
             onFocusProblem?(focusProblem)

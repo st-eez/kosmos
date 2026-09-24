@@ -172,9 +172,27 @@ actor AppWorker {
         guard isCurrent() else { return dropped() }
         if let element = elements[id] {
             _ = ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
-            _ = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
         }
+        raiseWindow(id)
         NSRunningApplication(processIdentifier: pid)?.activate(options: [])
+    }
+
+    /// Raises the window within its app for the private focus path, then runs `done`. The
+    /// focus queue posts the key record once `done` runs or its deadline passes
+    /// (FocusQueue.swift).
+    nonisolated func raise(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool, done: @escaping @Sendable () -> Void) {
+        executor.perform {
+            self.assumeIsolated { worker in
+                if isCurrent() { worker.raiseWindow(id) }
+                done()
+            }
+        }
+    }
+
+    private func raiseWindow(_ id: UInt32) {
+        guard let element = elements[id] else { return }
+        let error = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
+        if error != .success, askingSince == nil { log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)") }
     }
 
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
