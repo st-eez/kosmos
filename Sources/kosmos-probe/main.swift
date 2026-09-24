@@ -12,6 +12,12 @@
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
+//   kosmos-probe fullscreen [dry]   Which signals report a window entering and leaving
+//                                   native fullscreen, and when: SkyLight Space events, and
+//                                   Displays.isFullscreen after each Space membership event,
+//                                   as the inventory checks it. dry never enters.
+//                                   The window belongs to an accessory app, which Kosmos
+//                                   does not manage.
 import AppKit
 import CKosmos
 import KosmosRecovery
@@ -27,8 +33,10 @@ case "survive-kill": surviveKill()
 case "bar": bar()
 case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
+case "fullscreen-window": fullscreenWindow()
+case "fullscreen": fullscreen()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen")
     exit(2)
 }
 
@@ -206,4 +214,98 @@ func bar() {
     let start = ContinuousClock.now
     let outcome = Recovery.run(file: file)
     print("recovery of a record naming destroyed Space \(space): \(outcome) in \(String(format: "%.0f", elapsed(start))) ms; record cleared: \(file.read() == nil)")
+}
+
+/// A window that enters native fullscreen 1.5 s after it appears and leaves 4 s later, in
+/// an accessory app. Prints its window id.
+@MainActor func fullscreenWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let window = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 420, height: 300),
+                          styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+    window.collectionBehavior = [.fullScreenPrimary]
+    window.title = "kosmos-probe fullscreen"
+    window.makeKeyAndOrderFront(nil)
+    app.activate()
+    print(window.windowNumber)
+    let dry = CommandLine.arguments.contains("dry")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { print("enter"); if !dry { window.toggleFullScreen(nil) } }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { print("leave"); if !dry { window.toggleFullScreen(nil) } }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 9) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+/// Space types by id, from the managed display Spaces: 0 ordinary, 4 fullscreen.
+func spaceTypes() -> [UInt64: Int] {
+    let displays = SLSCopyManagedDisplaySpaces(SLSMainConnectionID())?.takeRetainedValue() as? [[String: Any]] ?? []
+    var types: [UInt64: Int] = [:]
+    for display in displays {
+        for space in display["Spaces"] as? [[String: Any]] ?? [] {
+            if let id = space["id64"] as? UInt64 { types[id] = space["type"] as? Int ?? -1 }
+        }
+    }
+    return types
+}
+
+nonisolated(unsafe) var probeStart = ContinuousClock.now
+nonisolated(unsafe) var probeWindow: UInt32 = 0
+nonisolated(unsafe) var probeLast = ""
+
+/// The window's Spaces with their types. AXFullScreen was read in runs without an event
+/// loop: reading it here, with AppKit running, blocked.
+func probeState() -> String {
+    let types = spaceTypes()
+    let spaces = (kosmos_window_spaces(probeWindow) as? [UInt64] ?? []).map { "\($0):\(types[$0] ?? -1)" }
+    return "spaces \(spaces)"
+}
+
+@MainActor func fullscreen() -> Never {
+    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["fullscreen-window"] + (CommandLine.arguments.contains("dry") ? ["dry"] : [])
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    probeWindow = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
+    probeStart = .now
+    print("window \(probeWindow), pid \(child.processIdentifier), AX trusted \(AXIsProcessTrusted())")
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { print(String(format: "%7.1f ms child: ", elapsed(probeStart)) + text) }
+    }
+    for id: UInt32 in [1325, 1326, 1327, 1328, 1401, 806, 807, 808, 815, 816] {
+        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+            func u32(_ offset: Int) -> UInt32 { bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : 0 }
+            func u64(_ offset: Int) -> UInt64 { bytes.count >= offset + 8 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt64.self) : 0 }
+            switch id {
+            case 1325, 1326:
+                guard u32(8) == probeWindow else { return }
+                print(String(format: "%7.1f ms event %d space %llu", elapsed(probeStart), id, u64(0)))
+                // The check the inventory makes on these events, off the main thread.
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let state = Displays.isFullscreen(probeWindow).map { "\($0)" } ?? "nil (no Space)"
+                    print(String(format: "%7.1f ms   Displays.isFullscreen: ", elapsed(probeStart)) + state)
+                }
+            case 1327, 1328:
+                print(String(format: "%7.1f ms event %d space %llu", elapsed(probeStart), id, u64(0)))
+            case 1401:
+                print(String(format: "%7.1f ms event 1401", elapsed(probeStart)))
+            default:
+                guard u32(0) == probeWindow else { return }
+                print(String(format: "%7.1f ms event %d", elapsed(probeStart), id))
+            }
+        }, id, nil)
+    }
+    var ids = [probeWindow]
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &ids, 1)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { exit(0) }
+    app.run()
+    exit(0)
 }

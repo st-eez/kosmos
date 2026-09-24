@@ -10,16 +10,31 @@ public struct Displays {
     }
 
     public let displays: [Display]
+    /// Native fullscreen Spaces, type 4 where ordinary Spaces are type 0.
+    public let fullscreenSpaces: Set<UInt64>
 
     public static func current() -> Displays {
         let raw = SLSCopyManagedDisplaySpaces(SkyLight.connection)?.takeRetainedValue() as? [[String: Any]] ?? []
+        let fullscreen = raw.flatMap { display in
+            (display["Spaces"] as? [[String: Any]] ?? []).filter { ($0["type"] as? Int) == 4 }.compactMap { $0["id64"] as? UInt64 }
+        }
         return Displays(displays: raw.map { display in
             let current = display["Current Space"] as? [String: Any]
             let ordinary = (display["Spaces"] as? [[String: Any]] ?? []).filter { ($0["type"] as? Int) == 0 }
             return Display(identifier: display["Display Identifier"] as? String ?? "",
                            currentSpace: (current?["type"] as? Int) == 0 ? current?["id64"] as? UInt64 : nil,
                            spaces: ordinary.compactMap { $0["id64"] as? UInt64 })
-        })
+        }, fullscreenSpaces: Set(fullscreen))
+    }
+
+    /// Whether the window is in a native fullscreen Space. Nil while it is in no Space, as
+    /// during the transition in and out, when it has left one Space and not yet joined the
+    /// other. The queries can block during a Space transition, so call it off the main
+    /// thread.
+    public static func isFullscreen(_ window: UInt32) -> Bool? {
+        let spaces = kosmos_window_spaces(window) as? [UInt64] ?? []
+        guard !spaces.isEmpty else { return nil }
+        return !current().fullscreenSpaces.isDisjoint(with: spaces)
     }
 
     public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.spaces)) }

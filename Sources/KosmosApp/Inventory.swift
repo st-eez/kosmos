@@ -17,11 +17,17 @@ final class Inventory {
     /// Accessibility facts for windows whose app's worker knows them.
     private var ax: [UInt32: AXWindowInfo] = [:]
     private(set) var focused: UInt32?
+    /// Windows in a native fullscreen Space.
+    private(set) var fullscreen: Set<UInt32> = []
+    /// Space queries for fullscreen checks, in the order the events asked for them.
+    private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
     /// A window became managed (true) or stopped being managed (false).
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
+    /// A managed window entered (true) or left (false) native fullscreen.
+    var onFullscreenChange: (@MainActor (UInt32, Bool) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -100,8 +106,32 @@ final class Inventory {
         guard let worker = apps.worker(pid) else { return }
         Task {
             let info = await worker.info(id)
+            // Known before the window is managed, so a window that is already fullscreen
+            // is parked at once and never tiled.
+            setFullscreen(id, await fullscreenState(id))
             setAX(id, info)
         }
+    }
+
+    /// A native fullscreen window moves to a Space of its own, which SkyLight reports as a
+    /// Space membership change (the fullscreen probe in kosmos-probe). Accessibility has no
+    /// notification for it.
+    private func checkFullscreen(_ id: UInt32) {
+        Task { setFullscreen(id, await fullscreenState(id)) }
+    }
+
+    private func fullscreenState(_ id: UInt32) async -> Bool? {
+        await withCheckedContinuation { continuation in
+            spaceQueue.async { continuation.resume(returning: Displays.isFullscreen(id)) }
+        }
+    }
+
+    private func setFullscreen(_ id: UInt32, _ state: Bool?) {
+        guard let state, windows[id] != nil else { return }
+        let changed = state ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil
+        guard changed else { return }
+        inventoryLog.info("\(id) \(state ? "entered" : "left", privacy: .public) native fullscreen")
+        if isManaged(id) { onFullscreenChange?(id, state) }
     }
 
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
@@ -121,8 +151,11 @@ final class Inventory {
     private func handle(_ event: WindowServerEvent) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
         switch event {
-        case .created(let id), .changed(let id), .spaceMembership(let id):
+        case .created(let id), .changed(let id):
             refresh(id)
+        case .spaceMembership(let id):
+            refresh(id)
+            if let row = windows[id], isCandidate(row) { checkFullscreen(id) }
         case .destroyed(let id):
             remove(id, reason: "destroyed")
         case .spacesChanged:
@@ -162,6 +195,7 @@ final class Inventory {
         let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
+        fullscreen.remove(id)
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
