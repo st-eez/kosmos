@@ -1,5 +1,5 @@
-// kosmos-probe secure-input: which Carbon hotkeys fire while Secure Input is on, and how
-// Kosmos can learn that it turned on (DESIGN.md, section 5.6).
+// kosmos-probe secure-input: which Carbon hotkeys fire while Secure Input is on, and the
+// WindowServer events that report it turning on and off (DESIGN.md, section 5.6).
 //
 // The probe registers each key below as an exclusive hotkey, and its window asks the person
 // at the keyboard to press each one twice: with Secure Input off, and with the probe's own
@@ -10,8 +10,11 @@
 // Real presses only. Synthetic presses gave a different answer depending on how the event
 // was built, and they type into whatever app is in front if the probe loses focus.
 //
-// Secure Input ends when its holder exits (measured: WindowServer sends event 753 at the
-// exit), so a crash or a kill leaves it off, and the probe stops itself with an alarm.
+// Secure Input ends when its holder exits, so a crash or a kill leaves it off: a throwaway
+// program that exited while holding it through EnableSecureEventInput released it, with
+// event 753 at the exit (measured September 24, 2026). AppKit's password field uses the
+// same call; AppKit imports EnableSecureEventInput and DisableSecureEventInput from
+// HIToolbox (`dyld_info -imports`, macOS 27). The probe also stops itself with an alarm.
 import AppKit
 import Carbon.HIToolbox
 import CKosmos
@@ -104,8 +107,6 @@ private func stamp() -> String {
     // A person who walks away would leave Secure Input on.
     alarm(600)
 
-    print("checks with Secure Input off:")
-    timeChecks()
     watchWindowServerEvents()
     let refs = registerTestKeys()
     installHotkeyHandler()
@@ -131,8 +132,6 @@ private func stamp() -> String {
         if phase == .on {
             print("\(stamp()) password field focused")
             pump(until: { IsSecureEventInputEnabled() }, timeout: 1)
-            print("checks with Secure Input on:")
-            timeChecks()
         }
         print("phase \(phase.title): Secure Input \(IsSecureEventInputEnabled() ? "on, held by \(holderDescription())" : "off")")
         for key in testKeys {
@@ -203,30 +202,13 @@ private func pump(until condition: () -> Bool, timeout: Double) -> Bool {
 }
 
 /// Prints WindowServer's Secure Input events as they arrive: 752 when it turns on and 753
-/// when it turns off, whichever process changes it.
+/// when it turns off.
 private func watchWindowServerEvents() {
     for event: UInt32 in [752, 753] {
         SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { event, _, _, _, _ in
             print("\(stamp()) WindowServer event \(event), IsSecureEventInputEnabled \(IsSecureEventInputEnabled())")
         }, event, nil)
     }
-}
-
-/// Times the check Kosmos would run and the session dictionary read that names the holder.
-private func timeChecks() {
-    var check: [Double] = [], holder: [Double] = []
-    for _ in 0..<2000 {
-        let start = ContinuousClock.now
-        _ = IsSecureEventInputEnabled()
-        check.append(elapsed(start) * 1000)
-    }
-    for _ in 0..<2000 {
-        let start = ContinuousClock.now
-        _ = (CGSessionCopyCurrentDictionary() as? [String: Any])?["kCGSSessionSecureInputPID"]
-        holder.append(elapsed(start) * 1000)
-    }
-    print(String(format: "  IsSecureEventInputEnabled: median %.3f µs, p95 %.3f µs", percentile(check, 0.5), percentile(check, 0.95)))
-    print(String(format: "  session dictionary holder read: median %.1f µs, p95 %.1f µs", percentile(holder, 0.5), percentile(holder, 0.95)))
 }
 
 private func holderDescription() -> String {

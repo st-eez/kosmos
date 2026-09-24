@@ -60,10 +60,11 @@ public enum SkyLight {
         }
     }
 
-    /// Calls `changed` on the main queue when Secure Input turns on (event 752) or off (753),
-    /// whichever process changes it. The events follow the session's state: a second or
-    /// nested enable sends none, and the last holder's exit sends 753 (kosmos-probe
-    /// secure-input). Call once.
+    /// Calls `changed` on the main queue when Secure Input turns on (event 752) or off (753).
+    /// The events follow the session's state, whichever process changes it. Measured
+    /// September 24, 2026 with throwaway programs: another process turning it on and off sent
+    /// 752 and 753; with two overlapping holders, only the first enable and the last release
+    /// sent one; and a holder that exited without releasing sent 753 at its exit. Call once.
     @MainActor public static func watchSecureInput(_ changed: @escaping @MainActor () -> Void) {
         secureInputChanged = changed
         for id: UInt32 in [752, 753] {
