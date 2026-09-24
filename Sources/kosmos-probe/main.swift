@@ -1254,9 +1254,7 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
             let at = Date()
             let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
             let payload = bytes.prefix(16).map { String(format: "%02x", $0) }.joined()
-            // Window events carry the window first; Space membership events after a 64 bit Space id.
-            let offset = id == 1325 || id == 1326 ? 8 : 0
-            let window: UInt32? = id < 1327 && bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : nil
+            let window = WindowServerEvent(id: id, payload: bytes)?.window
             DispatchQueue.main.async { MainActor.assumeIsolated { printEvent(id, window: window, payload: payload, at: at) } }
         }, id, nil)
     }
