@@ -148,42 +148,55 @@ off the main thread).
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
 - Every report names the key window. For an app activation, the app's worker reads the
-  app's focused window. Hotkeys, socket commands and reports are stamped on receipt.
+  app's focused window, stamped when the main actor noticed the activation. An app's
+  focused window notification is stamped, and checked against the front process, on an
+  observer thread that never waits behind the worker's calls into the app. Hotkeys and
+  socket commands are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
-    app alone would take a Command-Tab to another window of that app for an echo.
+    app alone would take a Command-Tab to another window of that app for an echo. The
+    exception is an activation read: Kosmos records an activation only just before
+    making it, so the next activation read of that app is its echo, whichever window the
+    app has by then. A notification of the same window joins an activation's record
+    without using it up. Only the matched record goes: each app's reports wait behind its
+    own worker, so an echo can come after the echo of a later request. When the echo
+    names another window than the current intent, as after a busy app's late raise, the
+    intent is requested again.
+  - A report from an app that is not the front process consumes an echo it matches and is
+    otherwise ignored: background apps report windows they open. An activation read of
+    an app that lost the front is ignored too, unless Kosmos recorded an activation after
+    it: then the user's activation beat Kosmos's older request and stands.
+  - A report stamped before the last report taken as the user's was overtaken by it.
   - A click or Command-Tab received before the latest command is stale. The command wins,
     and its focus is requested again.
   - A window on Kosmos's current workspace becomes the focus intent and is requested
     again, in case an older request of Kosmos's landed after the user's change.
-  - A window that was hidden when it became key was reached with Command-Tab, and Kosmos
-    follows it to its workspace.
+  - A window that was hidden at the report's stamp was reached with Command-Tab, and
+    Kosmos follows it to its workspace. Hiding keeps when each window was last revealed,
+    because a later switch can reveal it before the report is classified.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again.
-- A report that repeats the previous report is dropped. An app activation and the app's
-  focused window notification can both report one key change, and a repeat that arrives
-  after a newer request would look like the user's and pull focus back.
 - The main actor knows the key window only from reports, which lag, so it requests every
   focus. The focus queue skips a request whose window is already key when the request
   runs, judged from the front process and, for a request to the front app, that app's
-  focused window, read on its worker within 30 ms. The echo is recorded just before each
-  call that changes the key window, so a skipped request leaves nothing that a later
-  click could match ([tla/](../tla/README.md), changes 8 and 9). Inside the front app
-  the key record changes nothing unless the window is frontmost in its app, so the app's
-  worker keys: if AXRaise alone keys the window it records just before the raise, and
-  otherwise it raises, then records and posts the key record. For a background app the
-  queue records just before the key record that activates it. Neither side records for
-  the other's call (change 11); `kosmos-probe keying` settles which front app case
-  holds. When a newer
-  command for another workspace is already queued, the older one lays out but doesn't
-  focus.
-- A report from an app that is not the front process when it arrives consumes an echo it
-  matches and is otherwise ignored: raising a window in a background app makes some apps
-  report it, after a switch that window can be concealed (change 10), and background
-  apps report windows they open. The check runs in the observer callback, which waits
-  behind a busy worker, so a user's click inside the front app that races Kosmos's
-  activation of another app can be judged against the newer front app and missed.
+  focused window, read on its worker within 30 ms; a read with no answer stops the
+  request. The echo is recorded just before each call that changes the key window, so a
+  skipped request leaves nothing that a later click could match ([tla/](../tla/README.md),
+  changes 8 and 9).
+  - Inside the front app the key record changes nothing unless the window is frontmost
+    in its app, so the app's worker keys: if AXRaise alone keys the window it records
+    just before the raise, and otherwise it raises, then records and posts the key
+    record. The worker waits for the raise to finish; a raise it gave up on can still
+    land. `kosmos-probe keying` settles which of the two cases holds.
+  - For a background app the queue records just before the key record that activates it,
+    and nothing raises the window: a raise in a background app lands after anything that
+    fronts the app meanwhile.
+  - Neither side records for the other's call (change 11). When a newer command for
+    another workspace is already queued, the older one lays out but doesn't focus.
+- When Kosmos keys an app again before that app's activation read runs, the read finds
+  Kosmos's window, and nothing tells which window the user activated: a Command-Tab to a
+  window of that app is then lost. The TLA+ spec exempts this case (change 12).
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 

@@ -28,52 +28,53 @@ Java 11 or newer is required.
 
 | Config | Inputs | Checks | Result | States |
 | --- | --- | --- | --- | --- |
-| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,550 |
-| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 105,355 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 105,355 |
-| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 104,809 |
-| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 167,686 |
-| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 167,686 |
-| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 374,395 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 4,171,155 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 68 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 50 |
-| `skip-on-report` | commands; main skips the last reported key window | convergence, last command wins | fails, expected | 5,569 |
+| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,552 |
+| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 105,783 |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 105,783 |
+| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 105,237 |
+| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 168,304 |
+| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 168,304 |
+| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 392,771 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 3,746,589 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 83 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 66 |
+| `skip-on-report` | commands; main skips the last reported key window | convergence, last command wins | fails, expected | 6,219 |
 
-The `split-` configs run a focus request as the focus queue's and the target app worker's
-separate steps (`SplitQueue`). The queue's 30 ms wait can run out for the busy app
-(`BusyApp`, app A unless named `busyb`). A raise in a background app is reported as a
-focus change, or not in the `quiet` configs (`RaiseReports`). AXRaise alone keys a window
-inside the front app, or needs the key record after it in the `nokey` configs
-(`RaiseKeys`). In the `background` configs background apps also change their own focused
-window (`AllowBackground`). The `user` configs check what `user` checks, the `hover` ones
-what `hover` checks, and `commands` what `commands` checks; `settles` checks liveness.
+The `split-` configs run a focus request as the steps the implementation takes
+(`SplitQueue`): the focus queue's, the target app worker's, the app's AXRaise landing
+later, the app's focus notification, and the activation read, which runs on the app's
+worker and reads the app's focused window whenever it runs. The queue's 30 ms wait can run
+out for the busy app (`BusyApp`, app A unless named `busyb`). A raise in a background app
+is reported as a focus change, or not in the `quiet` configs (`RaiseReports`). AXRaise
+alone keys a window inside the front app, or needs the key record after it in the `nokey`
+configs (`RaiseKeys`). In the `background` configs background apps also change their own
+focused window (`AllowBackground`). The `user` configs check what `user` checks, the
+`hover` ones what `hover` checks, and `commands` what `commands` checks; `settles` checks
+liveness.
 
 | Config | Result | States | Config | Result | States |
 | --- | --- | --- | --- | --- | --- |
-| `split-commands` | pass | 52,773 | `split-commands-nokey` | pass | 54,593 |
-| `split-commands-quiet` | pass | 41,463 | `split-commands-nokey-quiet` | pass | 43,212 |
-| `split-user` | pass | 537,127 | `split-user-nokey` | pass | 584,354 |
-| `split-user-quiet` | pass | 469,818 | `split-user-nokey-quiet` | pass | 516,147 |
-| `split-user-busyb` | pass | 415,636 | `split-user-busyb-nokey` | pass | 448,018 |
-| `split-user-busyb-quiet` | pass | 348,703 | `split-user-busyb-nokey-quiet` | pass | 380,796 |
-| `split-user-background` | pass | 577,448 | `split-user-background-nokey` | pass | 625,390 |
-| `split-user-background-quiet` | pass | 505,322 | `split-user-d1be665` | fails, expected | 288,982 |
-| `split-hover` | pass | 969,637 | `split-hover-nokey` | pass | 1,050,988 |
-| `split-hover-quiet` | pass | 859,110 | `split-hover-nokey-quiet` | pass | 938,437 |
-| `split-hover-settles` | pass | 969,637 | `split-hover-nokey-settles` | pass | 1,050,997 |
+| `split-commands` | pass | 107,142 | `split-commands-nokey` | pass | 105,685 |
+| `split-commands-quiet` | pass | 105,462 | `split-commands-nokey-quiet` | pass | 103,986 |
+| `split-user` | pass | 5,761,524 | `split-user-nokey` | pass | 5,995,624 |
+| `split-user-quiet` | pass | 5,507,397 | `split-user-nokey-quiet` | pass | 5,773,103 |
+| `split-user-busyb` | pass | 3,883,449 | `split-user-busyb-nokey` | pass | 4,161,848 |
+| `split-user-busyb-quiet` | pass | 3,798,536 | `split-user-busyb-nokey-quiet` | pass | 4,074,315 |
+| `split-user-background` | pass | 5,985,318 | `split-user-background-nokey` | pass | 6,223,920 |
+| `split-user-background-quiet` | pass | 5,730,703 | | | |
+| `split-hover` | pass | 9,163,984 | `split-hover-nokey` | pass | 9,480,149 |
+| `split-hover-quiet` | pass | 8,709,564 | `split-hover-nokey-quiet` | pass | 9,074,760 |
+| `split-hover-settles` | pass | 9,163,898 | `split-hover-nokey-settles` | pass | 9,479,847 |
 
-`split-user-d1be665` runs the rules robust had at d1be665 (`SplitRules`), which change 11
-replaced.
+Each of these runs one rule the implementation had, and fails as expected (change 12):
 
-The split model assumes an app answers the worker's read of its focused window. When a
-busy app's read could go unanswered and count as "not focused", a request for a window
-already key recorded, raised with no effect, and its record swallowed the user's later
-Command-Tab back to that window (`split-user` and `split-user-quiet`, in a scratch copy).
-Stopping the request instead fails only if the app ignores the read yet answers the
-raise, and raising without a record lets the raise land after a click and be adopted.
-The read and the raise are back-to-back calls on the app's worker, so an unanswered read
-means an unresponsive app, and the request stops.
+| Config | The rule | Result | States |
+| --- | --- | --- | --- |
+| `split-user-actcheck` | an activation read counts only while its app is front (`ActFrontCheck`) | fails, expected | 86,784 |
+| `split-user-latenote` | a focus notification is stamped and checked when the worker delivers it (`LateNoteCheck`) | fails, expected | 865,807 |
+| `split-user-timeout` | the worker gives up on a busy app's AXRaise, which still lands (`RaiseTimeout`) | fails, expected | 5,379,113 |
+| `split-user-bgraise` | the worker also raises a window of a background app (`BackgroundRaise`) | fails, expected | 4,706,703 |
+| `split-user-d1be665` | robust's rules at d1be665 (`SplitRules`), which change 11 replaced | fails, expected | 1,412,358 |
 
 `skip-on-report` records how Kosmos worked before the focus queue checked the key window
 (change 8 below). The other three expected failures record trade-offs:
@@ -166,3 +167,35 @@ change that removed it:
     not key served both cases but failed: the user's Command-Tab between the raise and the
     read made the read say not key, and the key record took focus back. Which case holds
     is for `kosmos-probe keying` to settle.
+12. **Late reports and late raises.** The split model then took each report as the
+    implementation takes it: an activation read runs on the app's worker, behind its
+    raises, and reads whatever window the app has by then, and a busy app's AXRaise can
+    land after the worker stopped waiting. That found, in turn:
+    - A notification and an activation read both report one activation. With the
+      notification consuming the record, the read, arriving after an unrelated echo, was
+      adopted and followed into a hidden workspace. An activation read now matches
+      Kosmos's activation record for that app whatever window it reads, and a
+      notification only joins such a record.
+    - Echoes from one app came after the echo of a later request from another, which
+      dropped the earlier records with it; only the matched record goes now. The repeat
+      filter dropped a Command-Tab to the window of the last report processed, which was
+      another app's older report; it is gone.
+    - The user clicked A, then B, and A's report came last; a report stamped before the
+      last one taken as the user's is now ignored.
+    - An activation read marked background once its app lost the front dropped the user's
+      Command-Tab when Kosmos's older request fronted another app first. Such a read is
+      now ignored only when no Kosmos activation was recorded after it.
+    - A notification checked when the worker delivered it, behind the worker's calls, was
+      judged against a newer front app and dropped a click. Notifications are checked
+      when sent.
+    - A raise the worker gave up on landed after a newer command, keying a concealed
+      window that Kosmos followed. The worker waits for the raise.
+    - A raise in a background app landed after the app came front and keyed a stale
+      window. Nothing raises a background app's window.
+    - Whether a window was hidden, judged as the report was classified, turned a
+      Command-Tab into a click on a window being concealed after a later switch revealed
+      it. It is judged at the report's stamp.
+
+    One case is left: when Kosmos keys an app again before that app's activation read
+    runs, the read finds Kosmos's window, and no report says which window the user
+    activated. The spec exempts it with a ghost (`lastAmb`) and DESIGN.md 5.4 records it.
