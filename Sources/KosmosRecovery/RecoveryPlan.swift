@@ -32,6 +32,9 @@ struct RecoveryPlan: Equatable {
         return plan
     }
 
+    /// Every window the plan covers, including the ones with nowhere to go.
+    var windows: [UInt32] { Array(removals.values.joined()) + Array(moves.values.joined()) + stuck }
+
     /// Recovery is complete only when no window is left in a recorded Space and every
     /// window it handled is on an ordinary Space. Otherwise the record stays for another
     /// attempt.

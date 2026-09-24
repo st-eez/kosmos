@@ -79,7 +79,13 @@ public struct RecoveryRecord: Equatable, Sendable {
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"
     static let version: UInt32 = 1
 
-    func encoded() -> [UInt8] {
+    /// The decoder's limits; a record beyond them could be written but not read back.
+    static let maxSpaces = 64
+    static let maxWindows = 4096
+
+    /// Nil when the record is beyond what the decoder accepts.
+    func encoded() -> [UInt8]? {
+        guard spaces.count <= Self.maxSpaces, windows.count <= Self.maxWindows else { return nil }
         var bytes: [UInt8] = []
         func put<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { bytes += $0 } }
         put(Self.magic); put(Self.version)
@@ -106,13 +112,13 @@ public struct RecoveryRecord: Equatable, Sendable {
         guard take(UInt32.self) == Self.magic, take(UInt32.self) == Self.version,
               let wsPid: Int32 = take(), let wsStart: UInt64 = take(),
               let mPid: Int32 = take(), let mStart: UInt64 = take(),
-              let spaceCount: UInt32 = take(), spaceCount <= 64 else { return nil }
+              let spaceCount: UInt32 = take(), spaceCount <= Self.maxSpaces else { return nil }
         var spaces: [UInt64] = []
         for _ in 0..<spaceCount {
             guard let space: UInt64 = take() else { return nil }
             spaces.append(space)
         }
-        guard let windowCount: UInt32 = take(), windowCount <= 4096 else { return nil }
+        guard let windowCount: UInt32 = take(), windowCount <= Self.maxWindows else { return nil }
         var windows: [Window] = []
         for _ in 0..<windowCount {
             guard let id: UInt32 = take(), let pid: Int32 = take(), let start: UInt64 = take(),

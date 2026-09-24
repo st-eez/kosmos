@@ -37,8 +37,7 @@ public final class RecordFile {
     /// Publishes a record. Returns false when it does not fit in a slot.
     @discardableResult
     public func publish(_ record: RecoveryRecord) -> Bool {
-        let payload = record.encoded()
-        guard payload.count <= Self.capacity else { return false }
+        guard let payload = record.encoded(), payload.count <= Self.capacity else { return false }
         let current = (0..<2).compactMap { index in slot(at: index).map { (index, $0.generation) } }
         let newest = current.max { $0.1 < $1.1 }
         let target = newest.map { 1 - $0.0 } ?? 0

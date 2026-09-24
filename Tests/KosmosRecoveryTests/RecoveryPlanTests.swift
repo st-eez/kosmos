@@ -30,3 +30,9 @@ import Testing
     #expect(!RecoveryPlan.isComplete(remainingMembers: 1, withoutSpace: 0))
     #expect(!RecoveryPlan.isComplete(remainingMembers: 0, withoutSpace: 1))
 }
+
+@Test func stuckWindowsAreAmongThoseChecked() {
+    // A stranded window with no destination must keep the record: it is on no Space.
+    let plan = RecoveryPlan.make(members: [:], stranded: [3], hasOrdinarySpace: { _ in false }, destination: { _ in nil })
+    #expect(plan.windows == [3])
+}

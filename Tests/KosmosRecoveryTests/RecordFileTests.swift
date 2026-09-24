@@ -99,3 +99,12 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     ]
     #expect(record.encoded() == expected)
 }
+
+@Test func recordBeyondTheDecodersLimitsIsRefused() throws {
+    let url = temporaryFile()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let file = try RecordFile(url: url)
+    #expect(file.publish(record(spaces: Array(1...64))))
+    #expect(!file.publish(record(spaces: Array(1...65))))
+    #expect(file.read()?.spaces.count == 64)
+}

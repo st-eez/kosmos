@@ -1,5 +1,6 @@
 import CKosmos
 import Foundation
+import KosmosCore
 import KosmosRecovery
 import KosmosSkyLight
 import os
@@ -13,7 +14,7 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 final class Hiding {
     /// How a window leaves the screen. An app's selected window keeps its ordinary Space
     /// membership so Command-Tab still picks it; the app's other concealed windows lose it.
-    enum Conceal: Sendable { case keepOrdinary, exclusive }
+    typealias Conceal = ConcealLedger.Kind
 
     enum Outcome: Sendable {
         case confirmed
@@ -26,8 +27,9 @@ final class Hiding {
     private let guardian: Guardian
     private let bridge = DispatchQueue(label: "kosmos.bridge", qos: .userInteractive)
     private let store: HidingStore
-    /// How each concealed window was concealed; revealing it undoes exactly that.
-    private var concealed: [UInt32: Conceal] = [:]
+    /// The windows concealed after the last batch the bridge finished, for focus reports.
+    /// The bridge queue's ledger is the truth; this copy only follows it.
+    private var concealed: Set<UInt32> = []
 
     init(record: RecordFile, guardian: Guardian) {
         self.guardian = guardian
@@ -35,27 +37,21 @@ final class Hiding {
         guardian.onUnavailable = { [weak self] in self?.restoreAll() }
     }
 
-    func isConcealed(_ window: UInt32) -> Bool { concealed[window] != nil }
+    func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
     /// Reveals `show`, then conceals `hide`, then reads the barrier, on the bridge queue.
     /// Concealing needs a ready guardian; revealing does not.
     func apply(show: [UInt32], hide: [UInt32: Conceal], done: @escaping @MainActor (Outcome) -> Void) {
-        let reveal = show.filter { concealed[$0] == .keepOrdinary }
-        let move = show.filter { concealed[$0] == .exclusive }
         let canConceal = guardian.isReady
-        // A window already concealed keeps its membership, so it keeps its kind too.
-        let fresh = canConceal ? hide.filter { concealed[$0.key] == nil } : [:]
-        let expectHidden = canConceal ? Array(hide.keys) : []
-        for id in show { concealed[id] = nil }
-        concealed.merge(fresh) { old, _ in old }
-
+        let hide = canConceal ? hide : [:]
         let store = self.store
         bridge.async {
-            let confirmed = store.apply(reveal: reveal, move: move, conceal: fresh, expectShown: show, expectHidden: expectHidden)
-            let left = confirmed ? nil : store.recover()
+            let confirmed = store.apply(show: show, hide: hide)
+            if !confirmed { store.recover() }
+            let concealed = store.concealed
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    if let left { self.concealed = left.reduce(into: [:]) { $0[$1] = .exclusive } }
+                    self.concealed = concealed
                     done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed)
                 }
             }
@@ -66,9 +62,10 @@ final class Hiding {
     func restoreAll() {
         let store = self.store
         bridge.async {
-            let left = store.recover()
+            store.recover()
+            let concealed = store.concealed
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self.concealed = left.reduce(into: [:]) { $0[$1] = .exclusive } }
+                MainActor.assumeIsolated { self.concealed = concealed }
             }
         }
     }
@@ -80,33 +77,50 @@ final class Hiding {
     }
 }
 
-/// The record, its copy in memory and the holding Space, used only on the bridge queue.
+/// The record, its copy in memory, the holding Space and the ledger, used only on the
+/// bridge queue.
 private final class HidingStore: @unchecked Sendable {
     private let record: RecordFile
     private var state: RecoveryRecord?
     private var space: UInt64 = 0
+    private var ledger = ConcealLedger()
 
     init(record: RecordFile) { self.record = record }
 
-    func apply(reveal: [UInt32], move: [UInt32], conceal: [UInt32: Hiding.Conceal],
-               expectShown: [UInt32], expectHidden: [UInt32]) -> Bool {
-        if !conceal.isEmpty, !prepare(Array(conceal.keys)) { return false }
-        guard space != 0 else { return reveal.isEmpty && move.isEmpty }
-        var ids = reveal
-        kosmos_remove_windows(space, &ids, ids.count)
-        // Windows concealed exclusively have no ordinary Space; one exclusive add moves them
-        // back and out of the holding Space.
-        ids = move
-        if !ids.isEmpty {
+    var concealed: Set<UInt32> { Set(ledger.entries.keys) }
+
+    func apply(show: [UInt32], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
+        let fresh = hide.keys.filter { ledger.entries[$0] == nil }
+        if !fresh.isEmpty, !prepare(fresh) { return false }
+        let batch = ledger.batch(show: show, hide: hide, into: space)
+        for (from, windows) in batch.removals {
+            var ids = windows
+            kosmos_remove_windows(from, &ids, ids.count)
+        }
+        if !batch.moves.isEmpty {
             guard let destination = Displays.current().mainCurrentSpace else { return false }
+            var ids = batch.moves
             kosmos_add_windows(destination, &ids, ids.count, true)
         }
-        ids = conceal.filter { $0.value == .keepOrdinary }.map(\.key)
+        var ids = batch.keep
         kosmos_add_windows(space, &ids, ids.count, false)
-        ids = conceal.filter { $0.value == .exclusive }.map(\.key)
+        ids = batch.strip
         kosmos_add_windows(space, &ids, ids.count, true)
-        guard kosmos_barrier(space), let members = (kosmos_space_windows(space) as? [UInt32]).map(Set.init) else { return false }
-        return expectShown.allSatisfy { !members.contains($0) } && expectHidden.allSatisfy { members.contains($0) }
+        // One barrier after every operation of the batch: the bridge runs them in order.
+        let touched = Set(batch.mustBeIn.values).union(batch.mustHaveLeft.values)
+        guard let any = touched.first else { return true }
+        guard kosmos_barrier(any) else { return false }
+        var members: [UInt64: Set<UInt32>] = [:]
+        for space in touched {
+            // A failed read proves nothing, so it fails the batch.
+            guard let list = kosmos_space_windows(space) as? [UInt32] else { return false }
+            members[space] = Set(list)
+        }
+        let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
+        let shown = batch.mustHaveLeft.allSatisfy { !members[$0.value]!.contains($0.key) }
+        guard hidden && shown else { return false }
+        ledger.commit(batch, into: space)
+        return true
     }
 
     /// Records the holding Space before any window enters it, and each window before its
@@ -114,10 +128,12 @@ private final class HidingStore: @unchecked Sendable {
     private func prepare(_ windows: [UInt32]) -> Bool {
         if state == nil {
             guard let windowServer = ProcessIdentity.windowServer() else { return false }
-            // Spaces an incomplete recovery left on file stay recorded.
+            // Spaces an incomplete recovery left on file stay recorded, and the newest is
+            // used again rather than adding one per attempt.
             if let onFile = record.read(), onFile.windowServer == windowServer {
                 state = onFile
                 state!.manager = .current
+                space = onFile.spaces.last ?? 0
             } else {
                 state = RecoveryRecord(windowServer: windowServer, manager: .current)
             }
@@ -160,19 +176,24 @@ private final class HidingStore: @unchecked Sendable {
         return false
     }
 
-    /// Runs recovery and returns the windows still concealed afterwards.
-    func recover() -> Set<UInt32> {
-        _ = recoverOutcome()
-        guard let left = record.read() else { return [] }
-        return Set(left.spaces.flatMap { kosmos_space_windows($0) as? [UInt32] ?? [] })
-    }
-
-    func recoverOutcome() -> Recovery.Outcome {
+    /// Runs recovery, then rebuilds the ledger from the windows it could not restore.
+    @discardableResult
+    func recover() -> Recovery.Outcome {
         let outcome = Recovery.run(file: record)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
         // Start over from the file: empty after a full recovery, the leftovers otherwise.
         state = nil
         space = 0
+        var entries: [UInt32: ConcealLedger.Entry] = [:]
+        for left in record.read()?.spaces ?? [] {
+            for window in kosmos_space_windows(left) as? [UInt32] ?? [] {
+                let ordinary = !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
+                entries[window] = .init(kind: ordinary ? .keepOrdinary : .exclusive, space: left)
+            }
+        }
+        ledger = ConcealLedger(entries: entries)
         return outcome
     }
+
+    func recoverOutcome() -> Recovery.Outcome { recover() }
 }

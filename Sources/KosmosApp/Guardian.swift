@@ -26,7 +26,10 @@ final class Guardian {
 
     private func spawn() {
         var fds: [Int32] = [0, 0]
-        guard pipe(&fds) == 0 else { return guardianLog.error("pipe failed: \(errno)") }
+        guard pipe(&fds) == 0 else {
+            guardianLog.error("pipe failed: \(errno)")
+            return failed()
+        }
         var actions: posix_spawn_file_actions_t?
         var attributes: posix_spawnattr_t?
         posix_spawn_file_actions_init(&actions)
@@ -50,7 +53,8 @@ final class Guardian {
         close(fds[1])
         guard result == 0 else {
             close(fds[0])
-            return guardianLog.error("cannot start \(path, privacy: .public): \(result)")
+            guardianLog.error("cannot start \(path, privacy: .public): \(result)")
+            return failed()
         }
 
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
@@ -78,9 +82,16 @@ final class Guardian {
     private func exited(_ pid: pid_t) {
         var status: Int32 = 0
         waitpid(pid, &status, WNOHANG)
-        isReady = false
         exitSource?.cancel()
         exitSource = nil
+        guardianLog.error("guardian \(pid) exited with status \(status)")
+        failed()
+    }
+
+    /// A guardian that could not start or has exited: try again, unless it keeps failing,
+    /// in which case every concealed window is restored.
+    private func failed() {
+        isReady = false
         let now = ContinuousClock.now
         recentExits = recentExits.filter { now - $0 < .seconds(10) } + [now]
         guard recentExits.count <= 3 else {
@@ -88,7 +99,9 @@ final class Guardian {
             onUnavailable?()
             return
         }
-        guardianLog.error("guardian \(pid) exited with status \(status); restarting")
-        spawn()
+        // Once a second, so a spawn that fails at once cannot spin.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            MainActor.assumeIsolated { self?.spawn() }
+        }
     }
 }
