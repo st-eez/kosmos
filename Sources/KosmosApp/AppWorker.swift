@@ -157,62 +157,51 @@ actor AppWorker {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
-    /// What the worker's part of a private focus request found (FocusQueue.swift).
-    enum Preparation: Sendable {
-        /// A newer focus intent exists, and nothing was done.
-        case stale
-        /// The target is key already, and nothing was done.
-        case alreadyKey
-        /// The echo is recorded and a window target raised: the key record goes ahead.
-        case ready
-    }
-
     /// The worker's part of a private focus request, as one job the focus queue waits on at
-    /// most 30 ms. It reads the app's focused window when `readFocus`, as the app is the
-    /// front process, and unless the target is key already, runs `goAhead`, which records
-    /// the echo, then raises a window target. The record comes before the raise, whose own
-    /// focus report must find it.
+    /// most 30 ms (FocusQueue.swift). It reads the app's focused window when `readFocus`, as
+    /// the app is the front process, and unless the target is key already, the shared request
+    /// records the echo before the job raises a window target, as the raise can report the
+    /// window key itself. Stale and late answers resolve under the request's lock
+    /// (KosmosCore's KeyRequest).
     nonisolated func prepareKey(_ key: KeyWindow, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
-                                goAhead: @escaping @Sendable () -> Void, done: @escaping @Sendable (Preparation) -> Void) {
+                                request: SharedKeyRequest, done: @escaping @Sendable () -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
-                guard isCurrent() else { return done(.stale) }
+                defer { done() }
+                guard request.workerStarts(isCurrent: isCurrent()) else { return }
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
-                guard !key.isAlreadyKey(appIsFront: readFocus, focused: focused) else { return done(.alreadyKey) }
-                goAhead()
-                if case .window(let id) = key { worker.raiseWindow(id) }
-                done(.ready)
+                if request.workerRead(alreadyKey: key.isAlreadyKey(appIsFront: readFocus, focused: focused)),
+                   case .window(let id) = key {
+                    worker.raiseWindow(id)
+                }
             }
         }
     }
 
-    /// The public focus path, for when the private one is off or its call fails (DESIGN.md,
-    /// section 5.4), as one job: skips a target that is key already, as `prepareKey` does,
-    /// records the echo through `performing`, makes a window target its app's main window and
-    /// raises it, then activates the app. The app keys a window of its own choosing, on this
-    /// Mac often another one (wm-research focus note, section 4). Each step can wait up to the
-    /// timeout on a slow app, so each first checks that no newer focus intent exists: a
-    /// request stale before its record does nothing, and one that turns stale after it stops
-    /// and keeps the record for any report its steps cause. `dropped` gets the record's stamp
-    /// when the activation fails.
-    nonisolated func focusPublicly(_ key: KeyWindow, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
+    /// The public focus path for a window, for when the private one is off or its call fails
+    /// (DESIGN.md, section 5.4), as one job: skips a target that is key already, records the
+    /// echo through `performing`, makes the window its app's main window and raises it, then
+    /// activates the app. The app keys a window of its own choosing, on this Mac often another
+    /// one (wm-research focus note, section 4). Each step can wait up to the timeout on a slow
+    /// app, so each is preceded by a check that no newer focus intent exists: a request stale
+    /// before its record does nothing, and one that turns stale after it stops and keeps the
+    /// record for any report its steps cause. `dropped` gets the record's stamp when the
+    /// activation fails.
+    nonisolated func focusPublicly(_ id: UInt32, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
                                    performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                    dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
-                guard isCurrent() else { return }
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
-                guard !key.isAlreadyKey(appIsFront: readFocus, focused: focused) else { return }
+                guard isCurrent(), !KeyWindow.window(id).isAlreadyKey(appIsFront: readFocus, focused: focused) else { return }
                 let stamp = ContinuousClock.now
                 performing(stamp)
-                if case .window(let id) = key {
-                    if let element = worker.elements[id] {
-                        _ = worker.ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
-                    }
-                    guard isCurrent() else { return }
-                    worker.raiseWindow(id)
-                    guard isCurrent() else { return }
+                if let element = worker.elements[id] {
+                    _ = worker.ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
                 }
+                guard isCurrent() else { return }
+                worker.raiseWindow(id)
+                guard isCurrent() else { return }
                 if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { dropped(stamp) }
             }
         }

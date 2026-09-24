@@ -227,16 +227,21 @@ off the main thread).
   window, through the main queue, which runs the record before any report of that change.
   On the private path the app's worker does the read and the raise as one job the focus
   queue waits on at most 30 ms, and records between them, as the raise can itself report
-  the window key. When the job does not answer in time, the queue records and posts the
-  key record anyway. A stale or skipped request records nothing, and a failed call forgets
-  its record. Once recorded, a private request finishes even if a newer one arrived: the
-  newer one follows in the queue and wins, and dropping the older one would leave its
-  raise's report unmatched and adopted, with Kosmos and macOS apart at rest. Recording when
+  the window key. The queue and the job share the request's state under one lock
+  (KosmosCore's KeyRequest): whichever takes it out of pending first decides it. While it
+  is pending, the job's stale or already key answer skips the request, and the queue then
+  keys nothing. When the job has not answered in 30 ms, the queue records and posts the key
+  record, and the job, when it runs, no longer checks for staleness and raises, since in the
+  front app the key record alone keys nothing. If it then finds the target key already, it
+  forgets the record, for no echo will come. A failed call forgets its record too. Once
+  recorded, a private request finishes even if a newer one arrived: the newer one follows
+  in the queue and wins, and dropping the older one would leave its raise's report
+  unmatched and adopted, with Kosmos and macOS apart at rest. Recording when
   the request was made failed TLC's `user` config. The user clicked w2, and Kosmos
   requested w2 again. Before the queue ran that request, the user clicked w1 and then w2,
   the second click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.
-  One ceiling: when the job answers late and then finds the target key already, the key
-  record changes nothing and the expectation waits for a later echo to clear it.
+  An expectation whose echo arrived while the session was locked is never consumed, since
+  reports are not classified then, so a resync forgets every pending one.
 - When a newer command for another workspace is already queued, the older one lays out but
   doesn't focus.
 - The private path has a kill switch with two triggers. Once off, it stays off across
@@ -266,7 +271,11 @@ off the main thread).
   only its own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the public
   path on the app's worker: make the window the app's main window, raise it, then activate
-  the app, or activate Finder alone for an empty workspace. The app picks its key window, so
+  the app. For an empty workspace it activates Kosmos, which holds no workspace window. No
+  public call fronts Finder with no key window, and activating Finder can key a hidden
+  Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
+  off the empty workspace on every switch. Concealing Finder's windows fully instead would
+  not reach one concealed earlier: the conceal ledger leaves a concealed window as it was. The app picks its key window, so
   the spec's assumption that the requested window becomes key no longer holds, and a wrong
   window is adopted like the user's choice. A public request's expectation ends at the
   first report from its app that is no echo, so a click on the requested window afterwards
