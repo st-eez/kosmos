@@ -26,18 +26,30 @@ final class Controller {
     private var key: KeyWindow?
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
+    /// Window rules, first match wins.
+    var rules: [WindowRule] = []
     var publish: (@MainActor (Data) -> Void)?
 
-    init(inventory: Inventory, hiding: Hiding, names: [String], managing: Bool) {
+    init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
-        session = Session(names: names, display: Controller.displayRect())
+        session = Session(names: names, display: Controller.displayRect(), gaps: gaps)
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
     }
 
     /// Runs one command. Returns the exit code and the text for the CLI.
+    var workspaceNames: [String] { session.names }
+
+    /// Applies new gaps and rules after a config reload. A changed workspace list takes a
+    /// restart.
+    func reconfigure(gaps: Gaps, rules: [WindowRule]) {
+        self.rules = rules
+        session.gaps = gaps
+        writeFrames(session.frames(of: session.visible))
+    }
+
     func run(_ arguments: [String], received: ContinuousClock.Instant) -> (code: Int32, text: String) {
         switch arguments {
         case ["list-workspaces"]:
@@ -78,7 +90,11 @@ final class Controller {
     private func managedChanged(_ id: WindowID, pid: pid_t, _ managed: Bool) {
         if managed {
             owner[id] = pid
-            execute(session.add(id))
+            let app = NSRunningApplication(processIdentifier: pid)
+            let rule = rules.first { $0.matches(appID: app?.bundleIdentifier, appName: app?.localizedName) }
+            var plan = session.add(id, to: rule?.workspace)
+            if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
+            execute(plan)
         } else {
             owner[id] = nil
             recent.removeAll { $0 == id }

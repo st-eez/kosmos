@@ -66,6 +66,14 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// Takes a window out of the tiling, as a window rule asks.
+    public mutating func float(_ window: WindowID) -> Plan {
+        guard let name = home[window], workspaces[name]!.float(window) else { return Plan() }
+        var plan = Plan()
+        plan.frames = frames(of: name)
+        return plan
+    }
+
     public mutating func remove(_ window: WindowID) -> Plan {
         guard let name = home.removeValue(forKey: window) else { return Plan() }
         let wasFocused = name == visible && focused == window
