@@ -27,12 +27,17 @@ final class Controller {
     private var hiddenApps: [pid_t: [WindowID]] = [:]
     /// Windows parked while they are in native fullscreen.
     private var fullscreenParked: Set<WindowID> = []
+    /// Windows parked because their app ordered them out and kept them.
+    private var closedByApp: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
-    /// A report whose verdict waits for the departure of the window key before it, with
-    /// the number of its grace timer (tla/Kosmos.tla, Hold).
-    private var held: (report: KeyReport, number: Int)?
-    private var holds = 0
+    /// A report whose verdict waits for the departure of the window key before it
+    /// (tla/Kosmos.tla, Hold).
+    private var held = HeldReport<KeyReport>()
+    /// A departure that waits for macOS's report of the next key window: the key window that
+    /// left, and the number of the departure's grace timer.
+    private var awaitingKey: (window: WindowID, number: Int)?
+    private var departures = 0
     /// A focus request found its window gone from the screen, so the window's departure
     /// focuses again (tla/Kosmos.tla, RequestFocus).
     private var refocus = false
@@ -61,6 +66,7 @@ final class Controller {
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
+        inventory.onOrderedOut = { [weak self] id, out, at in self?.orderedOutChanged(id, out, at: at) }
         let center = NSWorkspace.shared.notificationCenter
         for (name, hidden) in [(NSWorkspace.didHideApplicationNotification, true), (NSWorkspace.didUnhideApplicationNotification, false)] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
@@ -140,11 +146,11 @@ final class Controller {
             // Already minimized, in native fullscreen or hidden with its app, as at launch:
             // it waits parked for its return, with no frame and no concealing. A minimized or
             // fullscreen window of a hidden app returns on its own, not when the app unhides.
-            let fullscreen = inventory.fullscreen.contains(id)
-            let minimized = inventory.isMinimized(id)
-            let hidden = !fullscreen && !minimized && NSRunningApplication(processIdentifier: pid)?.isHidden == true
-            if fullscreen || minimized || hidden {
-                if fullscreen { fullscreenParked.insert(id) } else if hidden { hiddenApps[pid, default: []].append(id) }
+            if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
+                                                   minimized: inventory.isMinimized(id),
+                                                   appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {
+                if reason == .fullscreen { fullscreenParked.insert(id) }
+                if reason == .appHidden { hiddenApps[pid, default: []].append(id) }
                 plan.frames = session.park([id]).frames
                 plan.hide.removeAll { $0 == id }
             }
@@ -156,9 +162,10 @@ final class Controller {
             recent.removeAll { $0 == id }
             hiddenApps[pid]?.removeAll { $0 == id }
             fullscreenParked.remove(id)
+            closedByApp.remove(id)
             ledger.forget(id)
             execute(session.remove(id))
-            decideHeld(departed: [id])
+            if let report = held.departed([id]) { decideHeld(report, departed: true) }
         }
     }
 
@@ -177,6 +184,20 @@ final class Controller {
         }
     }
 
+    /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
+    /// parks as a minimized window does, and when the app orders it in again it returns to
+    /// its place and Kosmos follows it there. Removing it would lose its place, and the
+    /// inventory would not admit it again, since it stays managed.
+    private func orderedOutChanged(_ id: WindowID, _ out: Bool, at received: ContinuousClock.Instant) {
+        if out {
+            guard session.workspace(of: id) != nil, !session.isParked(id) else { return }
+            closedByApp.insert(id)
+            depart([id])
+        } else if closedByApp.remove(id) != nil {
+            returned([id], follow: id, at: received)
+        }
+    }
+
     /// Windows back from minimizing, hiding or fullscreen return to their places, and Kosmos
     /// follows `follow` to its workspace. A command received after the return wins, as over
     /// a stale Command-Tab, and its focus is requested again: macOS keyed the returning
@@ -188,24 +209,32 @@ final class Controller {
         execute(plan)
     }
 
-    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When the key window
-    /// leaves, macOS keys another window itself, and that report has Kosmos keep its
-    /// workspace and focus it again. Focusing here first could put Kosmos's own echo
-    /// between the departure and that report. The departure focuses the workspace's next
-    /// window, or Finder, only when no such report is on its way: the key window macOS last
-    /// reported stayed, or a focus request found these windows already gone.
+    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus
+    /// leaves, the workspace's next window, or Finder, is focused now, or after macOS's
+    /// report of the next key window when the key window left too (DepartureFocus). A
+    /// report that does not come within the grace, as when an app keeps no key window, has
+    /// the departure focus then.
     private func depart(_ windows: [WindowID]) {
         let focusLeft = session.focused.map(windows.contains) == true
         execute(session.park(windows))
-        if focusLeft, refocus || !keyLeaving(windows) { requestFocus(intent) }
-        decideHeld(departed: windows)
-    }
-
-    /// Whether the key window macOS last reported is among `windows` or left the screen
-    /// too, so that macOS's report of the next key window is still on its way.
-    private func keyLeaving(_ windows: [WindowID]) -> Bool {
-        guard case .window(let id)? = key else { return false }
-        return windows.contains(id) || inventory.leftScreen(id, within: .seconds(1))
+        switch DepartureFocus.decide(focusLeft: focusLeft, refocus: refocus, key: key, departing: windows,
+                                     left: { self.inventory.leftScreen($0, within: .seconds(1)) }) {
+        case .none:
+            break
+        case .now:
+            requestFocus(intent)
+        case .afterKeyReport:
+            guard case .window(let keyWindow)? = key else { break }
+            departures += 1
+            let number = departures
+            awaitingKey = (keyWindow, number)
+            afterGrace { controller in
+                guard controller.awaitingKey?.number == number else { return }
+                controller.awaitingKey = nil
+                controller.requestFocus(controller.intent)
+            }
+        }
+        if let report = held.departed(windows) { decideHeld(report, departed: true) }
     }
 
     /// An app hid its windows: they leave the layout, and switches leave them alone.
@@ -226,11 +255,8 @@ final class Controller {
             // Hidden again while the worker answered: the windows wait for the next unhide.
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true,
                   let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty else { return }
-            // A keyed window that did not hide with the app is not followed from here. A
-            // minimized one whose Dock thumbnail unhid the app follows by its own return,
-            // and a fullscreen one keeps macOS on its Space.
-            let follow = keyed.flatMap { session.workspace(of: $0) != nil ? $0 : nil } ?? mostRecent(windows)
-            returned(windows, follow: follow, at: received)
+            returned(windows, follow: session.followOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows)),
+                     at: received)
         }
     }
 
@@ -241,11 +267,13 @@ final class Controller {
             let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             let repeated = key == reported
             key = reported
+            // macOS's report of the next key window, which a departure waited for.
+            if let previous, awaitingKey?.window == previous { awaitingKey = nil }
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
             if let id, session.workspace(of: id) == nil || session.isParked(id) { return }
             // The held window again, as after a miss: the same activation, still held.
-            if repeated, held?.report.key == reported { return }
+            if repeated, held.report?.key == reported { return }
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4). The
             // bound covers macOS's delay: after a minimize, the new key window was reported
@@ -312,17 +340,15 @@ final class Controller {
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report
         // of no key window leave it held.
-        if id != nil, verdict != .echo { held = nil }
+        if id != nil, verdict != .echo { held.end() }
         switch verdict {
         case .echo, .ignore:
             break
         case .undecided:
-            holds += 1
-            let number = holds
-            held = (report, number)
-            Task { [weak self] in
-                try? await Task.sleep(for: Self.grace)
-                self?.decideHeld(number: number)
+            guard let previous = report.previous else { break }
+            let number = held.hold(report, previous: previous)
+            afterGrace { controller in
+                if let report = controller.held.expire(number) { controller.decideHeld(report, departed: false) }
             }
         case .reassert:
             requestFocus(intent)
@@ -347,15 +373,13 @@ final class Controller {
         return mostRecent(session.windows(of: session.visible).filter { owner[$0] == pid })
     }
 
-    /// Decides the held report when the window key before it departs, or when its grace
-    /// (`number`) ends, by what WindowServer says of that window then.
-    private func decideHeld(number: Int? = nil, departed: [WindowID] = []) {
-        guard let (report, heldNumber) = held, let previous = report.previous,
-              number.map({ $0 == heldNumber }) ?? departed.contains(previous) else { return }
-        held = nil
+    /// Decides a held report: when the window key before it departs, or when the grace ends,
+    /// by what WindowServer says of that window then.
+    private func decideHeld(_ report: KeyReport, departed: Bool) {
         // The reported window left or stopped being managed meanwhile.
         if case .window(let id) = report.key, session.workspace(of: id) == nil || session.isParked(id) { return }
-        let left = departed.contains(previous) || inventory.leftScreen(previous, within: .seconds(1))
+        guard let previous = report.previous else { return }
+        let left = departed || inventory.leftScreen(previous, within: .seconds(1))
         controllerLog.notice("""
             held focus report \(String(describing: report.key), privacy: .public): \
             \(previous) \(left ? "left" : "stayed", privacy: .public) \
@@ -364,14 +388,25 @@ final class Controller {
         decide(report, keyLeft: left ? .left : .stayed)
     }
 
+    /// Runs `body` on the main actor once the grace ends.
+    private func afterGrace(_ body: @escaping @MainActor (Controller) -> Void) {
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.grace)
+            if let self { body(self) }
+        }
+    }
+
     // MARK: Plans
 
     private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
 
-    /// macOS shows a native fullscreen window's Space, where that window is key.
+    /// macOS shows a native fullscreen window's Space: that window is key, or a panel or
+    /// dialog of its app is.
     private var inFullscreenSpace: Bool {
-        guard case .window(let id)? = key else { return false }
-        return fullscreenParked.contains(id)
+        let keyWindow: WindowID? = if case .window(let id)? = key { id } else { nil }
+        return showsFullscreenSpace(key: key, keyManaged: keyWindow.map { session.workspace(of: $0) != nil } ?? false,
+                                    keyApp: keyWindow.flatMap { owner[$0] ?? inventory.windows[$0]?.pid },
+                                    fullscreen: Dictionary(uniqueKeysWithValues: fullscreenParked.compactMap { id in owner[id].map { (id, $0) } }))
     }
 
     /// `since` is when the command arrived, for the switch timing log.
@@ -385,11 +420,8 @@ final class Controller {
             needsResync = false
         }
         let movePointer = fromCommand && mouseFollowsFocus
-        // Focusing a desktop window takes the user out of a fullscreen Space: only a command
-        // does that, not a window closing behind it or an unhide that conceals windows.
-        let mayFocus = { fromCommand || !self.inFullscreenSpace }
         if show.isEmpty && hide.isEmpty {
-            if plan.focus != nil, mayFocus() { requestFocus(intent, movePointer: movePointer) }
+            if plan.focus != nil { requestFocus(intent, movePointer: movePointer, fromCommand: fromCommand) }
         } else {
             switchGeneration += 1
             let generation = switchGeneration
@@ -415,8 +447,8 @@ final class Controller {
                     return
                 }
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
-                guard generation == self.switchGeneration, mayFocus() else { return }
-                self.requestFocus(self.intent, movePointer: movePointer)
+                guard generation == self.switchGeneration else { return }
+                self.requestFocus(self.intent, movePointer: movePointer, fromCommand: fromCommand)
             }
         }
         publishState()
@@ -448,7 +480,12 @@ final class Controller {
         return kinds
     }
 
-    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false) {
+    /// Every focus request goes through here. `fromCommand`: a command asked for it.
+    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false, fromCommand: Bool = false) {
+        // Focusing a desktop window takes the user out of a fullscreen Space: only a command
+        // does that, not a window closing or hiding behind it, nor an unhide that conceals
+        // windows.
+        guard fromCommand || !inFullscreenSpace else { return }
         // A window that just left the screen, before Kosmos heard: fronting it would
         // unminimize it or unhide its app. Its departure focuses again.
         if case .window(let id) = target, inventory.leftScreen(id, within: .seconds(1)) {

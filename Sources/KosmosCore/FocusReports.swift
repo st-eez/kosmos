@@ -36,6 +36,19 @@ public enum Departure: Sendable {
     case unknown
 }
 
+/// Whether macOS shows a native fullscreen window's Space: that window is key, or a window
+/// Kosmos does not manage is key and its app owns one, as the fullscreen app's panel or
+/// dialog. Only a command then requests focus, since focusing a desktop window takes the
+/// user out of that Space (DESIGN.md, section 5.4).
+/// - Parameter fullscreen: each window parked in native fullscreen, with its app.
+public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int32?,
+                                 fullscreen: [WindowID: Int32]) -> Bool {
+    guard case .window(let id)? = key else { return false }
+    if fullscreen[id] != nil { return true }
+    guard !keyManaged, let keyApp else { return false }
+    return fullscreen.values.contains(keyApp)
+}
+
 /// Classifies key window reports against the focus requests Kosmos made. Hotkeys, requests
 /// and reports carry receipt stamps (`Stamp`) so "happened before" can be decided.
 public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {

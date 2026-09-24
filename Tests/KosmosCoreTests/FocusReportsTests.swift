@@ -79,7 +79,9 @@ import Testing
 @Test func commandTabSoonAfterAHideIsStillFollowed() {
     var reports = FocusReports<Int>()
     #expect(reports.classify(.window(2), receivedAt: 11, onCurrentWorkspace: true, reachable: false, keyLeft: .left) == .adopt(2))
-    // The window key before the Command-Tab is the one macOS keyed, still on screen.
+    // The window key before the Command-Tab is the one macOS keyed, still on screen, which
+    // no departure names: the report waits for the grace, then follows.
+    #expect(reports.classify(.window(3), receivedAt: 12, onCurrentWorkspace: false, reachable: true, keyLeft: .unknown) == .undecided)
     #expect(reports.classify(.window(3), receivedAt: 12, onCurrentWorkspace: false, reachable: true, keyLeft: .stayed) == .follow(3))
 }
 
@@ -152,4 +154,15 @@ import Testing
     // With no window of the app shown, it is a Command-Tab.
     #expect(reports.classify(.window(3), receivedAt: 12, onCurrentWorkspace: false, reachable: true,
                              keyLeft: .stayed) == .follow(3))
+}
+
+@Test func aFullscreenSpaceIsOnScreenWhileItsWindowOrItsAppsPanelIsKey() {
+    let fullscreen: [WindowID: Int32] = [5: 100]   // window 5 of app 100
+    #expect(showsFullscreenSpace(key: .window(5), keyManaged: true, keyApp: 100, fullscreen: fullscreen))
+    // A panel or dialog of the fullscreen app, which Kosmos does not manage.
+    #expect(showsFullscreenSpace(key: .window(9), keyManaged: false, keyApp: 100, fullscreen: fullscreen))
+    // A managed desktop window of the same app, or another app's panel: the desktop.
+    #expect(!showsFullscreenSpace(key: .window(6), keyManaged: true, keyApp: 100, fullscreen: fullscreen))
+    #expect(!showsFullscreenSpace(key: .window(9), keyManaged: false, keyApp: 200, fullscreen: fullscreen))
+    #expect(!showsFullscreenSpace(key: KeyWindow.none, keyManaged: false, keyApp: nil, fullscreen: fullscreen))
 }

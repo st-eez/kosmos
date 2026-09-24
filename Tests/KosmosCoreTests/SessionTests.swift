@@ -357,10 +357,33 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.park([1])   // minimized
     _ = s.park([2])   // hidden with A
     _ = s.perform(.workspace(.named("3")))
-    let plan = s.unpark([2], follow: 1)
+    let follow = s.followOnUnhide([2], keyed: 1, fallback: 2)
+    #expect(follow == nil)
+    let plan = s.unpark([2], follow: follow)
     #expect(s.visible == "3")
     #expect(plan.hide == [2] && plan.show.isEmpty)
     #expect(s.isParked(1))
+}
+
+@Test func anUnhiddenAppIsFollowedToTheWindowItKeys() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, to: "2")
+    _ = s.park([1, 2])   // hidden with their app
+    #expect(s.followOnUnhide([1, 2], keyed: 2, fallback: 1) == 2)
+    // A dialog Kosmos does not manage, or no key window: the most recently focused one.
+    #expect(s.followOnUnhide([1, 2], keyed: 99, fallback: 1) == 1)
+    #expect(s.followOnUnhide([1, 2], keyed: nil, fallback: 1) == 1)
+}
+
+@Test func aWindowAdmittedParkedWaitsForItsOwnReturn() {
+    #expect(ParkReason.atAdmission(fullscreen: false, minimized: false, appHidden: false) == nil)
+    #expect(ParkReason.atAdmission(fullscreen: false, minimized: true, appHidden: false) == .minimized)
+    #expect(ParkReason.atAdmission(fullscreen: false, minimized: false, appHidden: true) == .appHidden)
+    // A minimized window of a hidden app stays minimized when the app unhides, and a
+    // fullscreen one returns when it leaves fullscreen.
+    #expect(ParkReason.atAdmission(fullscreen: false, minimized: true, appHidden: true) == .minimized)
+    #expect(ParkReason.atAdmission(fullscreen: true, minimized: false, appHidden: true) == .fullscreen)
 }
 
 @Test func aWindowConcealedWhenItParkedIsRevealedOnTheShownWorkspace() {

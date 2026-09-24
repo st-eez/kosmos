@@ -1,5 +1,21 @@
 import CoreGraphics
 
+/// Why a window waits parked when Kosmos admits it, as at launch (DESIGN.md, section 5.5).
+public enum ParkReason: Equatable, Sendable {
+    case fullscreen
+    case minimized
+    case appHidden
+
+    /// Fullscreen comes first: a fullscreen window of a hidden app returns when it leaves
+    /// fullscreen. A minimized window stays minimized when its app unhides, so it is not
+    /// hidden with the app.
+    public static func atAdmission(fullscreen: Bool, minimized: Bool, appHidden: Bool) -> ParkReason? {
+        if fullscreen { return .fullscreen }
+        if minimized { return .minimized }
+        return appHidden ? .appHidden : nil
+    }
+}
+
 /// Every workspace of one display and which one is shown (DESIGN.md, section 4.3). A change
 /// returns a Plan that the app carries out; the Session never talks to macOS.
 public struct Session: Sendable {
@@ -139,6 +155,16 @@ public struct Session: Sendable {
         plan.show += returning.filter { home[$0] == visible && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
         return plan
+    }
+
+    /// The window Kosmos follows when an app unhides: the window the app keys, if it hid with
+    /// the app, else the one focused most recently (`fallback`). A managed keyed window that
+    /// did not hide with the app is not followed from the unhide: a minimized one whose Dock
+    /// thumbnail unhid the app follows by its own return, and a fullscreen one keeps macOS
+    /// on its Space (DESIGN.md, section 5.5).
+    public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?) -> WindowID? {
+        guard let keyed, home[keyed] != nil else { return fallback }
+        return windows.contains(keyed) ? keyed : nil
     }
 
     public func isParked(_ window: WindowID) -> Bool {

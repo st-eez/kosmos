@@ -1,4 +1,5 @@
 import AppKit
+import KosmosCore
 import KosmosSkyLight
 import os
 
@@ -19,10 +20,8 @@ final class Inventory {
     private(set) var focused: UInt32?
     /// Windows in a native fullscreen Space.
     private(set) var fullscreen: Set<UInt32> = []
-    /// When windows left the screen: closed, minimized, or hidden with their app. The first
-    /// word of a departure counts: Accessibility reports a minimize as it starts, and macOS
-    /// can key the next app before WindowServer orders a hidden app's windows out.
-    private var leftAt: [UInt32: ContinuousClock.Instant] = [:]
+    /// When windows left the screen: closed, minimized, or hidden with their app.
+    private var departures = DepartureLog()
     /// When each window's Space membership first changed since its fullscreen state was last
     /// read. A window leaving fullscreen leaves its Space before it joins the desktop's, and
     /// its return dates from the first of those events.
@@ -34,6 +33,11 @@ final class Inventory {
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
+    /// A managed window that its app ordered out and kept (true), as a closed window of an
+    /// NSWindowController is, or that its app ordered in again (false), and when.
+    var onOrderedOut: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
+    /// Windows reported ordered out by their app.
+    private var orderedOut: Set<UInt32> = []
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
@@ -114,7 +118,7 @@ final class Inventory {
         case .minimized(let id, let minimized):
             inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
             ax[id]?.minimized = minimized
-            if minimized, windows[id]?.orderedIn == true { noteLeft(id) } else if !minimized { leftAt[id] = nil }
+            if minimized, windows[id]?.orderedIn == true { departures.left(id, at: .now) } else if !minimized { departures.returned(id) }
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
@@ -157,24 +161,34 @@ final class Inventory {
     /// its app. WindowServer may have ordered it out in an event not handled yet, which
     /// counts as now.
     func leftScreen(_ id: UInt32, within limit: Duration) -> Bool {
-        if let at = leftAt[id] { return ContinuousClock.now - at <= limit }
+        if let left = departures.left(id, within: limit, at: .now) { return left }
         guard windows[id]?.orderedIn == true else { return false }
         guard let row = SkyLight.rows([id]).first else { return true }
         return !row.orderedIn
+    }
+
+    /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
+    /// probe), and a minimize, a hide and native fullscreen have their own reports, so a
+    /// window still ordered out for none of those reasons a second later was closed by its
+    /// app, which kept it. The second outlasts a fullscreen transition, which takes a
+    /// window off its Space for about 0.5 s.
+    private func checkOrderedOut(_ id: UInt32) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, let row = self.windows[id], !row.orderedIn, self.isManaged(id), !self.isMinimized(id),
+                  NSRunningApplication(processIdentifier: row.pid)?.isHidden != true, !self.fullscreen.contains(id),
+                  self.orderedOut.insert(id).inserted else { return }
+            inventoryLog.info("\(id) ordered out by \(self.appName(row.pid), privacy: .public)")
+            self.onOrderedOut?(id, true, .now)
+        }
     }
 
     /// An app hid or came back. Its windows leave or return with it.
     private func appHidden(_ pid: pid_t, _ hidden: Bool) {
         inventoryLog.info("\(self.appName(pid), privacy: .public) \(hidden ? "hid" : "unhid", privacy: .public)")
         for (id, row) in windows where row.pid == pid {
-            if !hidden { leftAt[id] = nil } else if row.orderedIn { noteLeft(id) }
+            if !hidden { departures.returned(id) } else if row.orderedIn { departures.left(id, at: .now) }
         }
-    }
-
-    private func noteLeft(_ id: UInt32) {
-        let now = ContinuousClock.now
-        leftAt = leftAt.filter { now - $0.value < .seconds(10) }
-        leftAt[id] = now
     }
 
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
@@ -225,9 +239,9 @@ final class Inventory {
         guard ownedByRegularApp(row) else { return }
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
-        // Back on screen only once WindowServer orders it in again: before WindowServer orders
-        // a hidden app's windows out, their rows still read ordered in.
-        if row.orderedIn, old?.orderedIn == false { leftAt[row.id] = nil } else if !row.orderedIn, old?.orderedIn == true { noteLeft(row.id) }
+        departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
+        if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
+        if old?.orderedIn == false, row.orderedIn, orderedOut.remove(row.id) != nil { onOrderedOut?(row.id, false, .now) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX(row.id, pid: row.pid) }
             inventoryLog.info("""
@@ -246,7 +260,8 @@ final class Inventory {
         ax[id] = nil
         fullscreen.remove(id)
         spaceChangedAt[id] = nil
-        if row.orderedIn { noteLeft(id) }
+        orderedOut.remove(id)
+        if row.orderedIn { departures.left(id, at: .now) }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()

@@ -203,17 +203,20 @@ off the main thread).
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
 - Skip activation when the target is already key. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
-- While macOS shows a native fullscreen window's Space, only a command requests focus,
-  directly or after its switch's barrier. Parking the fullscreen window moved Kosmos's
-  focus to a desktop window. Focusing the next one when that window closes, or after an
-  unhide conceals the app's other windows, would take the user out of fullscreen.
+- Every focus request passes one gate: while macOS shows a native fullscreen window's
+  Space, only a command requests focus. The Space counts as shown while its window is
+  key, or a panel or dialog of its app that Kosmos does not manage. Parking the fullscreen
+  window moved Kosmos's focus to a desktop window. Focusing the next one when that window
+  closes or hides, or after an unhide conceals the app's other windows, would take the
+  user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
   next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
   replaced at once too, unless the key window macOS last reported left with it: then
   macOS's report of the next key window is still on its way and focuses. Focusing earlier
   could put Kosmos's echo between the departure and that report. When macOS keys no
-  window, the departure focuses.
+  window, the departure focuses, and when no report comes within 100 ms, as when an app
+  keeps no key window after its last window minimizes, the departure focuses then.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
@@ -247,6 +250,11 @@ off the main thread).
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
+  - A window its app orders out and keeps, as a closed NSWindowController window, parks
+    as a minimized one does, and returns when the app orders it in again. Kosmos takes a
+    window still ordered out a second later for none of the other reasons as one. A
+    conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
+    fullscreen transition.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first
