@@ -587,7 +587,7 @@ public struct Session: Sendable {
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
         guard monitors.count > 1 else { return [] }
         return Set(hide.filter { window in
-            guard let recent = latest(window), recent != window, let shown = home[recent], isShown(shown),
+            guard let recent = latest(window), let shown = home[recent], isShown(shown),
                   !isParked(recent), let own = home[window] else { return false }
             return monitor(of: own).id != monitor(of: shown).id
         })
