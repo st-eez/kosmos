@@ -630,7 +630,9 @@ final class Controller {
             let displays = Dictionary(uniqueKeysWithValues: show.compactMap { id in
                 session.workspace(of: id).map { (id, session.monitor(of: $0).id) }
             })
-            let strip = stripped(hide)
+            // The windows to conceal that lose their ordinary Space, by each app's window
+            // focused last (Session.stripped).
+            let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
             hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
@@ -694,12 +696,6 @@ final class Controller {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
             inventory.worker(pid)?.enqueueFrames(batch)
         }
-    }
-
-    /// The windows to conceal that lose their ordinary Space (Session.stripped), by each
-    /// app's window focused last.
-    private func stripped(_ windows: [WindowID]) -> Set<WindowID> {
-        session.stripped(windows) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
     }
 
     /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
