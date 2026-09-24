@@ -170,26 +170,28 @@ actor AppWorker {
 
     /// The worker's part of a private focus request for a window, as one job the focus queue
     /// waits on at most 30 ms (FocusQueue.swift). Its steps are the split model's `WorkerStart`,
-    /// `WorkerRead` and `WorkerRaise` (KosmosCore's KeyRequest). The app's focused window is
-    /// read only when the app was front, the generation is checked at each step, and just
-    /// before AXRaise the request, under its lock, records the echo if the app is front,
-    /// where the raise keys the window. A read with no answer stops the request, and a raise
-    /// that fails after its record forgets it.
-    nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool,
-                                    request: SharedKeyRequest, done: @escaping @Sendable () -> Void) {
+    /// `WorkerRead` and `WorkerRaise` (KosmosCore's KeyRequest), and it acts only for the front
+    /// app, where the raise keys the window. The generation is checked at each step. Just
+    /// before AXRaise the worker records the echo through `performing`, which reaches the
+    /// main actor before any report of the raise. A read with no answer stops the request,
+    /// and a raise that cannot land forgets its record through `dropped`.
+    nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool, request: KeyRequest,
+                                    performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                    dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                    done: @escaping @Sendable () -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
                 defer { done() }
                 guard request.workerStarts(isCurrent: isCurrent()) else { return }
-                let focused: UInt32?? = request.appWasFront ? worker.focusedWindow() : nil
-                if request.appWasFront, focused == nil { worker.logUnanswered(id) }
+                let focused = worker.focusedWindow()
+                if focused == nil { worker.logUnanswered(id) }
                 guard request.workerRead(isCurrent: isCurrent(), focused: focused, target: id),
-                      worker.elements[id] != nil else { return }
-                switch request.workerRaises(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == worker.pid) {
-                case .stop: break
-                case .raise: worker.raiseWindow(id)
-                case .recordAndRaise(let stamp): if !worker.raiseWindow(id) { request.dropped(stamp) }
-                }
+                      worker.elements[id] != nil,
+                      request.workerRaises(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == worker.pid)
+                else { return }
+                let stamp = ContinuousClock.now
+                performing(stamp)
+                if !worker.raiseWindow(id) { dropped(stamp) }
             }
         }
     }

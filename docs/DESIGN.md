@@ -45,7 +45,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep every 2 to 5 s as a backstop | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
 | Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
-| Focus | Private window-targeted focus in every case: AXRaise the window on its app's worker, then front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
+| Focus | Private window-targeted focus in every case: inside the front app, AXRaise the window on its app's worker; for a background app, front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
 | Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
@@ -281,13 +281,14 @@ off the main thread).
   worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so
     the worker keys it and the queue posts no key record. The worker ends a stale request,
-    and one whose front app already has the target focused; then, under the request's lock
-    just before the raise, it records and marks the request raising while the app is front.
-  - For a background app the worker raises without a record, as the raise changes only the
-    app's own focused window, and the queue keys it. Unless the request went stale, the app
-    came front meanwhile, or the worker is raising it, the queue marks it sent, records, and
-    posts the key record, which activates the app with the named window. A worker that
-    finds it sent raises nothing.
+    and one whose front app already has the target focused; then, just before the raise,
+    it records and raises if the request is current and the app is still front.
+  - For a background app the queue keys it and nothing raises the window: a raise in a
+    background app lands after anything that fronts the app meanwhile, and in TLC it keyed
+    a stale window over a newer activation (tla/README.md, change 12). The app's job does
+    nothing, and the queue waits on it only so its key record follows the app's queued
+    activation reads. Unless the request went stale or the app came front meanwhile, the
+    queue records and posts the key record, which activates the app with the named window.
   - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
     serves only a call that fails.
   - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
@@ -343,19 +344,21 @@ off the main thread).
     private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
     between two windows of the active app, so the miss rate is at most about 5% at 95%
     confidence, and five misses in a row at 5% come once in about 3 million runs. Those
-    trials posted a down and up record pair, and Kosmos posts the down alone;
-    `kosmos-probe keying` measures Kosmos's own sequence. The public path chose the wrong
+    trials raised first and posted a down and up record pair, and Kosmos posts the down
+    alone with no raise; `kosmos-probe keying` measures Kosmos's own sequence. The public path chose the wrong
     window in 9 of 9 trials, so a false trip costs more than a few late wrong windows
     (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, before the queue's key record for a background app. On
-  macOS 27 the record alone leaves the key window unchanged inside the app that is already
-  frontmost, for stacked and side by side windows alike, while AXRaise and then the record
-  keyed the right window in every case, same app or not (`kosmos-probe raise` on the hover
-  branch). yabai and alt-tab raise after the record, an order no probe has checked on
-  macOS 27. A slow app's raise lands after the key record, and a hung app holds only its
-  own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
+- AXRaise runs on the app's worker, and only inside the front app. On macOS 27 the record
+  alone leaves the key window unchanged inside the app that is already frontmost, for
+  stacked and side by side windows alike, while AXRaise and then the record keyed the right
+  window in every case (`kosmos-probe raise` on the hover branch). A hung app holds only
+  its own worker. `kosmos-probe keying` compares the orders, AXRaise alone included. Its
+  "record only" rows for another app show whether the key record alone brings a
+  background app's window above that app's other windows. yabai raises after its record
+  for that; if the record leaves the window behind, a raise once the app is front has to
+  be modeled first, as a raise in a background app was what failed.
 - The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
   waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
   a newer command, and Kosmos followed it there (tla/README.md, change 12). A raise that

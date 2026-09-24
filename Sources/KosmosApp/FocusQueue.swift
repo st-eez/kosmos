@@ -28,11 +28,12 @@ final class FocusQueue: Sendable {
     /// The private path for a window follows the split model in tla/Kosmos.tla (KosmosCore's
     /// KeyRequest). `FocusStart`: a stale request, or one whose window was concealed when it
     /// was made, does nothing; otherwise the queue reads whether the target's app is front
-    /// (1.6 us) and hands the worker its job. The worker ends a request whose front app
-    /// already has the target focused, as it is key already: the key window last reported can
-    /// be older than a request still in flight. `FocusDecide`: after the job, or 30 ms, the
-    /// queue keys only a background app, since inside the front app the key record does
-    /// nothing and only the worker's raise keys a window.
+    /// (1.6 us) and hands the worker its job. For the front app the worker ends a request
+    /// whose target is focused already, as it is key already: the key window last reported
+    /// can be older than a request still in flight. Otherwise it raises, which keys the
+    /// window there. `FocusDecide`: after the job, or 30 ms, the queue keys only a
+    /// background app, whose job did nothing but order the key record after the app's queued
+    /// activation reads.
     ///
     /// Each side records the echo right before its own call that changes the key window, and
     /// never for the other's: `performing` runs on the main actor with a stamp and the path,
@@ -51,13 +52,12 @@ final class FocusQueue: Sendable {
                 let stamp: ContinuousClock.Instant
                 switch key {
                 case .window(let id):
-                    let request = SharedKeyRequest(appWasFront: front,
-                                                   performing: { stamp in Self.onMain { performing(stamp, .raise) } },
-                                                   dropped: { stamp in Self.onMain { dropped(stamp) } })
-                    Self.wait(for: worker, id, isCurrent, request)
-                    guard let decided = request.queueDecides(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid)
-                    else { return }
-                    stamp = decided
+                    let request = KeyRequest(appWasFront: front)
+                    Self.wait(for: worker, id, isCurrent, request,
+                              performing: { stamp in Self.onMain { performing(stamp, .raise) } },
+                              dropped: { stamp in Self.onMain { dropped(stamp) } })
+                    guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
+                    stamp = ContinuousClock.now
                 case .none:
                     // `FocusStart`: Finder with no window, keyed at once unless it is already
                     // (KeyWindow.goesAhead).
@@ -103,14 +103,18 @@ final class FocusQueue: Sendable {
     /// Runs the worker's job for a private request and waits for it no longer than the main
     /// actor waits on a worker (DESIGN.md, section 4.2). On macOS 27 the key record alone
     /// leaves the key window unchanged inside the app that is already frontmost, while AXRaise
-    /// and then the record keyed the right window in every case, same app or not (the hover
-    /// branch's `kosmos-probe raise`). A slow app's job finishes on its own, and a hung app
-    /// holds only its own worker. With no worker, nothing is raised and the queue decides.
+    /// keyed the right window (the hover branch's `kosmos-probe raise`). A slow app's job
+    /// finishes on its own, and a hung app holds only its own worker. With no worker, nothing
+    /// is raised and the queue decides.
     private static func wait(for worker: AppWorker?, _ id: UInt32, _ isCurrent: @escaping @Sendable () -> Bool,
-                             _ request: SharedKeyRequest) {
+                             _ request: KeyRequest,
+                             performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                             dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         guard let worker else { return }
         let finished = DispatchSemaphore(value: 0)
-        worker.focusPrivately(id, isCurrent: isCurrent, request: request) { finished.signal() }
+        worker.focusPrivately(id, isCurrent: isCurrent, request: request, performing: performing, dropped: dropped) {
+            finished.signal()
+        }
         _ = finished.wait(timeout: .now() + .milliseconds(30))
     }
 
@@ -140,46 +144,4 @@ enum FocusPath: Sendable {
     case raise
     /// The public activation, which lets the app choose its key window.
     case activation
-}
-
-/// A private request's KeyRequest, shared by the focus queue and the app's worker under one
-/// lock. The worker's record is posted to the main actor inside the lock, so it precedes
-/// anything the queue does after its own decision under the same lock. The queue posts its
-/// record itself, after its decision and before its key record.
-final class SharedKeyRequest: Sendable {
-    let appWasFront: Bool
-    private let state: Mutex<KeyRequest<ContinuousClock.Instant>>
-    private let performing: @Sendable (ContinuousClock.Instant) -> Void
-    let dropped: @Sendable (ContinuousClock.Instant) -> Void
-
-    init(appWasFront: Bool, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
-         dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
-        self.appWasFront = appWasFront
-        state = Mutex(KeyRequest(appWasFront: appWasFront))
-        self.performing = performing
-        self.dropped = dropped
-    }
-
-    func workerStarts(isCurrent: Bool) -> Bool {
-        state.withLock { $0.workerStarts(isCurrent: isCurrent) }
-    }
-
-    func workerRead(isCurrent: Bool, focused: UInt32??, target: UInt32) -> Bool {
-        state.withLock { $0.workerRead(isCurrent: isCurrent, focused: focused, target: target) }
-    }
-
-    /// Records the worker's echo inside the lock when the step says so.
-    func workerRaises(isCurrent: Bool, appIsFront: Bool) -> KeyRequest<ContinuousClock.Instant>.RaiseStep {
-        state.withLock { request in
-            let step = request.workerRaises(isCurrent: isCurrent, appIsFront: appIsFront, now: .now)
-            if case .recordAndRaise(let stamp) = step { performing(stamp) }
-            return step
-        }
-    }
-
-    /// The stamp for the queue's key record, or nil when the queue keys nothing. The queue
-    /// records it itself, as the key record is its call.
-    func queueDecides(isCurrent: Bool, appIsFront: Bool) -> ContinuousClock.Instant? {
-        state.withLock { $0.queueDecides(isCurrent: isCurrent, appIsFront: appIsFront, now: .now) }
-    }
 }
