@@ -348,6 +348,21 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.focus == .window(1))
 }
 
+@Test func aKeyedWindowThatDidNotHideWithItsAppIsNotFollowedWithIt() {
+    // App A has 1 minimized on workspace 1 and 2 on workspace 2, and hides. Clicking 1's
+    // Dock thumbnail unhides A and keys 1, which returns on its own.
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, to: "2")
+    _ = s.park([1])   // minimized
+    _ = s.park([2])   // hidden with A
+    _ = s.perform(.workspace(.named("3")))
+    let plan = s.unpark([2], follow: 1)
+    #expect(s.visible == "3")
+    #expect(plan.hide == [2] && plan.show.isEmpty)
+    #expect(s.isParked(1))
+}
+
 @Test func aWindowConcealedWhenItParkedIsRevealedOnTheShownWorkspace() {
     // An app with a window on each workspace hides, Kosmos shows the hidden workspace, and
     // the app comes back keyed on the window there.

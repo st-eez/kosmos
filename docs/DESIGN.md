@@ -189,7 +189,11 @@ off the main thread).
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
   workspace at their saved position, and Kosmos follows them to that workspace, as it does
-  for Command-Tab. For an app that unhides, it follows the window the app keys.
+  for Command-Tab. For an app that unhides, it follows the window the app keys if that
+  window hid with the app. A keyed window that returns on its own, as a minimized one does
+  when its Dock thumbnail unhides the app, is followed by its own return. A keyed
+  fullscreen window is not followed, because macOS shows its Space, where a switch fails.
+  With no managed window keyed, Kosmos follows the app's most recently focused window.
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The

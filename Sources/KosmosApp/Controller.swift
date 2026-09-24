@@ -211,8 +211,11 @@ final class Controller {
             let keyed = await inventory.worker(pid)?.focusedWindow()
             // Hidden again while the worker answered: the windows wait for the next unhide.
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true,
-                  let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty,
-                  let follow = keyed.flatMap({ windows.contains($0) ? $0 : nil }) ?? mostRecent(windows) else { return }
+                  let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty else { return }
+            // A keyed window that did not hide with the app is not followed from here. A
+            // minimized one whose Dock thumbnail unhid the app follows by its own return,
+            // and a fullscreen one keeps macOS on its Space.
+            let follow = keyed.flatMap { session.workspace(of: $0) != nil ? $0 : nil } ?? mostRecent(windows)
             returned(windows, follow: follow, at: received)
         }
     }
