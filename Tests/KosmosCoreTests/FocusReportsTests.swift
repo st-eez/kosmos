@@ -66,3 +66,15 @@ import Testing
     reports.requestDropped(.window(1), at: 10)
     #expect(reports.classify(.window(1), receivedAt: 11, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
 }
+
+@Test func awaitsTheEchoOfEveryRequest() {
+    var reports = FocusReports<Int>()
+    #expect(!reports.awaitingEcho)
+    reports.focusRequested(.window(1), at: 10)
+    reports.focusRequested(.window(2), at: 11)
+    #expect(reports.awaitingEcho)
+    reports.requestDropped(.window(2), at: 11)
+    #expect(reports.awaitingEcho)
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, wasHidden: false) == .echo)
+    #expect(!reports.awaitingEcho)
+}

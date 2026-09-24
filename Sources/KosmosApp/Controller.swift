@@ -120,6 +120,10 @@ final class Controller {
         switch report.kind {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
+            // An app activation and the app's focused window notification can report one key
+            // change twice. A repeat that arrives after a newer request would otherwise be
+            // taken for the user's and pull focus back.
+            guard reported != key else { return }
             key = reported
             // Dialogs and panels are not managed; their focus is theirs.
             if let id, session.workspace(of: id) == nil { return }
@@ -251,7 +255,9 @@ final class Controller {
 
     private func requestFocus(_ target: KeyWindow, movePointer: Bool = false) {
         if movePointer, case .window(let id) = target { centerPointer(on: id) }
-        guard target != key else { return }   // already key: activating again costs the system work
+        // Already key, and no request on its way could change that: activating again costs
+        // the system work.
+        guard target != key || reports.awaitingEcho else { return }
         let pid: pid_t?
         switch target {
         case .window(let id):

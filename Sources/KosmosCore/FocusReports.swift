@@ -36,6 +36,10 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         expected.append((key, stamp))
     }
 
+    /// Whether a request has not come back yet, so the key window macOS last reported may
+    /// still change.
+    public var awaitingEcho: Bool { !expected.isEmpty }
+
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
     public mutating func requestDropped(_ key: KeyWindow, at stamp: Stamp) {
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested == stamp }) {

@@ -161,7 +161,11 @@ off the main thread).
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again.
-- Skip activation when the target is already key. When a newer command for another
+- A report that repeats the previous report is dropped. An app activation and the app's
+  focused window notification can both report one key change, and a repeat that arrives
+  after a newer request would look like the user's and pull focus back.
+- Skip activation when the target is already key and no request is waiting for its echo;
+  while one is, the key window is about to change. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.

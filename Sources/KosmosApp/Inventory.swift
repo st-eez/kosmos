@@ -75,7 +75,7 @@ final class Inventory {
             // AX alone never removes a window; WindowServer decides.
             refresh(id)
         case .focusedWindowChanged(let id):
-            // Repeats still go to the controller, which counts echoes.
+            // Repeats still go to the controller, which drops them.
             if id != focused {
                 focused = id
                 let name = appName(report.pid)
