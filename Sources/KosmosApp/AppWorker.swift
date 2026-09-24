@@ -1,5 +1,6 @@
 import AppKit
 import CSkyLight
+import KosmosCore
 
 /// What an app's worker tells the main actor. Each report is stamped on receipt, so the
 /// main actor can order it against commands (DESIGN.md, section 5.4).
@@ -10,6 +11,8 @@ struct AXReport: Sendable {
         case focusedWindowChanged(UInt32?)
         case minimized(UInt32, Bool)
         case titleChanged(UInt32)
+        /// Frames read back after writes, with the target each write aimed for.
+        case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
     }
 
     let pid: pid_t
@@ -34,6 +37,9 @@ actor AppWorker {
     private let app: AXUIElement
     private var observer: AXObserver?
     private var elements: [UInt32: AXUIElement] = [:]
+    /// Writes waiting for the next drain; a newer target replaces an older one.
+    private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
+    private var drainScheduled = false
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
 
@@ -91,6 +97,60 @@ actor AppWorker {
         return track(element)
     }
 
+    /// Queues frame writes. Writes queued before the drain runs are merged, so each window
+    /// gets only its newest target.
+    func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
+        queuedWrites.merge(writes) { _, new in new }
+        guard !drainScheduled else { return }
+        drainScheduled = true
+        Task { self.drainWrites() }
+    }
+
+    private func drainWrites() {
+        drainScheduled = false
+        let writes = queuedWrites
+        queuedWrites = [:]
+        var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
+        for (id, entry) in writes {
+            guard let element = elements[id] else { continue }
+            switch entry.write {
+            case .position(let origin):
+                set(element, kAXPositionAttribute, origin)
+            case .frame(let frame):
+                set(element, kAXSizeAttribute, frame.size)
+                set(element, kAXPositionAttribute, frame.origin)
+                set(element, kAXSizeAttribute, frame.size)
+            }
+            if let readBack = frame(element) { results.append((id, entry.target, readBack)) }
+        }
+        if !results.isEmpty { send(.framesApplied(results)) }
+    }
+
+    private func set(_ element: AXUIElement, _ attribute: String, _ point: CGPoint) {
+        var point = point
+        guard let value = AXValueCreate(.cgPoint, &point) else { return }
+        logFailure(AXUIElementSetAttributeValue(element, attribute as CFString, value), attribute)
+    }
+
+    private func set(_ element: AXUIElement, _ attribute: String, _ size: CGSize) {
+        var size = size
+        guard let value = AXValueCreate(.cgSize, &size) else { return }
+        logFailure(AXUIElementSetAttributeValue(element, attribute as CFString, value), attribute)
+    }
+
+    private func logFailure(_ error: AXError, _ attribute: String) {
+        // Backing off an app that times out comes with tiling on real apps.
+        if error != .success { log.error("pid \(self.pid) set \(attribute, privacy: .public) failed: \(error.rawValue)") }
+    }
+
+    private func frame(_ element: AXUIElement) -> CGRect? {
+        var origin = CGPoint.zero, size = CGSize.zero
+        guard let p = copy(element, kAXPositionAttribute), let s = copy(element, kAXSizeAttribute),
+              AXValueGetValue(p as! AXValue, .cgPoint, &origin), AXValueGetValue(s as! AXValue, .cgSize, &size)
+        else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
     private func handle(_ notification: String, _ element: AXUIElement) {
         switch notification {
         case kAXWindowCreatedNotification:
@@ -116,6 +176,7 @@ actor AppWorker {
     private func track(_ element: AXUIElement) -> UInt32? {
         guard let id = windowID(element) else { return nil }
         if elements.updateValue(element, forKey: id) == nil, let observer {
+            AXUIElementSetMessagingTimeout(element, 1.0)
             let refcon = Unmanaged.passUnretained(self).toOpaque()
             for name in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
                          kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {

@@ -72,7 +72,7 @@ final class Inventory {
         case .minimized(let id, let minimized):
             inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
             if let row = windows[id] { readAX(id, pid: row.pid) }
-        case .titleChanged:
+        case .titleChanged, .framesApplied:
             break
         }
     }
