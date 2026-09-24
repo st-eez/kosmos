@@ -371,12 +371,13 @@ final class Inventory {
 
     /// Diffs every window WindowServer knows against the inventory. The Space list omits
     /// windows that are on no Space, such as one created but not yet shown, so tracked
-    /// windows missing from it are queried directly before they count as gone. The queries
-    /// can block during a Space transition, so they run off the main thread.
+    /// windows missing from it are queried directly before they count as gone, and so are
+    /// windows first seen while locked, which an unlock sweep admits even when ordered out.
+    /// The queries can block during a Space transition, so they run off the main thread.
     func sweep() {
         guard !sessionLocked, touchedDuringSweep == nil else { return }
         touchedDuringSweep = []
-        let tracked = Array(windows.keys)
+        let tracked = Array(windows.keys) + arrivedWhileLocked.keys
         DispatchQueue.global(qos: .utility).async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
