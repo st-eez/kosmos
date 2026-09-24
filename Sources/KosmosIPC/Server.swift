@@ -102,6 +102,10 @@ public actor IPCServer {
             let fd = accept(listenerFD, nil, nil)
             guard fd >= 0 else {
                 if errno == EINTR || errno == ECONNABORTED { continue }
+                // When accept fails for lack of a descriptor (EMFILE or ENFILE), macOS removes
+                // the pending connection and closes it, so the listener stops firing and this
+                // loop cannot spin. Measured on macOS 27: the client reads EOF, and the next
+                // accept returns EAGAIN.
                 if errno != EAGAIN { log("accept failed: \(String(cString: strerror(errno)))") }
                 return
             }
