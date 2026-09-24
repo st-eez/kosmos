@@ -28,6 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var focusProblem: String?
     private var hiding: Hiding?
     private var secureInput: SecureInput?
+    /// The config that applies, for display changes.
+    private var config = Config()
+    /// The profile `profile` applied, until the displays change or the config reloads.
+    private var forcedProfile: String?
+    /// The displays read last, to tell a change of displays from one of their areas.
+    private var displayIDs: Set<DisplayID> = []
+    /// Numbers the display change notifications, so a burst gets one response.
+    private var displayChanges = 0
+    private var screensAsleep = false
+    private static let defaultWorkspaces = (1...9).map(String.init)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
@@ -111,7 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let (applied, messages) = reloadConfig(atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
         default:
-            if case .success(.mode(let name)) = Command.parse(arguments) { return switchMode(to: name) }
+            switch Command.parse(arguments) {
+            case .success(.mode(let name)): return switchMode(to: name)
+            case .success(.profile(let name)): return applyProfile(name)
+            default: break
+            }
             guard let controller else {
                 return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission")
             }
@@ -127,6 +141,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let problems = hotkeys.switchMode(to: name)
         for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
         return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
+    }
+
+    /// Applies a profile from the config until the displays change or the config reloads, as
+    /// `set-profile.sh` did (DESIGN.md, section 5.13).
+    private func applyProfile(_ name: String) -> Response {
+        guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
+        guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+        guard config.profiles.contains(where: { $0.name == name }) else {
+            return Response(exitCode: 1, stderr: "kosmos: no profile named '\(name)'")
+        }
+        forcedProfile = name
+        applyDisplays()
+        return Response()
+    }
+
+    /// Reads the displays and applies the profile for them, or the one `profile` applied
+    /// while they stay the same (DESIGN.md, section 5.13). `resync`: conceal, reveal and focus
+    /// every window again; the first apply at launch leaves them to the inventory. With no
+    /// display at all, as in the middle of a change, the ones read before stay.
+    private func applyDisplays(resync: Bool = true) {
+        guard let controller else { return }
+        let displays = ConfigFile.displays()
+        guard !displays.isEmpty else { return log.notice("no displays listed; the ones read before stay") }
+        let ids = Set(displays.map(\.id))
+        if ids != displayIDs {
+            if let forced = forcedProfile { log.notice("displays changed; profile \(forced, privacy: .public) no longer forced") }
+            forcedProfile = nil
+            displayIDs = ids
+        }
+        let setup = config.setup(for: displays, profile: forcedProfile)
+        controller.apply(setup, names: setup.workspaces.isEmpty ? Self.defaultWorkspaces : setup.workspaces,
+                         barDisplays: ConfigFile.barDisplays(displays), resync: resync)
+    }
+
+    /// Displays came or went, moved, or changed their visible areas. A burst gets one
+    /// response 0.5 s after the last notification. While the session is locked or the
+    /// displays sleep, the resync after the unlock or wake reads them instead: a sleeping
+    /// Mac can report its displays gone (DESIGN.md, section 5.13).
+    private func screenParametersChanged() {
+        displayChanges += 1
+        let number = displayChanges
+        log.notice("screen parameters changed (\(number)): \(NSScreen.screens.count) displays")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, number == self.displayChanges, !self.inventory.sessionLocked, !self.screensAsleep else { return }
+                self.applyDisplays()
+            }
+        }
     }
 
     /// Applies the config file. With errors the running config stays; at launch there is
@@ -147,15 +209,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (loaded.errors.isEmpty, loaded.errors + loaded.warnings)
         }
         configProblems = loaded.errors.isEmpty ? [] : ["Config has errors; \(loaded.source) is running"] + loaded.errors
-        let displays = ConfigFile.displays()
-        let setup = config.setup(for: displays)
-        controller.reconfigure(gaps: displays.first.map { ConfigFile.gaps(config, on: $0) } ?? Gaps(), rules: setup.rules)
+        self.config = config
+        forcedProfile = nil
+        applyDisplays(resync: !atLaunch)
         controller.mouseFollowsFocus = config.mouseFollowsFocus
-        controller.profile = setup.profile
         var messages = loaded.errors + loaded.warnings
-        if setup.workspaces != controller.workspaceNames {
-            messages.append("the workspace list changed; it takes effect when Kosmos restarts")
-        }
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
             _ = self?.respond(to: binding.arguments, received: .now)
         }
@@ -163,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let problems = hotkeys.load(config.modes)
         showHotkeyProblems(problems)
         messages += problems.map(\.description)
-        log.notice("config loaded from \(loaded.source, privacy: .public): profile \(setup.profile ?? "base", privacy: .public)")
+        log.notice("config loaded from \(loaded.source, privacy: .public): profile \(controller.profile ?? "base", privacy: .public)")
         return (loaded.errors.isEmpty, messages)
     }
 
@@ -210,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inventory.sessionLocked = locked
         guard !locked else { return }
         inventory.sweep()
-        controller?.resync()
+        applyDisplays()
     }
 
     private func accessibilityGranted() {
@@ -224,18 +282,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Two tiling window managers would fight over every window.
         let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
         let managing = !otherManager || ProcessInfo.processInfo.environment["KOSMOS_MANAGE"] == "1"
-        // The workspace list is read once; the rest of the config applies on every reload.
-        let config = ConfigFile.load(atLaunch: true).config
-        let displays = ConfigFile.displays()
-        let names = config.map { $0.setup(for: displays).workspaces } ?? (1...9).map(String.init)
-        let gaps = config.flatMap { config in displays.first.map { ConfigFile.gaps(config, on: $0) } } ?? Gaps()
+        config = ConfigFile.load(atLaunch: true).config ?? Config()
+        // NSScreen can list no display in the middle of a change; the main display stands in.
+        let main = CGMainDisplayID()
+        var displays = ConfigFile.displays()
+        if displays.isEmpty { displays = [Display(id: main, name: "Display", frame: CGDisplayBounds(main))] }
+        displayIDs = Set(displays.map(\.id))
+        let setup = config.setup(for: displays)
         let hiding = Hiding(record: record, guardian: guardian)
         hiding.onProblem = { [weak self] problem in
             self?.hidingProblem = problem
             self?.updateProblems()
         }
         self.hiding = hiding
-        let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
+        let controller = Controller(inventory: inventory, hiding: hiding,
+                                    names: setup.workspaces.isEmpty ? Self.defaultWorkspaces : setup.workspaces, setup: setup,
+                                    barDisplays: ConfigFile.barDisplays(displays), managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
         controller.onFocusProblem = { [weak self] problem in
             self?.focusProblem = problem
@@ -249,6 +311,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.managing = managing
         if managing { _ = reloadConfig(atLaunch: true) }
         inventory.startAccessibility()
+        let center = NSWorkspace.shared.notificationCenter
+        for (name, asleep) in [(NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false)] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.screensAsleep = asleep }
+            }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,
+                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.screenParametersChanged() }
+        }
         log.notice("started, \(managing ? "managing windows" : "observing only: AeroSpace is running", privacy: .public)")
     }
 }

@@ -93,8 +93,8 @@ and if AeroSpace is running, it only observes until it is started again.
    config for a rollback.
 3. Quit AeroSpace.
 4. Stop the helpers Kosmos replaces. A display profile watcher that rewrites AeroSpace's
-   config when monitors change gives way once Kosmos switches its own profiles when
-   displays change (DESIGN.md, section 5.12). AutoRaise stays until Kosmos has focus
+   config when monitors change gives way to Kosmos's profiles, which follow the displays
+   (DESIGN.md, section 5.13). AutoRaise stays until Kosmos has focus
    follows mouse (section 5.11). For a helper run by a LaunchAgent,
    `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/<helper>.plist` stops it and
    keeps the plist for a rollback.

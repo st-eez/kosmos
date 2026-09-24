@@ -92,9 +92,9 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func nextAndPreviousWrapAround() {
     var s = session()
     #expect(s.perform(.workspace(.previous)) != nil)
-    #expect(s.visible == "3")
+    #expect(s.focusedWorkspace == "3")
     _ = s.perform(.workspace(.next))
-    #expect(s.visible == "1")
+    #expect(s.focusedWorkspace == "1")
 }
 
 @Test func moveNodeToWorkspaceConcealsTheWindowAndFocusesTheNextOne() {
@@ -113,7 +113,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2)
     s.adopt(2)
     let plan = s.perform(.moveNodeToWorkspace(.next, focusFollowsWindow: true))!
-    #expect(s.visible == "2")
+    #expect(s.focusedWorkspace == "2")
     #expect(plan.hide == [1])
     #expect(plan.show.isEmpty)
     #expect(plan.focus == .window(2))
@@ -124,7 +124,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(5, to: "2")
     let plan = s.follow(5)
-    #expect(s.visible == "2")
+    #expect(s.focusedWorkspace == "2")
     #expect(plan.focus == .window(5))
     #expect(plan.hide == [1])
 }
@@ -191,7 +191,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(7, to: "2")
     let plan = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: true, window: 7))!
-    #expect(s.visible == "3")
+    #expect(s.focusedWorkspace == "3")
     #expect(plan.show == [7])      // concealed on 2, it must be revealed on 3
     #expect(plan.hide == [1])
     #expect(plan.focus == .window(7))
@@ -263,7 +263,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1], follow: 1)
-    #expect(s.visible == "1")
+    #expect(s.focusedWorkspace == "1")
     #expect(plan.show == [1])
     #expect(plan.hide == [2])
     #expect(plan.focus == .window(1))
@@ -310,7 +310,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1, 3], follow: 1)
-    #expect(s.visible == "1")
+    #expect(s.focusedWorkspace == "1")
     #expect(plan.show == [1])
     #expect(Set(plan.hide) == [2, 3])
 }
@@ -322,7 +322,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1], follow: nil)
-    #expect(s.visible == "2")
+    #expect(s.focusedWorkspace == "2")
     #expect(plan.hide == [1])   // back on workspace 1, which is hidden
     #expect(plan.show.isEmpty && plan.focus == nil)
     #expect(s.focused == 2)
@@ -360,7 +360,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     let follow = s.followOnUnhide([2], keyed: 1, fallback: 2)
     #expect(follow == nil)
     let plan = s.unpark([2], follow: follow)
-    #expect(s.visible == "3")
+    #expect(s.focusedWorkspace == "3")
     #expect(plan.hide == [2] && plan.show.isEmpty)
     #expect(s.isParked(1))
 }
@@ -395,7 +395,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.park([1, 2])
     _ = s.perform(.workspace(.named("2")))
     let plan = s.unpark([1, 2], follow: 2)
-    #expect(s.visible == "2")
+    #expect(s.focusedWorkspace == "2")
     #expect(plan.show == [2])
     #expect(plan.hide == [1])
 }

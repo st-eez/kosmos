@@ -51,8 +51,19 @@ public struct Displays {
                                   original: original)
     }
 
-    /// The choice itself: `current` is the main display's current Space when it is
-    /// ordinary, and `spaces` every ordinary Space, the main display's first.
+    /// The ordinary Space for a window with none that is revealed on the display `id`: that
+    /// display's current Space, else the window's `original` Space if that display has it,
+    /// else that display's first ordinary Space (DESIGN.md, section 5.3). A display missing
+    /// from the Space list, or none given, leaves the choice to `ordinarySpace(original:)`.
+    public func ordinarySpace(on id: CGDirectDisplayID?, original: UInt64?) -> UInt64? {
+        guard let id, let display = display(for: id),
+              let space = Self.ordinarySpace(current: display.currentSpace, spaces: display.spaces, original: original)
+        else { return ordinarySpace(original: original) }
+        return space
+    }
+
+    /// The choice itself: `current` is the display's current Space when it is ordinary, and
+    /// `spaces` every ordinary Space to choose from, the display's first.
     static func ordinarySpace(current: UInt64?, spaces: [UInt64], original: UInt64?) -> UInt64? {
         if let current { return current }
         if let original, spaces.contains(original) { return original }

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import KosmosCore
 
@@ -309,9 +310,11 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     workspace = '2'
     """
 
-    private let builtIn = Display(name: "Color LCD", isBuiltIn: true)
-    private let left = Display(name: "VG279QE5A (2)", serial: "L")
-    private let main = Display(name: "VG279QE5A (1)", serial: "M")
+    // Steve's desk: the left panel, the main panel at the origin, and the built-in display
+    // below.
+    private let builtIn = Display(id: 3, name: "Color LCD", isBuiltIn: true, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982))
+    private let left = Display(id: 1, name: "VG279QE5A (2)", serial: "L", frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+    private let main = Display(id: 2, name: "VG279QE5A (1)", serial: "M", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
 
     private func config() throws -> Config {
         let result = Config.load(Self.text)
@@ -333,16 +336,42 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
     @Test func workspacesGoToTheFirstConnectedMonitorInTheirList() throws {
         let config = try config()
-        #expect(config.setup(for: [builtIn, left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 0])
-        // Lid closed: 3 falls back to the main panel, and 4 has no monitor, so the app places it.
-        #expect(config.setup(for: [left, main]).workspaceDisplays == ["1": 1, "2": 0, "3": 1])
-        #expect(config.setup(for: [builtIn, main]).workspaceDisplays == ["1": 1, "2": 1, "3": 0, "4": 1])
+        #expect(config.setup(for: [builtIn, left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 3])
+        // Lid closed: 3 falls back to the main panel, and 4 has no monitor, so it is free.
+        #expect(config.setup(for: [left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 2])
+        #expect(config.setup(for: [builtIn, main]).workspaceDisplays == ["1": 2, "2": 2, "3": 3, "4": 2])
+    }
+
+    @Test func aNameMatchingTwoDisplaysTakesTheLeftOne() throws {
+        var config = try config()
+        config.profiles.removeFirst()   // home
+        let setup = config.setup(for: [main, builtIn, left])
+        #expect(setup.profile == "single")
+        #expect(setup.workspaceDisplays == ["1": 1, "2": 1, "3": 3, "4": 1])
+    }
+
+    @Test func aForcedProfileAppliesWhateverIsConnected() throws {
+        let config = try config()
+        #expect(config.setup(for: [builtIn], profile: "home").profile == "home")
+        // Its monitors are not connected, so its workspaces are free.
+        #expect(config.setup(for: [builtIn], profile: "home").workspaceDisplays == ["3": 3])
+        #expect(config.setup(for: [builtIn, left, main], profile: "laptop").workspaces == ["1", "2"])
+        // An unknown name leaves the choice to the displays.
+        #expect(config.setup(for: [builtIn], profile: "nowhere").profile == "laptop")
+    }
+
+    @Test func monitorsCarryTheirGapsAndNamesInDisplayOrder() throws {
+        let setup = try config().setup(for: [builtIn, main, left])
+        #expect(setup.monitors.map(\.id) == [1, 2, 3])
+        #expect(setup.monitors.map(\.names) == [["asus", "left"], ["asus", "main"], ["builtin"]])
+        #expect(setup.monitors.map(\.gaps.outer.top) == [35, 35, 5])
+        #expect(setup.monitors[2].area == builtIn.frame)
     }
 
     @Test func profileReplacesWorkspacesAndPutsItsRulesFirst() throws {
         let setup = try config().setup(for: [builtIn])
         #expect(setup.workspaces == ["1", "2"])
-        #expect(setup.workspaceDisplays == ["1": 0, "2": 0])
+        #expect(setup.workspaceDisplays == ["1": 3, "2": 3])
         #expect(setup.mergeWorkspaces == ["3": "1", "4": "2"])
         // The profile's Spotify rule wins, and the base Chrome rule's workspace 3 merges into 1.
         #expect(setup.rules.map(\.appID) == ["spotify", "spotify", "chrome"])

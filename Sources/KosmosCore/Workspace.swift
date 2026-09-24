@@ -102,6 +102,16 @@ extension Workspace {
         check()
     }
 
+    /// Tiles a window at one end of the root: first when `first`, else last. A window
+    /// entering from another display arrives at the edge it crossed.
+    mutating func insert(_ window: WindowID, first: Bool) {
+        precondition(!contains(window), "window \(window) is already in the workspace")
+        root.insert(.window(window), at: first ? 0 : root.children.count)
+        normalize()
+        edits += 1
+        check()
+    }
+
     /// Forgets a window. Call it only when the WindowServer reports the window gone.
     @discardableResult
     mutating func remove(_ window: WindowID) -> Bool {

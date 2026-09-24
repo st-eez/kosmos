@@ -1,3 +1,5 @@
+import CoreGraphics
+
 /// A checked config file. `Config.load` builds one, and every monitor, workspace and mode
 /// name in it is defined. docs/sample-config.toml is Steve's AeroSpace setup in this schema.
 public struct Config: Equatable, Sendable {
@@ -15,20 +17,32 @@ public struct Config: Equatable, Sendable {
     public var rules: [WindowRule] = []
     /// Display profiles in file order. The first whose monitors are all connected applies.
     public var profiles: [Profile] = []
+
+    /// No workspaces, bindings, rules or profiles, for when there is no config file.
+    public init() {}
 }
 
 /// A connected display, as the app reads it.
 public struct Display: Equatable, Sendable {
+    public var id: DisplayID
     /// The name `NSScreen.localizedName` reports.
     public var name: String
     /// The EDID alphanumeric serial number, when the app can read one.
     public var serial: String?
     public var isBuiltIn: Bool
+    /// The whole display, in the top left origin coordinates Accessibility uses.
+    public var frame: CGRect
+    /// The visible frame, without the menu bar and the Dock.
+    public var area: CGRect
 
-    public init(name: String, serial: String? = nil, isBuiltIn: Bool = false) {
+    public init(id: DisplayID = 0, name: String, serial: String? = nil, isBuiltIn: Bool = false,
+                frame: CGRect = .zero, area: CGRect? = nil) {
+        self.id = id
         self.name = name
         self.serial = serial
         self.isBuiltIn = isBuiltIn
+        self.frame = frame
+        self.area = area ?? frame
     }
 }
 
@@ -131,26 +145,33 @@ public struct Setup: Equatable, Sendable {
     /// The profile that applies, or nil when none matches and the base config applies alone.
     public var profile: String?
     public var workspaces: [String]
-    /// The display each workspace belongs on, as an index into the displays given to
-    /// `setup(for:)`: the first display that the first connected monitor in the workspace's
-    /// list matches. A workspace with no connected monitor is absent, and the app places it.
-    public var workspaceDisplays: [String: Int]
+    /// The display each workspace belongs on: the first display, left to right, then top to
+    /// bottom, that the first connected monitor in the workspace's list matches. A workspace
+    /// with no connected monitor is absent, and free (DESIGN.md, section 5.13).
+    public var workspaceDisplays: [String: DisplayID]
     /// Windows on a workspace missing from `workspaces` move to the workspace named here.
     public var mergeWorkspaces: [String: String]
     /// The profile's rules, then the base rules with `mergeWorkspaces` applied to their
     /// workspaces.
     public var rules: [WindowRule]
+    /// The displays as the session tiles them, in the order above, each with its gaps and
+    /// the monitor names that match it.
+    public var monitors: [Monitor]
 }
 
 extension Config {
-    public func setup(for displays: [Display]) -> Setup {
-        func firstDisplay(_ monitor: String) -> Int? {
-            monitors[monitor].flatMap { match in displays.firstIndex(where: match.matches) }
+    /// The profile `forced` names, as the `profile` command asks for, else the first whose
+    /// monitors are all connected.
+    public func setup(for displays: [Display], profile forced: String? = nil) -> Setup {
+        let displays = displays.sorted { ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id) }
+        func firstDisplay(_ monitor: String) -> DisplayID? {
+            monitors[monitor].flatMap { match in displays.first(where: match.matches)?.id }
         }
-        let profile = profiles.first { $0.when.allSatisfy { firstDisplay($0) != nil } }
+        let profile = forced.flatMap { name in profiles.first { $0.name == name } }
+            ?? profiles.first { $0.when.allSatisfy { firstDisplay($0) != nil } }
         let workspaces = profile?.workspaces ?? workspaces
         let assignment = profile?.workspaceMonitors ?? workspaceMonitors
-        var workspaceDisplays: [String: Int] = [:]
+        var workspaceDisplays: [String: DisplayID] = [:]
         for workspace in workspaces {
             workspaceDisplays[workspace] = assignment[workspace]?.lazy.compactMap(firstDisplay).first
         }
@@ -160,8 +181,18 @@ extension Config {
             if let workspace = rule.workspace, let target = merge[workspace] { rule.workspace = target }
             return rule
         }
+        let tiled = displays.map { display in
+            Monitor(id: display.id, frame: display.frame, area: display.area, gaps: gaps(on: display),
+                    names: monitors.filter { $0.value.matches(display) }.keys.sorted())
+        }
         return Setup(profile: profile?.name, workspaces: workspaces, workspaceDisplays: workspaceDisplays,
-                     mergeWorkspaces: merge, rules: (profile?.rules ?? []) + baseRules)
+                     mergeWorkspaces: merge, rules: (profile?.rules ?? []) + baseRules, monitors: tiled)
+    }
+
+    public func gaps(on display: Display) -> Gaps {
+        let outer = outerGaps(on: display)
+        return Gaps(inner: CGFloat(gaps.inner), outer: Insets(top: CGFloat(outer.top), left: CGFloat(outer.left),
+                                                              bottom: CGFloat(outer.bottom), right: CGFloat(outer.right)))
     }
 
     public func outerGaps(on display: Display) -> OuterGaps {

@@ -9,9 +9,9 @@ import Testing
         return try! String(contentsOf: repository.appending(path: "docs/sample-config.toml"), encoding: .utf8)
     }()
 
-    private let builtIn = Display(name: "Color LCD", isBuiltIn: true)
-    private let asusMain = Display(name: "VG279QE5A (1)", serial: "T9LMTF156633")
-    private let asusLeft = Display(name: "VG279QE5A (2)", serial: "T9LMTF156643")
+    private let builtIn = Display(id: 3, name: "Color LCD", isBuiltIn: true, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982))
+    private let asusMain = Display(id: 2, name: "VG279QE5A (1)", serial: "T9LMTF156633", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+    private let asusLeft = Display(id: 1, name: "VG279QE5A (2)", serial: "T9LMTF156643", frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
 
     private func config() throws -> Config {
         let result = Config.load(Self.text)
@@ -21,9 +21,9 @@ import Testing
 
     @Test func loadsWithoutDiagnostics() throws {
         let config = try config()
-        // AeroSpace's 64 bindings, less ctrl-alt-a and the 11 that wait on multi-monitor commands.
+        // AeroSpace's 64 bindings, less ctrl-alt-a.
         #expect(config.modes.keys.sorted() == ["main"])
-        #expect(config.modes["main"]?.count == 52)
+        #expect(config.modes["main"]?.count == 63)
         #expect(config.rules.count == 18)
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "laptop"])
         #expect(config.gaps.inner == 10)
@@ -33,25 +33,28 @@ import Testing
         let setup = try config().setup(for: [builtIn, asusMain, asusLeft])
         #expect(setup.profile == "home")
         #expect(setup.workspaces.count == 10)
-        #expect(setup.workspaceDisplays == ["1": 1, "2": 1, "3": 1, "4": 1, "5": 2, "6": 2, "7": 2, "8": 0, "9": 0, "0": 0])
+        #expect(setup.workspaceDisplays == ["1": 2, "2": 2, "3": 2, "4": 2, "5": 1, "6": 1, "7": 1, "8": 3, "9": 3, "0": 3])
     }
 
     @Test func homeWithTheLidClosed() throws {
         let setup = try config().setup(for: [asusLeft, asusMain])
         #expect(setup.profile == "home")
-        #expect(setup.workspaceDisplays["8"] == 1)
+        #expect(setup.workspaceDisplays["8"] == 2)
     }
 
     @Test func single() throws {
-        let setup = try config().setup(for: [builtIn, Display(name: "VG279QE5A", serial: "T9LMTF156633")])
+        let asus = Display(id: 2, name: "VG279QE5A", serial: "T9LMTF156633", frame: asusMain.frame)
+        let setup = try config().setup(for: [builtIn, asus])
         #expect(setup.profile == "single")
-        #expect(setup.workspaceDisplays == ["1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 0, "9": 0, "0": 0])
+        #expect(setup.workspaceDisplays == ["1": 2, "2": 2, "3": 2, "4": 2, "5": 2, "6": 2, "7": 2, "8": 3, "9": 3, "0": 3])
     }
 
     @Test func office() throws {
-        let setup = try config().setup(for: [builtIn, Display(name: "LG ULTRAWIDE"), Display(name: "ASUS VA24E")])
+        let ultrawide = Display(id: 4, name: "LG ULTRAWIDE", frame: CGRect(x: 0, y: 0, width: 3440, height: 1440))
+        let asus = Display(id: 5, name: "ASUS VA24E", frame: CGRect(x: 3440, y: 0, width: 1920, height: 1080))
+        let setup = try config().setup(for: [builtIn, ultrawide, asus])
         #expect(setup.profile == "office")
-        #expect(setup.workspaceDisplays == ["1": 1, "2": 1, "3": 1, "4": 1, "5": 2, "6": 2, "7": 2, "8": 0, "9": 0, "0": 0])
+        #expect(setup.workspaceDisplays == ["1": 4, "2": 4, "3": 4, "4": 4, "5": 5, "6": 5, "7": 5, "8": 3, "9": 3, "0": 3])
     }
 
     @Test func laptop() throws {

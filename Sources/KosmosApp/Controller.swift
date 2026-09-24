@@ -61,10 +61,9 @@ final class Controller {
     /// Move the pointer into a window that a command focused.
     var mouseFollowsFocus = false
     /// The active display profile, for the bar.
-    var profile: String?
-    /// The display the session tiles, as the bar numbers it. Read at launch and at each
-    /// resync, as the session's display is.
-    private var barDisplay: BarSnapshot.Display
+    private(set) var profile: String?
+    /// Each connected display as the bar numbers it, read with the displays.
+    private var barDisplays: [DisplayID: BarSnapshot.Display]
     var publish: (@MainActor (Data) -> Void)?
     /// Called with a description when the private focus path turns off, and with nil when it
     /// turns back on.
@@ -73,12 +72,13 @@ final class Controller {
     /// requests no focus and takes no command; `resync` catches up (DESIGN.md, section 5.1).
     private var sessionLocked: Bool { inventory.sessionLocked }
 
-    init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
+    init(inventory: Inventory, hiding: Hiding, names: [String], setup: Setup,
+         barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
-        session = Session(names: names, display: Controller.displayRect(), gaps: gaps)
-        barDisplay = Controller.barDisplay()
+        session = Session(names: names, monitors: setup.monitors, assigned: setup.workspaceDisplays)
+        self.barDisplays = barDisplays
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
@@ -87,16 +87,25 @@ final class Controller {
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
     }
 
-    /// Runs one command. Returns the exit code and the text for the CLI.
-    var workspaceNames: [String] { session.names }
-
-    /// Applies new gaps and rules after a config reload. A changed workspace list takes a
-    /// restart.
-    func reconfigure(gaps: Gaps, rules: [WindowRule]) {
-        self.rules = rules
-        session.gaps = gaps
-        guard managing else { return }   // another window manager owns the frames
-        writeFrames(session.frames(of: session.visible))
+    /// Applies a config, or the displays after they change: the profile's workspaces and
+    /// rules, and each display with its gaps (DESIGN.md, section 5.13). Then every window is
+    /// concealed or revealed again, and each workspace's frames are written again as it is
+    /// shown, since macOS moves the windows of a display that leaves.
+    /// `resync`: false for the first apply at launch, before the inventory has admitted
+    /// anything, which must not front Finder for an empty session.
+    func apply(_ setup: Setup, names: [String], barDisplays: [DisplayID: BarSnapshot.Display], resync: Bool = true) {
+        rules = setup.rules
+        profile = setup.profile
+        self.barDisplays = barDisplays
+        session.reconfigure(names: names, monitors: setup.monitors, assigned: setup.workspaceDisplays,
+                            merge: setup.mergeWorkspaces)
+        let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
+        controllerLog.notice("""
+            profile \(setup.profile ?? "base", privacy: .public), workspace on each display \
+            \(shown.joined(separator: ", "), privacy: .public), focused \(self.session.focusedWorkspace, privacy: .public)
+            """)
+        ledger = FrameLedger()
+        if resync { self.resync() } else { publishState() }
     }
 
     /// Why the private focus path is off, for the status item, or nil while it is on.
@@ -117,12 +126,13 @@ final class Controller {
         onFocusProblem?(nil)
     }
 
+    /// Runs one command. Returns the exit code and the text for the CLI.
     func run(_ arguments: [String], received: ContinuousClock.Instant) -> (code: Int32, text: String) {
         switch arguments {
         case ["state"]:
             return (0, String(decoding: stateJSON(), as: UTF8.self))
         case ["list-workspaces"]:
-            return (0, session.names.map { $0 == session.visible ? "\($0) *" : $0 }.joined(separator: "\n"))
+            return (0, session.names.map { $0 == session.focusedWorkspace ? "\($0) *" : $0 }.joined(separator: "\n"))
         case ["list-windows"]:
             let lines = session.names.flatMap { name in
                 session.windows(of: name).map { id in
@@ -149,50 +159,27 @@ final class Controller {
         }
     }
 
-    /// After an unlock, or a wake while unlocked: reads the main display again, lays the shown
-    /// workspace out on its area as it is now, conceals and reveals every window again,
-    /// requests the focus intent and publishes the state. Other workspaces are laid out when
-    /// they are shown.
+    /// After an unlock, a wake while unlocked or a display change, once the displays are
+    /// read again (`apply`): lays the shown workspaces out on their areas as they are now,
+    /// conceals and reveals every window again, requests the focus intent and publishes the
+    /// state. Other workspaces are laid out when they are shown.
     func resync() {
-        // With no display at all, the ones read before stay.
-        let display = Controller.displayRect()
-        if display != .zero {
-            barDisplay = Controller.barDisplay()
-            if display != session.display {
-                controllerLog.notice("display area is now \(String(describing: display), privacy: .public)")
-                session.display = display
-            }
-        }
         guard managing else { return publishState() }
         // Reports received before now are older than the focus this asks for again, and an
         // echo in flight at the lock was dropped with the other reports while locked.
         reports.forgetRequests()
         reports.commandExecuted(receivedAt: .now)
         var plan = Session.Plan()
-        plan.frames = session.frames(of: session.visible)
+        let shown = session.shownWorkspaces
+        for name in shown { plan.frames.merge(session.frames(of: name)) { current, _ in current } }
         // macOS can move windows while the session is locked or the displays sleep, and the
-        // ledger would take them for placed: every tiled window of the shown workspace is
+        // ledger would take them for placed: every tiled window of the shown workspaces is
         // written again. Floating windows have no layout frame and stay where they are.
         for id in plan.frames.keys { ledger.forget(id) }
-        plan.show = session.windows(of: session.visible)
-        plan.hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
+        plan.show = shown.flatMap { session.windows(of: $0) }
+        plan.hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
         plan.focus = intent
         execute(plan)
-    }
-
-    /// The main display's visible area in the top left origin coordinates Accessibility uses.
-    static func displayRect() -> CGRect {
-        guard let main = NSScreen.main, let primary = NSScreen.screens.first else { return .zero }
-        let visible = main.visibleFrame
-        return CGRect(x: visible.minX, y: primary.frame.height - visible.maxY, width: visible.width, height: visible.height)
-    }
-
-    /// The main display, the one `displayRect()` measures, by SketchyBar's number for it.
-    static func barDisplay() -> BarSnapshot.Display {
-        guard let main = NSScreen.main else { return BarSnapshot.Display(id: 1, name: "Display") }
-        let number = BarSnapshot.displayNumber(uuid: DisplayIdentity.uuid(of: main.displayID),
-                                               active: DisplayIdentity.active().count, managed: DisplayIdentity.managed())
-        return BarSnapshot.Display(id: number, name: main.localizedName)
     }
 
     // MARK: Events
@@ -225,7 +212,8 @@ final class Controller {
     private func place(_ id: WindowID, pid: pid_t, ruled: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = ruled ? rules.first { $0.matches(appID: app.bundleID, appName: app.name) } : nil
-        var plan = session.add(id, to: rule?.workspace)
+        let center = inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        var plan = session.add(id, to: rule?.workspace, at: center)
         if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
         if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
                                                minimized: inventory.isMinimized(id),
@@ -236,7 +224,7 @@ final class Controller {
             plan.hide.removeAll { $0 == id }
         }
         // Reported key before it had a place, as at launch: that report was dropped.
-        if inventory.focused == id, session.workspace(of: id) == session.visible { session.adopt(id) }
+        if inventory.focused == id, session.workspace(of: id) == session.focusedWorkspace { session.adopt(id) }
         execute(plan)
     }
 
@@ -329,7 +317,8 @@ final class Controller {
             unplacedKey = nil
             placedHidden.remove(new)
             decidePlaced(KeyReport(key: report.key, received: report.received, pid: report.pid, previous: report.previous,
-                                   concealed: session.workspace(of: new) != session.visible, miss: report.miss), keyLeft: .stayed)
+                                   concealed: session.workspace(of: new).map { !session.isShown($0) } ?? false, miss: report.miss),
+                         keyLeft: .stayed)
         }
         return true
     }
@@ -514,7 +503,7 @@ final class Controller {
         // After a failed batch, recovery showed the windows of hidden workspaces, so a click
         // reaches them (needsResync).
         let verdict = reports.classify(report.key, receivedAt: report.received,
-                                       onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
+                                       onCurrentWorkspace: id.map { session.workspace(of: $0) == session.focusedWorkspace } ?? false,
                                        concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft)
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report
@@ -593,10 +582,11 @@ final class Controller {
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
+        moveFloating(plan.floatingMoves)
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
-            show = session.windows(of: session.visible)
-            hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
+            show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
+            hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
             needsResync = false
         }
         let movePointer = fromCommand && mouseFollowsFocus
@@ -608,13 +598,17 @@ final class Controller {
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
-            hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome in
+            // A window revealed with no ordinary Space goes to its display's (DESIGN.md, section 5.3).
+            let displays = Dictionary(uniqueKeysWithValues: show.compactMap { id in
+                session.workspace(of: id).map { (id, session.monitor(of: $0).id) }
+            })
+            hiding.apply(show: show, on: displays, hide: concealment(of: hide)) { [weak self] outcome in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
-                    switch to \(self.session.visible, privacy: .public): \(show.count) shown, \(hide.count) hidden, \
+                    switch to \(self.session.focusedWorkspace, privacy: .public): \(show.count) shown, \(hide.count) hidden, \
                     before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms, \
                     total \(Self.ms(total), privacy: .public) ms, \(String(describing: outcome), privacy: .public)
                     """)
@@ -640,6 +634,16 @@ final class Controller {
         String(format: "%.3f", Double(duration.components.attoseconds) / 1e15 + Double(duration.components.seconds) * 1000)
     }
 
+    /// Floating windows whose workspace changed display go to the same place on the new
+    /// display's area, from where WindowServer last saw them.
+    private func moveFloating(_ moves: [WindowID: Session.FloatingMove]) {
+        var targets: [WindowID: CGRect] = [:]
+        for (id, move) in moves {
+            if let frame = inventory.windows[id]?.frame { targets[id] = move.moved(frame) }
+        }
+        writeFrames(targets)
+    }
+
     private func writeFrames(_ targets: [WindowID: CGRect]) {
         guard !sessionLocked else { return }
         let writes = ledger.writes(for: targets)
@@ -650,10 +654,10 @@ final class Controller {
     }
 
     /// Each app's most recently focused hidden window keeps its ordinary Space membership
-    /// so Command-Tab picks it, unless the app has a window on the shown workspace; every
-    /// other concealed window loses it (DESIGN.md, section 5.3).
+    /// so Command-Tab picks it, unless the app has a window on a shown workspace; every
+    /// other concealed window loses it (DESIGN.md, sections 5.3 and 5.13).
     private func concealment(of windows: [WindowID]) -> [WindowID: Hiding.Conceal] {
-        let shownApps = Set(session.windows(of: session.visible).compactMap { owner[$0] })
+        let shownApps = Set(session.shownWorkspaces.flatMap { session.windows(of: $0) }.compactMap { owner[$0] })
         var kinds: [WindowID: Hiding.Conceal] = [:]
         for (pid, group) in Dictionary(grouping: windows, by: { owner[$0] ?? 0 }) {
             let selected = shownApps.contains(pid) ? nil
@@ -739,7 +743,7 @@ final class Controller {
     /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.
     private func stateJSON() -> Data {
         let snapshot = session.barSnapshot(
-            profile: profile, display: barDisplay,
+            profile: profile, displays: barDisplays,
             app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
             frame: { [inventory] id in inventory.windows[id]?.frame })
         let encoder = JSONEncoder()

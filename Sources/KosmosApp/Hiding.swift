@@ -45,13 +45,15 @@ final class Hiding {
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
     /// Reveals `show`, then conceals `hide`, then reads the barrier, on the bridge queue.
-    /// Concealing needs a ready guardian; revealing does not.
-    func apply(show: [UInt32], hide: [UInt32: Conceal], done: @escaping @MainActor (Outcome) -> Void) {
+    /// `displays` holds the display each revealed window's workspace is on. Concealing needs
+    /// a ready guardian; revealing does not.
+    func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32: Conceal],
+               done: @escaping @MainActor (Outcome) -> Void) {
         let canConceal = guardian.isReady
         let hide = canConceal ? hide : [:]
         let store = self.store
         bridge.async {
-            let confirmed = store.apply(show: show, hide: hide)
+            let confirmed = store.apply(show: show, on: displays, hide: hide)
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
             DispatchQueue.main.async {
@@ -147,7 +149,7 @@ private final class HidingStore: @unchecked Sendable {
         return true
     }
 
-    func apply(show: [UInt32], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
+    func apply(show: [UInt32], on showDisplays: [UInt32: CGDirectDisplayID], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
         guard load() else { return false }
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
@@ -162,7 +164,7 @@ private final class HidingStore: @unchecked Sendable {
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
             var destinations: [UInt64: [UInt32]] = [:]
             for window in batch.adds {
-                guard let destination = displays.ordinarySpace(original: original[window]) else { return false }
+                guard let destination = displays.ordinarySpace(on: showDisplays[window], original: original[window]) else { return false }
                 destinations[destination, default: []].append(window)
             }
             for (destination, windows) in destinations {

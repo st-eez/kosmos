@@ -27,6 +27,8 @@ private struct ConfigDecoder {
     /// Every name declared under [monitors], including ones whose matcher is invalid, so one
     /// mistake is reported once.
     private var monitorNames: [String] = []
+    /// Profiles that `profile` bindings name, checked once every profile is known.
+    private var profileTargets: [Located] = []
 
     mutating func config(_ root: TOMLTable) -> Config {
         let path = ValuePath()
@@ -72,6 +74,11 @@ private struct ConfigDecoder {
         }
         if let entry = root["profile"] {
             config.profiles = profiles(entry.value, path.key(entry.key), base: config, baseRules: rules)
+        }
+        let profileNames = config.profiles.map(\.name)
+        for target in profileTargets where !profileNames.contains(target.value) {
+            fail("no profile named '\(target.value)'" + suggestion(for: target.value, from: profileNames),
+                 at: target.position, target.path)
         }
         return config
     }
@@ -223,8 +230,16 @@ private struct ConfigDecoder {
                     }
                     seen[combo] = binding
                     guard let parsed = command(binding.value, bindingPath) else { continue }
-                    if case .mode(let target) = parsed.command {
+                    switch parsed.command {
+                    case .mode(let target):
                         targets.append((target, binding.value.position, bindingPath))
+                    case .profile(let target):
+                        profileTargets.append((target, binding.value.position, bindingPath))
+                    case .focusMonitor(.named(let monitor), _), .moveNodeToMonitor(.named(let monitor), _, _, _),
+                         .moveWorkspaceToMonitor(.named(let monitor), _):
+                        checkMonitor((monitor, binding.value.position, bindingPath))
+                    default:
+                        break
                     }
                     bindings.append(Binding(key: binding.key, combo: combo, arguments: parsed.arguments))
                 }

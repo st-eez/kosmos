@@ -12,7 +12,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
     _ = s.add(20, to: "2")
     s.adopt(11)
     let apps: [WindowID: String] = [10: "Ghostty", 11: "Helium", 20: "Spotify"]
-    let snapshot = s.barSnapshot(profile: "laptop", display: builtIn, app: { apps[$0] }, frame: { _ in nil })
+    let snapshot = s.barSnapshot(profile: "laptop", displays: [1: builtIn], app: { apps[$0] }, frame: { _ in nil })
 
     #expect(snapshot.version == 1)
     #expect(snapshot.profile == "laptop")
@@ -30,7 +30,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
     _ = s.add(10); _ = s.add(11)
     s.adopt(11)
     _ = s.perform(.layout(.toggleFloating))
-    let snapshot = s.barSnapshot(profile: nil, display: builtIn, app: { _ in "App" },
+    let snapshot = s.barSnapshot(profile: nil, displays: [1: builtIn], app: { _ in "App" },
                                  frame: { $0 == 11 ? CGRect(x: 5, y: 600, width: 100, height: 100) : nil })
     // 10 now fills the display from x = 0; the floating 11 reports its own frame.
     #expect(snapshot.workspaces[0].windows.map(\.id) == [10, 11])
@@ -39,14 +39,14 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
 
 @Test func emptyWorkspaceHasNoFocus() {
     let s = Session(names: ["1"], display: display)
-    #expect(s.barSnapshot(profile: nil, display: builtIn, app: { _ in nil }, frame: { _ in nil }).focused == nil)
+    #expect(s.barSnapshot(profile: nil, displays: [1: builtIn], app: { _ in nil }, frame: { _ in nil }).focused == nil)
 }
 
 /// The JSON a bar parses. Changing a key breaks every bar config, so this pins them.
 @Test func snapshotJSONKeysAreStable() throws {
     var s = Session(names: ["1"], display: display)
     _ = s.add(10)
-    let snapshot = s.barSnapshot(profile: "home", display: builtIn, app: { _ in "Ghostty" }, frame: { _ in nil })
+    let snapshot = s.barSnapshot(profile: "home", displays: [1: builtIn], app: { _ in "Ghostty" }, frame: { _ in nil })
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let json = String(decoding: try encoder.encode(snapshot), as: UTF8.self)
@@ -68,7 +68,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
 
 @Test func workspacesCarryTheNumberOfTheTiledDisplay() {
     let main = BarSnapshot.Display(id: 2, name: "VG279QE5A (1)")
-    let snapshot = Session(names: ["1", "2"], display: display).barSnapshot(profile: "home", display: main, app: { _ in nil }, frame: { _ in nil })
+    let snapshot = Session(names: ["1", "2"], display: display).barSnapshot(profile: "home", displays: [1: main], app: { _ in nil }, frame: { _ in nil })
     #expect(snapshot.displays == [main])
     #expect(snapshot.workspaces.map(\.display) == [2, 2])
 }

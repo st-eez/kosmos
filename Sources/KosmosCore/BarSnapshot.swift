@@ -69,12 +69,14 @@ extension BarSnapshot {
 }
 
 extension Session {
-    /// The bar's view of this session, on one display for now.
+    /// The bar's view of this session.
     /// - Parameters:
-    ///   - display: the display the session tiles.
+    ///   - displays: each connected display as the bar numbers and names it. A workspace
+    ///     whose display is missing here gets display 0, as SketchyBar numbers a display
+    ///     it cannot find.
     ///   - app: the name of the app that owns a window.
     ///   - frame: where a window is, for windows the layout does not place (floating).
-    public func barSnapshot(profile: String?, display: BarSnapshot.Display,
+    public func barSnapshot(profile: String?, displays: [DisplayID: BarSnapshot.Display],
                             app: (WindowID) -> String?, frame: (WindowID) -> CGRect?) -> BarSnapshot {
         let workspaces = names.map { name -> BarSnapshot.Workspace in
             let tiled = frames(of: name)
@@ -82,9 +84,11 @@ extension Session {
                 guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
                 return BarSnapshot.Window(id: id, app: app(id) ?? "?", x: Int(origin.x.rounded()), y: Int(origin.y.rounded()))
             }.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
-            return BarSnapshot.Workspace(name: name, display: display.id, shown: name == visible, focused: name == visible, windows: windows)
+            return BarSnapshot.Workspace(name: name, display: displays[monitor(of: name).id]?.id ?? 0, shown: isShown(name),
+                                         focused: name == focusedWorkspace, windows: windows)
         }
-        let focus = focused.map { BarSnapshot.Focus(window: $0, app: app($0) ?? "?", workspace: visible) }
-        return BarSnapshot(profile: profile, displays: [display], workspaces: workspaces, focused: focus)
+        let focus = focused.map { BarSnapshot.Focus(window: $0, app: app($0) ?? "?", workspace: focusedWorkspace) }
+        return BarSnapshot(profile: profile, displays: monitors.compactMap { displays[$0.id] }, workspaces: workspaces,
+                           focused: focus)
     }
 }
