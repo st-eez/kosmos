@@ -250,6 +250,25 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     }
 }
 
+@Suite struct StrippingTests {
+    @Test func aConcealedWindowIsStrippedWhenItsAppsLatestWindowIsOnAnotherDisplay() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(60, to: "6"); _ = s.add(20, to: "2")
+        // One app owns 10, 20 and 60, and 10 is its window focused last.
+        let latest: (WindowID) -> WindowID? = { [10, 20, 60].contains($0) ? 10 : nil }
+        // 60 is concealed on the left panel while 10 shows on the main panel: stripped. 20
+        // is concealed on the main panel, where 10 is: it keeps its Space. 50 is another
+        // app's.
+        #expect(s.stripped([20, 50, 60], latest: latest) == [60])
+        // Once 10 is minimized, nothing of the app shows, and nothing is stripped.
+        _ = s.park([10])
+        #expect(s.stripped([20, 60], latest: latest).isEmpty)
+        // On one display nothing is stripped.
+        let one = Session(names: ["1", "2"], display: main.frame)
+        #expect(one.stripped([1, 2], latest: { _ in 1 }).isEmpty)
+    }
+}
+
 @Suite struct DisplayFocusTests {
     @Test func adoptingAWindowOnAnotherDisplayFocusesThatDisplay() {
         var s = desk()

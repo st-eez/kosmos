@@ -33,7 +33,8 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | A shell hook that notifies a status bar launches 3 to 8 processes per switch; a direct Mach message costs 1 to 4 µs | Push state to the bar from inside the manager |
 | Some Carbon hotkeys stop while any app holds Secure Input, for example in a password prompt (`kosmos-probe secure-input`, section 5.6) | Show Secure Input and its holder |
 | Pixel-based container weights produce wrong and negative sizes | Store fractions |
-| After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read confirms a switch, where the fork polled |
+| After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read can confirm a switch, where the fork polled |
+| Live on 2026-09-24, 40 alternating switches per run between two workspaces of one window each. Reading the holding Space directly every 0.1 ms confirmed each batch at a median of 2.10, 2.18 and 2.95 ms in three runs (p90 3.66, 4.83 and 3.44 ms; at most 4.62, 9.79 and 3.86 ms), and all 120 confirmed before the barrier was due. The barrier alone confirmed at 3.31 and 3.44 ms median in two runs (p90 4.72 and 5.24 ms; at most 11.08 and 10.59 ms). Switches over 8.3 ms from keypress to the end: 10 of 120 with the reads, 21 of 80 with the barrier alone | Direct reads confirm a switch; the barrier backs them up after 10 ms |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
 | An AX call to a hung app returns kAXErrorCannotComplete 5 ms after its messaging timeout, and with none set macOS 27 waits 1.5 s. An app still launching fails with the same error in under 9 ms and answers about 60 ms after it starts. An answered read takes 13 µs (`kosmos-probe ax-timeout`) | Time out every call at 1 s, and back an app off only after a call that waited out the timeout |
 
@@ -43,7 +44,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | --- | --- | --- |
 | Window geometry | Accessibility on one worker thread per app; batched, deduplicated writes with generation ids; one read-back per batch | A shared thread pool, where one hung app stalls every relayout |
 | Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep at launch, on a Space change and after an unlock or wake, as a backstop, with no timer (as yabai and rift) | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
-| Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
+| Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations, confirmed by direct reads of the holding Space, with one bridged read as the barrier when the reads do not show them within 10 ms | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
 | Focus | Private window-targeted focus in every case: AXRaise the window on its app's worker, then front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
 | Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
@@ -72,7 +73,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
 | One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads, and raises before focus | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
-| Bridge queue, serial | Bridged Space operations and the barrier read | Run past its time budget |
+| Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
 
@@ -87,10 +88,10 @@ on its own and never delays another app.
    One batched SkyLight query validates its windows; layout runs only if something changed,
    and changed frames go to their apps' workers.
 3. The bridge queue sends the reveal of the incoming windows and the conceal of the
-   outgoing windows back to back, then the barrier read. Revealing first shows windows of
-   both workspaces for the length of one bridged operation; concealing first would show an
-   empty desktop for the same time.
-4. Once the barrier confirms the target window is revealed, and the switch generation is
+   outgoing windows back to back, then reads the holding Space until it shows them done.
+   Revealing first shows windows of both workspaces for the length of one bridged
+   operation; concealing first would show an empty desktop for the same time.
+4. Once the reads confirm the target window is revealed, and the switch generation is
    still current, the focus queue fronts the target, or Finder with no window for an empty
    workspace, and reads back the key window.
 5. The main actor publishes one bar snapshot and one `subscribe` frame.
@@ -211,9 +212,25 @@ off the main thread).
 
 - Create the holding Space once per session, and record its id in the durable record
   before the first window enters it.
-- Hidden windows keep their ordinary Space membership and gain holding membership, so
-  Command-Tab still selects the right window. Only an app's other concealed windows lose
-  ordinary membership.
+- Every concealed window keeps its ordinary Space membership and gains holding
+  membership, so every reveal is a removal from the holding Space. On one display,
+  Command-Tab and a Dock click key the app's most recently used window, which AppKit keys
+  on activation, concealed or not, and Kosmos follows it to its workspace, as macOS does
+  without Kosmos. The AeroSpace fork kept every concealed window's ordinary Space in its
+  np3 trial and its forward selection cases passed (fork NATIVE-WINDOW-SELECTION-TRIAL.md).
+  Two costs follow. Command-backtick cycles through the app's concealed windows too, and
+  Kosmos follows each one. When the key window closes, AppKit can key a concealed window
+  of the app, and the departure rule keeps Kosmos's workspace (section 5.4).
+- On one display Kosmos strips no window of its ordinary Space, because revealing a
+  stripped window adds it back to an ordinary Space, which makes WindowManager.app rebuild
+  its window model; on 2026-09-24 such switches took 2.6 to 33.2 ms, and switches that
+  only removed windows from the holding Space took 0.7 to 5.0 ms.
+- With several displays, keeping every concealed window's ordinary Space failed one of
+  the fork's np3 cases on three displays: macOS keyed a concealed window on the current
+  display in place of the app's last key window on another display (fork
+  NATIVE-WINDOW-ELIGIBILITY-TRIAL.md). So as Kosmos conceals a window, it strips it when
+  its app's most recently used window, the one it last focused, is shown on another
+  display than the concealed window's workspace, and pays the add when it is revealed.
 - A reveal removes the window from the holding Space. A window with no other Space at
   the time of the reveal is first added to an ordinary one, exclusively; that add strips
   only managed Spaces, and the holding Space is not one, so the removal is still needed.
@@ -225,7 +242,14 @@ off the main thread).
   compares the window's Spaces with the displays' ordinary Spaces, whether or not the
   window's Space list names fullscreen Spaces. A window whose add did not land stays in
   the holding Space, so the batch fails its confirmation and recovery adds it again.
-- The barrier at the end confirms that each revealed window left the holding Space.
+- A batch is confirmed when the Spaces it touched show each revealed window out of them
+  and each concealed window in them. Kosmos reads them directly, on its own connection,
+  every 0.1 ms for up to 10 ms, and only then sends the barrier and reads once more. A
+  direct read never shows an operation at once (0 in 60 tries on the development Mac),
+  but it shows it as soon as WindowServer applied it: 0.47 ms at the median for a window
+  that is not key, against 0.50 ms for the barrier, which also waits behind
+  WindowManager.app. WindowServer applies a batch's operations in order, so a window
+  seen out of the holding Space implies the add sent before its removal.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
   else to that display's first ordinary Space. A display missing from WindowServer's Space
@@ -238,14 +262,11 @@ off the main thread).
   destroys the Spaces and clears the record. It removes an added window from a recorded
   Space only once the add landed, and keeps the record while a window is left there. Every
   step can safely run twice.
-- Open item: which concealed windows keep ordinary membership is decided as each is
-  concealed. With several displays, an app whose most recently used window is shown on
-  another display must have its concealed windows stripped, or macOS keys one of them on
-  the current display over that window, the failure the AeroSpace fork's np3 trials hit
-  (section 5.13). When that window moves to another display later, the app's windows
-  concealed before keep the membership they had until they are concealed again. The
-  per-app tracking and the membership job outside switches of commit a0f9e6d (branch
-  `switch`) would update them, if the desk shows the case.
+- Open item: stripping is decided as each window is concealed. When an app's most
+  recently used window later moves to another display, or its focus moves to a window on
+  another display, the app's windows concealed before keep the membership they had until
+  they are concealed again. The per-app tracking and the membership job outside switches
+  of commit a0f9e6d (branch `switch`) would update them, if the desk shows the case.
 
 ### 5.4 Focus
 
@@ -337,8 +358,8 @@ off the main thread).
     reports are not classified then, so a resync forgets every pending one.
 - The focus queue never names a concealed window (tla/Kosmos.tla, ExecFocus). A request for
   a window Hiding held concealed when the request was made still supersedes older requests,
-  and then keys nothing; the switch that reveals the window requests focus once its barrier
-  confirms the reveal. The concealment is the one known on the main actor at the request,
+  and then keys nothing; the switch that reveals the window requests focus once its
+  confirmation shows the reveal. The concealment is the one known on the main actor at the request,
   since Hiding's ledger lives on the bridge queue.
 - When a newer command for another workspace is already queued, the older one lays out but
   doesn't focus.
@@ -777,9 +798,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   waits on WindowServer, which is busy committing right after a switch, so it runs only
   while a shown workspace has a floating window, and never between a keypress and its
   batch or its focus request. The log gives each read's time, to measure at the desk.
-- An app keeps ordinary Space membership for a concealed window only while no display
-  shows a window of it, since macOS prefers an eligible window on the current display over
-  the app's key window on another display (the AeroSpace fork's NativeWindowStash).
+- A concealed window keeps its ordinary Space, as on one display, unless its app's most
+  recently used window is shown on another display, since macOS prefers an eligible
+  window on the current display over the app's key window on another display (section
+  5.3, and its open item on windows concealed before that window moved).
 - Open item: a click on the desktop of another display does not focus that display, as
   when its workspace is empty. AeroSpace watches left mouse up with
   `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift), and when the pointer is in

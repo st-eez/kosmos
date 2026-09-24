@@ -574,6 +574,20 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// The windows of `hide` that lose their ordinary Space as they are concealed: with
+    /// several displays, those whose app's most recently used window, as `latest` gives it,
+    /// is on a shown workspace of another display. macOS would key such a window on the
+    /// current display over that one, the AeroSpace fork's np3 failure. Every other window
+    /// keeps its ordinary Space, as on one display (DESIGN.md, sections 5.3 and 5.13).
+    public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
+        guard monitors.count > 1 else { return [] }
+        return Set(hide.filter { window in
+            guard let recent = latest(window), recent != window, let shown = home[recent], isShown(shown),
+                  !isParked(recent), let own = home[window] else { return false }
+            return monitor(of: own).id != monitor(of: shown).id
+        })
+    }
+
     /// The floating windows of the shown workspaces, which `floatingFrames` checks.
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 

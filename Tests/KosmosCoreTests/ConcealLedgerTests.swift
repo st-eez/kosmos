@@ -5,27 +5,39 @@ private let holding: UInt64 = 100
 
 @Test func freshConcealsAreRecordedWithTheirSpace() {
     var ledger = ConcealLedger()
-    let batch = ledger.batch(show: [], hide: [1: .keepOrdinary, 2: .exclusive], into: holding, hasOrdinarySpace: { _ in true })
-    #expect(batch.keep == [1] && batch.strip == [2])
+    let batch = ledger.batch(show: [], hide: [2, 1, 2], into: holding, hasOrdinarySpace: { _ in true })
+    #expect(batch.fresh == [1, 2])
     #expect(batch.mustBeIn == [1: holding, 2: holding])
     ledger.commit(batch, into: holding)
     #expect(ledger.entries == [1: holding, 2: holding])
 }
 
 /// Every revealed window leaves its concealing Space; one without an ordinary Space now is
-/// added to one first, whatever kind it was concealed with.
+/// added to one first.
 @Test func revealRemovesEachWindowAndAddsOnlyThoseWithoutAnOrdinarySpace() {
     var ledger = ConcealLedger(entries: [1: holding, 2: holding])
-    let batch = ledger.batch(show: [1, 2, 3], hide: [:], into: holding, hasOrdinarySpace: { $0 == 1 })
+    let batch = ledger.batch(show: [1, 2, 3], hide: [], into: holding, hasOrdinarySpace: { $0 == 1 })
     #expect(batch.removals == [holding: [1, 2]])   // 3 was never concealed
     #expect(batch.adds == [2])
     ledger.commit(batch, into: holding)
     #expect(ledger.entries.isEmpty)
 }
 
+/// With several displays, windows concealed now can be stripped of their ordinary Space; a
+/// window concealed before keeps what it had (DESIGN.md, sections 5.3 and 5.13).
+@Test func onlyWindowsConcealedNowAreStripped() {
+    var ledger = ConcealLedger(entries: [3: holding])
+    let batch = ledger.batch(show: [], hide: [1, 2, 3], stripping: [2, 3], into: holding, hasOrdinarySpace: { _ in true })
+    #expect(batch.fresh == [1, 2])
+    #expect(batch.strip == [2])
+    #expect(batch.mustBeIn == [1: holding, 2: holding, 3: holding])
+    ledger.commit(batch, into: holding)
+    #expect(ledger.entries == [1: holding, 2: holding, 3: holding])
+}
+
 @Test func concealingAConcealedWindowChangesNothing() {
     var ledger = ConcealLedger(entries: [2: holding])
-    let batch = ledger.batch(show: [], hide: [2: .keepOrdinary], into: holding, hasOrdinarySpace: { _ in true })
+    let batch = ledger.batch(show: [], hide: [2], into: holding, hasOrdinarySpace: { _ in true })
     #expect(batch.fresh.isEmpty)
     #expect(batch.mustBeIn == [2: holding])
     ledger.commit(batch, into: holding)
@@ -35,8 +47,19 @@ private let holding: UInt64 = 100
 @Test func windowsLeftInAnOlderSpaceAreCheckedAndRevealedThere() {
     let old: UInt64 = 7
     let ledger = ConcealLedger(entries: [4: old])
-    #expect(ledger.batch(show: [], hide: [4: .exclusive], into: holding, hasOrdinarySpace: { _ in true }).mustBeIn == [4: old])
-    #expect(ledger.batch(show: [4], hide: [:], into: holding, hasOrdinarySpace: { _ in true }).removals == [old: [4]])
+    #expect(ledger.batch(show: [], hide: [4], into: holding, hasOrdinarySpace: { _ in true }).mustBeIn == [4: old])
+    #expect(ledger.batch(show: [4], hide: [], into: holding, hasOrdinarySpace: { _ in true }).removals == [old: [4]])
+}
+
+@Test func aBatchIsDoneWhenEachWindowIsWhereItPutIt() {
+    let desktop: UInt64 = 5
+    let batch = ConcealLedger(entries: [1: holding]).batch(show: [1], hide: [2], into: holding, hasOrdinarySpace: { _ in true })
+    #expect(batch.touched == [holding])
+    #expect(batch.isDone(members: [holding: [2]]))
+    // Revealed onto the desktop but still in the holding Space too: it is still concealed.
+    #expect(!batch.isDone(members: [holding: [1, 2], desktop: [1]]))
+    #expect(!batch.isDone(members: [holding: []]))   // 2 is not concealed yet
+    #expect(!batch.isDone(members: [:]))             // a Space that was not read proves nothing
 }
 
 @Test func rebuildRecordsEachWindowsSpace() {
@@ -52,7 +75,7 @@ private let holding: UInt64 = 100
 
 @Test func anAddedWindowIsRemovedOnlyOnceItsAddLanded() {
     let batch = ConcealLedger(entries: [1: holding, 2: holding])
-        .batch(show: [1, 2], hide: [:], into: holding, hasOrdinarySpace: { $0 == 1 })
+        .batch(show: [1, 2], hide: [], into: holding, hasOrdinarySpace: { $0 == 1 })
     #expect(batch.removals(landed: { _ in true }) == [holding: [1, 2]])
     #expect(batch.removals(landed: { _ in false }) == [holding: [1]])
 }
@@ -66,6 +89,11 @@ private struct Memberships {
     var spaces: [UInt32: Set<UInt64>]
     var addsLand = true
 
+    /// The windows each of `spaces` holds, as a read of them returns.
+    func members(of spaces: Set<UInt64>) -> [UInt64: Set<UInt32>] {
+        Dictionary(uniqueKeysWithValues: spaces.map { space in (space, Set(self.spaces.filter { $0.value.contains(space) }.keys)) })
+    }
+
     /// Carries out a batch in the order Hiding sends it: adds to the desktop, the removals
     /// of windows whose add landed, then conceals.
     mutating func run(_ batch: ConcealLedger.Batch) {
@@ -77,25 +105,43 @@ private struct Memberships {
                 if spaces[window]!.isEmpty { spaces[window] = [Self.fullscreen] }   // the active Space
             }
         }
-        for window in batch.keep { spaces[window]!.insert(holding) }
-        for window in batch.strip { spaces[window] = [holding] }
+        for window in batch.fresh { spaces[window]!.insert(holding) }
     }
 }
 
-/// The live failure: an app with a window on each of two workspaces. Each switch strips the
-/// hidden window, because the app has one on the shown workspace, and the switch back
-/// reveals it. Adding it to the desktop alone left it in the holding Space, and every
-/// switch back failed its confirmation.
-@Test func anAppOnTwoWorkspacesSwitchesBackAndForth() {
+/// A window concealed with no listed Space, as in a ledger that load() rebuilt after an
+/// incomplete recovery: its reveal adds it to the desktop, then removes it from the holding
+/// Space. The add alone left it in the holding Space, and the switch failed its
+/// confirmation (2026-09-24). Concealed again, it keeps the desktop, so its next reveal is a
+/// removal.
+@Test func aWindowWithNoListedSpaceIsAddedThenRemoved() {
+    var ledger = ConcealLedger(entries: [2: holding])
+    var server = Memberships(spaces: [1: [Memberships.desktop], 2: [holding]])
+    var (shown, hidden): (UInt32, UInt32) = (2, 1)
+    for _ in 0..<4 {
+        let batch = ledger.batch(show: [shown], hide: [hidden], into: holding,
+                                 hasOrdinarySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
+        server.run(batch)
+        #expect(batch.isDone(members: server.members(of: batch.touched)))
+        #expect(server.spaces == [shown: [Memberships.desktop], hidden: [Memberships.desktop, holding]])
+        ledger.commit(batch, into: holding)
+        (shown, hidden) = (hidden, shown)
+    }
+}
+
+/// The path production takes: every window keeps the desktop while concealed, so each
+/// reveal is a removal alone.
+@Test func windowsThatKeepTheDesktopAreRevealedByRemovalAlone() {
     var ledger = ConcealLedger()
     var server = Memberships(spaces: [1: [Memberships.desktop], 2: [Memberships.desktop]])
     var (shown, hidden): (UInt32, UInt32) = (1, 2)
     for _ in 0..<4 {
-        let batch = ledger.batch(show: [shown], hide: [hidden: .exclusive], into: holding,
+        let batch = ledger.batch(show: [shown], hide: [hidden], into: holding,
                                  hasOrdinarySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
+        #expect(batch.adds.isEmpty)
         server.run(batch)
-        #expect(batch.mustBeIn.allSatisfy { server.spaces[$0.key]!.contains($0.value) })
-        #expect(server.spaces == [shown: [Memberships.desktop], hidden: [holding]])
+        #expect(batch.isDone(members: server.members(of: batch.touched)))
+        #expect(server.spaces == [shown: [Memberships.desktop], hidden: [Memberships.desktop, holding]])
         ledger.commit(batch, into: holding)
         (shown, hidden) = (hidden, shown)
     }
@@ -106,8 +152,10 @@ private struct Memberships {
 @Test func aRevealWhoseAddFailsLeavesTheWindowConcealed() {
     let ledger = ConcealLedger(entries: [2: holding])
     var server = Memberships(spaces: [2: [holding]], addsLand: false)
-    server.run(ledger.batch(show: [2], hide: [:], into: holding, hasOrdinarySpace: { _ in false }))
+    let batch = ledger.batch(show: [2], hide: [], into: holding, hasOrdinarySpace: { _ in false })
+    server.run(batch)
     #expect(server.spaces[2] == [holding])
+    #expect(!batch.isDone(members: server.members(of: batch.touched)))
 }
 
 @Test func aWindowThatLeftTheHoldingSpaceOnItsOwnIsForgotten() {
@@ -116,6 +164,6 @@ private struct Memberships {
     ledger.forget([1])
     #expect(ledger.entries == [2: 9])
     // Selected again on a hidden workspace, it is concealed afresh and checked.
-    let batch = ledger.batch(show: [], hide: [1: .exclusive], into: 9, hasOrdinarySpace: { _ in true })
-    #expect(batch.strip == [1] && batch.mustBeIn == [1: 9])
+    let batch = ledger.batch(show: [], hide: [1], into: 9, hasOrdinarySpace: { _ in true })
+    #expect(batch.fresh == [1] && batch.mustBeIn == [1: 9])
 }
