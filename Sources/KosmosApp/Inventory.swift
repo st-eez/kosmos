@@ -24,6 +24,13 @@ final class Inventory {
     var onReport: (@MainActor (AXReport) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
+
+    /// The app's bundle identifier and name, for window rules.
+    func appIdentity(_ pid: pid_t) -> (bundleID: String?, name: String?) {
+        if let identity = apps.identity(pid) { return identity }
+        let app = NSRunningApplication(processIdentifier: pid)
+        return (app?.bundleIdentifier, app?.localizedName)
+    }
     private var watchPending = false
     private var sweepTimer: Timer?
     /// Windows that events changed while a sweep was running. The sweep's snapshot is older
@@ -174,7 +181,7 @@ final class Inventory {
     }
 
     private func appName(_ pid: pid_t) -> String {
-        NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?"
+        appIdentity(pid).name ?? "?"
     }
 
     /// Sends the whole watch list once per run loop turn, however many windows changed.

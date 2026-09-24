@@ -97,8 +97,8 @@ final class Controller {
     private func managedChanged(_ id: WindowID, pid: pid_t, _ managed: Bool) {
         if managed {
             owner[id] = pid
-            let app = NSRunningApplication(processIdentifier: pid)
-            let rule = rules.first { $0.matches(appID: app?.bundleIdentifier, appName: app?.localizedName) }
+            let app = inventory.appIdentity(pid)
+            let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
             if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
             execute(plan)

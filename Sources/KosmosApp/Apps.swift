@@ -7,6 +7,9 @@ private let appsLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "ap
 @MainActor
 final class Apps {
     private var workers: [pid_t: AppWorker] = [:]
+    /// Each app's bundle identifier and name, kept from its NSRunningApplication:
+    /// NSRunningApplication(processIdentifier:) returned nil for a running app at startup.
+    private var identities: [pid_t: (bundleID: String?, name: String?)] = [:]
     private let report: @MainActor (AXReport) -> Void
 
     init(report: @escaping @MainActor (AXReport) -> Void) {
@@ -35,12 +38,15 @@ final class Apps {
 
     func worker(_ pid: pid_t) -> AppWorker? { workers[pid] }
 
+    func identity(_ pid: pid_t) -> (bundleID: String?, name: String?)? { identities[pid] }
+
     private func add(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
         guard app.activationPolicy == .regular, workers[pid] == nil else { return }
         let name = app.localizedName ?? String(pid)
         let worker = AppWorker(pid: pid, name: name, report: report)
         workers[pid] = worker
+        identities[pid] = (app.bundleIdentifier, app.localizedName)
         Task {
             // Apps answer Accessibility some time after launch: retry for about a second,
             // as yabai and Hammerspoon do.
@@ -56,6 +62,7 @@ final class Apps {
     }
 
     private func remove(_ pid: pid_t) {
+        identities[pid] = nil
         guard let worker = workers.removeValue(forKey: pid) else { return }
         Task { await worker.stop() }
     }
