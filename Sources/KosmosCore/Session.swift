@@ -112,19 +112,27 @@ public struct Session: Sendable {
 
     /// Parked windows return to their own workspaces at their saved positions, and Kosmos
     /// follows `follow` there when its workspace is hidden, as it does for Command-Tab
-    /// (DESIGN.md, section 5.5). The other returning windows of hidden workspaces are
-    /// concealed again, and those Kosmos concealed that return to the shown workspace are
-    /// revealed.
-    public mutating func unpark(_ windows: [WindowID], follow: WindowID) -> Plan {
+    /// (DESIGN.md, section 5.5). Following nothing, the shown workspace keeps its focus,
+    /// and an empty one focuses a window returning to it. The other returning windows of
+    /// hidden workspaces are concealed again, and those Kosmos concealed that return to
+    /// the shown workspace are revealed.
+    public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
         let returning = windows.filter { isParked($0) }
+        let focused = self.focused
         let changed = Set(returning.map { home[$0]! })
         for name in changed {
             workspaces[name]!.unpark(returning.filter { home[$0] == name }, in: display, gaps: gaps)
         }
         var plan = Plan()
-        if returning.contains(follow), let name = home[follow] {
+        if let follow, returning.contains(follow), let name = home[follow] {
             workspaces[name]!.focus(follow)
             if name != visible { plan = show(name) }
+        } else if let focused {
+            // A returning window focused more recently would take the focus back.
+            workspaces[visible]!.focus(focused)
+        } else if let window = returning.first(where: { home[$0] == visible }) {
+            workspaces[visible]!.focus(window)
+            plan.focus = .window(window)
         }
         for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
         plan.hide += returning.filter { home[$0] != visible && !plan.hide.contains($0) }

@@ -93,3 +93,15 @@ import Testing
     reports.focusRequested(.window(2), at: 10)
     #expect(reports.classify(.window(2), receivedAt: 11, onCurrentWorkspace: true, wasHidden: false, keyLeft: true) == .echo)
 }
+
+// Change 10: a window returns (unminimized, its app unhidden, out of native fullscreen),
+// and a command comes before Kosmos handles the return.
+
+@Test func aReturnReceivedBeforeTheLatestCommandIsStale() {
+    var reports = FocusReports<Int>()
+    #expect(!reports.isStale(10))   // no command yet
+    reports.commandExecuted(receivedAt: 12)
+    #expect(reports.isStale(11))
+    #expect(!reports.isStale(12))
+    #expect(!reports.isStale(13))
+}

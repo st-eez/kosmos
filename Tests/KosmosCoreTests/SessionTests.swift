@@ -315,6 +315,39 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(Set(plan.hide) == [2, 3])
 }
 
+@Test func aReturnAfterACommandLeavesKosmosWhereTheCommandTookIt() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.park([1])   // minimized on workspace 1
+    _ = s.perform(.workspace(.named("2")))
+    _ = s.add(2)
+    let plan = s.unpark([1], follow: nil)
+    #expect(s.visible == "2")
+    #expect(plan.hide == [1])   // back on workspace 1, which is hidden
+    #expect(plan.show.isEmpty && plan.focus == nil)
+    #expect(s.focused == 2)
+}
+
+@Test func aReturnNotFollowedKeepsTheShownWorkspacesFocus() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    _ = s.park([2])   // Kosmos focused 1 again without a report
+    let plan = s.unpark([2], follow: nil)
+    #expect(s.focused == 1)   // though 2 was focused more recently
+    #expect(plan.focus == nil)
+}
+
+@Test func aReturnNotFollowedIntoAnEmptyShownWorkspaceIsFocused() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.park([1])
+    #expect(s.focused == nil)
+    let plan = s.unpark([1], follow: nil)
+    #expect(s.focused == 1)
+    #expect(plan.focus == .window(1))
+}
+
 @Test func aWindowConcealedWhenItParkedIsRevealedOnTheShownWorkspace() {
     // An app with a window on each workspace hides, Kosmos shows the hidden workspace, and
     // the app comes back keyed on the window there.

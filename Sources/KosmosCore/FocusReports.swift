@@ -36,6 +36,12 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         expected.append((key, stamp))
     }
 
+    /// A user action received before the latest command is stale: the command wins
+    /// (tla/Kosmos.tla, Adopt and Rejoin).
+    public func isStale(_ stamp: Stamp) -> Bool {
+        lastCommand.map { stamp < $0 } ?? false
+    }
+
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
     public mutating func requestDropped(_ key: KeyWindow, at stamp: Stamp) {
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested == stamp }) {
@@ -59,7 +65,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
             expected.removeFirst(index + 1)
             return .echo
         }
-        if let lastCommand, stamp < lastCommand { return .reassert }
+        if isStale(stamp) { return .reassert }
         guard case .window(let id) = key else { return keyLeft ? .reassert : .ignore }
         if onCurrentWorkspace { return .adopt(id) }
         return wasHidden && !keyLeft ? .follow(id) : .reassert

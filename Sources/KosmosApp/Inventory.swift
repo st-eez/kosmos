@@ -22,6 +22,10 @@ final class Inventory {
     /// When windows left the screen: closed, or ordered out as when they minimize or their
     /// app hides.
     private var leftAt: [UInt32: ContinuousClock.Instant] = [:]
+    /// When each window's Space membership first changed since its fullscreen state was last
+    /// read. A window leaving fullscreen leaves its Space before it joins the desktop's, and
+    /// its return dates from the first of those events.
+    private var spaceChangedAt: [UInt32: ContinuousClock.Instant] = [:]
     /// Space queries for fullscreen checks, in the order the events asked for them.
     private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
@@ -29,8 +33,9 @@ final class Inventory {
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
-    /// A managed window entered (true) or left (false) native fullscreen.
-    var onFullscreenChange: (@MainActor (UInt32, Bool) -> Void)?
+    /// A managed window entered (true) or left (false) native fullscreen, and when its Space
+    /// membership started to change.
+    var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -127,10 +132,11 @@ final class Inventory {
 
     private func setFullscreen(_ id: UInt32, _ state: Bool?) {
         guard let state, windows[id] != nil else { return }
+        let since = spaceChangedAt.removeValue(forKey: id) ?? .now
         let changed = state ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil
         guard changed, isManaged(id) else { return }
         inventoryLog.info("\(id) \(state ? "entered" : "left", privacy: .public) native fullscreen")
-        onFullscreenChange?(id, state)
+        onFullscreenChange?(id, state, since)
     }
 
     /// Whether the window left the screen within `limit`: it closed, or was ordered out as
@@ -170,7 +176,10 @@ final class Inventory {
             refresh(id)
         case .spaceMembership(let id):
             refresh(id)
-            if let row = windows[id], isCandidate(row) { Task { setFullscreen(id, await fullscreenState(id)) } }
+            if let row = windows[id], isCandidate(row) {
+                if spaceChangedAt[id] == nil { spaceChangedAt[id] = .now }
+                Task { setFullscreen(id, await fullscreenState(id)) }
+            }
         case .destroyed(let id):
             remove(id, reason: "destroyed")
         case .spacesChanged:
@@ -212,6 +221,7 @@ final class Inventory {
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
         fullscreen.remove(id)
+        spaceChangedAt[id] = nil
         if row.orderedIn { noteLeft(id) }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")

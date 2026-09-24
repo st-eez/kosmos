@@ -56,7 +56,7 @@ final class Controller {
         barDisplay = Controller.barDisplay()
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
-        inventory.onFullscreenChange = { [weak self] id, entered in self?.fullscreenChanged(id, entered) }
+        inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
         let center = NSWorkspace.shared.notificationCenter
         for (name, hidden) in [(NSWorkspace.didHideApplicationNotification, true), (NSWorkspace.didUnhideApplicationNotification, false)] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
@@ -162,9 +162,9 @@ final class Controller {
     }
 
     /// A window in native fullscreen is on a Space of its own: parked, Kosmos neither
-    /// conceals it nor writes its frame. When it leaves, it returns to its workspace and
-    /// Kosmos follows it there (DESIGN.md, section 5.5).
-    private func fullscreenChanged(_ id: WindowID, _ entered: Bool) {
+    /// conceals it nor writes its frame. When it leaves, it returns to its workspace.
+    /// `since` is when it started to leave its Space.
+    private func fullscreenChanged(_ id: WindowID, _ entered: Bool, since: ContinuousClock.Instant) {
         if entered {
             guard !session.isParked(id) else { return }
             fullscreenParked.insert(id)
@@ -172,8 +172,15 @@ final class Controller {
         } else if fullscreenParked.remove(id) != nil {
             // macOS restores the frame it had; write the tile's frame again all the same.
             ledger.forget(id)
-            execute(session.unpark([id], follow: id))
+            returned([id], follow: id, at: since)
         }
+    }
+
+    /// Windows back from minimizing, hiding or fullscreen return to their places, and Kosmos
+    /// follows `follow` to its workspace. A command received after the return wins, as over
+    /// a stale Command-Tab (DESIGN.md, section 5.5; tla/Kosmos.tla, Rejoin).
+    private func returned(_ windows: [WindowID], follow: WindowID?, at stamp: ContinuousClock.Instant) {
+        execute(session.unpark(windows, follow: reports.isStale(stamp) ? nil : follow))
     }
 
     /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). macOS keys another
@@ -199,13 +206,14 @@ final class Controller {
     /// app keys, or else its most recently focused one, to its workspace.
     private func appUnhidden(_ pid: pid_t) {
         guard hiddenApps[pid]?.isEmpty == false else { return }
+        let received = ContinuousClock.now
         Task {
             let keyed = await inventory.worker(pid)?.focusedWindow()
             // Hidden again while the worker answered: the windows wait for the next unhide.
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true,
                   let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty,
                   let follow = keyed.flatMap({ windows.contains($0) ? $0 : nil }) ?? mostRecent(windows) else { return }
-            execute(session.unpark(windows, follow: follow))
+            returned(windows, follow: follow, at: received)
         }
     }
 
@@ -246,9 +254,7 @@ final class Controller {
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
-            // A restored window returns to its own workspace, and Kosmos follows it there
-            // (DESIGN.md, section 5.5).
-            execute(session.unpark([id], follow: id))
+            returned([id], follow: id, at: report.received)
         case .framesApplied(let results):
             for result in results {
                 ledger.confirm(result.id, target: result.target, readBack: result.readBack)
