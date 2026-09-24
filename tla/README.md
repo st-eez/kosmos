@@ -33,16 +33,17 @@ Java 11 or newer is required.
 | `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 79,564 |
 | `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 79,124 |
 | `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 108,187 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 66 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 64 |
-| `leave` | all inputs, and the key window leaving and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 1,264,965 |
-| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 1,264,965 |
-| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 213,291 |
-| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 895,132 |
-| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 1,157,002 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 114,408 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 68 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 61 |
+| `leave` | all inputs, the key window leaving, with or without a report of the next, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 1,656,420 |
+| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 1,656,420 |
+| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 243,362 |
+| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 881,920 |
+| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 4,879 |
+| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 1,148,458 |
 | `miss` | commands, clicks, Command-Tab, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 107,322 |
-| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 55,187 |
+| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 57,515 |
 
 The first three expected failures record trade-offs, and the others record the behaviour
 this model replaced:
@@ -68,6 +69,10 @@ this model replaced:
 - **`miss-follow`.** Kosmos switches to workspace 2 and fronts w3, but app A keeps w1,
   now concealed on workspace 1, and reports it again. Following that report as a
   Command-Tab takes Kosmos back to workspace 1. This happened live with Ghostty.
+- **`quiet-unbounded`.** When the only window of an app minimizes, the app can stay
+  front with no key window, and macOS reports none. A departure that waits for macOS's
+  report of the next key window without a bound then never focuses the workspace's
+  other window.
 - **`return-stale`.** A window comes back: it is unminimized, its app unhides, or it
   leaves native fullscreen. If the user runs a workspace command before Kosmos handles
   the return, following the return takes Kosmos away from the workspace the command
@@ -82,7 +87,8 @@ return and the report of the next key window still reach Kosmos in either order.
 
 No user input comes between a departure and Kosmos hearing of it. Accessibility reports a
 minimize as it starts, NSWorkspace reports a hide, and WindowServer reports a close, each
-within milliseconds. WindowServer can report a hidden app's windows gone after macOS keyed
+within milliseconds. A window its app orders out and keeps is the exception: Kosmos
+counts it gone a second later (DESIGN.md, section 5.5). WindowServer can report a hidden app's windows gone after macOS keyed
 the next window. Kosmos's grace outlasts that delay: the departures probe saw a hidden
 app's window ordered out 17 ms after the hide, and the grace is 100 ms.
 
@@ -174,3 +180,7 @@ Each change below started as a counterexample from TLC.
     report is the same activation and keeps it held. A Command-Tab that lands on a
     hidden window now counts as honored when Kosmos focuses that window or the app's
     window on the workspace the user asked for.
+13. **Departures with no report of the next key window.** A departure of Kosmos's focus
+    waited for macOS's report of the next key window, which need not come
+    (`quiet-unbounded`). The wait now ends with the grace, and the departure focuses. The
+    grace outlasts the report's delay, so a report on its way arrives first.

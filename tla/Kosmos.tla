@@ -78,17 +78,19 @@ CONSTANTS
     AllowFallback,  \* macOS may re-key when the key window is hidden (not observed)
     AllowLeave,     \* the key window may close or minimize, or its app hide
     AllowMiss,      \* fronting another window of the key app may leave its key window, once
+    AllowQuiet,     \* a departure may leave no key window and no report of one
     AllowReturn,    \* a window that left without closing may return
     FollowRekeys,   \* Kosmos follows a re-key onto a hidden window (the behaviour before this rule)
     FollowStale,    \* Kosmos follows a return received before the latest command (the behaviour before this rule)
     Grace,          \* Kosmos holds a report until it knows whether the key window before it left
     Redirect,       \* Kosmos follows no report of a hidden window that Command-Tab cannot produce
+    WaitBound,      \* a departure's wait for macOS's report of the next key window ends with the grace
     RevealFirst,    \* a switch reveals the incoming windows before concealing the outgoing
     Coalesce        \* a resumed command does not focus while a newer command is queued
 
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ AllowLeave \in BOOLEAN /\ FollowRekeys \in BOOLEAN
 ASSUME AllowReturn \in BOOLEAN /\ FollowStale \in BOOLEAN /\ Grace \in BOOLEAN
-ASSUME AllowMiss \in BOOLEAN /\ Redirect \in BOOLEAN
+ASSUME AllowMiss \in BOOLEAN /\ Redirect \in BOOLEAN /\ AllowQuiet \in BOOLEAN /\ WaitBound \in BOOLEAN
 
 NoWin == "none"   \* no key window: Finder fronted without windows
 AppOfX(w) == IF w = NoWin THEN "finder" ELSE AppOf[w]
@@ -138,6 +140,7 @@ Init ==
                held     |-> <<>>,     \* Kosmos: a report waiting to learn whether the key window before it left
                seenKey  |-> f,        \* Kosmos: the key window macOS last reported
                missed   |-> FALSE,    \* macOS: a focus request already missed
+               waiting  |-> NoWin,    \* Kosmos: a departure waits for macOS's report after this key window
                refocus  |-> FALSE,    \* Kosmos: a re-assert found its focus gone; its departure focuses
                notices  |-> <<>> ]    \* departures and returns not yet reported: [w, closed, back, t]
     /\ history = <<>>
@@ -252,7 +255,7 @@ Observe(t, evs) ==
     IF evs = <<>> THEN t
     ELSE LET ev == Head(evs)
              ks == {k \in 1..Len(t.expect) : Matches(ev, t.expect[k])}
-             t0 == [t EXCEPT !.seenKey = ev.w]
+             t0 == [t EXCEPT !.seenKey = ev.w, !.waiting = IF ev.prev = @ THEN NoWin ELSE @]
              \* A newer activation of a window ends a held report. One that repeats
              \* the held window, after a miss, is the same activation.
              again == t.held # <<>> /\ ev.w = t.held[1].w
@@ -271,7 +274,7 @@ Observe(t, evs) ==
 \* has left too: macOS's own key change is still on its way, and focusing
 \* first could put Kosmos's echo between the departure and that report. A
 \* re-assert that found the focus gone focuses here all the same. A report
-\* held for this departure is decided now.
+\* held for this departure is decided now. The wait ends with the grace (Nudge).
 NextWin(k, left) == IF WsWins(k) \ left = {} THEN NoWin ELSE CHOOSE v \in WsWins(k) \ left : TRUE
 Leaves(t, x) ==
     LET w == x.w
@@ -281,7 +284,7 @@ Leaves(t, x) ==
         t2 == [t1 EXCEPT !.focus = t1.mru[t.active], !.gen = t.gen + 1]
     IN IF t.focus # w THEN t1
        ELSE IF x.closed \/ t.refocus \/ t.seenKey \notin Known(t1) THEN Reassert([t2 EXCEPT !.refocus = FALSE])
-       ELSE t2
+       ELSE IF WaitBound THEN [t2 EXCEPT !.waiting = t.seenKey] ELSE t2
 Depart(t, x) ==
     LET t1 == Leaves(t, x)
     IN IF t.held # <<>> /\ t.held[1].prev = x.w THEN Adopt([t1 EXCEPT !.held = <<>>], t.held[1], TRUE)
@@ -375,6 +378,16 @@ Expire ==
     /\ s' = Adopt([s EXCEPT !.held = <<>>], s.held[1], TRUE)
     /\ UNCHANGED history
 
+\* The grace of a departure that waited for macOS's report of the next key
+\* window ends without one, as when the app keeps no key window: the departure
+\* focuses. The grace outlasts the report's delay, so no report is on its way.
+Nudge ==
+    /\ WaitBound
+    /\ s.waiting # NoWin
+    /\ s.evs = <<>> /\ \A n \in 1..Len(s.mq) : s.mq[n].kind # "report"
+    /\ s' = Reassert([s EXCEPT !.waiting = NoWin])
+    /\ UNCHANGED history
+
 Fallback ==
     /\ AllowFallback
     /\ s.osFocus # NoWin
@@ -444,19 +457,21 @@ Leave ==
     /\ Len(history) < MaxEvents
     /\ s.osFocus \in Visible   \* seen key
     /\ Seen
-    /\ \E out \in {{s.osFocus}, AppWins(s.osFocus) \ s.gone}, closed \in BOOLEAN :
+    /\ \E out \in {{s.osFocus}, AppWins(s.osFocus) \ s.gone}, closed \in BOOLEAN, quiet \in BOOLEAN :
        /\ closed => out = {s.osFocus}   \* a window closes alone; an app hides together
-       /\ \E v \in (Win \ (s.gone \cup out)) \cup {NoWin} :
+       /\ quiet => AllowQuiet
+       \* Quiet: no window becomes key, and no report says so.
+       /\ \E v \in IF quiet THEN {NoWin} ELSE (Win \ (s.gone \cup out)) \cup {NoWin} :
             LET q == SeqOf(out)
                 notices == [n \in 1..Len(q) |-> [w |-> q[n], closed |-> closed, back |-> FALSE, t |-> 0]]
                 \* The user is on Kosmos's workspace, unless a command or a return is
                 \* still on its way there.
                 queued == Returning \/ \E n \in 1..Len(s.mq) : s.mq[n].kind = "input"
-            IN /\ s' = KeyChange([s EXCEPT !.gone = @ \cup out, !.lag = @ \cup out,
-                                           !.closed = IF closed THEN @ \cup out ELSE @,
-                                           !.notices = @ \o notices, !.lastWin = {},
-                                           !.goal = IF queued THEN @ ELSE s.active],
-                                 v, Len(history) + 1)
+                t1 == [s EXCEPT !.gone = @ \cup out, !.lag = @ \cup out,
+                                !.closed = IF closed THEN @ \cup out ELSE @,
+                                !.notices = @ \o notices, !.lastWin = {},
+                                !.goal = IF queued THEN @ ELSE s.active]
+            IN /\ s' = IF quiet THEN [t1 EXCEPT !.osFocus = NoWin] ELSE KeyChange(t1, v, Len(history) + 1)
                /\ history' = Append(history, -3)
 
 \* A window that left returns where it was, and macOS keys it: the user
@@ -472,19 +487,19 @@ Return ==
                            w, Len(history) + 1)
          /\ history' = Append(history, -4)
 
-Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports \/ PostNotices \/ OrderOut \/ Expire
+Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports \/ PostNotices \/ OrderOut \/ Expire \/ Nudge
 
 Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab \/ Leave \/ Return
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
                               /\ WF_vars(ExecFocus) /\ WF_vars(PostReports) /\ WF_vars(PostNotices)
-                              /\ WF_vars(OrderOut) /\ WF_vars(Expire)
+                              /\ WF_vars(OrderOut) /\ WF_vars(Expire) /\ WF_vars(Nudge)
 
 (***************************************************************************)
 (* Properties                                                              *)
 (***************************************************************************)
 Quiescent == s.mq = <<>> /\ s.bq = <<>> /\ s.fq = <<>> /\ s.evs = <<>> /\ s.notices = <<>>
-             /\ s.lag = {} /\ s.held = <<>>
+             /\ s.lag = {} /\ s.held = <<>> /\ s.waiting = NoWin
 
 \* The screen shows Kosmos's workspace and macOS keys Kosmos's focus.
 Converged == Visible = WsWins(s.active) \ s.gone /\ s.osFocus = s.focus
@@ -528,7 +543,7 @@ StateView == <<[s EXCEPT !.sw = 0, !.gen = 0,
 
 TraceView == [history |-> history, active |-> s.active, focus |-> s.focus,
               osFocus |-> s.osFocus, visible |-> Visible, gone |-> s.gone, left |-> s.left,
-              notices |-> s.notices, lag |-> s.lag, held |-> s.held,
+              notices |-> s.notices, lag |-> s.lag, held |-> s.held, waiting |-> s.waiting,
               sw |-> s.sw, gen |-> s.gen,
               mq |-> [n \in 1..Len(s.mq) |-> s.mq[n].kind],
               bq |-> [n \in 1..Len(s.bq) |-> s.bq[n].op],
