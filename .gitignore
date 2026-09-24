@@ -5,3 +5,4 @@
 DerivedData/
 /tla/tla2tools.jar
 /tla/.cache/
+/tla/*.out

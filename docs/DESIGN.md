@@ -79,14 +79,17 @@ on its own and never delays another app.
 ### 4.3 A workspace switch
 
 1. A hotkey or socket command arrives. The main actor updates the model: the new visible
-   workspace, and a focus intent with a new generation.
+   workspace with a new switch generation, and a focus intent with a new focus generation.
 2. The incoming workspace was laid out while hidden, so its frames are usually current.
    One batched SkyLight query validates its windows; layout runs only if something changed,
    and changed frames go to their apps' workers.
 3. The bridge queue sends the reveal of the incoming windows and the conceal of the
-   outgoing windows back to back, then the barrier read.
-4. Once the barrier confirms the target window is revealed, the focus queue fronts it, or
-   Finder with no window for an empty workspace, and reads back the key window.
+   outgoing windows back to back, then the barrier read. Revealing first shows windows of
+   both workspaces for the length of one bridged operation; concealing first would show an
+   empty desktop for the same time.
+4. Once the barrier confirms the target window is revealed, and the switch generation is
+   still current, the focus queue fronts the target, or Finder with no window for an empty
+   workspace, and reads back the key window.
 5. The main actor publishes one bar snapshot and one `subscribe` frame.
 
 A switch launches no process, writes no file and leaves the status item alone. Everything
@@ -138,14 +141,24 @@ off the main thread).
 
 ### 5.4 Focus
 
-- There is one current focus intent, identified by a generation.
-  - A report naming the intended window confirms it.
-  - A report for the intended app naming another window, within 1 s, gets one
-    re-assertion.
-  - A report for any other app is the user's (a click, Command-Tab) and is adopted,
-    including a window on a hidden workspace.
-- Skip activation when the target is already key. When a newer workspace command is
-  already queued, the older one lays out but doesn't focus.
+- There is one current focus intent, identified by a focus generation. A switch has its own
+  generation, so a focus change adopted during a switch leaves the switch to finish.
+- Every report names the key window. For an app activation, the app's worker reads the
+  app's focused window. Hotkeys, socket commands and reports are stamped on receipt.
+- Reports are classified in order:
+  - An echo is a report of a requested window received after the request. Matching the
+    app alone would take a Command-Tab to another window of that app for an echo.
+  - A click or Command-Tab received before the latest command is stale. The command wins,
+    and its focus is requested again.
+  - A window on Kosmos's current workspace becomes the focus intent and is requested
+    again, in case an older request of Kosmos's landed after the user's change.
+  - A window that was hidden when it became key was reached with Command-Tab, and Kosmos
+    follows it to its workspace.
+  - A visible window of another workspace is key only during a switch: macOS re-keyed
+    after a hide, or the user clicked or Command-Tabbed to a window about to be
+    concealed. The switch wins, and its focus is requested again.
+- Skip activation when the target is already key. When a newer command for another
+  workspace is already queued, the older one lays out but doesn't focus.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 
@@ -207,13 +220,16 @@ off the main thread).
   - echo accounting and the switch protocol in 4.3.
 
   Check that the screen and key window converge with Kosmos's model and that the last
-  command wins. Also check that windows of two workspaces are never visible together,
-  that every disturbance settles, and that no hidden window lacks a recovery path.
+  command wins. Also check that every disturbance settles, that no hidden window lacks a
+  recovery path, and what each reveal order shows mid-switch. The spec and its results
+  are in [tla/](../tla/README.md).
 - **Unit tests** drive the model, tree, layout, command parser, echo classifier and config
   loader without AX.
 - **Probes in a macOS virtual machine** cover everything that changes window state:
   - hiding: barrier ordering, reusable Spaces, Dock restart;
-  - focus: the key record in Chromium and Electron apps, same-app key changes;
+  - focus: the key record in Chromium and Electron apps, same-app key changes, whether
+    macOS re-keys after the key window is concealed, and the receipt order of hotkeys and
+    activation reports;
   - discovery notifications, minimum sizes, and Secure Input.
 - **Hardware trials** cover timing, CPU and multi-monitor, because a virtual machine's
   graphics timing is not representative.
