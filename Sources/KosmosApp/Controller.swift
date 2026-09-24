@@ -463,9 +463,7 @@ final class Controller {
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
-            // it left too. It is read only when the verdict depends on it, which an echo, or a
-            // report of a window on the shown workspace, never does: after a switch the read
-            // waited on WindowServer's Space transaction.
+            // it left too. classify reads it only for a verdict that depends on it.
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
                                    concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss),
