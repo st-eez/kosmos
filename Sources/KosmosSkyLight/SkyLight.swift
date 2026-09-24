@@ -32,6 +32,14 @@ public enum WindowServerEvent: Sendable {
         default: return nil
         }
     }
+
+    /// The window the event names, if any.
+    public var window: UInt32? {
+        switch self {
+        case .created(let id), .destroyed(let id), .changed(let id), .spaceMembership(let id): id
+        case .spacesChanged, .frontAppChanged: nil
+        }
+    }
 }
 
 /// One window as WindowServer describes it.
@@ -56,6 +64,21 @@ public enum SkyLight {
                 guard let context, let event = WindowServerEvent(id: id, payload: payload) else { return }
                 Unmanaged<EventSink>.fromOpaque(context).takeUnretainedValue().send(event)
             }, id, sink)
+            if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
+        }
+    }
+
+    /// Calls `changed` on the main queue when Secure Input turns on (event 752) or off (753).
+    /// The events follow the session's state, whichever process changes it. Measured
+    /// September 24, 2026 with throwaway programs: another process turning it on and off sent
+    /// 752 and 753; with two overlapping holders, only the first enable and the last release
+    /// sent one; and a holder that exited without releasing sent 753 at its exit. Call once.
+    @MainActor public static func watchSecureInput(_ changed: @escaping @MainActor () -> Void) {
+        secureInputChanged = changed
+        for id: UInt32 in [752, 753] {
+            let result = SLSRegisterConnectionNotifyProc(connection, { _, _, _, _, _ in
+                DispatchQueue.main.async { MainActor.assumeIsolated { secureInputChanged?() } }
+            }, id, nil)
             if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
         }
     }
@@ -96,6 +119,8 @@ public enum SkyLight {
         return rows
     }
 }
+
+@MainActor private var secureInputChanged: (@MainActor () -> Void)?
 
 private final class EventSink: Sendable {
     private let handler: @MainActor (WindowServerEvent) -> Void

@@ -2,6 +2,7 @@ import AppKit
 import KosmosCore
 import KosmosIPC
 import KosmosRecovery
+import KosmosSkyLight
 import os
 
 let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "app")
@@ -14,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboarding: Onboarding?
     private let inventory = Inventory()
     private let guardian = Guardian()
+    private let lockWatch = LockWatch()
     private var signalSources: [DispatchSourceSignal] = []
     private var controller: Controller?
     private var server: IPCServer?
@@ -23,9 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configProblems: [String] = []
     private var hotkeyProblems: [String] = []
     private var hidingProblem: String?
+    private var focusProblem: String?
     private var hiding: Hiding?
+    private var secureInput: SecureInput?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
+        // and quits Kosmos with exit 0 once startup is done. Killed by the signal, Kosmos
+        // would count as crashed, and launch at login would restart it.
+        handleTerminationSignals()
         do {
             // The lock keeps a second Kosmos out and serializes recovery with the guardian,
             // which holds it for up to about a second after a crash.
@@ -35,8 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 acquired = try FileLock(KosmosFiles.lock)
             }
             guard let lock = acquired else {
-                log.error("another Kosmos is running")
-                exit(1)
+                // launchd restarts the login agent after a failed start, which suits a lock the
+                // guardian still holds. While another Kosmos runs, this one exits successfully,
+                // so launchd leaves the agent stopped. The guardian has no bundle identifier.
+                let running = NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.st-eez.kosmos")
+                    .contains { $0 != NSRunningApplication.current }
+                log.error("\(running ? "another Kosmos is running" : "the instance lock is still held", privacy: .public)")
+                exit(running ? 0 : 1)
             }
             instanceLock = lock
             let record = try RecordFile(url: KosmosFiles.record)
@@ -47,12 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.error("\(error.localizedDescription, privacy: .public)")
             exit(1)
         }
-        handleTerminationSignals()
         guardian.start()
         startServer()
 
         let statusItem = StatusItem()
         self.statusItem = statusItem
+        SkyLight.watchSecureInput { [weak self] in self?.secureInputChanged() }
+        secureInputChanged()
+        lockWatch.onChange = { [weak self] locked in self?.lockChanged(locked) }
+        lockWatch.start()
         // WindowServer tracking needs no permission, so it starts before the Accessibility grant.
         inventory.start()
         if AXIsProcessTrusted() {
@@ -91,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case ["reload-config"]:
             guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
             guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+            controller?.turnOnPrivateFocus()
             let (applied, messages) = reloadConfig(atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
         default:
@@ -159,7 +176,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateProblems() {
-        statusItem?.problems = configProblems + hotkeyProblems + (hidingProblem.map { [$0] } ?? [])
+        statusItem?.problems = configProblems + hotkeyProblems + [hidingProblem, focusProblem].compactMap { $0 }
+    }
+
+    /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
+    /// polls, so this never runs inside a switch, though an app that holds Secure Input only
+    /// while active makes it run right after one (DESIGN.md, section 5.6).
+    ///
+    /// Ceiling: a second holder's enable, or a release while another holder remains, sends no
+    /// event, so the named holder can be stale until Secure Input turns off and on. Reading
+    /// the holder again when the status menu opens would keep the menu current.
+    private func secureInputChanged() {
+        let current = SecureInput.current()
+        guard current != secureInput else { return }
+        secureInput = current
+        log.notice("secure input \(current.map { "on, held by \($0)" } ?? "off", privacy: .public)")
+        statusItem?.secureInput = current
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
@@ -171,6 +203,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             source.resume()
             signalSources.append(source)
         }
+    }
+
+    /// Locked: windows wait and nothing on screen changes. Unlocked, or awake while unlocked:
+    /// the inventory sweeps and the Controller resyncs (DESIGN.md, section 5.1).
+    private func lockChanged(_ locked: Bool) {
+        inventory.sessionLocked = locked
+        guard !locked else { return }
+        inventory.sweep()
+        controller?.resync()
     }
 
     private func accessibilityGranted() {
@@ -197,6 +238,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
+        controller.onFocusProblem = { [weak self] problem in
+            self?.focusProblem = problem
+            self?.updateProblems()
+        }
+        focusProblem = controller.focusProblem
+        updateProblems()
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.

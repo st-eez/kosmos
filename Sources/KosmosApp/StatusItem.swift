@@ -1,5 +1,6 @@
 import AppKit
 import KosmosIPC
+import ServiceManagement
 
 /// A static menu bar icon. It changes only when Kosmos's state changes, never during a
 /// command, because a status item that changes width makes the menu bar lay itself out
@@ -9,6 +10,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
     var accessibilityMissing = false { didSet { updateImage() } }
     /// Config errors and hotkeys that could not be registered, shown in the menu.
     var problems: [String] = [] { didSet { updateImage() } }
+    /// The holder of Secure Input while it is on.
+    var secureInput: SecureInput? { didSet { updateImage() } }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private var shownImage = ""
@@ -22,9 +25,11 @@ final class StatusItem: NSObject, NSMenuDelegate {
         updateImage()
     }
 
-    /// Waiting for Accessibility outranks problems, which outrank running normally.
+    /// Waiting for Accessibility outranks Secure Input, which explains keys that do nothing
+    /// right now; problems come next, then running normally.
     private func updateImage() {
         let name = accessibilityMissing ? "exclamationmark.triangle"
+            : secureInput != nil ? "lock.square"
             : problems.isEmpty ? "square.grid.2x2" : "exclamationmark.octagon"
         guard name != shownImage else { return }
         shownImage = name
@@ -39,9 +44,54 @@ final class StatusItem: NSObject, NSMenuDelegate {
         if accessibilityMissing {
             menu.addItem(withTitle: "Waiting for Accessibility permission", action: nil, keyEquivalent: "")
         }
+        if let secureInput {
+            menu.addItem(withTitle: "Secure Input is on, held by \(secureInput)", action: nil, keyEquivalent: "")
+            menu.addItem(withTitle: "Until it is off, alt and alt-shift bindings on letter, digit and punctuation keys do nothing",
+                         action: nil, keyEquivalent: "")
+        }
         for problem in problems.prefix(8) { menu.addItem(withTitle: problem, action: nil, keyEquivalent: "") }
         if problems.count > 8 { menu.addItem(withTitle: "and \(problems.count - 8) more in the log", action: nil, keyEquivalent: "") }
         menu.addItem(.separator())
+        menu.addItem(launchAtLoginItem())
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Kosmos", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
+
+    /// Shows SMAppService's status as it is when the menu opens.
+    private func launchAtLoginItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        item.target = self
+        switch LaunchAtLogin.service.status {
+        case .enabled:
+            item.state = .on
+            if LaunchAtLogin.isAgent { item.subtitle = "Turning it off quits Kosmos" }
+        case .requiresApproval:
+            item.state = .mixed
+            item.subtitle = "Needs approval in Login Items"
+            item.action = #selector(openLoginItems)
+        default:
+            break
+        }
+        return item
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = LaunchAtLogin.service
+        do {
+            if service.status == .enabled {
+                let agent = LaunchAtLogin.isAgent
+                try service.unregister()
+                // launchd kills the agent's process. Quitting restores hidden windows in
+                // process, and the guardian restores them if the kill comes first.
+                if agent { NSApp.terminate(nil) }
+            } else {
+                try service.register()
+            }
+        } catch {
+            log.error("launch at login: \(error.localizedDescription, privacy: .public)")
+        }
+        if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+    }
+
+    @objc private func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
 }

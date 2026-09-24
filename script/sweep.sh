@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# Builds small stub apps and runs a focus probe on them: `sweep` (the default) or `raise`.
-# Each stub is a bundle of its own, so macOS counts it as a separate app, holding the
-# probe's own executable signed like Kosmos (script/bundle.sh). The probe runs the
-# executables directly, and they quit when it exits.
+# Builds small stub apps and runs the sweep probe on them. Each stub is a bundle of its
+# own, so macOS counts it as a separate app, holding the probe's own executable signed like
+# Kosmos (script/bundle.sh). The probe runs the executables directly, and they quit when it
+# exits.
 #
-# Both probes activate the stub apps and take keyboard focus while they run: `sweep` for
-# about four minutes, `raise` for about five seconds. Run them when nobody is typing.
+# The probe activates the stub apps and takes keyboard focus for about four minutes. Run it
+# when nobody is typing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-probe=${1:-sweep}
 count=${STUBS:-5}
-[[ $probe == raise ]] && count=3
 
 swift build -c release --product kosmos-probe
 bin=$(swift build -c release --show-bin-path)
@@ -48,5 +46,5 @@ done
 # Running a stub can register it with Launch Services; take the entries out again.
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 trap 'for app in "${stubs[@]}"; do "$lsregister" -u "$app" 2>/dev/null || true; done' EXIT
-echo "kosmos-probe $probe takes keyboard focus until it finishes."
-"$bin/kosmos-probe" "$probe" "${stubs[@]}"
+echo "kosmos-probe sweep takes keyboard focus until it finishes."
+"$bin/kosmos-probe" sweep "${stubs[@]}"

@@ -5,9 +5,15 @@ import CoreGraphics
 /// rename or remove fields, while new fields can appear in any version.
 public struct BarSnapshot: Codable, Equatable, Sendable {
     public struct Display: Codable, Equatable, Sendable {
-        /// 1-based, in the order macOS arranges displays, as SketchyBar numbers them.
+        /// SketchyBar's number for the display (`BarSnapshot.displayNumber`), the value an item's
+        /// `display` property takes.
         public var id: Int
         public var name: String
+
+        public init(id: Int, name: String) {
+            self.id = id
+            self.name = name
+        }
     }
 
     public struct Window: Codable, Equatable, Sendable {
@@ -20,6 +26,7 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
 
     public struct Workspace: Codable, Equatable, Sendable {
         public var name: String
+        /// The `id` of its display.
         public var display: Int
         /// On screen on its display.
         public var shown: Bool
@@ -43,12 +50,31 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
     public var focused: Focus?
 }
 
+extension BarSnapshot {
+    /// SketchyBar's number for a display, as `display_arrangement` in its src/display.c
+    /// computes it (SketchyBar 2.24.0): 1 when it is the only active display, otherwise one more
+    /// than its position in WindowServer's managed display list, and 0 when the list lacks it.
+    /// Kosmos reads the same list, so its numbers equal SketchyBar's in whatever order
+    /// WindowServer keeps it. Two displays with one UUID would share a number; whether macOS
+    /// gives Steve's twin panels one UUID is part of the pending desk check (DESIGN.md,
+    /// section 5.8).
+    /// - Parameters:
+    ///   - uuid: the display's UUID (CGDisplayCreateUUIDFromDisplayID).
+    ///   - active: how many displays are active (CGGetActiveDisplayList).
+    ///   - managed: the display UUIDs from SLSCopyManagedDisplays, in its order.
+    public static func displayNumber(uuid: String?, active: Int, managed: [String]) -> Int {
+        if active == 1 { return 1 }
+        return managed.firstIndex { $0 == uuid }.map { $0 + 1 } ?? 0
+    }
+}
+
 extension Session {
     /// The bar's view of this session, on one display for now.
     /// - Parameters:
+    ///   - display: the display the session tiles.
     ///   - app: the name of the app that owns a window.
     ///   - frame: where a window is, for windows the layout does not place (floating).
-    public func barSnapshot(profile: String?, displayName: String,
+    public func barSnapshot(profile: String?, display: BarSnapshot.Display,
                             app: (WindowID) -> String?, frame: (WindowID) -> CGRect?) -> BarSnapshot {
         let workspaces = names.map { name -> BarSnapshot.Workspace in
             let tiled = frames(of: name)
@@ -56,9 +82,9 @@ extension Session {
                 guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
                 return BarSnapshot.Window(id: id, app: app(id) ?? "?", x: Int(origin.x.rounded()), y: Int(origin.y.rounded()))
             }.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
-            return BarSnapshot.Workspace(name: name, display: 1, shown: name == visible, focused: name == visible, windows: windows)
+            return BarSnapshot.Workspace(name: name, display: display.id, shown: name == visible, focused: name == visible, windows: windows)
         }
         let focus = focused.map { BarSnapshot.Focus(window: $0, app: app($0) ?? "?", workspace: visible) }
-        return BarSnapshot(profile: profile, displays: [.init(id: 1, name: displayName)], workspaces: workspaces, focused: focus)
+        return BarSnapshot(profile: profile, displays: [display], workspaces: workspaces, focused: focus)
     }
 }
