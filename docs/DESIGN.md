@@ -112,7 +112,7 @@ off the main thread).
   - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole.
-  - One AX observer per app: creation, focus, main window, title, destroy and minimize.
+  - One AX observer per app: creation, focus, main window, destroy and minimize.
   - NSWorkspace app lifecycle events, plus a process exit source for each app.
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait. A

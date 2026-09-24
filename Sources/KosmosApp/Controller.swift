@@ -236,7 +236,7 @@ final class Controller {
                                                                  height: taller ? result.readBack.height : 0)))
                 }
             }
-        case .windowCreated, .windowDestroyed, .titleChanged, .answering:
+        case .windowCreated, .windowDestroyed, .answering:
             break
         }
     }

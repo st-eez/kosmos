@@ -10,7 +10,6 @@ struct AXReport: Sendable {
         case windowDestroyed(UInt32)
         case focusedWindowChanged(UInt32?)
         case minimized(UInt32, Bool)
-        case titleChanged(UInt32)
         /// Frames read back after writes, with the target each write aimed for.
         case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
         /// The app answers Accessibility: it started, or answered again after a timeout.
@@ -27,7 +26,6 @@ struct AXReport: Sendable {
 struct AXWindowInfo: Sendable {
     let role: String?
     let subrole: String?
-    let title: String?
     let minimized: Bool
 }
 
@@ -125,7 +123,6 @@ actor AppWorker {
         do {
             return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
                                 subrole: try copy(element, kAXSubroleAttribute) as? String,
-                                title: try copy(element, kAXTitleAttribute) as? String,
                                 minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false)
         } catch {
             return nil
@@ -270,8 +267,6 @@ actor AppWorker {
             }
         case kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification:
             if let id = id(of: element) { send(.minimized(id, notification == kAXWindowMiniaturizedNotification)) }
-        case kAXTitleChangedNotification:
-            if let id = id(of: element) { send(.titleChanged(id)) }
         default:
             break
         }
@@ -285,7 +280,7 @@ actor AppWorker {
         guard observer != nil else { return id }
         if elements.updateValue(element, forKey: id) == nil {
             for notification in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
-                                 kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
+                                 kAXWindowDeminiaturizedNotification] {
                 _ = observe(element, notification)
             }
         }
