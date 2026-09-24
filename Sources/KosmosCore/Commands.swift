@@ -112,7 +112,9 @@ extension Workspace {
     /// from its siblings in proportion to their shares. For a dimension across the
     /// window's container, the nearest ancestor inside a container along the dimension
     /// resizes. `rect` and `gaps` are the ones `frames` gets, to turn points into shares.
-    /// Returns false when the change would leave any sibling under one point, as i3 does.
+    /// Returns false when the change would leave a window under one point along the
+    /// dimension, as i3 does. That counts windows nested in a squeezed sibling, and lets a
+    /// window already under one point stay there.
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let path = root.path(to: window) else { return false }
@@ -129,12 +131,16 @@ extension Workspace {
         let old = children[index].weight
         let new = old + amount / usable
         let scale = (1 - new) / (1 - old)
-        let onePoint = 1 / usable
-        guard new >= onePoint, children.indices.allSatisfy({ $0 == index || children[$0].weight * scale >= onePoint }) else { return false }
+        guard new > 0, scale > 0 else { return false }
+        var resized = self
         for sibling in children.indices {
-            root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
+            resized.root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
         }
-        normalize()
+        resized.normalize()
+        let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height
+        let before = tileFrames(in: rect, gaps: gaps)
+        guard resized.tileFrames(in: rect, gaps: gaps).allSatisfy({ length($0.value) >= min(1, length(before[$0.key]!)) }) else { return false }
+        self = resized
         edits += 1
         check()
         return true

@@ -288,6 +288,15 @@ import Testing
     #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 2)
 }
 
+@Test func resizeKeepsNestedWindowsAtOnePoint() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    var workspace = Workspace("h[1 v[2 h[3 4]]]")
+    #expect(workspace.resize(1, .width, by: 863, in: display, gaps: Gaps()) == false)
+    #expect(workspace.resize(1, .width, by: 862, in: display, gaps: Gaps()) == true)
+    let frames = workspace.frames(in: display, gaps: Gaps())
+    #expect([2, 3, 4].map { frames[$0]!.width } == [2, 1, 1])
+}
+
 @Test func resizeNeedsSiblingsAlongDimension() {
     var single = Workspace("h[1]")
     #expect(single.resize(1, .width, by: 10, in: screen, gaps: Gaps()) == false)

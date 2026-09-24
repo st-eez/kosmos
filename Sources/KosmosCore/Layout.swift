@@ -36,6 +36,13 @@ extension Workspace {
     /// overlaps its neighbor until layout solves each axis with the minimums the geometry
     /// layer observes.
     func frames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
+        var frames = tileFrames(in: rect, gaps: gaps)
+        if let fullscreenWindow { frames[fullscreenWindow] = rect.standardized }
+        return frames
+    }
+
+    /// The frame of every tiled window's tile, as if none were fullscreen.
+    func tileFrames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         func place(_ container: Container, in rect: CGRect) {
             for (child, frame) in zip(container.children, split(rect, container, gap: gaps.inner)) {
@@ -46,7 +53,6 @@ extension Workspace {
             }
         }
         place(root, in: tilingRect(rect, gaps.outer))
-        if let fullscreenWindow { frames[fullscreenWindow] = rect.standardized }
         return frames
     }
 
