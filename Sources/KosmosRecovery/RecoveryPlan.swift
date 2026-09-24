@@ -54,13 +54,10 @@ struct RecoveryPlan: Equatable {
         return removals.mapValues { $0.filter { !failed.contains($0) } }
     }
 
-    /// The windows of the plan, stuck ones included, that are not back: on no Space, or
-    /// added and on no ordinary Space, as when an add failed and the removal after it left
-    /// the window on a native fullscreen Space. Recovery is complete only when this is empty
-    /// and no window is left in a recorded Space; otherwise the record stays for another
-    /// attempt.
-    func unplaced(isOnNoSpace: (UInt32) -> Bool, isInOrdinarySpace: (UInt32) -> Bool) -> Set<UInt32> {
-        let added = Set(adds.values.joined())
-        return windows.filter { isOnNoSpace($0) || (added.contains($0) && !isInOrdinarySpace($0)) }
+    /// Recovery is complete only when no window is left in a recorded Space and every
+    /// window of the plan, including the stuck ones, is on a Space. Otherwise the record
+    /// stays for another attempt.
+    func isComplete(remainingMembers: Int, isOnNoSpace: (UInt32) -> Bool) -> Bool {
+        remainingMembers == 0 && !windows.contains(where: isOnNoSpace)
     }
 }

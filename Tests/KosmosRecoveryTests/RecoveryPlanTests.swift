@@ -34,23 +34,18 @@ import Testing
     #expect(plan.removals(landed: { _ in false }) == [9: [1]])
 }
 
-@Test func aWindowOnNoSpaceIsNotBack() {
-    let plan = RecoveryPlan.make(members: [9: [1]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
-    #expect(plan.unplaced(isOnNoSpace: { _ in false }, isInOrdinarySpace: { _ in false }).isEmpty)
-    #expect(plan.unplaced(isOnNoSpace: { $0 == 1 }, isInOrdinarySpace: { _ in false }) == [1])
-}
-
-/// A removal after a failed add leaves the window on the active Space, which can be a native
-/// fullscreen one. A window revealed by removal alone may stay on one: it was there.
-@Test func anAddedWindowIsBackOnlyOnAnOrdinarySpace() {
+/// Both halves: a window left in a recorded Space, as when its add did not land, and a
+/// window of the plan on no Space each keep the record.
+@Test func recoveryIsCompleteOnlyWhenNothingIsLeftAnywhere() {
     let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
-    #expect(plan.unplaced(isOnNoSpace: { _ in false }, isInOrdinarySpace: { _ in false }) == [2])
-    #expect(plan.unplaced(isOnNoSpace: { _ in false }, isInOrdinarySpace: { $0 == 2 }).isEmpty)
+    #expect(plan.isComplete(remainingMembers: 0, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: 1, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 2 }))
 }
 
 @Test func aStuckStrandedWindowKeepsTheRecord() {
     // A stranded window with no destination is on no Space, so recovery is not complete.
     let plan = RecoveryPlan.make(members: [:], stranded: [3], hasOrdinarySpace: { _ in false }, destination: { _ in nil })
     #expect(plan.stuck == [3])
-    #expect(plan.unplaced(isOnNoSpace: { $0 == 3 }, isInOrdinarySpace: { _ in false }) == [3])
+    #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 3 }))
 }
