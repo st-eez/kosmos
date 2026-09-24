@@ -261,7 +261,12 @@ off the main thread).
   path on the app's worker: make the window the app's main window, raise it, then activate
   the app, or activate Finder alone for an empty workspace. The app picks its key window, so
   the spec's assumption that the requested window becomes key no longer holds, and a wrong
-  window is adopted like the user's choice.
+  window is adopted like the user's choice. A public request's expectation ends at the
+  first report from its app that is no echo, so a click on the requested window afterwards
+  is the user's. Private requests keep theirs until matched (tla/README.md, change 6). The
+  spec does not model the public path; if the app keys the requested window late, after
+  the user chose another of its windows, that late report reads as the user's and pulls
+  focus back, change 6's bounce in the fallback alone.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space

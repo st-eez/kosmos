@@ -66,3 +66,30 @@ import Testing
     reports.requestDropped(.window(1), at: 10)
     #expect(reports.classify(.window(1), receivedAt: 11, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
 }
+
+@Test func thePublicPathsChoiceAnswersItsRequest() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), at: 10, publicIn: 7)
+    // App 7 keyed window 2 of its own choosing.
+    #expect(reports.classify(.window(2), receivedAt: 11, onCurrentWorkspace: true, wasHidden: false) == .adopt(2))
+    reports.publicRequestsAnswered(by: 7, receivedAt: 11)
+    // The user's click on window 1 is theirs, not the request's echo.
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
+}
+
+@Test func anotherWindowOfTheAppLeavesAPrivateRequestExpected() {   // change 6
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), at: 10)
+    #expect(reports.classify(.window(2), receivedAt: 11, onCurrentWorkspace: true, wasHidden: false) == .adopt(2))
+    reports.publicRequestsAnswered(by: 7, receivedAt: 11)
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, wasHidden: false) == .echo)
+}
+
+@Test func onlyTheNamedAppAnswersAPublicRequest() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), at: 10, publicIn: 7)
+    reports.publicRequestsAnswered(by: 8, receivedAt: 11)
+    // A report received before the request answers nothing either.
+    reports.publicRequestsAnswered(by: 7, receivedAt: 9)
+    #expect(reports.classify(.window(1), receivedAt: 12, onCurrentWorkspace: true, wasHidden: false) == .echo)
+}

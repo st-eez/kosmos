@@ -193,6 +193,7 @@ final class Controller {
                                            wasHidden: id.map(hiding.isConcealed) ?? false)
             controllerLog.debug("focus report \(String(describing: reported), privacy: .public): \(String(describing: verdict), privacy: .public)")
             misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: verdict == .echo)
+            if verdict != .echo { reports.publicRequestsAnswered(by: report.pid, receivedAt: report.received) }
             switch verdict {
             case .echo, .ignore:
                 break
@@ -329,21 +330,21 @@ final class Controller {
             pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
         }
         guard let pid else { return }
-        let privately = focusQueue.killSwitch.isOn
-        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately,
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
                            generation: focusQueue.newGeneration(),
-                           performing: { [weak self] stamp in self?.performing(target, pid: pid, privately: privately, at: stamp) },
+                           performing: { [weak self] stamp, exact in self?.performing(target, pid: pid, exact: exact, at: stamp) },
                            dropped: { [weak self] stamp in
                                self?.reports.requestDropped(target, at: stamp)
                                self?.misses.requestDropped(at: stamp)
                            })
     }
 
-    /// The focus queue is about to key `target`: records the echo that will come back, and
-    /// counts a private request toward the kill switch (DESIGN.md, section 5.4).
-    private func performing(_ target: KeyWindow, pid: pid_t, privately: Bool, at stamp: ContinuousClock.Instant) {
-        reports.focusRequested(target, at: stamp)
-        guard privately, focusQueue.killSwitch.isOn, case .window(let id) = target,
+    /// The focus queue is about to key `target`, exactly on the private path: records the echo
+    /// that will come back, and counts a private request toward the kill switch (DESIGN.md,
+    /// section 5.4).
+    private func performing(_ target: KeyWindow, pid: pid_t, exact: Bool, at stamp: ContinuousClock.Instant) {
+        reports.focusRequested(target, at: stamp, publicIn: exact ? nil : pid)
+        guard exact, focusQueue.killSwitch.isOn, case .window(let id) = target,
               misses.willRequest(id, pid: pid, at: stamp) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)
         controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")

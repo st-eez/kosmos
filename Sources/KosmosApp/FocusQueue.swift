@@ -25,19 +25,22 @@ final class FocusQueue: Sendable {
     /// A request that is stale, or whose target is already key, makes no call and records
     /// nothing. Otherwise `performing` runs on the main actor with a stamp taken just before
     /// the calls, so the caller records the echo it expects, and `dropped` runs with that
-    /// stamp when the calls fail, so the caller forgets it (tla/Kosmos.tla, ExecFocus). The
+    /// stamp when the calls fail, so the caller forgets it (tla/Kosmos.tla, ExecFocus).
+    /// `performing` says whether the path keys the exact window: the private path does, and
+    /// the public path, which a failed private call falls back to with a record of its own,
+    /// lets the app choose. The
     /// main queue runs `performing` before any report of the change, which reaches main only
     /// after the change starts. Recording when the request is made instead failed TLC: a
     /// request still queued took a click on its window for its echo.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, generation: UInt64,
-                 performing: @escaping @MainActor (ContinuousClock.Instant) -> Void,
+                 performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ exact: Bool) -> Void,
                  dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !Self.isKey(key, pid: pid, worker: worker) else { return }
-            let stamp = ContinuousClock.now
-            Self.onMain { performing(stamp) }
             if privately {
+                let stamp = ContinuousClock.now
+                Self.onMain { performing(stamp, true) }
                 if case .window(let id) = key, let worker {
                     Self.raise(id, on: worker, isCurrent)
                     guard isCurrent() else { return Self.onMain { dropped(stamp) } }
@@ -49,7 +52,10 @@ final class FocusQueue: Sendable {
                     }
                 }
                 if performed { return }
+                Self.onMain { dropped(stamp) }
             }
+            let stamp = ContinuousClock.now
+            Self.onMain { performing(stamp, false) }
             switch key {
             case .window(let id):
                 guard let worker else { return Self.onMain { dropped(stamp) } }
