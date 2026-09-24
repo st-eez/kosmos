@@ -154,8 +154,9 @@ off the main thread).
   and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
   read has returned is read again when its app's worker reports it created, reports that
-  the app answers again, or reports the window focused, when its app unhides, and at the
-  sweep after a Space change while it is ordered in. Accessibility lists no window on a
+  the app answers again, or reports the window focused, when its app unhides, when it is
+  ordered in or changes Space, and at the sweep after a Space change while it is ordered
+  in. Accessibility lists no window on a
   Space that is not shown, such as another fullscreen Space, so a sweep every 3 s would
   ask each such app again and again. A worker asked about windows it does not know reads
   its app's window list again first, once for all of them, and knows the elements it has

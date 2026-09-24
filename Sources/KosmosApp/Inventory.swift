@@ -186,8 +186,8 @@ final class Inventory {
     /// Candidates whose facts no read has returned yet, one job for each app. Terminal,
     /// launched hidden, restored a window that no read answered for and no creation report
     /// named while it stayed hidden (live log, September 24, 2026): its unhide, a focus
-    /// report naming the window and the sweep after a Space change read it again
-    /// (DESIGN.md, section 5.1).
+    /// report naming the window, its order-in or Space change, and the sweep after a Space
+    /// change read it again (DESIGN.md, section 5.1).
     private func readIfUnknown(_ ids: some Sequence<UInt32>) {
         var unknown: [pid_t: [UInt32]] = [:]
         for id in ids {
@@ -280,6 +280,8 @@ final class Inventory {
             refresh(id)
         case .spaceMembership(let id):
             refresh(id)
+            // It may join the shown Space, where Accessibility lists it.
+            readIfUnknown([id])
             if let row = windows[id], isCandidate(row) {
                 if spaceChangedAt[id] == nil { spaceChangedAt[id] = .now }
                 Task { setFullscreen(id, await fullscreenState(id)) }
@@ -323,6 +325,9 @@ final class Inventory {
             onOrderChange?(row.id, row.pid, row.orderedIn, .now)
         }
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
+        // Shown now, as the second window an app launched hidden restored, with no report of
+        // its own.
+        if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
