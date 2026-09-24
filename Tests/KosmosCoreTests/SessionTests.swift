@@ -139,13 +139,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.remove(2).isEmpty)
 }
 
-@Test func parkedWindowsLeaveTheLayoutAndReturn() {
-    var s = session()
-    _ = s.add(1); _ = s.add(2)
-    #expect(s.park([2]).frames == [1: display])
-    #expect(s.unpark([2], follow: 2).frames.count == 2)
-}
-
 @Test func treeCommandsActOnTheFocusedWindow() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
@@ -288,24 +281,13 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.focused == 2)
 }
 
-@Test func aReturningWindowNotFollowedIsConcealedAgain() {
-    var s = session()
-    _ = s.add(1)
-    _ = s.park([1])
-    _ = s.perform(.workspace(.named("2")))
-    let plan = s.unpark([1], follow: nil)
-    #expect(s.visible == "2")
-    #expect(plan.hide == [1])
-    #expect(plan.show.isEmpty)
-}
-
 @Test func anAppsWindowsParkAndReturnTogether() {
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
     let before = s.frames(of: "1")
     #expect(s.park([1, 3]).frames == [2: display])
     #expect(s.isParked(1) && s.isParked(3) && !s.isParked(2))
-    #expect(s.unpark([3, 1], follow: nil).frames == before)
+    #expect(s.unpark([3, 1], follow: 1).frames == before)
     #expect(!s.isParked(1) && !s.isParked(3))
     #expect(s.unpark([9], follow: 9).isEmpty)
 }
@@ -316,7 +298,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.park([1])
     #expect(s.perform(.workspace(.named("2")))?.hide == [2])
     #expect(s.perform(.workspace(.named("1")))?.show == [2])
-    #expect(s.unpark([1], follow: nil).hide.isEmpty)
+    let plan = s.unpark([1], follow: 1)
+    #expect(plan.show.isEmpty && plan.hide.isEmpty)
 }
 
 @Test func anAppsWindowsOnOtherHiddenWorkspacesStayConcealed() {

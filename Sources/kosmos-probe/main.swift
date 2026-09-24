@@ -236,29 +236,8 @@ func bar() {
     exit(0)
 }
 
-/// Space types by id, from the managed display Spaces: 0 ordinary, 4 fullscreen.
-func spaceTypes() -> [UInt64: Int] {
-    let displays = SLSCopyManagedDisplaySpaces(SLSMainConnectionID())?.takeRetainedValue() as? [[String: Any]] ?? []
-    var types: [UInt64: Int] = [:]
-    for display in displays {
-        for space in display["Spaces"] as? [[String: Any]] ?? [] {
-            if let id = space["id64"] as? UInt64 { types[id] = space["type"] as? Int ?? -1 }
-        }
-    }
-    return types
-}
-
 nonisolated(unsafe) var probeStart = ContinuousClock.now
 nonisolated(unsafe) var probeWindow: UInt32 = 0
-nonisolated(unsafe) var probeLast = ""
-
-/// The window's Spaces with their types. AXFullScreen was read in runs without an event
-/// loop: reading it here, with AppKit running, blocked.
-func probeState() -> String {
-    let types = spaceTypes()
-    let spaces = (kosmos_window_spaces(probeWindow) as? [UInt64] ?? []).map { "\($0):\(types[$0] ?? -1)" }
-    return "spaces \(spaces)"
-}
 
 @MainActor func fullscreen() -> Never {
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
@@ -274,7 +253,7 @@ func probeState() -> String {
     while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
     probeWindow = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
     probeStart = .now
-    print("window \(probeWindow), pid \(child.processIdentifier), AX trusted \(AXIsProcessTrusted())")
+    print("window \(probeWindow), pid \(child.processIdentifier)")
     pipe.fileHandleForReading.readabilityHandler = { handle in
         let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty { print(String(format: "%7.1f ms child: ", elapsed(probeStart)) + text) }

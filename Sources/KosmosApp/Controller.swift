@@ -165,11 +165,10 @@ final class Controller {
     /// The app is back: its windows return to their places, and Kosmos follows the one the
     /// app keys, or else its most recently focused one, to its workspace.
     private func appUnhidden(_ pid: pid_t) {
-        guard let windows = hiddenApps.removeValue(forKey: pid) else { return }
+        guard let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty else { return }
         Task {
             let keyed = await inventory.worker(pid)?.focusedWindow()
-            let follow = keyed.flatMap { windows.contains($0) ? $0 : nil }
-                ?? windows.max { (recent.lastIndex(of: $0) ?? -1) < (recent.lastIndex(of: $1) ?? -1) }
+            guard let follow = keyed.flatMap({ windows.contains($0) ? $0 : nil }) ?? mostRecent(windows) else { return }
             execute(session.unpark(windows, follow: follow))
         }
     }
@@ -292,7 +291,7 @@ final class Controller {
         var kinds: [WindowID: Hiding.Conceal] = [:]
         for (pid, group) in Dictionary(grouping: windows, by: { owner[$0] ?? 0 }) {
             let selected = shownApps.contains(pid) ? nil
-                : group.max { (recent.lastIndex(of: $0) ?? -1) < (recent.lastIndex(of: $1) ?? -1) }
+                : mostRecent(group)
             for window in group { kinds[window] = window == selected ? .keepOrdinary : .exclusive }
         }
         return kinds
@@ -328,6 +327,10 @@ final class Controller {
     private func touch(_ window: WindowID) {
         recent.removeAll { $0 == window }
         recent.append(window)
+    }
+
+    private func mostRecent(_ windows: [WindowID]) -> WindowID? {
+        windows.max { (recent.lastIndex(of: $0) ?? -1) < (recent.lastIndex(of: $1) ?? -1) }
     }
 
     /// One snapshot for the bar and for `kosmos subscribe` (DESIGN.md, section 5.12).

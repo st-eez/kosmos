@@ -116,10 +116,6 @@ final class Inventory {
     /// A native fullscreen window moves to a Space of its own, which SkyLight reports as a
     /// Space membership change (the fullscreen probe in kosmos-probe). Accessibility has no
     /// notification for it.
-    private func checkFullscreen(_ id: UInt32) {
-        Task { setFullscreen(id, await fullscreenState(id)) }
-    }
-
     private func fullscreenState(_ id: UInt32) async -> Bool? {
         await withCheckedContinuation { continuation in
             spaceQueue.async { continuation.resume(returning: Displays.isFullscreen(id)) }
@@ -155,7 +151,7 @@ final class Inventory {
             refresh(id)
         case .spaceMembership(let id):
             refresh(id)
-            if let row = windows[id], isCandidate(row) { checkFullscreen(id) }
+            if let row = windows[id], isCandidate(row) { Task { setFullscreen(id, await fullscreenState(id)) } }
         case .destroyed(let id):
             remove(id, reason: "destroyed")
         case .spacesChanged:

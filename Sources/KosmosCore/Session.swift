@@ -108,14 +108,14 @@ public struct Session: Sendable {
     /// follows `follow` there when its workspace is hidden, as it does for Command-Tab
     /// (DESIGN.md, section 5.5). The other returning windows of hidden workspaces are
     /// concealed again.
-    public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
+    public mutating func unpark(_ windows: [WindowID], follow: WindowID) -> Plan {
         let returning = windows.filter { isParked($0) }
         let changed = Set(returning.map { home[$0]! })
         for name in changed {
             workspaces[name]!.unpark(returning.filter { home[$0] == name }, in: display, gaps: gaps)
         }
         var plan = Plan()
-        if let follow, returning.contains(follow), let name = home[follow] {
+        if returning.contains(follow), let name = home[follow] {
             workspaces[name]!.focus(follow)
             if name != visible { plan = show(name) }
         }
@@ -172,8 +172,7 @@ public struct Session: Sendable {
             return show(previous)
         case .moveNodeToWorkspace(let target, let follow, let chosen):
             // A minimized or hidden window stays where it will return to.
-            guard let window = chosen ?? focused, let source = home[window],
-                  !workspaces[source]!.parked.contains(where: { $0.window == window }),
+            guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
         case .reloadConfig, .mode:
