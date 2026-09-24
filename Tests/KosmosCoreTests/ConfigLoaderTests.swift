@@ -1,0 +1,392 @@
+import Testing
+@testable import KosmosCore
+
+private let header = "config-version = 1\nworkspaces = ['1', '2', '3']\n"
+
+/// Loads `header` followed by `body`, so line 3 is the first line of `body`.
+private func load(_ body: String, commandError: (Binding.Command) -> String? = { _ in nil }) -> (config: Config?, diagnostics: [String]) {
+    let result = Config.load(header + body, commandError: commandError)
+    return (result.config, result.diagnostics.map(\.description))
+}
+
+@Suite struct ConfigLoaderTests {
+    @Test func minimalConfigTakesDefaults() throws {
+        let result = load("")
+        #expect(result.diagnostics.isEmpty)
+        let config = try #require(result.config)
+        #expect(config.workspaces == ["1", "2", "3"])
+        #expect(!config.startAtLogin)
+        #expect(config.gaps == GapSettings())
+        #expect(config.modes.isEmpty && config.rules.isEmpty && config.profiles.isEmpty)
+    }
+
+    @Test func requiredKeys() {
+        let result = Config.load("")
+        #expect(result.config == nil)
+        #expect(result.diagnostics.map(\.description) == [
+            "1:1: error: missing key 'config-version'; set it to 1",
+            "1:1: error: missing key 'workspaces'",
+        ])
+        #expect(Config.load("config-version = 2\nworkspaces = ['1']").diagnostics.map(\.description) == [
+            "1:18: error: config-version: this version of Kosmos reads config-version 1",
+        ])
+    }
+
+    @Test func syntaxErrorsComeBackAsDiagnostics() {
+        let result = load("[gaps]\ninner = 'ten")
+        #expect(result.config == nil)
+        #expect(result.diagnostics == ["4:9: error: gaps.inner: the string is not closed on this line"])
+    }
+
+    @Test func unknownKeysSuggestTheNearestKey() {
+        #expect(load("mouse-follow-focus = true\n[gaps]\ninnr = 1\n[[rules]]").diagnostics == [
+            "3:1: error: mouse-follow-focus: unknown key; did you mean 'mouse-follows-focus'?",
+            "5:1: error: gaps.innr: unknown key; did you mean 'inner'?",
+            "6:3: error: rules: unknown key; did you mean 'rule'?",
+        ])
+        #expect(load("colour = 1").diagnostics == ["3:1: error: colour: unknown key"])
+    }
+
+    @Test func wrongTypesNameTheKeyPath() {
+        #expect(load("start-at-login = 'yes'\n[gaps]\ninner = '10'\nouter = { top = true }").diagnostics == [
+            "3:18: error: start-at-login: expected true or false, found a string",
+            "5:9: error: gaps.inner: expected an integer, found a string",
+            "6:17: error: gaps.outer.top: expected an integer, found a boolean",
+        ])
+        #expect(load("gaps = 10").diagnostics == ["3:8: error: gaps: expected a table, found an integer"])
+    }
+
+    @Test func gapsCannotBeNegative() {
+        #expect(load("[gaps]\ninner = -1").diagnostics == ["4:9: error: gaps.inner: gaps cannot be negative"])
+    }
+
+    @Test func workspaceNames() {
+        let diagnostics = Config.load("config-version = 1\nworkspaces = ['a b', '-x', 'next', 'w', 'w', '']").diagnostics
+        #expect(diagnostics.map(\.description) == [
+            "2:15: error: workspaces[0]: workspace names cannot contain whitespace",
+            "2:22: error: workspaces[1]: workspace names cannot start with '-', which starts an option",
+            "2:28: error: workspaces[2]: 'next' is a command keyword and cannot name a workspace",
+            "2:41: error: workspaces[4]: workspace 'w' is listed twice",
+            "2:46: error: workspaces[5]: the string is empty",
+        ])
+        #expect(Config.load("config-version = 1\nworkspaces = []").diagnostics.map(\.description) == [
+            "2:14: error: workspaces: list at least one workspace",
+        ])
+    }
+
+    @Test func monitorMatchers() {
+        let body = """
+        [monitors]
+        both = { name = 'A', serial = 'B' }
+        none = {}
+        off = { built-in = false }
+        typo = { nmae = 'A' }
+        """
+        #expect(load(body).diagnostics == [
+            "4:8: error: monitors.both: give exactly one of name, serial or built-in",
+            "5:8: error: monitors.none: give exactly one of name, serial or built-in",
+            "6:20: error: monitors.off.built-in: built-in = false matches nothing; match the display by name or serial",
+            "7:8: error: monitors.typo: give exactly one of name, serial or built-in",
+            "7:10: error: monitors.typo.nmae: unknown key; did you mean 'name'?",
+        ])
+    }
+
+    @Test func referencesMustBeDefined() {
+        let body = """
+        [monitors]
+        main = { name = 'Studio' }
+        [workspace-monitor]
+        1 = 'mian'
+        4 = 'main'
+        [gaps]
+        outer-per-monitor = { side = { top = 1 } }
+        [[rule]]
+        app-id = 'x'
+        workspace = '9'
+        """
+        #expect(load(body).diagnostics == [
+            "6:5: error: workspace-monitor.1: no monitor named 'mian' under [monitors]; did you mean 'main'?",
+            "7:1: error: workspace-monitor.4: workspace '4' is not in workspaces",
+            "9:23: error: gaps.outer-per-monitor.side: no monitor named 'side' under [monitors]",
+            "12:13: error: rule[0].workspace: workspace '9' is not in workspaces",
+        ])
+    }
+
+    @Test func bindings() throws {
+        let body = """
+        [mode.main.binding]
+        alt-h = 'focus left'
+        alt-shift-1 = ['move-to-workspace', '1']
+        [mode.resize.binding]
+        esc = 'mode main'
+        """
+        let config = try #require(load(body).config)
+        let main = try #require(config.modes["main"])
+        #expect(main.map(\.key) == ["alt-h", "alt-shift-1"])
+        #expect(main[0].command == .string("focus left"))
+        #expect(main[1].command == .argv(["move-to-workspace", "1"]))
+        #expect(try main[1].combo == KeyCombo("shift-alt-1"))
+        #expect(config.modes["resize"]?.first?.combo.modifiers == [])
+    }
+
+    @Test func badBindings() {
+        let body = """
+        [mode.main.binding]
+        alt-hh = 'a'
+        opt-h = 'a'
+        alt-shift-j = 'a'
+        shift-alt-j = 'a'
+        alt-k = ''
+        alt-l = []
+        alt-m = 3
+        [mode.'two words'.binding]
+        [mode.x]
+        bindings = {}
+        """
+        #expect(load(body).diagnostics == [
+            "4:1: error: mode.main.binding.alt-hh: 'hh' is not a key name; did you mean 'h'?",
+            "5:1: error: mode.main.binding.opt-h: 'opt' is not a modifier; use cmd, ctrl, alt or shift; did you mean 'alt'?",
+            "7:1: error: mode.main.binding.shift-alt-j: 'shift-alt-j' is the same combination as 'alt-shift-j' on line 6",
+            "8:9: error: mode.main.binding.alt-k: the string is empty",
+            "9:9: error: mode.main.binding.alt-l: the command is empty",
+            "10:9: error: mode.main.binding.alt-m: expected a command as a string or an array of arguments, found an integer",
+            "11:7: error: mode.\"two words\": mode names cannot be empty or contain whitespace",
+            "13:1: error: mode.x.bindings: unknown key; did you mean 'binding'?",
+        ])
+    }
+
+    @Test func commandErrorsFailTheLoad() {
+        let body = """
+        [mode.main.binding]
+        alt-h = 'focus left'
+        alt-j = 'fcous down'
+        """
+        let result = load(body) { command in
+            guard case .string(let line) = command, !line.hasPrefix("focus") else { return nil }
+            return "unknown command '\(line.split(separator: " ")[0])'"
+        }
+        #expect(result.config == nil)
+        #expect(result.diagnostics == ["5:9: error: mode.main.binding.alt-j: unknown command 'fcous'"])
+    }
+
+    @Test func rulesNeedAMatcherAndAnAction() {
+        let body = """
+        [[rule]]
+        float = true
+        [[rule]]
+        app-id = 'x'
+        [[rule]]
+        app-id = 'x'
+        app-name = 'X'
+        float = true
+        workspace = '2'
+        """
+        #expect(load(body).diagnostics == [
+            "3:3: error: rule[0]: a rule needs app-id or app-name",
+            "5:3: error: rule[1]: a rule needs float or workspace",
+        ])
+    }
+
+    @Test func shadowedRulesAreWarnings() throws {
+        // AeroSpace's Ghostty floating rule never fired: a rule for the same bundle id came first.
+        let body = """
+        [[rule]]
+        app-id = 'com.mitchellh.ghostty'
+        workspace = '1'
+
+        [[rule]]
+        app-name = 'you'
+        float = true
+
+        [[rule]]
+        app-id = 'com.mitchellh.ghostty'
+        float = true
+
+        [[rule]]
+        app-name = 'YouTube'
+        workspace = '2'
+
+        [[rule]]
+        app-id = 'com.google.youtube'
+        workspace = '3'
+
+        [[rule]]
+        app-id = 'com.google.youtube'
+        app-name = 'YouTube Music'
+        workspace = '3'
+        """
+        let result = load(body)
+        // A warning alone leaves the config usable.
+        #expect(result.config?.rules.count == 6)
+        #expect(result.diagnostics == [
+            "11:3: warning: rule[2]: this rule never applies: rule[0] on line 3 matches every window it matches",
+            "15:3: warning: rule[3]: this rule never applies: rule[1] on line 7 matches every window it matches",
+            "23:3: warning: rule[5]: this rule never applies: rule[1] on line 7 matches every window it matches",
+        ])
+    }
+
+    @Test func ruleMatching() {
+        let rule = WindowRule(appID: "com.google.Chrome", appName: "chrome")
+        #expect(rule.matches(appID: "com.google.Chrome", appName: "Google Chrome"))
+        #expect(!rule.matches(appID: "com.google.Chrome", appName: "Brave Browser"))
+        #expect(!rule.matches(appID: "com.google.chrome", appName: "Google Chrome"))
+        #expect(!rule.matches(appID: nil, appName: "Google Chrome"))
+        #expect(WindowRule(appName: "youtube").matches(appID: "com.apple.Safari.WebApp.1234", appName: "YouTube"))
+    }
+
+    @Test func diagnosticsAreInFileOrder() {
+        // The loader checks [monitors] before workspaces, but reports in file order.
+        let result = Config.load("config-version = 1\nworkspaces = [1]\n[monitors]\nx = {}")
+        #expect(result.diagnostics.map(\.position.line) == [2, 4])
+    }
+}
+
+@Suite struct ProfileTests {
+    private static let text = """
+    config-version = 1
+    workspaces = ['1', '2', '3', '4']
+
+    [monitors]
+    builtin = { built-in = true }
+    left = { serial = 'L' }
+    main = { serial = 'M' }
+    asus = { name = 'VG279QE5A' }
+
+    [workspace-monitor]
+    1 = 'main'
+    2 = 'left'
+    3 = ['builtin', 'main']
+
+    [gaps]
+    outer = { top = 35, left = 10, bottom = 10, right = 10 }
+    outer-per-monitor = { builtin = { top = 5 } }
+
+    [[rule]]
+    app-id = 'spotify'
+    workspace = '4'
+
+    [[rule]]
+    app-id = 'chrome'
+    workspace = '3'
+
+    [[profile]]
+    name = 'home'
+    when = ['left', 'main']
+
+    [[profile]]
+    name = 'single'
+    when = ['asus']
+    workspace-monitor = { 1 = 'asus', 2 = 'asus', 3 = ['builtin', 'asus'], 4 = 'asus' }
+
+    [[profile]]
+    name = 'laptop'
+    workspaces = ['1', '2']
+    workspace-monitor = { 1 = 'builtin', 2 = 'builtin' }
+    merge-workspaces = { 3 = '1', 4 = '2' }
+
+    [[profile.rule]]
+    app-id = 'spotify'
+    workspace = '2'
+    """
+
+    private let builtIn = Display(name: "Color LCD", isBuiltIn: true)
+    private let left = Display(name: "VG279QE5A (2)", serial: "L")
+    private let main = Display(name: "VG279QE5A (1)", serial: "M")
+
+    private func config() throws -> Config {
+        let result = Config.load(Self.text)
+        #expect(result.diagnostics.isEmpty)
+        return try #require(result.config)
+    }
+
+    @Test func firstProfileWhoseMonitorsAreConnectedApplies() throws {
+        let config = try config()
+        #expect(config.setup(for: [builtIn, left, main]).profile == "home")
+        // With the lid closed at home the built-in display is gone, and home still applies.
+        #expect(config.setup(for: [main, left]).profile == "home")
+        // One panel: its name matches 'asus', and home needs both serials.
+        #expect(config.setup(for: [builtIn, main]).profile == "single")
+        // A profile without `when` takes every other set of displays.
+        #expect(config.setup(for: [builtIn]).profile == "laptop")
+        #expect(config.setup(for: [builtIn, Display(name: "Projector")]).profile == "laptop")
+    }
+
+    @Test func workspacesGoToTheFirstConnectedMonitorInTheirList() throws {
+        let config = try config()
+        #expect(config.setup(for: [builtIn, left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 0])
+        // Lid closed: 3 falls back to the main panel, and 4 has no monitor, so the app places it.
+        #expect(config.setup(for: [left, main]).workspaceDisplays == ["1": 1, "2": 0, "3": 1])
+        #expect(config.setup(for: [builtIn, main]).workspaceDisplays == ["1": 1, "2": 1, "3": 0, "4": 1])
+    }
+
+    @Test func profileReplacesWorkspacesAndPutsItsRulesFirst() throws {
+        let setup = try config().setup(for: [builtIn])
+        #expect(setup.workspaces == ["1", "2"])
+        #expect(setup.workspaceDisplays == ["1": 0, "2": 0])
+        #expect(setup.mergeWorkspaces == ["3": "1", "4": "2"])
+        // The profile's Spotify rule wins, and the base Chrome rule's workspace 3 merges into 1.
+        #expect(setup.rules.map(\.appID) == ["spotify", "spotify", "chrome"])
+        #expect(setup.rules.first { $0.matches(appID: "spotify", appName: nil) }?.workspace == "2")
+        #expect(setup.rules.first { $0.matches(appID: "chrome", appName: nil) }?.workspace == "1")
+    }
+
+    @Test func noMatchingProfileLeavesTheBaseConfig() throws {
+        var config = try config()
+        config.profiles.removeLast()
+        let setup = config.setup(for: [builtIn])
+        #expect(setup.profile == nil)
+        #expect(setup.workspaces == ["1", "2", "3", "4"])
+        #expect(setup.rules == config.rules)
+    }
+
+    @Test func outerGapsPerMonitor() throws {
+        let config = try config()
+        #expect(config.outerGaps(on: builtIn) == OuterGaps(top: 5, left: 10, bottom: 10, right: 10))
+        #expect(config.outerGaps(on: main) == OuterGaps(top: 35, left: 10, bottom: 10, right: 10))
+    }
+
+    @Test func monitorNamesMatchIgnoringCase() {
+        #expect(MonitorMatch.name("lg ultrawide").matches(Display(name: "LG ULTRAWIDE")))
+        #expect(!MonitorMatch.serial("L").matches(Display(name: "VG279QE5A")))
+    }
+
+    @Test func profileErrors() {
+        let body = """
+        [monitors]
+        a = { name = 'A' }
+        [[profile]]
+        when = ['b']
+        [[profile]]
+        name = 'p'
+        workspaces = ['1']
+        workspace-monitor = { 2 = 'a' }
+        merge-workspaces = { 1 = '1', 3 = '9' }
+        [[profile]]
+        name = 'p'
+        """
+        #expect(load(body).diagnostics == [
+            "5:3: error: profile[0]: missing key 'name'",
+            "6:9: error: profile[0].when[0]: no monitor named 'b' under [monitors]",
+            "10:23: error: profile[1].workspace-monitor.2: workspace '2' is not in this profile's workspaces",
+            "11:22: error: profile[1].merge-workspaces.1: workspace '1' is in this profile's workspaces, so there is nothing to merge",
+            "11:35: error: profile[1].merge-workspaces.3: workspace '9' is not in this profile's workspaces",
+            "12:3: warning: profile[2]: this profile never applies: profile 'p' on line 7 comes first and matches whenever it does",
+            "13:8: error: profile[2].name: profile 'p' is already defined at line 8",
+        ])
+    }
+
+    @Test func baseRuleForAMissingWorkspaceIsAWarning() {
+        let body = """
+        [[rule]]
+        app-id = 'spotify'
+        workspace = '3'
+        [[profile]]
+        name = 'small'
+        workspaces = ['1']
+        """
+        #expect(load(body).diagnostics == [
+            "6:3: warning: profile[0]: rule[0] on line 3 sends windows to workspace '3', which this profile leaves out; "
+                + "add '3' to merge-workspaces or give the profile a rule of its own",
+        ])
+    }
+}
