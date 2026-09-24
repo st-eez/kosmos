@@ -166,17 +166,15 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again.
 - Skip activation when the target is already key. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
-- While macOS shows a native fullscreen window's Space, only a command requests focus.
-  Parking the fullscreen window moved Kosmos's focus to a desktop window, and when that
-  window closes, focusing the next one would take the user out of fullscreen.
+- While macOS shows a native fullscreen window's Space, only a command requests focus,
+  directly or after its switch's barrier. Parking the fullscreen window moved Kosmos's
+  focus to a desktop window. Focusing the next one when that window closes, or after an
+  unhide conceals the app's other windows, would take the user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
   next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
   replaced only in that case, because focusing earlier could put Kosmos's echo between
   the departure and the report of the window macOS keys next.
-- While a window in native fullscreen is key, a closed focus is replaced without being
-  focused. Parking the fullscreen window moved Kosmos's focus to a window behind it, and
-  focusing the desktop would take the user out of the fullscreen Space.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 

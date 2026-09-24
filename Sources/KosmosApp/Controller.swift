@@ -153,12 +153,7 @@ final class Controller {
             hiddenApps[pid]?.removeAll { $0 == id }
             fullscreenParked.remove(id)
             ledger.forget(id)
-            var plan = session.remove(id)
-            // Kosmos's focus moved to a window behind the one in native fullscreen, which
-            // is still key. Focusing a window of the desktop would take the user out of the
-            // fullscreen Space; the fullscreen window brings the focus back when it leaves.
-            if case .window(let keyed)? = key, fullscreenParked.contains(keyed) { plan.focus = nil }
-            execute(plan)
+            execute(session.remove(id))
         }
     }
 
@@ -302,10 +297,11 @@ final class Controller {
             needsResync = false
         }
         let movePointer = fromCommand && mouseFollowsFocus
+        // Focusing a desktop window takes the user out of a fullscreen Space: only a command
+        // does that, not a window closing behind it or an unhide that conceals windows.
+        let mayFocus = { fromCommand || !self.inFullscreenSpace }
         if show.isEmpty && hide.isEmpty {
-            // Focusing a desktop window takes the user out of a fullscreen Space: only a
-            // command does that, not a window closing behind it.
-            if plan.focus != nil, fromCommand || !inFullscreenSpace { requestFocus(intent, movePointer: movePointer) }
+            if plan.focus != nil, mayFocus() { requestFocus(intent, movePointer: movePointer) }
         } else {
             switchGeneration += 1
             let generation = switchGeneration
@@ -331,7 +327,7 @@ final class Controller {
                     return
                 }
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
-                guard generation == self.switchGeneration else { return }
+                guard generation == self.switchGeneration, mayFocus() else { return }
                 self.requestFocus(self.intent, movePointer: movePointer)
             }
         }
