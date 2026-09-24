@@ -190,9 +190,28 @@ off the main thread).
 
 - Create the holding Space once per session, and record its id in the durable record
   before the first window enters it.
-- Hidden windows keep their ordinary Space membership and gain holding membership, so
-  Command-Tab still selects the right window. Only an app's other concealed windows lose
-  ordinary membership.
+- Each app's most recently used window, the one it last reported key, keeps its ordinary
+  Space membership when concealed and gains holding membership, whether or not the app
+  has a window on the shown workspace. Command-Tab and a Dock click then key it, and
+  Kosmos follows it to its workspace, as macOS does without Kosmos. The app's other
+  concealed windows lose ordinary membership, so macOS keys no other hidden window.
+  Command-backtick cycles through the app's windows on screen, and when the key window
+  closes, AppKit keys no hidden window in its place. This is the AeroSpace fork's np4
+  rule, which passed all eight selection cases on three displays (fork
+  NATIVE-WINDOW-ELIGIBILITY-TRIAL.md). Keeping every concealed window's ordinary Space
+  (np3) let macOS key a concealed window on the current display in place of the app's
+  last key window on another display.
+- When an app reports another window key, its concealed windows change membership in a
+  bridge job of their own, outside any switch. That window gets an ordinary Space back if
+  it is concealed without one, and the app's other concealed windows lose theirs. An app
+  that has reported no key window since Kosmos started is asked for its focused window.
+- The rule keeps the key window out of reveals that add. Adding an app's key window to
+  the current Space makes WindowServer move the key window and the menu bar ("acquiring
+  menu bar for key/main window move"), and a batch's final barrier waited 3 to 30 ms for
+  it. On 2026-09-24, the 8 switches that revealed a concealed key window this way took 5.9
+  to 33.2 ms, median 9.1, and the 24 other switches 0.7 to 5.0 ms, median 2.7. For a
+  window that is not key, the add and a barrier took 0.8 ms at the median and the removal
+  0.7 ms.
 - A reveal removes the window from the holding Space. A window with no other Space at
   the time of the reveal is first added to an ordinary one, exclusively; that add strips
   only managed Spaces, and the holding Space is not one, so the removal is still needed.
