@@ -119,10 +119,12 @@ final class Controller {
             var plan = session.add(id, to: rule?.workspace)
             if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
             // Already in native fullscreen or hidden with its app, as at launch: it waits
-            // parked for its return, with no frame and no concealing.
-            let hidden = NSRunningApplication(processIdentifier: pid)?.isHidden == true
-            if inventory.fullscreen.contains(id) || hidden {
-                if hidden { hiddenApps[pid, default: []].append(id) } else { fullscreenParked.insert(id) }
+            // parked for its return, with no frame and no concealing. A fullscreen window
+            // of a hidden app returns when it leaves fullscreen, not when the app unhides.
+            let fullscreen = inventory.fullscreen.contains(id)
+            let hidden = !fullscreen && NSRunningApplication(processIdentifier: pid)?.isHidden == true
+            if fullscreen || hidden {
+                if fullscreen { fullscreenParked.insert(id) } else { hiddenApps[pid, default: []].append(id) }
                 plan.frames = session.park([id]).frames
                 plan.hide.removeAll { $0 == id }
             }
@@ -165,10 +167,13 @@ final class Controller {
     /// The app is back: its windows return to their places, and Kosmos follows the one the
     /// app keys, or else its most recently focused one, to its workspace.
     private func appUnhidden(_ pid: pid_t) {
-        guard let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty else { return }
+        guard hiddenApps[pid]?.isEmpty == false else { return }
         Task {
             let keyed = await inventory.worker(pid)?.focusedWindow()
-            guard let follow = keyed.flatMap({ windows.contains($0) ? $0 : nil }) ?? mostRecent(windows) else { return }
+            // Hidden again while the worker answered: the windows wait for the next unhide.
+            guard NSRunningApplication(processIdentifier: pid)?.isHidden != true,
+                  let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty,
+                  let follow = keyed.flatMap({ windows.contains($0) ? $0 : nil }) ?? mostRecent(windows) else { return }
             execute(session.unpark(windows, follow: follow))
         }
     }
