@@ -798,6 +798,16 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   waits on WindowServer, which is busy committing right after a switch, so it runs only
   while a shown workspace has a floating window, and never between a keypress and its
   batch or its focus request. The log gives each read's time, to measure at the desk.
+- A floating window the user drags onto a display showing another workspace joins that
+  workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
+  check above leaves it there. WindowServer reports each move (806), and Kosmos takes a
+  move of a floating window of a shown workspace for a drag when no frame write of its
+  own is in flight for it, the window is key and the left button is down, as AeroSpace's
+  `isManipulatedWithMouse` checks. macOS moving the windows of a display that leaves is
+  no drag, and the check moves them back. Each move of such a window with no write of
+  Kosmos's in flight also goes into the frame ledger, which otherwise holds Kosmos's last
+  write and would drop a target equal to it. Dragging a tiled window stays left out
+  (section 8).
 - A concealed window keeps its ordinary Space, as on one display, unless its app's most
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display (section
@@ -834,6 +844,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - whether a concealed window kept in another display's ordinary Space moves with its
     frame when revealed there;
   - how many notifications a hotplug posts, and whether the holding Space survives one;
+  - whether WindowServer reports a dragged window's moves while the left button is still
+    down, which rebinding a dragged floating window needs;
   - whether macOS keeps the twin panels' left and main places across replugs without
     BetterDisplay, which decides whether a placement step stays;
   - where a concealed window lands when a display leaves and recovery then runs: every

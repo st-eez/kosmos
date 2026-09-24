@@ -214,6 +214,28 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)]).isEmpty)
     }
 
+    @Test func aFloatingWindowDraggedOntoAnotherDisplayJoinsItsWorkspace() {
+        var s = desk()
+        _ = s.add(10); _ = s.float(10)
+        _ = s.add(11)
+        _ = s.add(60, to: "6"); _ = s.float(60)
+        s.adopt(10)
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let onLeft = CGRect(x: -1000, y: 100, width: 400, height: 300)
+        // On its own display or on none, it stays, and so do a tiled window and a floating
+        // window of a hidden workspace.
+        #expect(s.dragged(10, to: onMain) == nil)
+        #expect(s.dragged(10, to: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)) == nil)
+        #expect(s.dragged(11, to: onLeft) == nil)
+        #expect(s.dragged(60, to: onMain) == nil)
+        let plan = s.dragged(10, to: onLeft)
+        #expect(plan != nil && plan?.show == [] && plan?.hide == [] && plan?.focus == nil)
+        #expect(s.workspace(of: 10) == "5" && s.workspaces["5"]!.floating == [10])
+        #expect(s.focusedWorkspace == "5" && s.focused == 10)
+        // The floating check leaves it there.
+        #expect(s.floatingFrames(at: [10: onLeft]).isEmpty)
+    }
+
     @Test func focusAcrossMonitorsCrossesAtTheEdgeOnly() {
         var s = desk()
         _ = s.add(10); _ = s.add(11)

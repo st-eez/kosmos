@@ -593,6 +593,19 @@ public struct Session: Sendable {
         })
     }
 
+    /// The user dragged a floating window of a shown workspace to `frame`. With its center on
+    /// a display showing another workspace, it joins that workspace, and the focus goes with
+    /// it if it had it, as AeroSpace's moveWithMouse binds it. The plan asks for no focus:
+    /// the window is key. Nil when it stays, its center on its own workspace's display or on
+    /// none (DESIGN.md, section 5.13).
+    public mutating func dragged(_ window: WindowID, to frame: CGRect) -> Plan? {
+        guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window),
+              let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return nil }
+        var plan = move(window, from: source, to: name, follow: focused == window)
+        plan.focus = nil
+        return plan
+    }
+
     /// The floating windows of the shown workspaces, which `floatingFrames` checks.
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
