@@ -21,8 +21,6 @@ public struct Config: Equatable, Sendable {
 /// Focus moves to the window the pointer enters (DESIGN.md, section 5.11).
 public struct FocusFollowsMouse: Equatable, Sendable {
     public var enabled = false
-    /// Holding this modifier pauses focus follows mouse.
-    public var pauseKey: KeyCombo.Modifiers = .ctrl
     /// Apps whose windows the pointer never focuses, each named by its bundle identifier or
     /// its name.
     public var ignoreApps: [String] = []

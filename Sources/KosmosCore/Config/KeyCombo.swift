@@ -78,7 +78,7 @@ public struct PhysicalKey: Hashable, Sendable {
     }
 }
 
-let modifierNames: [String: KeyCombo.Modifiers] = ["cmd": .cmd, "ctrl": .ctrl, "alt": .alt, "shift": .shift]
+private let modifierNames: [String: KeyCombo.Modifiers] = ["cmd": .cmd, "ctrl": .ctrl, "alt": .alt, "shift": .shift]
 
 /// Keys named by the character they type. Letters and digits name themselves; punctuation has
 /// the names AeroSpace uses.

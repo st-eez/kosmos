@@ -11,11 +11,10 @@
 config-version = 1
 # Move the pointer into a window that a command or Command-Tab focused.
 mouse-follows-focus = true
-# Focus the window the pointer rests in, in place of AutoRaise. Holding the pause key
-# stops it, and the pointer leaves the listed apps alone, matched by bundle identifier or
-# name. These are AutoRaise's disableKey and ignoreApps settings.
+# Focus the window the pointer rests in, in place of AutoRaise. Holding Control stops it,
+# and the pointer leaves the listed apps alone, matched by bundle identifier or name, as
+# AutoRaise's ignoreApps did.
 focus-follows-mouse = true
-focus-follows-mouse-pause-key = 'ctrl'
 focus-follows-mouse-ignore-apps = ['Google Chrome for Testing']
 
 # Workspace names, in order. A profile may replace the list.

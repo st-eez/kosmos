@@ -42,7 +42,7 @@ final class Controller {
             if focusFollowsMouse.enabled, pointer == nil {
                 pointer = PointerTap { [weak self] window in self?.pointerEntered(window) }
             }
-            pointer?.configure(enabled: focusFollowsMouse.enabled, pause: focusFollowsMouse.pauseKey)
+            pointer?.setEnabled(focusFollowsMouse.enabled)
         }
     }
     /// Created when focus follows mouse is first turned on: creating the tap may ask for

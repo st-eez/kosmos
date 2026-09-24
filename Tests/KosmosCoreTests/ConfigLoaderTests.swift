@@ -59,34 +59,37 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     @Test func focusFollowsMouse() throws {
         let config = try #require(load("""
             focus-follows-mouse = true
-            focus-follows-mouse-pause-key = 'alt'
             focus-follows-mouse-ignore-apps = ['Google Chrome for Testing', 'com.apple.Notes']
             """).config)
         var expected = FocusFollowsMouse()
         expected.enabled = true
-        expected.pauseKey = .alt
         expected.ignoreApps = ["Google Chrome for Testing", "com.apple.Notes"]
         #expect(config.focusFollowsMouse == expected)
-        // Off by default, paused by Control.
+        // Off by default.
         #expect(try #require(load("").config).focusFollowsMouse == FocusFollowsMouse())
-        #expect(FocusFollowsMouse().pauseKey == .ctrl)
+    }
+
+    @Test func focusFollowsMouseIgnoresAppsByBundleIdentifierOrName() {
+        var settings = FocusFollowsMouse()
+        settings.ignoreApps = ["com.google.chrome.for.testing", "Numi"]
+        #expect(settings.ignores(appID: "com.google.chrome.for.testing", appName: "Google Chrome for Testing"))
+        #expect(settings.ignores(appID: nil, appName: "numi"))
+        #expect(settings.ignores(appID: "COM.GOOGLE.CHROME.FOR.TESTING", appName: nil))
+        // Names match whole, unlike window rules' app-name.
+        #expect(!settings.ignores(appID: "com.numi.pro", appName: "Numi Pro"))
+        #expect(!settings.ignores(appID: nil, appName: nil))
     }
 
     @Test func focusFollowsMouseMistakes() {
         #expect(load("""
             focus-follows-mouse = 'on'
-            focus-follows-mouse-pause-key = 'ctl'
             focus-follows-mouse-ignore-apps = ['Numi', '', 3]
             focus-follow-mouse = true
             """).diagnostics == [
             "3:23: error: focus-follows-mouse: expected true or false, found a string",
-            "4:33: error: focus-follows-mouse-pause-key: expected cmd, ctrl, alt or shift; did you mean 'ctrl'?",
-            "5:44: error: focus-follows-mouse-ignore-apps[1]: the string is empty",
-            "5:48: error: focus-follows-mouse-ignore-apps[2]: expected a string, found an integer",
-            "6:1: error: focus-follow-mouse: unknown key; did you mean 'focus-follows-mouse'?",
-        ])
-        #expect(load("focus-follows-mouse-pause-key = 'ctrl-alt'").diagnostics == [
-            "3:33: error: focus-follows-mouse-pause-key: expected cmd, ctrl, alt or shift",
+            "4:44: error: focus-follows-mouse-ignore-apps[1]: the string is empty",
+            "4:48: error: focus-follows-mouse-ignore-apps[2]: expected a string, found an integer",
+            "5:1: error: focus-follow-mouse: unknown key; did you mean 'focus-follows-mouse'?",
         ])
     }
 

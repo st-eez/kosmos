@@ -24,7 +24,7 @@ import Testing
         // AeroSpace's 64 bindings, less the 11 that wait on multi-monitor commands.
         #expect(config.modes.keys.sorted() == ["main"])
         #expect(config.modes["main"]?.count == 53)
-        #expect(config.focusFollowsMouse.enabled && config.focusFollowsMouse.pauseKey == .ctrl)
+        #expect(config.focusFollowsMouse.enabled)
         #expect(config.focusFollowsMouse.ignoreApps == ["Google Chrome for Testing"])
         #expect(config.rules.count == 18)
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "laptop"])

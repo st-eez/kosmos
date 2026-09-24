@@ -32,9 +32,8 @@ private struct ConfigDecoder {
         let path = ValuePath()
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
-            "config-version", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-pause-key",
-            "focus-follows-mouse-ignore-apps", "workspaces", "monitors", "workspace-monitor", "gaps", "mode", "rule",
-            "profile",
+            "config-version", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
+            "workspaces", "monitors", "workspace-monitor", "gaps", "mode", "rule", "profile",
         ])
         var config = Config()
 
@@ -50,14 +49,6 @@ private struct ConfigDecoder {
         }
         if let entry = root["focus-follows-mouse"] {
             config.focusFollowsMouse.enabled = boolean(entry.value, path.key(entry.key)) ?? false
-        }
-        if let entry = root["focus-follows-mouse-pause-key"], let name = string(entry.value, path.key(entry.key)) {
-            if let modifier = modifierNames[name] {
-                config.focusFollowsMouse.pauseKey = modifier
-            } else {
-                fail("expected cmd, ctrl, alt or shift" + suggestion(for: name, from: modifierNames.keys),
-                     at: entry.value.position, path.key(entry.key))
-            }
         }
         if let entry = root["focus-follows-mouse-ignore-apps"], let items = array(entry.value, path.key(entry.key)) {
             for (index, item) in items.enumerated() {

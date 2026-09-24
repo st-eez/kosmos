@@ -278,8 +278,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - The event may not name the window under the pointer; whether its `cgEvent` carries
     the annotated field is for the live test. If not, `NSWindow.windowNumber(at:
     belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point,
-    including other apps' windows, at one WindowServer call per movement that passes the
-    2 pt check. The monitor's points have a bottom left origin and are flipped first.
+    including other apps' windows, at one WindowServer call per movement. The monitor's
+    points have a bottom left origin and are flipped first.
 
   The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
   and Control still comes from each event's modifier flags. An active tap is the other
@@ -296,11 +296,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   dialogs, the Dock, and Mission Control's windows (not yet seen live). On a native
   fullscreen Space the only window under the pointer is the fullscreen one, so no tiled
   window is raised over fullscreen video, as AeroSpace's focus follows mouse did.
-- The pointer must move at least 2 pt from where it last counted, holding the pause key
-  (Control) pauses focus follows mouse, and chosen apps are ignored: the settings an
-  AutoRaise user has today. The pause key is read from each movement's flags, so the tap
-  takes no keyboard events. Nothing is focused while a mouse button is down, because a
-  movement with a button down is a drag event, which the tap does not receive.
+- Holding Control pauses focus follows mouse, as AutoRaise's `disableKey` did, and chosen
+  apps are ignored. Control is read from each movement's flags, so the tap takes no
+  keyboard events. Nothing is focused while a mouse button is down, because a movement
+  with a button down is a drag event, which the tap does not receive.
 - Keying leaves the stacking order alone (section 2), so a floating window is raised with
   AXRaise on its app's worker before it is keyed. Tiled windows are only keyed.
 - A hover focus counts as a command: reports received before it are stale, the session
@@ -312,12 +311,16 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   a window that is not under the pointer. A click happens over the window or its resize
   region, a few points past the frame, which counts as over it, so a click never moves the
   pointer. A hover focus never moves the pointer.
-- `focus-follows-mouse = true` turns it on, with `focus-follows-mouse-pause-key` and
-  `focus-follows-mouse-ignore-apps`, which match an app's bundle identifier or name; the
-  command `focus-follows-mouse on|off|toggle` switches it until the next config load.
-- Left out: moving the pointer off an open menu onto a window focuses that window and
-  closes the menu; a menu tracking signal would keep it open. The dwell is a constant
-  until a user needs another one.
+- `focus-follows-mouse = true` turns it on, and `focus-follows-mouse-ignore-apps` lists
+  apps by bundle identifier or name; the command `focus-follows-mouse on|off|toggle`
+  switches it until the next config load.
+- Left out:
+  - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
+    AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
+    minimum distance from where the pointer last counted brings it back.
+  - A pause key other than Control, and a dwell other than 50 ms, until a user needs one.
+  - Moving the pointer off an open menu onto a window focuses that window and closes the
+    menu; a menu tracking signal would keep it open.
 
 ### 5.12 Other tools
 

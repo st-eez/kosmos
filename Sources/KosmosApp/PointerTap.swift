@@ -1,5 +1,4 @@
 import CoreGraphics
-import KosmosCore
 import Synchronization
 import os
 
@@ -10,10 +9,10 @@ private let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: 
 /// at rest sends no events, so neither costs anything.
 ///
 /// The tap sits where WindowServer has annotated each event with the window under the
-/// pointer, found by its own hit test, so moving the pointer queries no window list. The
-/// callback only filters with a PointerGate; a movement into another window goes on to
-/// the main actor. Only mouse moved events are tapped: a movement with a button down is a
-/// drag, so nothing is focused while a button is down.
+/// pointer, found by its own hit test, so moving the pointer queries no window list. Only
+/// a movement into another window with Control up goes on to the main actor. Only mouse
+/// moved events are tapped: a movement with a button down is a drag, so nothing is focused
+/// while a button is down.
 ///
 /// On macOS 27 creating even this mouse-only tap asked a process without Input Monitoring
 /// for it, and the tap stayed silent. Whether Kosmos's Accessibility grant is enough is
@@ -23,11 +22,11 @@ final class PointerTap: Sendable {
     private let executor = RunLoopExecutor(name: "kosmos.pointer")
     /// Set once in `init`.
     private nonisolated(unsafe) var port: CFMachPort?
-    private let gate = Mutex(PointerGate())
     private let enabled = Atomic<Bool>(false)
-    private let pauseFlags = Atomic<UInt64>(0)
-    /// Whether the pause key was held at the latest movement.
-    private let pausedAtLastMovement = Atomic<Bool>(false)
+    /// The window the last movement passed on entered, or 0 since the tap turned on.
+    private let lastWindow = Atomic<UInt32>(0)
+    /// Whether Control was held at the latest movement.
+    private let controlAtLastMovement = Atomic<Bool>(false)
     private let heard = Atomic<Bool>(false)
     private let entered: @MainActor (UInt32) -> Void
 
@@ -51,20 +50,13 @@ final class PointerTap: Sendable {
         pointerLog.notice("pointer tap created; Input Monitoring granted: \(CGPreflightListenEventAccess())")
     }
 
-    /// Whether the pause key was held at the latest movement, from that event's flags.
-    var paused: Bool { pausedAtLastMovement.load(ordering: .relaxed) }
+    /// Whether Control, which pauses focus follows mouse, was held at the latest movement.
+    var paused: Bool { controlAtLastMovement.load(ordering: .relaxed) }
 
-    /// Turns the tap on or off, with the modifier that pauses focus follows mouse.
-    func configure(enabled on: Bool, pause: KeyCombo.Modifiers) {
-        var flags: CGEventFlags = []
-        if pause.contains(.cmd) { flags.insert(.maskCommand) }
-        if pause.contains(.ctrl) { flags.insert(.maskControl) }
-        if pause.contains(.alt) { flags.insert(.maskAlternate) }
-        if pause.contains(.shift) { flags.insert(.maskShift) }
-        pauseFlags.store(flags.rawValue, ordering: .relaxed)
+    func setEnabled(_ on: Bool) {
         guard let port, enabled.exchange(on, ordering: .relaxed) != on else { return }
         // The window under the pointer counts as entered on the first movement.
-        if on { gate.withLock { $0 = PointerGate() } }
+        if on { lastWindow.store(0, ordering: .relaxed) }
         CGEvent.tapEnable(tap: port, enable: on)
     }
 
@@ -78,9 +70,11 @@ final class PointerTap: Sendable {
         }
         if !heard.exchange(true, ordering: .relaxed) { pointerLog.notice("pointer tap receiving events") }
         let window = UInt32(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer))
-        let paused = event.flags.rawValue & pauseFlags.load(ordering: .relaxed) != 0
-        pausedAtLastMovement.store(paused, ordering: .relaxed)
-        guard gate.withLock({ $0.admit(event.location, over: window, paused: paused) }) else { return }
+        // A movement with Control held still moves the pointer, so after Control is released
+        // the next movement enters the window under it.
+        let control = event.flags.contains(.maskControl)
+        controlAtLastMovement.store(control, ordering: .relaxed)
+        guard !control, lastWindow.exchange(window, ordering: .relaxed) != window else { return }
         let entered = self.entered
         DispatchQueue.main.async { MainActor.assumeIsolated { entered(window) } }
     }
