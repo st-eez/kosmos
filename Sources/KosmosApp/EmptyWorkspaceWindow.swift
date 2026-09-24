@@ -8,8 +8,9 @@ import Synchronization
 /// path, which a background accessory app did for a window of its own in 10 of 10 trials
 /// (`kosmos-probe keying`, September 24, 2026).
 ///
-/// It is 1 by 1 point at the main display's bottom left corner, borderless, clear and
-/// transparent, ignores the mouse, joins every Space and stays out of the window cycle. The
+/// It is 1 by 1 point at the bottom left corner of the display it is placed on, borderless,
+/// clear and transparent, ignores the mouse, joins every Space and stays out of the window
+/// cycle. The
 /// inventory tracks only regular apps' windows, and Kosmos is an accessory app, so Kosmos
 /// never manages or conceals it. It swallows every key and key equivalent: Kosmos has no
 /// main menu, and a key no responder takes would beep. Kosmos's hotkeys are Carbon hotkeys,
@@ -43,6 +44,16 @@ final class EmptyWorkspaceWindow: NSWindow {
         isReleasedWhenClosed = false
         orderFrontRegardless()
         target = Target(window: UInt32(windowNumber))
+    }
+
+    /// Moves the window to the bottom left corner of `display`, given in the top left origin
+    /// coordinates Accessibility uses. With displays that have separate Spaces, keying the
+    /// window makes its display the active one, which takes the menu bar and the next new
+    /// window, so it sits on the display the empty workspace is on.
+    func place(on display: CGRect) {
+        guard let primary = NSScreen.screens.first else { return }
+        let origin = NSPoint(x: display.minX, y: primary.frame.height - display.maxY)
+        if frame.origin != origin { setFrameOrigin(origin) }
     }
 
     override func becomeKey() {

@@ -702,6 +702,7 @@ final class Controller {
             // private call keeps this one from being keyed (DESIGN.md, section 5.4).
             pid = getpid()
             privately = focusQueue.killSwitch.offReason != .crashed
+            emptyWorkspace.place(on: session.display)
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
