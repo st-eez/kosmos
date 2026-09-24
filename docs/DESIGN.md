@@ -263,20 +263,24 @@ off the main thread).
     fullscreen transition. A deselected tab is not one: it has left the session.
 - Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
   id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
-  window its app ordered out (alt-tab's measurements on macOS 26). A switch orders one
-  window of the app in and another out, or destroys the closed tab, within milliseconds
-  and in either order.
-  - Kosmos pairs the two within 250 ms, as the yabai forks that follow tabs do. The
-    incoming tab takes the outgoing tab's place, share, focus and workspace, with no
-    reflow and no follow, and gets that place's frame. The outgoing tab leaves the
-    session, a hidden member of the place.
-  - A new tab, and a tab selected for the first time, which Accessibility reports created
-    then, join the place the same way, even when Kosmos admitted them first.
-  - Closing the selected tab is a switch. Closing the group's last tab is a close.
-  - Merge All Windows orders the merged windows out with no tab arriving, so they park as
-    windows their app ordered out. Selecting one's tab later brings it to the place.
-  - A hidden member ordered in with no tab leaving, as when it is dragged out of its
-    group, takes a place of its own after 250 ms.
+  window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325
+  for the incoming tab, 816 and 1326 for the outgoing, then 815 for the incoming, all
+  within 0.2 ms (`kosmos-probe tabs`, macOS 27). Closing a tab can destroy it instead.
+  - Kosmos pairs the two within 250 ms, in either order, as the yabai forks that follow
+    tabs do. The incoming tab takes the outgoing tab's place, share, focus and workspace,
+    with no reflow and no follow, and gets that place's frame. The outgoing tab leaves
+    the session, a hidden member of the place.
+  - Only an admitted window takes a place. A new tab, and a tab selected for the first
+    time, which Accessibility reports created then, take the place once Kosmos admits
+    them, and a tab deselected before that stays a hidden member.
+  - Closing the selected tab is a switch. When the destroy comes before the next tab, the
+    closed tab's place waits the pairing window for it, if the app has windows ordered
+    out. Closing the group's last tab is a close.
+  - A window ordered in with no tab leaving is back after the pairing window if it is
+    still ordered in. A hidden member dragged out of its group takes a place of its own.
+    A window its app had closed and kept returns to its place, and Kosmos follows it, so
+    a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
+    windows that way, and selecting one's tab brings it to the group's place.
   - Kosmos does not read the AXTabGroup of the selected tab: that read costs a round trip
     to the app on every switch, and the pairing needs none. Two windows of one app, one
     leaving and one arriving within 250 ms, read as a switch; if that shows up, the

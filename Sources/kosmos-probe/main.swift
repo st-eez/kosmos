@@ -434,7 +434,7 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
 }
 
 /// Two windows in one native tab group, invisible and off every display. Prints both
-/// window ids, then selects each tab in turn.
+/// window ids, then selects each tab in turn, printing each selection with its uptime.
 @MainActor func tabsWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
@@ -453,48 +453,62 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
     first.orderFrontRegardless()
     first.addTabbedWindow(second, ordered: .above)
     second.orderFrontRegardless()
-    print("\(first.windowNumber) \(second.windowNumber) tabs \(first.tabbedWindows?.count ?? 0)")
-    let say = { (text: String) in print(text) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-        say("select A"); first.tabGroup?.selectedWindow = first
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-        say("select B"); first.tabGroup?.selectedWindow = second
-    }
+    print("\(first.windowNumber) \(second.windowNumber)")
+    let say = { (text: String) in print(String(format: "%.1f child: ", uptime()) + text) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("select A"); first.tabGroup?.selectedWindow = first }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { say("select B"); first.tabGroup?.selectedWindow = second }
     DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { exit(0) }
     app.run()
     exit(0)
 }
 
-@MainActor func tabs() {
-    _ = NSApplication.shared
+nonisolated(unsafe) var tabWindows: [UInt32] = []
+
+@MainActor func tabs() -> Never {
+    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
     let child = Process()
     child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
     child.arguments = ["tabs-window"]
     let pipe = Pipe()
     child.standardOutput = pipe
     try! child.run()
-    defer { child.terminate() }
     var line = Data()
     while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
-    let text = String(decoding: line, as: UTF8.self)
-    let ids = text.split(whereSeparator: \.isWhitespace).prefix(2).compactMap { UInt32($0) }
-    print("child: " + text.trimmingCharacters(in: .whitespacesAndNewlines))
-    /// Each tab's order and Spaces as the inventory would read them.
-    func state(_ step: String) {
-        let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(ids).map { ($0.id, $0) })
-        let parts = ids.map { id in
-            let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
-            return "\(id) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)"
-        }
-        print(step + ": " + parts.joined(separator: ", "))
+    tabWindows = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
+    print("tab A \(tabWindows[0]), tab B \(tabWindows[1]), selected B")
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { print(text) }
     }
-    Thread.sleep(forTimeInterval: 0.5)
-    state("B selected at start")
-    Thread.sleep(forTimeInterval: 1.0)
-    state("after select A")
-    Thread.sleep(forTimeInterval: 1.0)
-    state("after select B")
+    // 1325 and 1326: a window joins or leaves a Space; 815 and 816: ordered in or out.
+    for id: UInt32 in [815, 816, 1325, 1326] {
+        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+            let offset = id >= 1325 ? 8 : 0
+            let window: UInt32 = bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : 0
+            guard tabWindows.contains(window) else { return }
+            print(String(format: "%.1f event %d tab %@", uptime(), id, window == tabWindows[0] ? "A" : "B"))
+        }, id, nil)
+    }
+    var watched = tabWindows
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    /// Each tab's order and Spaces as the inventory reads them.
+    func state(_ step: String) {
+        let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(tabWindows).map { ($0.id, $0) })
+        let parts = zip(["A", "B"], tabWindows).map { name, id in
+            let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
+            return "\(name) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") Spaces \(spaces)"
+        }
+        print(String(format: "%.1f ", uptime()) + step + ": " + parts.joined(separator: ", "))
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { state("B selected") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { state("after select A") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { state("after select B") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { child.terminate(); exit(0) }
+    app.run()
+    exit(0)
 }
 
 @MainActor func reveal() {

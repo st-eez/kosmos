@@ -33,13 +33,16 @@ final class Controller {
     /// hidden member of the place its group's selected tab holds.
     private var tabSwitches = TabSwitches()
     private var tabs: Set<WindowID> = []
+    /// Tabs selected before Kosmos admitted them, as a new tab is: the tab whose place each
+    /// takes once admitted. Only admitted windows take places.
+    private var pendingTabs: [WindowID: WindowID] = [:]
     /// The key window macOS last reported.
     private var key: KeyWindow?
     /// A report whose verdict waits for the departure of the window key before it
     /// (tla/Kosmos.tla, Hold).
     private var held = HeldReport<KeyReport>()
     /// A departure that waits for macOS's report of the next key window: the key window that
-    /// left, and the number of the departure's grace timer.
+    /// left, and the number of the departure's timer.
     private var awaitingKey: (window: WindowID, number: Int)?
     private var departures = 0
     /// Set after a batch that did not conceal what it should have; the next switch conceals
@@ -67,7 +70,7 @@ final class Controller {
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
-        inventory.onOrderedOut = { [weak self] id, out, at in self?.orderedOutChanged(id, out, at: at) }
+        inventory.onKeptOrderedOut = { [weak self] id in self?.keptOrderedOut(id) }
         inventory.onOrderChange = { [weak self] id, pid, orderedIn, at in self?.orderChanged(id, pid: pid, orderedIn, at: at) }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
     }
@@ -134,14 +137,10 @@ final class Controller {
     private func managedChanged(_ id: WindowID, pid: pid_t, _ managed: Bool) {
         if managed {
             owner[id] = pid
-            // A tab switch placed it before Kosmos admitted it, as when a new tab opens: it
-            // keeps that place, and takes its frame.
-            if let name = session.workspace(of: id) {
-                ledger.forget(id)
-                var plan = Session.Plan()
-                plan.frames = session.frames(of: name)
-                return execute(plan)
-            }
+            // A deselected tab waits as a hidden member. A tab selected before now, as a new
+            // tab is, takes its group's place.
+            if tabs.contains(id) { return }
+            if let old = pendingTabs.removeValue(forKey: id), tabSwitched(from: old, to: id) { return }
             let app = inventory.appIdentity(pid)
             let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
@@ -160,16 +159,27 @@ final class Controller {
             // Reported key before it was managed, as at launch: that report was dropped.
             if inventory.focused == id, session.workspace(of: id) == session.visible { session.adopt(id) }
             execute(plan)
+        } else if session.workspace(of: id) != nil, !session.isParked(id), inventory.hasOrderedOutWindows(pid, besides: id) {
+            // Perhaps the selected tab closed before the next tab came in: its place waits
+            // for that tab for the pairing window.
+            after(TabSwitches.window) { $0.forget(id, pid: pid) }
         } else {
-            owner[id] = nil
-            recent.removeAll { $0 == id }
-            hiddenApps[pid]?.removeAll { $0 == id }
-            fullscreenParked.remove(id)
-            closedByApp.remove(id)
-            tabs.remove(id)
-            ledger.forget(id)
-            execute(session.remove(id))
+            forget(id, pid: pid)
         }
+    }
+
+    /// The window is gone for good.
+    private func forget(_ id: WindowID, pid: pid_t) {
+        owner[id] = nil
+        recent.removeAll { $0 == id }
+        hiddenApps[pid]?.removeAll { $0 == id }
+        fullscreenParked.remove(id)
+        closedByApp.remove(id)
+        tabs.remove(id)
+        pendingTabs[id] = nil
+        pendingTabs = pendingTabs.filter { $0.value != id }
+        ledger.forget(id)
+        execute(session.remove(id))
     }
 
     /// A window in native fullscreen is on a Space of its own: parked, Kosmos neither
@@ -188,59 +198,59 @@ final class Controller {
     }
 
     /// A candidate window was ordered in or out, or destroyed. A window of an app ordered in
-    /// as another is ordered out or destroyed is a switch between native tabs.
+    /// as another is ordered out or destroyed is a switch between native tabs. A window
+    /// ordered in with no tab leaving, a hidden member or one its app had closed and kept,
+    /// is back a pairing window later if it is still ordered in: a hidden member dragged out
+    /// of its group takes a place of its own, and a closed window returns to its place, and
+    /// Kosmos follows it. A reopened Settings window returns 250 ms late for that.
     private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, at: ContinuousClock.Instant) {
-        if orderedIn {
-            if let old = tabSwitches.orderedIn(id, app: pid, at: at) {
-                tabSwitched(from: old, to: id, pid: pid)
-            } else if tabs.contains(id) {
-                // A deselected tab back on screen with no tab leaving, as when it is dragged
-                // out of its group: a window of its own, unless its partner follows in time.
-                after(TabSwitches.window) { controller in
-                    guard controller.tabs.contains(id), controller.inventory.windows[id]?.orderedIn == true,
-                          controller.session.workspace(of: id) == nil else { return }
-                    controller.tabs.remove(id)
-                    controller.execute(controller.session.add(id))
-                }
+        if let change = tabSwitches.ordered(id, in: orderedIn, app: pid, at: at), tabSwitched(from: change.old, to: change.new) {
+            return
+        }
+        guard orderedIn, tabs.contains(id) || closedByApp.contains(id) else { return }
+        after(TabSwitches.window) { controller in
+            guard controller.inventory.windows[id]?.orderedIn == true else { return }
+            if controller.closedByApp.remove(id) != nil {
+                controller.returned([id], follow: id, at: at)
+            } else if controller.tabs.remove(id) != nil {
+                controller.execute(controller.session.add(id))
             }
-        } else if let new = tabSwitches.orderedOut(id, app: pid, at: at) {
-            tabSwitched(from: id, to: new, pid: pid)
         }
     }
 
     /// The selected tab changed from `old` to `new`: `new` takes the place of `old`, with no
     /// reflow and no follow, and `old` waits out of the session as a hidden member
-    /// (DESIGN.md, section 5.5). When `old` holds no place, as after its window was
-    /// destroyed first, a tab Kosmos knows takes a place of its own.
-    private func tabSwitched(from old: WindowID, to new: WindowID, pid: pid_t) {
-        tabs.remove(new)
-        // Parked as closed by its app, as a window Merge All Windows made a tab: the
-        // switch brings it back.
-        closedByApp.remove(new)
-        if session.workspace(of: old) != nil, !session.isParked(old) {
-            controllerLog.info("tab \(new) replaces \(old)")
-            owner[new] = owner[new] ?? pid
-            ledger.forget(new)
-            tabs.insert(old)
-            if key == .window(old) { key = .window(new) }
-            execute(session.replace(old, with: new))
-        } else if session.workspace(of: new) == nil, owner[new] != nil {
-            execute(session.add(new))
+    /// (DESIGN.md, section 5.5). A tab not admitted yet takes the place once it is. False
+    /// when `old` holds no place.
+    private func tabSwitched(from old: WindowID, to new: WindowID) -> Bool {
+        // A new tab deselected before Kosmos admitted it never took its place.
+        if pendingTabs.removeValue(forKey: old) != nil { tabs.insert(old) }
+        guard owner[new] != nil else {
+            guard session.workspace(of: old) != nil, !session.isParked(old) else { return false }
+            pendingTabs[new] = old
+            return true
         }
+        guard let plan = session.replace(old, with: new) else { return false }
+        controllerLog.info("tab \(new) replaces \(old)")
+        tabs.remove(new)
+        // Parked as closed by its app, as a window Merge All Windows made a tab.
+        closedByApp.remove(new)
+        tabs.insert(old)
+        ledger.forget(new)
+        if key == .window(old) { key = .window(new) }
+        execute(plan)
+        return true
     }
 
     /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
-    /// parks as a minimized window does, and when the app orders it in again it returns to
-    /// its place and Kosmos follows it there. Removing it would lose its place, and the
-    /// inventory would not admit it again, since it stays managed.
-    private func orderedOutChanged(_ id: WindowID, _ out: Bool, at received: ContinuousClock.Instant) {
-        if out {
-            guard session.workspace(of: id) != nil, !session.isParked(id) else { return }
-            closedByApp.insert(id)
-            depart([id])
-        } else if closedByApp.remove(id) != nil {
-            returned([id], follow: id, at: received)
-        }
+    /// parks as a minimized window does, and returns when the app orders it in again
+    /// (orderChanged). Removing it would lose its place, and the inventory would not admit
+    /// it again, since it stays managed. A deselected tab has left the session already.
+    private func keptOrderedOut(_ id: WindowID) {
+        guard session.workspace(of: id) != nil, !session.isParked(id) else { return }
+        controllerLog.info("\(id) closed and kept by its app: parked")
+        closedByApp.insert(id)
+        depart([id])
     }
 
     /// Windows back from minimizing, hiding or fullscreen return to their places, and Kosmos
@@ -259,7 +269,7 @@ final class Controller {
     /// report of the next key window when the key window left too (DepartureFocus). A
     /// report that does not come within the departure bound, as when an app keeps no key
     /// window, has the departure focus then. The bound outlasts macOS's key change after a
-    /// minimize, which ends its animation first; the grace would not.
+    /// minimize, which ends its animation first.
     private func depart(_ windows: [WindowID]) {
         let focusLeft = session.focused.map(windows.contains) == true
         execute(session.park(windows))

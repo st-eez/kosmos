@@ -72,20 +72,21 @@ private let t0 = ContinuousClock.now
 @Test func aTabSwitchPairsTwoWindowsOfOneAppInEitherOrder() {
     var tabs = TabSwitches()
     // Measured order: the incoming tab joins the Space before the outgoing leaves it.
-    #expect(tabs.orderedIn(2, app: 100, at: t0) == nil)
-    #expect(tabs.orderedOut(1, app: 100, at: t0 + .milliseconds(3)) == 2)
+    #expect(tabs.ordered(2, in: true, app: 100, at: t0) == nil)
+    #expect(tabs.ordered(1, in: false, app: 100, at: t0 + .milliseconds(3)).map { [$0.old, $0.new] } == [1, 2])
     // The other order, as when the selected tab closes first.
-    #expect(tabs.orderedOut(2, app: 100, at: t0 + .seconds(1)) == nil)
-    #expect(tabs.orderedIn(3, app: 100, at: t0 + .seconds(1) + .milliseconds(40)) == 2)
+    #expect(tabs.ordered(2, in: false, app: 100, at: t0 + .seconds(1)) == nil)
+    #expect(tabs.ordered(3, in: true, app: 100, at: t0 + .seconds(1) + .milliseconds(40)).map { [$0.old, $0.new] } == [2, 3])
 }
 
 @Test func windowsThatComeAndGoApartAreNotATabSwitch() {
     var tabs = TabSwitches()
-    #expect(tabs.orderedOut(1, app: 100, at: t0) == nil)
-    #expect(tabs.orderedIn(2, app: 100, at: t0 + .milliseconds(300)) == nil)   // too late
-    #expect(tabs.orderedOut(3, app: 200, at: t0 + .milliseconds(310)) == nil)  // another app
-    #expect(tabs.orderedIn(3, app: 200, at: t0 + .milliseconds(320)) == nil)   // the same window back
-    // Paired once: the next change starts afresh.
-    #expect(tabs.orderedOut(4, app: 100, at: t0 + .milliseconds(330)) == 2)
-    #expect(tabs.orderedIn(5, app: 100, at: t0 + .milliseconds(340)) == nil)
+    #expect(tabs.ordered(1, in: false, app: 100, at: t0) == nil)
+    #expect(tabs.ordered(2, in: true, app: 100, at: t0 + .milliseconds(300)) == nil)    // too late
+    #expect(tabs.ordered(3, in: false, app: 200, at: t0 + .milliseconds(310)) == nil)   // another app
+    #expect(tabs.ordered(3, in: true, app: 200, at: t0 + .milliseconds(320)) == nil)    // the same window back
+    #expect(tabs.ordered(4, in: true, app: 100, at: t0 + .milliseconds(330)) == nil)    // two in: no switch
+    // The latest change pairs, and once paired the next change starts afresh.
+    #expect(tabs.ordered(5, in: false, app: 100, at: t0 + .milliseconds(340)).map { [$0.old, $0.new] } == [5, 4])
+    #expect(tabs.ordered(6, in: true, app: 100, at: t0 + .milliseconds(350)) == nil)
 }

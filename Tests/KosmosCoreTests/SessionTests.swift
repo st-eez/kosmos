@@ -407,7 +407,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
     s.adopt(2)
     let before = s.frames(of: "1"), order = s.windows(of: "1")
-    let plan = s.replace(2, with: 7)
+    let plan = s.replace(2, with: 7)!
     #expect(s.workspace(of: 7) == "1" && s.workspace(of: 2) == nil)
     #expect(s.windows(of: "1") == order.map { $0 == 2 ? 7 : $0 })
     #expect(s.focused == 7)
@@ -423,7 +423,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2)
     let before = s.frames(of: "1")
     _ = s.add(9)   // admitted before its switch was seen
-    let plan = s.replace(2, with: 9)
+    let plan = s.replace(2, with: 9)!
     #expect(s.windows(of: "1") == [1, 9])
     #expect(plan.frames[9] == before[2] && plan.frames[1] == before[1])
 }
@@ -432,13 +432,13 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(2, to: "2")
-    #expect(s.replace(2, with: 8).hide == [8])
+    #expect(s.replace(2, with: 8)?.hide == [8])
     // A parked tab, or one that holds no place, changes nothing.
     _ = s.park([1])
-    #expect(s.replace(1, with: 5).isEmpty)
+    #expect(s.replace(1, with: 5) == nil)
     #expect(s.isParked(1))
-    #expect(s.replace(42, with: 5).isEmpty)
-    #expect(s.replace(8, with: 8).isEmpty)
+    #expect(s.replace(42, with: 5) == nil)
+    #expect(s.replace(8, with: 8) == nil)
 }
 
 @Test func aParkedWindowReturnsBesideTheTabThatReplacedItsNeighbour() {

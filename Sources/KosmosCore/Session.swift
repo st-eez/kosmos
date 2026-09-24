@@ -113,10 +113,10 @@ public struct Session: Sendable {
     /// the tab it replaces, with its share, focus and workspace, and `old` leaves the
     /// session (DESIGN.md, section 5.5). A tab Kosmos already placed as a window of its
     /// own, tiled or parked, as after Merge All Windows, leaves that place. The plan has
-    /// the frames, and conceals `new` when its place is on a hidden workspace. Nothing
-    /// changes when `old` is not tiled or floating.
-    public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan {
-        guard old != new, let name = home[old], !isParked(old) else { return Plan() }
+    /// the frames, and conceals `new` when its place is on a hidden workspace. Nil, and
+    /// nothing changes, when `old` holds no tiled or floating place.
+    public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
+        guard old != new, let name = home[old], !isParked(old) else { return nil }
         var changed: Set<String> = [name]
         if let current = home.removeValue(forKey: new) {
             _ = workspaces[current]!.remove(new)

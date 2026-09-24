@@ -86,7 +86,12 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
 
     /// Whether the report would be the echo of a request of Kosmos's.
     public func isEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
-        expected.contains { $0.key == key && $0.requested <= stamp }
+        echo(of: key, receivedAt: stamp) != nil
+    }
+
+    /// The expectation a report echoes: the requested window, reported after the request.
+    private func echo(of key: KeyWindow, receivedAt stamp: Stamp) -> Int? {
+        expected.firstIndex { $0.key == key && $0.requested <= stamp }
     }
 
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
@@ -132,7 +137,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
                                   keyLeft: Departure) -> ReportVerdict {
         // An echo names the requested window and arrives after the request. Earlier
         // expectations are dropped with it; a report that matches none leaves them all.
-        if let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) {
+        if let index = echo(of: key, receivedAt: stamp) {
             expected.removeFirst(index + 1)
             if key == retried { retried = nil }
             return .echo
