@@ -54,6 +54,11 @@ actor AppWorker {
     let pid: pid_t
     private let name: String
     private let executor: RunLoopExecutor
+    /// Runs the app's AX observer, apart from the worker's calls into the app, so a focus
+    /// notification is stamped and checked against the front process when the app sends it
+    /// (tla/README.md, change 12). Checked behind a busy worker, a click inside the front
+    /// app that raced Kosmos's activation of another app was dropped.
+    private let observerLoop: RunLoopExecutor
     private let report: @MainActor (AXReport) -> Void
     private let app: AXUIElement
     private var observer: AXObserver?
@@ -74,6 +79,7 @@ actor AppWorker {
         self.name = name
         self.report = report
         executor = RunLoopExecutor(name: "kosmos.ax.\(name)")
+        observerLoop = RunLoopExecutor(name: "kosmos.ax.\(name).observer")
         app = AXUIElementCreateApplication(pid)
         probeElement = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(probeElement, 0.05)
@@ -88,15 +94,10 @@ actor AppWorker {
             var created: AXObserver?
             guard AXObserverCreate(pid, { _, element, notification, refcon in
                 guard let refcon else { return }
-                let worker = Unmanaged<AppWorker>.fromOpaque(refcon).takeUnretainedValue()
-                let name = notification as String
-                // The callback runs on the worker's own run loop thread, so the element never
-                // leaves it.
-                nonisolated(unsafe) let element = element
-                worker.assumeIsolated { $0.handle(name, element) }
+                Unmanaged<AppWorker>.fromOpaque(refcon).takeUnretainedValue().observed(notification as String, element)
             }, &created) == .success, let created else { return false }
             observer = created
-            CFRunLoopAddSource(executor.runLoop, AXObserverGetRunLoopSource(created), .defaultMode)
+            CFRunLoopAddSource(observerLoop.runLoop, AXObserverGetRunLoopSource(created), .defaultMode)
         }
         for notification in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
             let result = observe(app, notification)
@@ -118,11 +119,12 @@ actor AppWorker {
     }
 
     func stop() {
-        if let observer { CFRunLoopRemoveSource(executor.runLoop, AXObserverGetRunLoopSource(observer), .defaultMode) }
+        if let observer { CFRunLoopRemoveSource(observerLoop.runLoop, AXObserverGetRunLoopSource(observer), .defaultMode) }
         if let probe { CFRunLoopTimerInvalidate(probe) }
         observer = nil
         probe = nil
         elements = [:]
+        observerLoop.stop()
         executor.stop()
     }
 
@@ -312,20 +314,29 @@ actor AppWorker {
         return CGRect(origin: origin, size: size)
     }
 
+    /// An observer callback, on the observer's thread. A focus change is stamped and checked
+    /// against the front process here, before anything that can wait on the app: only the
+    /// front app's focused window is the key window (tla/Kosmos.tla, Observe). Its window
+    /// id is asked of the app on this thread, which a slow app delays only for its own
+    /// notifications. Everything else goes to the worker, in order.
+    private nonisolated func observed(_ notification: String, _ element: AXUIElement) {
+        nonisolated(unsafe) let element = element
+        if notification == kAXFocusedWindowChangedNotification {
+            let received = ContinuousClock.now
+            let front = kosmos_front_pid() == pid
+            var id: UInt32 = 0
+            let window: UInt32? = _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+            deliver(AXReport(pid: pid, kind: front ? .focusedWindowChanged(window) : .backgroundFocus(window), received: received))
+        }
+        executor.perform { self.assumeIsolated { $0.handle(notification, element) } }
+    }
+
     private func handle(_ notification: String, _ element: AXUIElement) {
         switch notification {
         case kAXWindowCreatedNotification:
             if let id = track(element) { send(.windowCreated(id)) }
         case kAXFocusedWindowChangedNotification:
-            // Only the front app's focused window is the key window (tla/Kosmos.tla, Observe).
-            // The model reads the front process when the app sends the report; this callback
-            // reads it when the worker gets to it, which can be later while the worker is
-            // busy. A late read can take a user's same-app click that races Kosmos's
-            // activation of another app for a background report, and drop it. The check
-            // stays here for the common case it exists for: apps opening or focusing windows
-            // in the background.
-            let id = track(element)
-            if !backoff.backedOff { send(kosmos_front_pid() == pid ? .focusedWindowChanged(id) : .backgroundFocus(id)) }
+            track(element)   // reported by `observed`
         case kAXUIElementDestroyedNotification:
             if let id = elements.first(where: { CFEqual($0.value, element) })?.key {
                 elements[id] = nil
@@ -436,7 +447,10 @@ actor AppWorker {
     }
 
     private func send(_ kind: AXReport.Kind) {
-        let report = AXReport(pid: pid, kind: kind, received: .now)
+        deliver(AXReport(pid: pid, kind: kind, received: .now))
+    }
+
+    private nonisolated func deliver(_ report: AXReport) {
         let deliver = self.report
         DispatchQueue.main.async { MainActor.assumeIsolated { deliver(report) } }
     }

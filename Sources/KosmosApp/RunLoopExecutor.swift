@@ -1,8 +1,8 @@
 import Foundation
 
-/// A serial executor on a dedicated thread's run loop. An app worker's AX observer delivers
-/// callbacks on the run loop it was added to, so running the actor there lets callbacks use
-/// the actor's state directly, and a hung app blocks only its own thread.
+/// A serial executor on a dedicated thread's run loop, one for each app worker, so a hung app
+/// blocks only its own thread. A worker's AX observer runs on a second one, which only
+/// hosts the run loop.
 final class RunLoopExecutor: SerialExecutor, @unchecked Sendable {
     let runLoop: CFRunLoop
 

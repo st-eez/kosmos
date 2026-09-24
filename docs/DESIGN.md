@@ -70,7 +70,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Context | Owns | Never does |
 | --- | --- | --- |
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
-| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads, and raises before focus | Touch the model directly |
+| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, and raises before focus. Its observer runs on a second thread, which stamps each focus notification and checks the front process as the app sends it | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | Bridged Space operations and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
@@ -206,10 +206,14 @@ off the main thread).
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
 - Every report names the key window, the front app's focused window. For an app
-  activation, the app's worker reads the app's focused window. A focus change reported by
-  an app that is not front, as AXRaise in a background app causes, is no key window report:
-  it consumes an echo it matches, is otherwise ignored, and never counts as the last report
-  (tla/Kosmos.tla, Observe). Hotkeys, socket commands and reports are stamped on receipt.
+  activation, the app's worker reads the app's focused window. An app's focused window
+  notification is stamped, and checked against the front process, on an observer thread
+  that never waits behind the worker's calls into the app. Checked when the worker got to
+  it, a click inside the front app that raced Kosmos's activation of another app was
+  dropped (tla/README.md, change 12). A focus change reported by an app that is not front,
+  as a background app opening a window causes, is no key window report: it consumes an
+  echo it matches, is otherwise ignored, and never counts as the last report
+  (tla/Kosmos.tla, Observe). Hotkeys and socket commands are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
     app alone would take a Command-Tab to another window of that app for an echo.
