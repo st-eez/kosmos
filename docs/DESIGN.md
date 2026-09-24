@@ -46,7 +46,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations plus one bridged read as the barrier | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
 | Focus | Private window-targeted focus in every case: inside the front app, AXRaise the window on its app's worker; for a background app, front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
-| Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
+| Empty workspace | Key an invisible window of Kosmos's own | Nothing, which leaves keystrokes going to the hidden window. Finder with no window brought forward, which keys a concealed Finder window |
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
 | IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, a CLI that avoids AppKit (1.4 ms launch), and `subscribe` streams of full snapshots | A CLI that links AppKit (about 15 ms launch) |
@@ -91,8 +91,8 @@ on its own and never delays another app.
    both workspaces for the length of one bridged operation; concealing first would show an
    empty desktop for the same time.
 4. Once the barrier confirms the target window is revealed, and the switch generation is
-   still current, the focus queue fronts the target, or Finder with no window for an empty
-   workspace, and reads back the key window.
+   still current, the focus queue fronts the target, or Kosmos's own invisible window for an
+   empty workspace, and reads back the key window.
 5. The main actor publishes one bar snapshot and one `subscribe` frame.
 
 A switch launches no process, writes no file and leaves the status item alone. Everything
@@ -269,10 +269,8 @@ off the main thread).
   logged. The read and the raise go to the same app with the same timeout, so the app is
   not answering, and a record for a call that changes nothing would swallow a later click
   on the window: going ahead failed TLC's user configs, whose model assumes reads answer.
-  The empty workspace goes ahead when Finder's read gets no answer within 30 ms: stopping
-  would leave a hidden Finder window key, the 30 ms measures a busy worker rather than an
-  app that does not answer, and a record of no key window that gets no echo is matched
-  only by a later report of no key window, which then also drops any older expectation.
+  The empty workspace's window is key already when Kosmos is the front process and the
+  window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
   WorkerRaise, FocusDecide). Each side records the echo, through the main queue, right
@@ -318,7 +316,7 @@ off the main thread).
   user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
-  next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
+  next window, or Kosmos's empty workspace window. A closed focus is replaced at once. A minimized or hidden one is
   replaced at once too, unless the key window macOS last reported left with it: then
   macOS's report of the next key window is still on its way and focuses. Focusing earlier
   could put Kosmos's echo between the departure and that report. When macOS keys no
@@ -374,10 +372,9 @@ off the main thread).
   activate the app. A background accessory app with no window, as Kosmos is, made another
   app the front process in 10 of 10 trials with each of `activate`, yielding and then
   `activate(from:)` itself, and `activate(from:)` the front app, and Finder in 10 of 10
-  with each (`kosmos-probe keying`, September 24, 2026). For an empty workspace it
-  activates Kosmos, which holds no workspace window, but an accessory app that activated
-  itself became the front process in 0 of 10 trials, as activate returned false, so on
-  macOS 27 this fallback leaves the previous app front; Kosmos logs the refusal. The app
+  with each (`kosmos-probe keying`, September 24, 2026). An empty workspace has no public
+  path: its window is Kosmos's own, and an accessory app that activated itself became the
+  front process in 0 of 10 trials, as activate returned false. The app
   picks its key window, so the spec's assumption that the requested window becomes key no
   longer holds, and a wrong window is adopted like the user's choice. A public request's
   expectation ends at the first report from its app that is no echo, so a click on the
@@ -386,23 +383,34 @@ off the main thread).
   cover the public path. If the app keys the requested window late, after the user chose
   another of its windows, that late report reads as the user's and pulls focus back,
   change 6's bounce in the fallback alone.
-- Open item: an empty workspace on either path. `kosmos_front_without_windows` fronts the
-  app with no window brought forward, but the app still keys its own last key window: it
-  did in 10 of 10 trials with a stub whose window was on screen. Finder keyed nothing only
-  because it had no window open. A stub whose every window was concealed keyed one of
-  them in 10 of 10 trials in each of four ways: kept in their ordinary Space or concealed
-  exclusively, fronted by `activate` or by `kosmos_front_without_windows`
-  (`kosmos-probe keying`, September 24, 2026). So Finder, or any app with a concealed
-  window, cannot be the empty workspace's target: Kosmos would follow the concealed window
-  it keys off the empty workspace on every switch. The plan is a window of Kosmos's own
-  to key instead: 1 by 1 point, borderless, clear, ignoring the mouse, on every Space and
-  out of the window cycle, never managed, and keyed by the private path since Kosmos
-  cannot activate itself. `kosmos-probe keying` measures whether a background accessory
-  app can key such a window of its own that way. AeroSpace does nothing on an empty
-  workspace, so macOS keeps the outgoing window key while it is hidden and keystrokes
-  reach it (`refresh.swift`, upstream at 39e51904). The aerospace-steez fork fronts
-  Finder with `kCPSNoWindows` instead, following yabai (its commit 2031030b), which keys a
-  Finder window whenever Finder has one.
+- An empty workspace keys a window of Kosmos's own (EmptyWorkspaceWindow): 1 by 1 point
+  at the main display's bottom left corner, borderless, clear and transparent, ignoring
+  the mouse, on every Space and out of the window cycle. An app fronted with no window
+  brought forward still keys its own last key window: `kosmos_front_without_windows` let
+  a stub key its window in 10 of 10 trials, and a stub whose every window was concealed
+  keyed one of them in 10 of 10 in each of four ways, kept in their ordinary Space or
+  concealed exclusively, fronted by `activate` or by `kosmos_front_without_windows`. So
+  Finder, or any app with a concealed window, cannot be the target: Kosmos would follow
+  the concealed window it keys off the empty workspace on every switch. A background
+  accessory app keyed an invisible window of its own by the private key record in 10 of
+  10 trials, from its own background thread and from another process
+  (`kosmos-probe keying`, September 24, 2026).
+  - Kosmos is an accessory app, and the inventory tracks only regular apps' windows, so it
+    never manages or conceals the window. The window becoming key is the key window report
+    for an empty workspace, as Kosmos keeps no worker for itself; it names no window and
+    is the echo of the request's record of no key window.
+  - Kosmos has no main menu, and the window swallows every key and key equivalent, so
+    typing on an empty workspace neither beeps nor reaches a menu command such as Quit.
+    Hotkeys still fire: Carbon hotkeys are taken before the key reaches any window.
+  - The kill switch guards the call like any private call, and a crash inside it turns the
+    path off. The wrong window count judges only key records to other apps' windows, so
+    that trigger leaves the empty workspace's window keyed privately. After a crash the
+    empty workspace keys nothing and the previous window stays key, as there is no public
+    path to Kosmos's own window.
+  - AeroSpace does nothing on an empty workspace, so macOS keeps the outgoing window key
+    while it is hidden and keystrokes reach it (`refresh.swift`, upstream at 39e51904). The
+    aerospace-steez fork fronts Finder with `kCPSNoWindows` instead, following yabai (its
+    commit 2031030b), which keys a Finder window whenever Finder has one.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space

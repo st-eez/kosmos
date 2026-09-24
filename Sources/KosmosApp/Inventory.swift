@@ -127,6 +127,12 @@ final class Inventory {
     /// facts and as each minimize report since says.
     func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
 
+    /// Kosmos's own window became key, for an empty workspace: the key window report no
+    /// worker sends, as Kosmos keeps none for itself. It names no window.
+    func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
+        handle(AXReport(pid: getpid(), kind: .focusedWindowChanged(nil), received: stamp))
+    }
+
     private func handle(_ report: AXReport) {
         switch report.kind {
         case .windowCreated(let id):

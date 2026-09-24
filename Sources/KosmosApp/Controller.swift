@@ -17,7 +17,9 @@ final class Controller {
     private var misses = FocusMisses<ContinuousClock.Instant>()
     private let inventory: Inventory
     private let hiding: Hiding
-    private let focusQueue = FocusQueue()
+    /// What an empty workspace keys (DESIGN.md, section 5.4).
+    private let emptyWorkspace: EmptyWorkspaceWindow
+    private let focusQueue: FocusQueue
     private let bar = BarPush()
     /// Bumped by every switch; a switch whose barrier returns after a newer one does not focus.
     private var switchGeneration = 0
@@ -77,6 +79,10 @@ final class Controller {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
+        let emptyWorkspace = EmptyWorkspaceWindow()
+        emptyWorkspace.onKey = { [weak inventory] stamp in inventory?.ownWindowKeyed(at: stamp) }
+        self.emptyWorkspace = emptyWorkspace
+        focusQueue = FocusQueue(emptyWorkspace: emptyWorkspace.target)
         session = Session(names: names, display: Controller.displayRect(), gaps: gaps)
         barDisplay = Controller.barDisplay()
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
@@ -358,8 +364,8 @@ final class Controller {
     }
 
     /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus
-    /// leaves, the workspace's next window, or Finder, is focused now, or after macOS's
-    /// report of the next key window when the key window left too (DepartureFocus). A
+    /// leaves, the workspace's next window, or the empty workspace's, is focused now, or after
+    /// macOS's report of the next key window when the key window left too (DepartureFocus). A
     /// report that does not come within the departure bound, as when an app keeps no key
     /// window, has the departure focus then. The bound outlasts macOS's key change after a
     /// minimize, which ends its animation first.
@@ -680,16 +686,22 @@ final class Controller {
         // The focus queue skips a target that is key already, checked when the request runs:
         // the key window last reported here can be older than a request still in flight.
         let pid: pid_t?
+        let privately: Bool
         switch target {
         case .window(let id):
             pid = owner[id]
+            privately = focusQueue.killSwitch.isOn
             touch(id)
         case .none:
-            pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
+            // Kosmos's own window, which only the private path can key. The wrong window
+            // count judges key records to other apps' windows, so only a crash inside a
+            // private call keeps this one from being keyed (DESIGN.md, section 5.4).
+            pid = getpid()
+            privately = focusQueue.killSwitch.offReason != .crashed
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
-        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately,
                            concealed: concealed, generation: focusQueue.newGeneration(),
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)

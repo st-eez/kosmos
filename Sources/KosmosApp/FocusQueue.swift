@@ -14,6 +14,12 @@ final class FocusQueue: Sendable {
     private let queue = DispatchQueue(label: "kosmos.focus", qos: .userInteractive)
     private let current = Atomic<UInt64>(0)
     let killSwitch = FocusKillSwitch(url: KosmosFiles.support.appending(path: "private-focus"))
+    /// Kosmos's own window, which an empty workspace keys.
+    private let emptyWorkspace: EmptyWorkspaceWindow.Target
+
+    init(emptyWorkspace: EmptyWorkspaceWindow.Target) {
+        self.emptyWorkspace = emptyWorkspace
+    }
 
     /// Starts a new focus intent; requests from older intents are dropped.
     func newGeneration() -> UInt64 {
@@ -23,7 +29,8 @@ final class FocusQueue: Sendable {
     /// Uses the private path when `privately`, as the kill switch said on the main actor, and
     /// the public path otherwise or when a SkyLight call fails. `worker` belongs to the
     /// target's app: it reads the app's focused window, raises the window and runs the public
-    /// path.
+    /// path. For `.none`, `pid` is Kosmos's own, and the private key record keys Kosmos's
+    /// empty workspace window, which no public call can.
     ///
     /// The private path for a window follows the split model in tla/Kosmos.tla (KosmosCore's
     /// KeyRequest). `FocusStart`: a stale request, or one whose window was concealed when it
@@ -59,18 +66,15 @@ final class FocusQueue: Sendable {
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     stamp = ContinuousClock.now
                 case .none:
-                    // `FocusStart`: Finder with no window, keyed at once unless it is already
-                    // (KeyWindow.goesAhead).
-                    if front, let worker, !KeyWindow.none.goesAhead(appIsFront: true, focused: Self.focusedWindow(on: worker)) {
-                        return
-                    }
+                    // `FocusStart`: Kosmos's own window, keyed at once unless it is key already.
+                    if front, emptyWorkspace.isKey.load(ordering: .relaxed) { return }
                     stamp = ContinuousClock.now
                 }
                 Self.onMain { performing(stamp, .keyRecord) }
                 let performed = killSwitch.guarded {
                     switch key {
                     case .window(let id): kosmos_make_key(pid, id)
-                    case .none: kosmos_front_without_windows(pid)
+                    case .none: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
                 if performed { return }
@@ -82,20 +86,10 @@ final class FocusQueue: Sendable {
                                       performing: { stamp in Self.onMain { performing(stamp, .activation) } },
                                       dropped: { stamp in Self.onMain { dropped(stamp) } })
             case .none:
-                // No public call fronts Finder with no key window. Activating Finder can key a
-                // hidden Finder window that keeps its ordinary Space for Command-Tab, and
-                // Kosmos would follow it off the empty workspace. Kosmos itself has no window
-                // a workspace holds, and nothing reports its activation, so nothing is
-                // recorded. Whether macOS 27 lets a background agent activate itself is
-                // unmeasured (`kosmos-probe keying`), so a refusal is logged.
-                guard kosmos_front_pid() != getpid() else { return }
-                if !NSRunningApplication.current.activate(options: []) {
-                    focusLog.notice("activating Kosmos for an empty workspace returned false")
-                }
-                queue.asyncAfter(deadline: .now() + .milliseconds(200)) {
-                    guard isCurrent(), kosmos_front_pid() != getpid() else { return }
-                    focusLog.notice("Kosmos is not the front process 0.2 s after activating itself for an empty workspace")
-                }
+                // Only the private path keys Kosmos's own window: an accessory app that
+                // activated itself became front in 0 of 10 trials. With that path off after a
+                // crash, or its call failing, the previous window stays key.
+                focusLog.notice("the empty workspace keys nothing: the private path is off after a crash, or its call failed")
             }
         }
     }
@@ -116,18 +110,6 @@ final class FocusQueue: Sendable {
             finished.signal()
         }
         _ = finished.wait(timeout: .now() + .milliseconds(30))
-    }
-
-    /// The app's focused window, read on its worker within 30 ms, or nil without an answer.
-    private static func focusedWindow(on worker: AppWorker) -> UInt32?? {
-        let answer = Mutex<UInt32??>(nil)
-        let read = DispatchSemaphore(value: 0)
-        worker.readFocusedWindow { window in
-            answer.withLock { $0 = window }
-            read.signal()
-        }
-        guard read.wait(timeout: .now() + .milliseconds(30)) == .success else { return nil }
-        return answer.withLock { $0 }
     }
 
     private static func onMain(_ callback: @escaping @MainActor () -> Void) {

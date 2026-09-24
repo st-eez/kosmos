@@ -218,7 +218,7 @@ actor AppWorker {
             self.assumeIsolated { worker in
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
                 if readFocus, focused == nil { worker.logUnanswered(id) }
-                guard isCurrent(), KeyWindow.window(id).goesAhead(appIsFront: readFocus, focused: focused) else { return }
+                guard isCurrent(), focusGoesAhead(to: id, appIsFront: readFocus, focused: focused) else { return }
                 let stamp = ContinuousClock.now
                 performing(stamp)
                 if let element = worker.elements[id] {
