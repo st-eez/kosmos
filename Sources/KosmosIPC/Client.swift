@@ -3,22 +3,21 @@ import Darwin
 /// Blocking calls to a running Kosmos. They use no dispatch queues or tasks, which keeps the
 /// CLI's launch near the cost of a bare Swift binary.
 public enum IPCClient {
+    /// How long a request may take, from connecting to reading the first response.
+    private static let timeout = Duration.seconds(5)
+
     /// Sends one command and returns Kosmos's response. Throws `IPCError.notRunning` when
     /// nothing listens at `socketPath` and `IPCError.timedOut` when no response arrives in time.
-    public static func send(
-        _ args: [String], socketPath: String, timeout: Duration = .seconds(5)
-    ) throws(IPCError) -> Response {
-        try exchange(.command(args), socketPath: socketPath, timeout: timeout).response
+    public static func send(_ args: [String], socketPath: String) throws(IPCError) -> Response {
+        try exchange(.command(args), socketPath: socketPath).response
     }
 
     /// Subscribes to the frames Kosmos publishes and calls `onFrame` with each frame's body
     /// until Kosmos closes the stream. When Kosmos refuses the subscription, returns its error
-    /// at once; otherwise returns its success response once the stream ends. `timeout` covers
+    /// at once; otherwise returns its success response once the stream ends. The timeout covers
     /// the wait for that first response.
-    public static func subscribe(
-        socketPath: String, timeout: Duration = .seconds(5), onFrame: ([UInt8]) -> Void
-    ) throws(IPCError) -> Response {
-        let (connection, response) = try exchange(.subscribe, socketPath: socketPath, timeout: timeout)
+    public static func subscribe(socketPath: String, onFrame: ([UInt8]) -> Void) throws(IPCError) -> Response {
+        let (connection, response) = try exchange(.subscribe, socketPath: socketPath)
         guard response.exitCode == 0 else { return response }
         while let body = try connection.readFrame(deadline: nil) { onFrame(body) }
         return response
@@ -26,7 +25,7 @@ public enum IPCClient {
 
     /// Connects, sends `request` and reads the first response, all within `timeout`.
     private static func exchange(
-        _ request: Request, socketPath: String, timeout: Duration
+        _ request: Request, socketPath: String
     ) throws(IPCError) -> (connection: ClientConnection, response: Response) {
         let deadline = ContinuousClock.now + timeout
         let connection = try ClientConnection(socketPath: socketPath)
