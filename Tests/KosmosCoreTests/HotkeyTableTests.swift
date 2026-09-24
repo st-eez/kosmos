@@ -9,22 +9,18 @@ private func modes(_ tables: String) throws -> [String: [Binding]] {
     return try #require(result.config).modes
 }
 
-/// Dvorak types h with the key a US keyboard has j on.
-private let dvorak: [Character: UInt16] = ["h": 38]
-/// Part of French AZERTY: '-' is on the key a US keyboard has 6 on, and the digits need Shift.
-private let azerty: [Character: UInt16] = ["-": 22]
-
 @Suite struct HotkeyTableTests {
-    @Test func bindingsOnOnePhysicalKeyCollide() throws {
+    @Test @MainActor func bindingsOnOnePhysicalKeyCollide() throws {
         let bindings = try #require(try modes("""
         [mode.main.binding]
-        alt-minus = 'resize smart -100'
+        alt-sectionSign = 'resize smart -100'
         alt-6 = 'workspace 6'
         """)["main"])
         let us = HotkeyTable(bindings, layout: [:])
         #expect(us.bindings.count == 2 && us.collisions.isEmpty)
-        let french = HotkeyTable(bindings, layout: azerty)
-        #expect(french.bindings[PhysicalKey(code: 22, modifiers: .alt)]?.key == "alt-minus")
+        // French types § with the key a US keyboard has 6 on, and 6 only with Shift.
+        let french = HotkeyTable(bindings, layout: try installedLayout("com.apple.keylayout.French"))
+        #expect(french.bindings[PhysicalKey(code: 22, modifiers: .alt)]?.key == "alt-sectionSign")
         #expect(french.collisions == [HotkeyTable.Collision(kept: bindings[0], dropped: bindings[1])])
     }
 
@@ -51,7 +47,7 @@ private let azerty: [Character: UInt16] = ["-": 22]
         #expect(none.unregister.isEmpty && none.register.isEmpty)
     }
 
-    @Test func layoutChangeMovesOnlyCharacterKeys() throws {
+    @Test @MainActor func layoutChangeMovesOnlyCharacterKeys() throws {
         let bindings = try #require(try modes("""
         [mode.main.binding]
         alt-h = 'focus left'
@@ -59,6 +55,7 @@ private let azerty: [Character: UInt16] = ["-": 22]
         alt-1 = 'workspace 1'
         """)["main"])
         let us = HotkeyTable(bindings, layout: [:])
+        let dvorak = try installedLayout("com.apple.keylayout.Dvorak")
         let changes = HotkeyTable(bindings, layout: dvorak).changes(from: us.bindings.keys)
         #expect(changes.unregister == [PhysicalKey(code: 4, modifiers: .alt)])
         #expect(changes.register == [PhysicalKey(code: 38, modifiers: .alt)])

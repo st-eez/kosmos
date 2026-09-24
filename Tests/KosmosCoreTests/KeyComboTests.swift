@@ -14,11 +14,6 @@ private func comboError(_ text: String) -> String? {
     }
 }
 
-/// Dvorak types h with the key a US keyboard has j on.
-private let dvorak: [Character: UInt16] = ["h": 38]
-/// Part of French AZERTY: '-' is on the key a US keyboard has 6 on, and the digits need Shift.
-private let azerty: [Character: UInt16] = ["-": 22]
-
 @Suite struct KeyComboTests {
     @Test func modifiersAndKey() throws {
         let parsed = try combo("alt-shift-h")
@@ -49,13 +44,17 @@ private let azerty: [Character: UInt16] = ["-": 22]
         #expect(comboError("") == "expected modifiers and a key joined by '-', such as alt-shift-h")
     }
 
-    @Test func charactersResolveThroughTheLayout() throws {
+    @Test @MainActor func charactersResolveThroughTheLayout() throws {
+        let dvorak = try installedLayout("com.apple.keylayout.Dvorak")
+        let french = try installedLayout("com.apple.keylayout.French")
         let altH = try combo("alt-h")
         #expect(altH.physicalKey(layout: [:]) == PhysicalKey(code: 4, modifiers: .alt))
+        // Dvorak types h with the key a US keyboard has j on.
         #expect(altH.physicalKey(layout: dvorak) == PhysicalKey(code: 38, modifiers: .alt))
         // Arrows are in one place on every layout.
         #expect(try combo("alt-left").physicalKey(layout: dvorak).code == 123)
-        // A character the layout lacks keeps its US place: AZERTY types 1 only with Shift.
-        #expect(try combo("alt-1").physicalKey(layout: azerty).code == 18)
+        // French types 1 only with Shift, so alt-1 keeps its US place on the number row.
+        #expect(try combo("alt-1").physicalKey(layout: french).code == 18)
+        #expect(try combo("alt-minus").physicalKey(layout: french).code == 24)
     }
 }

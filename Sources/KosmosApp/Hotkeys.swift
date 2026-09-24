@@ -173,28 +173,16 @@ final class Hotkeys {
         layoutProblems(systemShortcutProblems() + apply())
     }
 
-    /// The key code of each character the current ASCII capable layout types without
-    /// modifiers. Codes run in order and the typing keys (0 to 50) come before the keypad, so
-    /// a digit maps to the number row. Empty when the layout has no Unicode data, and then
-    /// every character key takes its place on a US keyboard.
+    /// The characters the current ASCII capable layout types and their key codes. Empty when
+    /// the layout has no Unicode data, and then every character key takes its place on a US
+    /// keyboard.
     private static func currentLayout() -> [Character: UInt16] {
         guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
               let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData),
               let bytes = CFDataGetBytePtr(Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue())
         else { return [:] }
-        return bytes.withMemoryRebound(to: UCKeyboardLayout.self, capacity: 1) { keyboard in
-            var layout: [Character: UInt16] = [:]
-            for code in UInt16(0)..<128 {
-                var deadKeys: UInt32 = 0
-                var length = 0
-                var characters = [UniChar](repeating: 0, count: 4)
-                let status = UCKeyTranslate(keyboard, code, UInt16(kUCKeyActionDown), 0, UInt32(LMGetKbdType()),
-                                            OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeys, characters.count,
-                                            &length, &characters)
-                guard status == noErr, length == 1, let scalar = Unicode.Scalar(characters[0]) else { continue }
-                if layout[Character(scalar)] == nil { layout[Character(scalar)] = code }
-            }
-            return layout
+        return bytes.withMemoryRebound(to: UCKeyboardLayout.self, capacity: 1) { layout in
+            keyboardLayout(layout, keyboardType: UInt32(LMGetKbdType()))
         }
     }
 }

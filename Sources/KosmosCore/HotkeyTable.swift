@@ -8,7 +8,8 @@ public struct HotkeyTable: Equatable, Sendable {
 
     public private(set) var bindings: [PhysicalKey: Binding] = [:]
     /// Bindings left out because an earlier binding of the mode names the same physical key on
-    /// this layout. On a French layout, for example, `alt-minus` and `alt-6` are one key.
+    /// this layout. On a French layout, for example, `alt-sectionSign` and `alt-6` are one key:
+    /// 6 needs Shift there, so `alt-6` takes the key a US keyboard has 6 on, which types §.
     public private(set) var collisions: [Collision] = []
 
     public init(_ bindings: [Binding], layout: [Character: UInt16]) {
