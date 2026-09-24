@@ -744,7 +744,7 @@ final class FocusNotes: @unchecked Sendable {
             _ = kosmos_barrier(space)
             wait(0.3)
             let isFront = front(a), appKey = a.appKey(), axFocused = focusedWindow(of: a.pid)
-            let skips = KeyWindow.window(a.windows[0]).isAlreadyKey(appIsFront: isFront, focused: .some(axFocused))
+            let skips = !KeyWindow.window(a.windows[0]).goesAhead(appIsFront: isFront, focused: .some(axFocused))
             let wrong = skips && appKey != a.windows[0]
             concealTrials += 1
             if wrong { wrongSkips += 1 }

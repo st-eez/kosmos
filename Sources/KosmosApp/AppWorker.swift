@@ -166,7 +166,8 @@ actor AppWorker {
     /// `WorkerRead` and `WorkerRaise` (KosmosCore's KeyRequest). The app's focused window is
     /// read only when the app was front, the generation is checked at each step, and just
     /// before AXRaise the request, under its lock, records the echo if the app is front,
-    /// where the raise keys the window. A raise that fails after its record forgets it.
+    /// where the raise keys the window. A read with no answer stops the request, and a raise
+    /// that fails after its record forgets it.
     nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool,
                                     request: SharedKeyRequest, done: @escaping @Sendable () -> Void) {
         executor.perform {
@@ -174,7 +175,8 @@ actor AppWorker {
                 defer { done() }
                 guard request.workerStarts(isCurrent: isCurrent()) else { return }
                 let focused: UInt32?? = request.appWasFront ? worker.focusedWindow() : nil
-                guard request.workerRead(isCurrent: isCurrent(), targetFocused: focused == id),
+                if request.appWasFront, focused == nil { worker.logUnanswered(id) }
+                guard request.workerRead(isCurrent: isCurrent(), focused: focused, target: id),
                       worker.elements[id] != nil else { return }
                 switch request.workerRaises(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == worker.pid) {
                 case .stop: break
@@ -206,7 +208,8 @@ actor AppWorker {
         executor.perform {
             self.assumeIsolated { worker in
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
-                guard isCurrent(), !KeyWindow.window(id).isAlreadyKey(appIsFront: readFocus, focused: focused) else { return }
+                if readFocus, focused == nil { worker.logUnanswered(id) }
+                guard isCurrent(), KeyWindow.window(id).goesAhead(appIsFront: readFocus, focused: focused) else { return }
                 let stamp = ContinuousClock.now
                 performing(stamp)
                 if let element = worker.elements[id] {
@@ -218,6 +221,10 @@ actor AppWorker {
                 if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { dropped(stamp) }
             }
         }
+    }
+
+    private func logUnanswered(_ id: UInt32) {
+        log.notice("\(self.name, privacy: .public) did not answer the focused window read; focus on \(id) stops")
     }
 
     /// Returns whether the raise went through.

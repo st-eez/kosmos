@@ -59,8 +59,13 @@ final class FocusQueue: Sendable {
                     else { return }
                     stamp = decided
                 case .none:
-                    // `FocusStart`: Finder with no window, keyed at once unless it is already.
-                    if front, let worker, Self.focusedWindow(on: worker) == .some(nil) { return }
+                    // `FocusStart`: Finder with no window, keyed at once unless it is already,
+                    // or Finder does not answer the read (KeyWindow.goesAhead).
+                    if front, let worker {
+                        let focused = Self.focusedWindow(on: worker)
+                        if focused == nil { focusLog.notice("Finder did not answer the focused window read; the empty workspace keeps the key window") }
+                        guard KeyWindow.none.goesAhead(appIsFront: true, focused: focused) else { return }
+                    }
                     stamp = ContinuousClock.now
                 }
                 Self.onMain { performing(stamp, .keyRecord) }
@@ -160,8 +165,8 @@ final class SharedKeyRequest: Sendable {
         state.withLock { $0.workerStarts(isCurrent: isCurrent) }
     }
 
-    func workerRead(isCurrent: Bool, targetFocused: Bool) -> Bool {
-        state.withLock { $0.workerRead(isCurrent: isCurrent, targetFocused: targetFocused) }
+    func workerRead(isCurrent: Bool, focused: UInt32??, target: UInt32) -> Bool {
+        state.withLock { $0.workerRead(isCurrent: isCurrent, focused: focused, target: target) }
     }
 
     /// Records the worker's echo inside the lock when the step says so.

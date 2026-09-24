@@ -225,7 +225,11 @@ off the main thread).
   against it dropped the request for w1 before w3's report arrived, and w3's echo then
   left macOS keying w3 while Kosmos focused w1 (kosmos-hover's TLC counterexample;
   tla/Kosmos.tla, ExecFocus). The front process lookup takes 1.6 us, and only a request for
-  the front app pays an AX read.
+  the front app pays an AX read. A read with no answer, or none within 30 ms for the empty
+  workspace's Finder read, stops the request and is logged. The read and the raise go to
+  the same app with the same timeout, so the app is not answering, and a record for a call
+  that changes nothing would swallow a later click on the window: going ahead failed TLC's
+  user configs, whose model assumes reads answer.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
   WorkerRaise, FocusDecide). Each side records the echo, through the main queue, right

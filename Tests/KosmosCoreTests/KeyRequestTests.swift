@@ -6,7 +6,7 @@ import Testing
 
 @Test func inTheFrontAppTheWorkerRecordsAndRaisesAndTheQueueKeysNothing() {
     var request = KeyRequest<Int>(appWasFront: true)
-    let goesOn = request.workerStarts(isCurrent: true) && request.workerRead(isCurrent: true, targetFocused: false)
+    let goesOn = request.workerStarts(isCurrent: true) && request.workerRead(isCurrent: true, focused: .some(nil), target: 1)
     let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 2)
     let key = request.queueDecides(isCurrent: true, appIsFront: true, now: 3)
     #expect(goesOn && step == .recordAndRaise(2) && key == nil)
@@ -22,13 +22,13 @@ import Testing
 
 @Test func aFrontAppsFocusedTargetIsKeyAlready() {
     let request = KeyRequest<Int>(appWasFront: true)
-    #expect(!request.workerRead(isCurrent: true, targetFocused: true))
+    #expect(!request.workerRead(isCurrent: true, focused: .some(1), target: 1))
 }
 
 @Test func aBackgroundAppIsRaisedWithoutARecordAndKeyedByTheQueue() {
     var request = KeyRequest<Int>(appWasFront: false)
     // The read is not made, so its answer does not matter.
-    let goesOn = request.workerStarts(isCurrent: true) && request.workerRead(isCurrent: true, targetFocused: true)
+    let goesOn = request.workerStarts(isCurrent: true) && request.workerRead(isCurrent: true, focused: .some(1), target: 1)
     let step = request.workerRaises(isCurrent: true, appIsFront: false, now: 2)
     let key = request.queueDecides(isCurrent: true, appIsFront: false, now: 3)
     #expect(goesOn && step == .raise && key == 3)
@@ -63,7 +63,7 @@ import Testing
     // Command-Tab or click on that window.
     var request = KeyRequest<Int>(appWasFront: true)
     #expect(!request.workerStarts(isCurrent: false))
-    #expect(!request.workerRead(isCurrent: false, targetFocused: false))
+    #expect(!request.workerRead(isCurrent: false, focused: .some(nil), target: 1))
     #expect(request.workerRaises(isCurrent: false, appIsFront: true, now: 2) == .stop)
     #expect(request.phase == .pending)
 }
@@ -80,4 +80,13 @@ import Testing
     let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 2)
     let key = request.queueDecides(isCurrent: true, appIsFront: false, now: 3)
     #expect(step == .recordAndRaise(2) && key == nil)
+}
+
+@Test func aFrontAppThatDoesNotAnswerTheReadStopsTheRequest() {
+    // Going ahead left a record for a raise that changed nothing, which swallowed the user's
+    // Command-Tab back to the window (kosmos-hover's TLC run).
+    let request = KeyRequest<Int>(appWasFront: true)
+    #expect(!request.workerRead(isCurrent: true, focused: nil, target: 1))
+    // A background app is not read, and goes on.
+    #expect(KeyRequest<Int>(appWasFront: false).workerRead(isCurrent: true, focused: nil, target: 1))
 }

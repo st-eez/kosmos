@@ -48,9 +48,10 @@ public struct KeyRequest<Stamp: Sendable>: Sendable {
     }
 
     /// `WorkerRead`: a stale request ends, and so does one whose app was front with the
-    /// target as its focused window, which is key already.
-    public func workerRead(isCurrent: Bool, targetFocused: Bool) -> Bool {
-        isCurrent && !(appWasFront && targetFocused)
+    /// target as its focused window, which is key already, or which did not answer the read
+    /// (KeyWindow.goesAhead). `focused` is the read, made only when the app was front.
+    public func workerRead(isCurrent: Bool, focused: UInt32??, target: UInt32) -> Bool {
+        isCurrent && KeyWindow.window(target).goesAhead(appIsFront: appWasFront, focused: focused)
     }
 
     /// `WorkerRaise`, under the lock just before AXRaise. A stale request, or one the queue
