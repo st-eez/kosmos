@@ -210,32 +210,34 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.add(10); _ = s.add(11)
         _ = s.add(50, to: "5")
         s.adopt(11)
-        #expect(s.perform(.focus(.left, acrossMonitors: true))?.focus == .window(10))
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(10))
         #expect(s.focusedWorkspace == "1")
         #expect(s.perform(.focus(.left))?.focus == nil)   // at the edge, within the workspace
-        #expect(s.perform(.focus(.left, acrossMonitors: true))?.focus == .window(50))
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(50))
         #expect(s.focusedWorkspace == "5")
         // From an empty workspace, too, to the main panel's last focus.
         _ = s.perform(.workspace(.named("8")))
-        #expect(s.perform(.focus(.up, acrossMonitors: true))?.focus == .window(10))
+        #expect(s.perform(.focus(.up, boundaries: .allMonitors))?.focus == .window(10))
     }
 
     @Test func moveAcrossMonitorsTakesTheWindowOverTheEdgeAndFollowsIt() {
         var s = desk()
         _ = s.add(11); _ = s.add(10)
         s.adopt(10)
-        #expect(s.perform(.move(.left, acrossMonitors: true)) != nil)
+        #expect(s.perform(.move(.left, boundaries: .allMonitors)) != nil)
         #expect(s.workspace(of: 10) == "1")
         #expect(s.workspaces["1"]!.tree == "h[10 11]")
-        let plan = s.perform(.move(.left, acrossMonitors: true))!
+        let plan = s.perform(.move(.left, boundaries: .allMonitors))!
         #expect(s.workspace(of: 10) == "5")
         #expect(s.focusedWorkspace == "5")
         #expect(plan.hide.isEmpty && plan.show.isEmpty)
-        // A lone window crosses too, and a floating one stays.
-        #expect(s.perform(.move(.right, acrossMonitors: true)) != nil)
+        // A lone window crosses too, and past the outermost display only when it wraps.
+        #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
+        #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping)) != nil)
         #expect(s.workspace(of: 10) == "1")
+        // A floating window stays.
         _ = s.perform(.layout(.toggleFloating))
-        #expect(s.perform(.move(.left, acrossMonitors: true)) == nil)
+        #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
     }
 
     @Test func moveWorkspaceToMonitorMovesOnlyAFreeWorkspace() {
@@ -377,6 +379,15 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.workspaces["1"]!.root.windows.isEmpty)
     }
 
+    @Test func aCommandForAWorkspaceTheProfileLeftOutFailsUntilItReturns() {
+        var s = desk()
+        s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [builtIn], assigned: [:], merge: [:])
+        #expect(s.missingWorkspace(in: .workspace(.named("6"))) == "6")
+        #expect(s.missingWorkspace(in: .moveNodeToWorkspace(.named("0"), focusFollowsWindow: false)) == "0")
+        s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
+        #expect(s.missingWorkspace(in: .workspace(.named("6"))) == nil)
+    }
+
     @Test func aWorkspaceWithoutAMergeTargetGoesToTheFirst() {
         var s = Session(names: ["a", "b"], display: main.frame)
         _ = s.add(1, to: "b")
@@ -408,9 +419,13 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 @Suite struct DisplayParseTests {
     @Test func parsesTheMonitorCommands() {
         let cases: [([String], Command)] = [
-            (["focus", "left", "--boundaries", "all-monitors-outer-frame"], .focus(.left, acrossMonitors: true)),
+            (["focus", "left", "--boundaries", "all-monitors-outer-frame"], .focus(.left, boundaries: .allMonitors)),
             (["focus", "--boundaries", "workspace", "up"], .focus(.up)),
-            (["move", "--boundaries", "all-monitors-outer-frame", "down"], .move(.down, acrossMonitors: true)),
+            (["move", "--boundaries", "all-monitors-outer-frame", "down"], .move(.down, boundaries: .allMonitors)),
+            (["move", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "wrap-around-all-monitors", "left"],
+             .move(.left, boundaries: .allMonitorsWrapping)),
+            (["focus", "right", "--boundaries-action", "stop", "--boundaries", "all-monitors-outer-frame"],
+             .focus(.right, boundaries: .allMonitors)),
             (["focus-monitor", "left"], .focusMonitor(.direction(.left), wrapAround: false)),
             (["focus-monitor", "--wrap-around", "next"], .focusMonitor(.next, wrapAround: true)),
             (["focus-monitor", "2"], .focusMonitor(.number(2), wrapAround: false)),
@@ -429,6 +444,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 
     @Test func rejectsWhatTheMonitorCommandsDoNotTake() {
         for arguments in [["focus", "left", "--boundaries"], ["focus", "left", "--boundaries", "all-monitors"],
+                          ["move", "left", "--boundaries-action", "wrap-around-all-monitors"],
+                          ["move", "left", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "fail"],
                           ["focus-monitor"], ["focus-monitor", "left", "right"], ["focus-monitor", "--wrap-around", "2"],
                           ["focus-monitor", "--wrap-around", "asus-main"], ["focus-monitor", "--focus-follows-window", "left"],
                           ["move-workspace-to-monitor", "--window-id", "4", "left"], ["move-node-to-monitor", "--window-id"],
@@ -511,7 +528,8 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         case 17: carryOut(s.perform(.moveWorkspaceToMonitor(target, wrapAround: wrap)))
         case 18, 19:
             let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
-            carryOut(s.perform(Bool.random(using: &random) ? .focus(direction, acrossMonitors: true) : .move(direction, acrossMonitors: true)))
+            let boundaries: Command.Boundaries = wrap ? .allMonitorsWrapping : .allMonitors
+            carryOut(s.perform(Bool.random(using: &random) ? .focus(direction, boundaries: boundaries) : .move(direction, boundaries: boundaries)))
         case 20: carryOut(s.perform(.layout(.toggleFloating)))
         default:
             // A display change or a forced profile, and the resync after it.

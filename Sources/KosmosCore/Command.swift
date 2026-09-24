@@ -9,6 +9,17 @@ public enum Command: Equatable, Sendable {
         case previous
     }
 
+    /// Where `focus` and `move` stop, AeroSpace's `--boundaries` and `--boundaries-action`.
+    public enum Boundaries: Equatable, Sendable {
+        /// The edge of the workspace.
+        case workspace
+        /// The edge of the outermost display in the direction: at the edge of the
+        /// workspace, go on to the next display.
+        case allMonitors
+        /// As `allMonitors`, and from the outermost display on to the one at the other end.
+        case allMonitorsWrapping
+    }
+
     /// A display, as the monitor commands name one (DESIGN.md, section 5.13).
     public enum MonitorTarget: Equatable, Sendable {
         case direction(Direction)
@@ -28,11 +39,8 @@ public enum Command: Equatable, Sendable {
 
     case workspace(Workspace)
     case workspaceBackAndForth
-    /// `acrossMonitors`: at the edge of the workspace, focus the next display in the
-    /// direction (AeroSpace's `--boundaries all-monitors-outer-frame`).
-    case focus(Direction, acrossMonitors: Bool = false)
-    /// `acrossMonitors`: at the edge of the workspace, move the window to the next display.
-    case move(Direction, acrossMonitors: Bool = false)
+    case focus(Direction, boundaries: Boundaries = .workspace)
+    case move(Direction, boundaries: Boundaries = .workspace)
     case swap(Direction)
     case joinWith(Direction)
     /// Moves the focused window, or the window given with `--window-id`.
@@ -69,24 +77,35 @@ public enum Command: Equatable, Sendable {
         case "workspace-back-and-forth":
             return rest.isEmpty ? .success(.workspaceBackAndForth) : usage
         case "focus", "move":
-            // AeroSpace's --boundaries, whose default is the workspace, before or after the
-            // direction.
-            var across = false, directions: [String] = []
+            // AeroSpace's --boundaries, whose default is the workspace, and its
+            // --boundaries-action, before or after the direction. AeroSpace wraps only focus;
+            // Kosmos wraps a move too, as Steve's `move || move-node-to-monitor --wrap-around`
+            // binding did.
+            var across = false, wraps = false, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
-                guard word == "--boundaries" else {
+                switch word {
+                case "--boundaries":
+                    switch words.popFirst() {
+                    case "workspace": across = false
+                    case "all-monitors-outer-frame": across = true
+                    default: return fail("\(name): --boundaries takes workspace or all-monitors-outer-frame")
+                    }
+                case "--boundaries-action":
+                    switch words.popFirst() {
+                    case "stop": wraps = false
+                    case "wrap-around-all-monitors": wraps = true
+                    default: return fail("\(name): --boundaries-action takes stop or wrap-around-all-monitors")
+                    }
+                default:
                     directions.append(word)
-                    continue
-                }
-                switch words.popFirst() {
-                case "workspace": across = false
-                case "all-monitors-outer-frame": across = true
-                default: return fail("\(name): --boundaries takes workspace or all-monitors-outer-frame")
                 }
             }
             guard directions.count == 1 else { return usage }
             guard let direction = direction(directions[0]) else { return fail("\(name): unknown direction \(directions[0])") }
-            return .success(name == "focus" ? .focus(direction, acrossMonitors: across) : .move(direction, acrossMonitors: across))
+            if wraps, !across { return fail("\(name): wrap-around-all-monitors needs --boundaries all-monitors-outer-frame") }
+            let boundaries: Boundaries = wraps ? .allMonitorsWrapping : across ? .allMonitors : .workspace
+            return .success(name == "focus" ? .focus(direction, boundaries: boundaries) : .move(direction, boundaries: boundaries))
         case "swap", "join-with":
             guard rest.count == 1 else { return usage }
             guard let direction = direction(rest[0]) else { return fail("\(name): unknown direction \(rest[0])") }

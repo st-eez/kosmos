@@ -403,13 +403,15 @@ public struct Session: Sendable {
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
-        case .focus(let direction, acrossMonitors: true):
-            return performOnFocused(command) ?? perform(.focusMonitor(.direction(direction), wrapAround: false))
-        case .move(let direction, acrossMonitors: true):
+        case .focus(let direction, let boundaries) where boundaries != .workspace:
+            return performOnFocused(command)
+                ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
+        case .move(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command) { return plan }
             // A floating window has no edge to cross, as in AeroSpace.
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
-            return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true, wrapAround: false))
+            return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
+                                              wrapAround: boundaries == .allMonitorsWrapping))
         case .focusMonitor(let target, let wrap):
             guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrap),
                   let name = shown[monitor.id], name != focusedWorkspace else { return nil }

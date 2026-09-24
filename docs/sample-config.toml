@@ -72,15 +72,16 @@ alt-k = 'focus --boundaries all-monitors-outer-frame up'
 alt-j = 'focus --boundaries all-monitors-outer-frame down'
 
 # Move the window within its workspace, and at its edge onto the next monitor, where
-# focus follows it.
-alt-shift-left = 'move --boundaries all-monitors-outer-frame left'
-alt-shift-right = 'move --boundaries all-monitors-outer-frame right'
-alt-shift-up = 'move --boundaries all-monitors-outer-frame up'
-alt-shift-down = 'move --boundaries all-monitors-outer-frame down'
-alt-shift-h = 'move --boundaries all-monitors-outer-frame left'
-alt-shift-l = 'move --boundaries all-monitors-outer-frame right'
-alt-shift-k = 'move --boundaries all-monitors-outer-frame up'
-alt-shift-j = 'move --boundaries all-monitors-outer-frame down'
+# focus follows it. Past the last monitor it wraps to the first, as AeroSpace's
+# `move || move-node-to-monitor --wrap-around` chain did.
+alt-shift-left = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors left'
+alt-shift-right = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors right'
+alt-shift-up = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors up'
+alt-shift-down = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors down'
+alt-shift-h = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors left'
+alt-shift-l = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors right'
+alt-shift-k = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors up'
+alt-shift-j = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors down'
 
 # Switch workspace. On the laptop profile, 6 to 0 do not exist and these keys do nothing.
 alt-1 = 'workspace 1'

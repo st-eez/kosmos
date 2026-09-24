@@ -636,8 +636,14 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 ### 5.13 Displays
 
 - Each connected display shows one workspace. One display is focused, and its workspace
-  holds Kosmos's focus. Displays are ordered left to right, then top to bottom, as
-  AeroSpace orders monitors, and monitor numbers follow that order.
+  holds Kosmos's focus.
+- Two orders number the displays, and neither stands in for the other.
+  - Commands and the config order displays left to right, then top to bottom, as
+    AeroSpace orders monitors: monitor numbers, `next` and `prev`, and the first display a
+    monitor matcher matches follow that order.
+  - The bar event keeps SketchyBar's numbers (`BarSnapshot.displayNumber`, from
+    WindowServer's managed display list, section 5.12), so a bar item's `display` value
+    names the same display SketchyBar does. At Steve's desk the two can differ.
 - The active profile assigns workspaces to displays, as AeroSpace's
   `workspace-to-monitor-force-assignment` does: an assigned workspace shows only on the
   first connected display that its monitor list matches. A workspace whose list matches
@@ -663,7 +669,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     left shows another workspace. It refuses an assigned workspace, as AeroSpace does.
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
     display in the direction at the edge of the workspace. `focus` then focuses that
-    display's workspace; `move` moves a tiled window there and follows it.
+    display's workspace; `move` moves a tiled window there and follows it. With
+    `--boundaries-action wrap-around-all-monitors` they go on from the last display to
+    the first. AeroSpace takes that action for `focus` only; Kosmos takes it for `move`
+    too, which is what Steve's `move || move-node-to-monitor --wrap-around` binding did.
   - `profile <name>` applies a profile until the displays change or the config reloads,
     as `set-profile.sh` did.
 - A key window report of a window on the workspace of any display names a window on
@@ -707,6 +716,30 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - An app keeps ordinary Space membership for a concealed window only while no display
   shows a window of it, since macOS prefers an eligible window on the current display over
   the app's key window on another display (the AeroSpace fork's NativeWindowStash).
+- Open item: a click on the desktop of another display does not focus that display, as
+  when its workspace is empty. AeroSpace watches left mouse up with
+  `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift), and when the pointer is in
+  a display's visible area and that display's workspace is not the focused one, it
+  focuses that workspace. Kosmos sees such a click only as Finder becoming front with no
+  key window, which names no display. The pointer events of focus follows mouse (section
+  5.11) could carry the same check.
+- Steve's AeroSpace profiles map onto this model with these differences:
+  - Home assigns the twin panels by serial where AeroSpace used monitor numbers, which
+    `apply-profile.sh` kept right by placing the panels with BetterDisplay. Kosmos keeps
+    workspaces with their panel whatever the arrangement, and places nothing. The twins
+    share an EDID UUID, so macOS can swap their places across replugs, and the pointer
+    then crosses at the wrong edge until BetterDisplay or System Settings places them.
+  - `apply-profile.sh` chose home for any two VG279QE5A panels and office for either
+    office monitor. Kosmos's home needs both serials, and its office needs the LG
+    ULTRAWIDE, since `when` needs every monitor it lists.
+  - For displays that no profile knows, `apply-profile.sh` kept the profile it had;
+    Kosmos applies the first profile with no `when`, the laptop profile.
+  - `set-profile.sh` lasted until the watcher's next check, at most 120 s; `profile`
+    lasts until the displays change.
+  - The laptop profile left `alt-6` to `alt-0` unbound, so the keys reached the app;
+    Kosmos keeps its bindings in every profile, and those commands fail.
+  - The migrate script moved windows of 6 to 0 for good; Kosmos moves them back when a
+    profile lists their workspace again.
 - Open until the desk:
   - whether the twin panels read their own serials, and whether macOS gives them one
     display UUID, which would merge them in Kosmos's Space lookup and the bar numbering
