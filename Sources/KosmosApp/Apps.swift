@@ -18,6 +18,8 @@ final class Apps {
 
     func start() {
         for app in NSWorkspace.shared.runningApplications { add(app) }
+        // The key window at launch produces no notification; ask for it.
+        if let front = NSWorkspace.shared.frontmostApplication { activated(front.processIdentifier, received: .now) }
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }

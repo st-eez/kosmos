@@ -61,6 +61,8 @@ public struct Session: Sendable {
         guard home[window] == nil else { return Plan() }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? visible
         workspaces[target]!.insert(window)
+        // A workspace with windows always has a focused one, as in i3; reports refine it.
+        if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan()
         plan.frames = frames(of: target)

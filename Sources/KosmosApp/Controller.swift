@@ -101,6 +101,8 @@ final class Controller {
             let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
             var plan = session.add(id, to: rule?.workspace)
             if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
+            // Reported key before it was managed, as at launch: that report was dropped.
+            if inventory.focused == id, session.workspace(of: id) == session.visible { session.adopt(id) }
             execute(plan)
         } else {
             owner[id] = nil
@@ -147,7 +149,18 @@ final class Controller {
             }
             execute(plan)
         case .framesApplied(let results):
-            for result in results { ledger.confirm(result.id, target: result.target, readBack: result.readBack) }
+            for result in results {
+                ledger.confirm(result.id, target: result.target, readBack: result.readBack)
+                // A window that kept more than it was given refused the size: that is its
+                // minimum on that axis (DESIGN.md, section 5.2). A few points of slack keep
+                // apps that round their size from reading as a refusal.
+                let wider = result.readBack.width > result.target.width + 2
+                let taller = result.readBack.height > result.target.height + 2
+                if wider || taller {
+                    execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
+                                                                 height: taller ? result.readBack.height : 0)))
+                }
+            }
         case .windowCreated, .windowDestroyed, .titleChanged:
             break
         }

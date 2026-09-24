@@ -250,3 +250,13 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.remove(1)
     #expect(s.minimums.isEmpty)
 }
+
+@Test func aWorkspaceWithWindowsAlwaysHasFocus() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    #expect(s.focused == 1)   // no focus report yet, and commands still have a target
+    #expect(s.perform(.focus(.right))?.focus == .window(2))
+    _ = s.add(7, to: "3")
+    _ = s.perform(.workspace(.named("3")))
+    #expect(s.focused == 7)
+}
