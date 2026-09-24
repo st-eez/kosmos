@@ -54,13 +54,19 @@
 //                                   child app that is launching, answering and hung. The
 //                                   child is an accessory app with no window, which a running
 //                                   Kosmos ignores. Needs Accessibility for the terminal.
-//   kosmos-probe keying [rounds]    Keys windows of two stub apps four ways: the key record
+//   kosmos-probe keying [rounds] [finder]
+//                                   Keys windows of two stub apps four ways: the key record
 //                                   alone, AXRaise then the record (the order Kosmos uses), the
 //                                   record then AXRaise (yabai and alt-tab), and AXRaise alone.
 //                                   Covers two stacked windows of one app, two side by side,
 //                                   another app, and back into an app whose other window was
 //                                   key; a background accessory app activating itself, as
 //                                   Kosmos does for an empty workspace on the public path;
+//                                   one with no window activating another app three ways,
+//                                   as the public path does for every target, and the
+//                                   private front with no key window that Kosmos uses for an
+//                                   empty workspace, both on stub A and, with `finder`, on
+//                                   Finder (it fronts Finder and moves none of its windows);
 //                                   then a key window concealed and revealed, where the focus
 //                                   queue's already key check could skip wrongly. The
 //                                   stubs say which window they hold key, and every
@@ -98,7 +104,7 @@ case "secure-input": secureInput()
 case "ax-child": axChild()
 case "ax-timeout": axTimeout()
 case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
-case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
+case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3, finder: arguments.contains("finder"))
 default:
     print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds]")
     exit(2)
@@ -779,7 +785,8 @@ func axTimeout() {
 /// visible area and prints the window ids. Each "key" line on its standard input prints the
 /// window the app holds key, or 0. Each "activate" line activates the app from this
 /// background thread, as Kosmos's focus queue activates Kosmos, and prints what `activate`
-/// returned. It exits when its standard input closes.
+/// returned; "activate <way> <pid>" activates that app instead (ActivationWay). It exits
+/// when its standard input closes.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -799,13 +806,52 @@ func axTimeout() {
             switch line {
             case "key": DispatchQueue.main.async { MainActor.assumeIsolated { print(NSApp.keyWindow?.windowNumber ?? 0) } }
             case "activate": print(NSRunningApplication.current.activate(options: []))
-            default: break
+            default:
+                let parts = line.split(separator: " ")
+                guard parts.count == 3, parts[0] == "activate", let way = ActivationWay(rawValue: String(parts[1])),
+                      let pid = pid_t(parts[2]) else { break }
+                print(way.activate(pid))
             }
         }
         exit(0)
     }
     app.run()
     exit(0)
+}
+
+/// How a background app with no window, as Kosmos is, asks for another app's activation
+/// (`keying`). macOS 14 made activation cooperative: an app is asked to yield before
+/// another activates from it.
+enum ActivationWay: String, CaseIterable {
+    /// `activate(options:)`, what Kosmos's public path calls.
+    case plain
+    /// This app yields to the target, then activates it from itself.
+    case yield
+    /// Activates the target from the front app, as if that app had yielded.
+    case fromFront
+
+    var label: String {
+        switch self {
+        case .plain: "activate"
+        case .yield: "yield, then activate(from: itself)"
+        case .fromFront: "activate(from: the front app)"
+        }
+    }
+
+    /// Runs on the stub's background thread. Returns what the last call returned.
+    func activate(_ pid: pid_t) -> Bool {
+        guard let target = NSRunningApplication(processIdentifier: pid) else { return false }
+        switch self {
+        case .plain:
+            return target.activate(options: [])
+        case .yield:
+            DispatchQueue.main.sync { MainActor.assumeIsolated { NSApp.yieldActivation(to: target) } }
+            return target.activate(from: .current, options: [])
+        case .fromFront:
+            guard let front = NSWorkspace.shared.frontmostApplication else { return false }
+            return target.activate(from: front, options: [])
+        }
+    }
 }
 
 final class KeyStub {
@@ -846,6 +892,12 @@ final class KeyStub {
     /// Activates the app from its own background thread. Returns what `activate` returned.
     func activateItself() -> Bool {
         input.fileHandleForWriting.write(Data("activate\n".utf8))
+        return line() == "true"
+    }
+
+    /// Activates another app from the stub's background thread. Returns what the call returned.
+    func activate(_ pid: pid_t, _ way: ActivationWay) -> Bool {
+        input.fileHandleForWriting.write(Data("activate \(way.rawValue) \(pid)\n".utf8))
         return line() == "true"
     }
 
@@ -901,7 +953,7 @@ final class FocusNotes: @unchecked Sendable {
     }
 }
 
-@MainActor func keying(rounds: Int) {
+@MainActor func keying(rounds: Int, finder: Bool) {
     let rounds = max(rounds, 1)
     _ = NSApplication.shared   // the concealed case's bridged operations need an AppKit client
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
@@ -1022,6 +1074,40 @@ final class FocusNotes: @unchecked Sendable {
               + "B \(isFront ? "is" : "is NOT") the front app 0.3 s later")
     }
 
+    // A background app with no window, as Kosmos is, activating another app: the public path
+    // does that for every target. Then the private front with no key window, which the
+    // private path uses for an empty workspace. B is front before each try.
+    let s = KeyStub("S", [])
+    defer { s.process.terminate() }
+    let finderPid = finder ? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier : nil
+    var targets: [(name: String, pid: pid_t)] = [("A", a.pid)]
+    if let finderPid { targets.append(("Finder", finderPid)) }
+    var fronted: [String: Int] = [:], tries: [String: Int] = [:]
+    func frontPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+    // nil is the private front with no key window.
+    let ways: [ActivationWay?] = ActivationWay.allCases + [nil]
+    for round in 1...rounds {
+        for target in targets {
+            for way in ways {
+                focus(b, b.windows[0], .raiseFirst)
+                let label = way.map { "S \($0.label)" } ?? "kosmos_front_without_windows"
+                guard front(b) else {
+                    print("round \(round), \(target.name) by \(label): setup did not front B, skipped")
+                    continue
+                }
+                let returned = way.map { s.activate(target.pid, $0) } ?? kosmos_front_without_windows(target.pid)
+                wait(0.3)
+                let isFront = frontPid() == target.pid
+                let key = target.pid == a.pid ? a.label(a.appKey()) : focusedWindow(of: target.pid).map(String.init) ?? "none"
+                let row = "\(target.name) by \(label)"
+                tries[row, default: 0] += 1
+                if isFront { fronted[row, default: 0] += 1 }
+                print("round \(round), \(row): returned \(returned), \(target.name) \(isFront ? "is" : "is NOT") front 0.3 s later, "
+                      + "its key window \(key)")
+            }
+        }
+    }
+
     // A key window concealed in a holding Space and revealed again, as a switch away and back
     // does. The focus queue skips a request when the app is front and names the target as
     // focused; it would skip wrongly if the app named it while holding no key window.
@@ -1076,6 +1162,9 @@ final class FocusNotes: @unchecked Sendable {
         }
     }
     print("  a background accessory app activating itself became front in \(selfActivated) of \(selfTrials)")
+    for row in tries.keys.sorted() {
+        print("  \(row): front in \(fronted[row] ?? 0) of \(tries[row] ?? 0)")
+    }
     print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
           + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
     if !raiseTimes.isEmpty {
