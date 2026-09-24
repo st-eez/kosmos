@@ -145,8 +145,9 @@ enum FocusPath: Sendable {
 }
 
 /// A private request's KeyRequest, shared by the focus queue and the app's worker under one
-/// lock. A record is posted to the main actor inside the lock, so the main queue runs it
-/// before anything the other side does next.
+/// lock. The worker's record is posted to the main actor inside the lock, so it precedes
+/// anything the queue does after its own decision under the same lock. The queue posts its
+/// record itself, after its decision and before its key record.
 final class SharedKeyRequest: Sendable {
     let appWasFront: Bool
     private let state: Mutex<KeyRequest<ContinuousClock.Instant>>

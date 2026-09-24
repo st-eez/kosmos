@@ -192,10 +192,10 @@ final class Controller {
         case .backgroundFocus(let id):
             // An app that is not front changed its own focused window, as after AXRaise in
             // it: no key window report, and never the last one seen. It can still be
-            // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe).
-            let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
-            guard !sessionLocked, reports.consumeEcho(reported, receivedAt: report.received) else { return }
-            misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: true)
+            // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe). It leaves the
+            // kill switch's count alone: a raise's report says nothing about the key record.
+            guard !sessionLocked else { return }
+            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             key = reported
