@@ -639,7 +639,7 @@ final class Controller {
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
                     switch to \(self.session.focusedWorkspace, privacy: .public): \(show.count) shown, \(hide.count) hidden \
-                    (\(strip.count) stripped), \
+                    (\(timing.stripped) stripped), \
                     before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms \
                     (queued \(Self.ms(timing.queued), privacy: .public), sent \(Self.ms(timing.sent), privacy: .public), \
                     confirmed \(Self.ms(timing.confirmed), privacy: .public) \(timing.barrier.map { $0 ? "by barrier" : "by read" } ?? "without reads", privacy: .public), \

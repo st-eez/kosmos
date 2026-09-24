@@ -21,6 +21,8 @@ final class Hiding {
         /// The confirmation needed the barrier because direct reads did not show the batch
         /// done in time; nil when the batch read nothing.
         var barrier: Bool?
+        /// The windows the batch stripped of their ordinary Space as it concealed them.
+        var stripped = 0
     }
 
     enum Outcome: Sendable {
@@ -63,13 +65,14 @@ final class Hiding {
         let submitted = ContinuousClock.now
         bridge.async {
             let started = ContinuousClock.now
-            let (confirmed, sent, barrier) = store.apply(show: show, on: displays, hide: hide, stripping: stripping)
+            let (confirmed, sent, barrier, stripped) = store.apply(show: show, on: displays, hide: hide, stripping: stripping)
             let applied = ContinuousClock.now
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
             let finished = ContinuousClock.now
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
-                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier)
+                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier,
+                                stripped: stripped)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     timing.returned = .now - finished
@@ -165,12 +168,13 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// Whether the batch was confirmed, when it had sent its operations (nil if it stopped
-    /// before), and whether its confirmation needed the barrier (nil if it read nothing).
+    /// before), whether its confirmation needed the barrier (nil if it read nothing), and
+    /// how many windows it stripped.
     func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32],
-               stripping: Set<UInt32>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?) {
-        guard let (batch, sent) = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil) }
+               stripping: Set<UInt32>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
+        guard let (batch, sent) = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
         let touched = batch.touched
-        guard let any = touched.first else { return (true, sent, nil) }
+        guard let any = touched.first else { return (true, sent, nil, batch.strip.count) }
         /// Whether the touched Spaces show the batch done. A failed read leaves its Space out,
         /// which proves nothing.
         func done() -> Bool {
@@ -193,10 +197,10 @@ private final class HidingStore: @unchecked Sendable {
             confirmed = done()
         }
         if !confirmed {
-            guard kosmos_barrier(any), done() else { return (false, sent, true) }
+            guard kosmos_barrier(any), done() else { return (false, sent, true, batch.strip.count) }
         }
         ledger.commit(batch, into: space)
-        return (true, sent, !confirmed)
+        return (true, sent, !confirmed, batch.strip.count)
     }
 
     /// How long a batch reads the Spaces directly before it sends the barrier.
