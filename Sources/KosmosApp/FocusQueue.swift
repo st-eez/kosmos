@@ -17,16 +17,16 @@ final class FocusQueue: Sendable {
         current.add(1, ordering: .relaxed).newValue
     }
 
-    /// Uses the private path while the kill switch allows it, and the public path when it is
-    /// off or a SkyLight call fails. `worker` belongs to the window's app: it raises the window
+    /// Uses the private path when `privately`, as the kill switch said on the main actor, and
+    /// the public path otherwise or when a SkyLight call fails. `worker` belongs to the window's app: it raises the window
     /// before the private path keys it, and runs the public path. `dropped` runs on the main
     /// actor when the request is not performed, so the caller can forget the echo it expected.
-    func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, generation: UInt64,
+    func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, generation: UInt64,
                  dropped: @escaping @MainActor () -> Void) {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent() else { return Self.onMain(dropped) }
-            if killSwitch.isOn {
+            if privately {
                 if case .window(let id) = key, let worker {
                     Self.raise(id, on: worker, isCurrent)
                     guard isCurrent() else { return Self.onMain(dropped) }

@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import os
 
 private let switchLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
@@ -11,7 +10,8 @@ private let switchLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 /// stores into memory with no system call, about 1.4 ns in all.
 ///
 /// A kill during the call also leaves the first byte set and turns the path off; a reload
-/// turns it back on.
+/// turns it back on. The second byte is read and written on the main actor only, and the
+/// focus queue is told with each request which path to take.
 final class FocusKillSwitch: @unchecked Sendable {
     enum Reason: UInt8 {
         case crashed = 1
@@ -20,7 +20,6 @@ final class FocusKillSwitch: @unchecked Sendable {
 
     /// The byte set during a private call, and the reason the path is off (0 while on).
     private let bytes: UnsafeMutablePointer<UInt8>
-    private let on: Atomic<Bool>
 
     init(url: URL) {
         let size = 2
@@ -41,19 +40,17 @@ final class FocusKillSwitch: @unchecked Sendable {
             bytes[1] = Reason.crashed.rawValue
             switchLog.fault("the last run stopped inside a private focus call; focus uses the public path")
         }
-        let reason = Reason(rawValue: bytes[1])
-        if let reason {
+        if let reason = Reason(rawValue: bytes[1]) {
             switchLog.notice("private focus is off (\(String(describing: reason), privacy: .public)) until a config reload")
         } else {
             bytes[1] = 0
         }
-        on = Atomic(reason == nil)
     }
 
-    /// Read on the focus queue.
-    var isOn: Bool { on.load(ordering: .relaxed) }
+    /// Main actor only, like `offReason`, `turnOff` and `turnOn`.
+    var isOn: Bool { bytes[1] == 0 }
 
-    /// Why the path is off, or nil. Main actor only, like `turnOff` and `turnOn`.
+    /// Why the path is off, or nil.
     var offReason: Reason? { Reason(rawValue: bytes[1]) }
 
     /// Runs a private call with the first byte set. Focus queue only.
@@ -65,11 +62,9 @@ final class FocusKillSwitch: @unchecked Sendable {
 
     func turnOff(_ reason: Reason) {
         bytes[1] = reason.rawValue
-        on.store(false, ordering: .relaxed)
     }
 
     func turnOn() {
         bytes[1] = 0
-        on.store(true, ordering: .relaxed)
     }
 }

@@ -337,7 +337,8 @@ final class Controller {
             controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
             onFocusProblem?(focusProblem)
         }
-        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), generation: focusQueue.newGeneration()) { [weak self] in
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
+                           generation: focusQueue.newGeneration()) { [weak self] in
             self?.reports.requestDropped(target, at: stamp)
             self?.misses.requestDropped(at: stamp)
         }
