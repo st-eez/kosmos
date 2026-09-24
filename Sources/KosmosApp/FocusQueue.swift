@@ -1,5 +1,5 @@
 import AppKit
-import CSkyLight
+import CKosmos
 import KosmosCore
 import Synchronization
 

@@ -1,5 +1,7 @@
-// Private SkyLight and HIServices declarations. Each signature was checked by a probe on
-// macOS 27 (26A428) before use; none needs SIP disabled.
+// The C and Objective-C layer under Kosmos: private SkyLight and HIServices declarations,
+// the holding Space and focus operations (KosmosBridge.h) and the SketchyBar transport
+// (KosmosBar.h). Each private signature was checked by a probe on macOS 27 (26A428) before
+// use; none needs SIP disabled.
 #pragma once
 
 #include <ApplicationServices/ApplicationServices.h>
@@ -36,3 +38,4 @@ extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);
 extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
 
 #include "KosmosBridge.h"
+#include "KosmosBar.h"

@@ -1,5 +1,5 @@
 import AppKit
-import CSkyLight
+import CKosmos
 import KosmosCore
 
 /// What an app's worker tells the main actor. Each report is stamped on receipt, so the

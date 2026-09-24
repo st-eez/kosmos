@@ -1,5 +1,5 @@
 import CoreGraphics
-import CSkyLight
+import CKosmos
 import Foundation
 import KosmosSkyLight
 import os

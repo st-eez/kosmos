@@ -1,4 +1,4 @@
-import CSkyLight
+import CKosmos
 import CoreGraphics
 import Foundation
 import os

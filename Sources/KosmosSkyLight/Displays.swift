@@ -1,5 +1,5 @@
 import CoreGraphics
-import CSkyLight
+import CKosmos
 
 /// The managed displays and their Spaces, from SLSCopyManagedDisplaySpaces.
 public struct Displays {

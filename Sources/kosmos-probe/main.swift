@@ -3,11 +3,13 @@
 //
 //   kosmos-probe barrier [cycles]   Does one bridged read return only after earlier
 //                                   conceal and reveal operations have landed?
+//   kosmos-probe bar                Checks SketchyBar's wire format with a read-only query,
+//                                   and times sends of an event no item subscribes to.
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
 import AppKit
-import CSkyLight
+import CKosmos
 import KosmosRecovery
 import KosmosSkyLight
 
@@ -18,8 +20,9 @@ switch arguments.first {
 case "panel": showPanel()
 case "barrier": barrier(cycles: arguments.dropFirst().first.flatMap(Int.init) ?? 50)
 case "survive-kill": surviveKill()
+case "bar": bar()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar")
     exit(2)
 }
 
@@ -140,4 +143,29 @@ func surviveKill() -> Never {
     withExtendedLifetime(lock) {}
     kill(getpid(), SIGKILL)
     exit(1)
+}
+
+func bar() {
+    func payload(_ arguments: [String]) -> [CChar] { arguments.flatMap { $0.utf8CString } + [0] }
+    let query = payload(["--query", "bar"])
+    var reply = [CChar](repeating: 0, count: 8192)
+    var start = ContinuousClock.now
+    let count = query.withUnsafeBufferPointer {
+        kosmos_bar_query("git.felix.sketchybar", $0.baseAddress, UInt32($0.count), &reply, UInt32(reply.count), 500)
+    }
+    print(String(format: "--query bar: %d bytes in %.3f ms", count, elapsed(start)))
+    if count > 0 { print(String(decoding: reply.prefix(Int(count)).prefix(160).map { UInt8(bitPattern: $0) }, as: UTF8.self)) }
+
+    let state = #"{"workspace":"1","windows":[]}"#
+    let trigger = payload(["--trigger", "kosmos_probe", "STATE=" + state])
+    var times: [Double] = []
+    for _ in 0..<50 {
+        start = .now
+        let result = trigger.withUnsafeBufferPointer { kosmos_bar_send("git.felix.sketchybar", $0.baseAddress, UInt32($0.count)) }
+        times.append(elapsed(start))
+        if result != KERN_SUCCESS { print("send failed: \(result)"); return }
+        Thread.sleep(forTimeInterval: 0.005)
+    }
+    print(String(format: "trigger send: median %.4f ms, p95 %.4f ms (first includes the lookup: %.3f ms)",
+                 percentile(Array(times.dropFirst()), 0.5), percentile(Array(times.dropFirst()), 0.95), times[0]))
 }

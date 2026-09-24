@@ -21,7 +21,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 #import "KosmosBridge.h"
-#import "CSkyLight.h"
+#import "CKosmos.h"
 #import <Carbon/Carbon.h>
 #import <Foundation/Foundation.h>
 #import <objc/message.h>

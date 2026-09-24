@@ -8,7 +8,7 @@ let package = Package(
         // Private SkyLight declarations, and the holding Space and focus operations. The
         // framework ships with macOS.
         .target(
-            name: "CSkyLight",
+            name: "CKosmos",
             cSettings: [.unsafeFlags(["-fobjc-arc"])],
             linkerSettings: [
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
@@ -20,14 +20,14 @@ let package = Package(
         // The socket protocol, server and client. No AppKit, so the CLI stays fast to launch.
         .target(name: "KosmosIPC"),
         // Swift wrappers for SkyLight queries and events.
-        .target(name: "KosmosSkyLight", dependencies: ["CSkyLight"]),
+        .target(name: "KosmosSkyLight", dependencies: ["CKosmos"]),
         // The recovery record and procedure, shared by the app and the guardian.
-        .target(name: "KosmosRecovery", dependencies: ["CSkyLight", "KosmosSkyLight"]),
-        .executableTarget(name: "KosmosApp", dependencies: ["CSkyLight", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
+        .target(name: "KosmosRecovery", dependencies: ["CKosmos", "KosmosSkyLight"]),
+        .executableTarget(name: "KosmosApp", dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
         .executableTarget(name: "kosmos", dependencies: ["KosmosIPC"]),
         .executableTarget(name: "kosmos-guardian", dependencies: ["KosmosRecovery"]),
         // Measurements of private behaviour that the design depends on (DESIGN.md, section 6).
-        .executableTarget(name: "kosmos-probe", dependencies: ["CSkyLight", "KosmosRecovery", "KosmosSkyLight"]),
+        .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosRecovery", "KosmosSkyLight"]),
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
         .testTarget(name: "KosmosIPCTests", dependencies: ["KosmosIPC"]),
         .testTarget(name: "KosmosRecoveryTests", dependencies: ["KosmosRecovery"]),

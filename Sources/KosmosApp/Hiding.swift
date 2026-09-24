@@ -1,4 +1,4 @@
-import CSkyLight
+import CKosmos
 import Foundation
 import KosmosRecovery
 import KosmosSkyLight
