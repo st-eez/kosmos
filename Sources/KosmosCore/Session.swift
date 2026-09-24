@@ -25,6 +25,9 @@ public struct Session: Sendable {
     public private(set) var visible: String
     private var previous: String?
     private var home: [WindowID: String] = [:]
+    /// Parked windows whose workspace was hidden when they parked, so Kosmos had concealed
+    /// them. Switches skip parked windows, so they stay concealed until they return.
+    private var parkedConcealed: Set<WindowID> = []
     /// The smallest size each window accepted, as frames read back after writes show.
     private(set) var minimums: [WindowID: CGSize] = [:]
     public var display: CGRect
@@ -81,6 +84,7 @@ public struct Session: Sendable {
     public mutating func remove(_ window: WindowID) -> Plan {
         guard let name = home.removeValue(forKey: window) else { return Plan() }
         minimums[window] = nil
+        parkedConcealed.remove(window)
         let wasFocused = name == visible && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan()
@@ -97,7 +101,9 @@ public struct Session: Sendable {
     public mutating func park(_ windows: [WindowID]) -> Plan {
         var changed: Set<String> = []
         for window in windows {
-            if let name = home[window], workspaces[name]!.park(window) { changed.insert(name) }
+            guard let name = home[window], workspaces[name]!.park(window) else { continue }
+            changed.insert(name)
+            if name != visible { parkedConcealed.insert(window) }
         }
         var plan = Plan()
         for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
@@ -107,7 +113,8 @@ public struct Session: Sendable {
     /// Parked windows return to their own workspaces at their saved positions, and Kosmos
     /// follows `follow` there when its workspace is hidden, as it does for Command-Tab
     /// (DESIGN.md, section 5.5). The other returning windows of hidden workspaces are
-    /// concealed again.
+    /// concealed again, and those Kosmos concealed that return to the shown workspace are
+    /// revealed.
     public mutating func unpark(_ windows: [WindowID], follow: WindowID) -> Plan {
         let returning = windows.filter { isParked($0) }
         let changed = Set(returning.map { home[$0]! })
@@ -121,6 +128,8 @@ public struct Session: Sendable {
         }
         for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
         plan.hide += returning.filter { home[$0] != visible && !plan.hide.contains($0) }
+        plan.show += returning.filter { home[$0] == visible && parkedConcealed.contains($0) && !plan.show.contains($0) }
+        parkedConcealed.subtract(returning)
         return plan
     }
 

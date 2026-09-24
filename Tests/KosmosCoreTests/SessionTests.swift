@@ -314,3 +314,17 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.show == [1])
     #expect(Set(plan.hide) == [2, 3])
 }
+
+@Test func aWindowConcealedWhenItParkedIsRevealedOnTheShownWorkspace() {
+    // An app with a window on each workspace hides, Kosmos shows the hidden workspace, and
+    // the app comes back keyed on the window there.
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, to: "2")   // concealed
+    _ = s.park([1, 2])
+    _ = s.perform(.workspace(.named("2")))
+    let plan = s.unpark([1, 2], follow: 2)
+    #expect(s.visible == "2")
+    #expect(plan.show == [2])
+    #expect(plan.hide == [1])
+}
