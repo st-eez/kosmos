@@ -67,13 +67,12 @@ extension BarSnapshot {
 }
 
 extension Session {
-    /// The bar's view of this session, whose workspaces are all on one display for now.
+    /// The bar's view of this session, on one display for now.
     /// - Parameters:
-    ///   - displays: the connected displays.
-    ///   - display: the `id` of the display the session tiles.
+    ///   - display: the display the session tiles.
     ///   - app: the name of the app that owns a window.
     ///   - frame: where a window is, for windows the layout does not place (floating).
-    public func barSnapshot(profile: String?, displays: [BarSnapshot.Display], display: Int,
+    public func barSnapshot(profile: String?, display: BarSnapshot.Display,
                             app: (WindowID) -> String?, frame: (WindowID) -> CGRect?) -> BarSnapshot {
         let workspaces = names.map { name -> BarSnapshot.Workspace in
             let tiled = frames(of: name)
@@ -81,9 +80,9 @@ extension Session {
                 guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
                 return BarSnapshot.Window(id: id, app: app(id) ?? "?", x: Int(origin.x.rounded()), y: Int(origin.y.rounded()))
             }.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
-            return BarSnapshot.Workspace(name: name, display: display, shown: name == visible, focused: name == visible, windows: windows)
+            return BarSnapshot.Workspace(name: name, display: display.id, shown: name == visible, focused: name == visible, windows: windows)
         }
         let focus = focused.map { BarSnapshot.Focus(window: $0, app: app($0) ?? "?", workspace: visible) }
-        return BarSnapshot(profile: profile, displays: displays, workspaces: workspaces, focused: focus)
+        return BarSnapshot(profile: profile, displays: [display], workspaces: workspaces, focused: focus)
     }
 }

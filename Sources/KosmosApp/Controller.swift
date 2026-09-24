@@ -36,9 +36,9 @@ final class Controller {
     var mouseFollowsFocus = false
     /// The active display profile, for the bar.
     var profile: String?
-    /// The connected displays and the one the session tiles, as the bar numbers them. Read at
-    /// launch, as the session's display is.
-    private let barDisplays: (all: [BarSnapshot.Display], tiled: Int)
+    /// The display the session tiles, as the bar numbers it. Read at launch, as the session's
+    /// display is.
+    private let barDisplay: BarSnapshot.Display
     var publish: (@MainActor (Data) -> Void)?
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
@@ -46,7 +46,7 @@ final class Controller {
         self.hiding = hiding
         self.managing = managing
         session = Session(names: names, display: Controller.displayRect(), gaps: gaps)
-        barDisplays = Controller.numberedDisplays()
+        barDisplay = Controller.barDisplay()
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
     }
@@ -100,15 +100,12 @@ final class Controller {
         return CGRect(x: visible.minX, y: primary.frame.height - visible.maxY, width: visible.width, height: visible.height)
     }
 
-    /// The connected displays by SketchyBar's numbers, and the number of the main display, the
-    /// one `displayRect()` measures.
-    static func numberedDisplays() -> (all: [BarSnapshot.Display], tiled: Int) {
-        let active = DisplayIdentity.active().count, managed = DisplayIdentity.managed()
-        func number(_ screen: NSScreen) -> Int {
-            BarSnapshot.displayNumber(uuid: DisplayIdentity.uuid(of: screen.displayID), active: active, managed: managed)
-        }
-        let all = NSScreen.screens.map { BarSnapshot.Display(id: number($0), name: $0.localizedName) }
-        return (all.sorted { $0.id < $1.id }, NSScreen.main.map(number) ?? 1)
+    /// The main display, the one `displayRect()` measures, by SketchyBar's number for it.
+    static func barDisplay() -> BarSnapshot.Display {
+        guard let main = NSScreen.main else { return BarSnapshot.Display(id: 1, name: "Display") }
+        let number = BarSnapshot.displayNumber(uuid: DisplayIdentity.uuid(of: main.displayID),
+                                               active: DisplayIdentity.active().count, managed: DisplayIdentity.managed())
+        return BarSnapshot.Display(id: number, name: main.localizedName)
     }
 
     // MARK: Events
@@ -302,7 +299,7 @@ final class Controller {
     /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.
     private func stateJSON() -> Data {
         let snapshot = session.barSnapshot(
-            profile: profile, displays: barDisplays.all, display: barDisplays.tiled,
+            profile: profile, display: barDisplay,
             app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
             frame: { [inventory] id in inventory.windows[id]?.frame })
         let encoder = JSONEncoder()
