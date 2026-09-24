@@ -355,8 +355,8 @@ off the main thread).
   alone leaves the key window unchanged inside the app that is already frontmost, for
   stacked and side by side windows alike, while AXRaise and then the record keyed the right
   window in every case (`kosmos-probe raise` on the hover branch). A hung app holds only
-  its own worker. AXRaise took 0.65 ms at the median and 3.70 ms at most over 120 raises
-  (`kosmos-probe keying`, September 24, 2026).
+  its own worker. AXRaise took 0.65 and 1.02 ms at the median and 3.70 and 2.13 ms at
+  most, over 120 raises in each of two runs (`kosmos-probe keying`, September 24, 2026).
 - Open item: the key record alone keys a background app's window but leaves it where it
   was in the window order. It was on top in 0 of 20 trials, behind the windows of the app
   that was front and of its own app. The record and then AXRaise keyed it and put it on
@@ -369,26 +369,34 @@ off the main thread).
   a newer command, and Kosmos followed it there (tla/README.md, change 12). A raise that
   outlasts the 5 s counts as made, so its echo is still recognized. Only a raise the app
   refuses or fails at once is dropped.
-- While the path is off, and for a request whose SkyLight call fails, focus takes the public
-  path on the app's worker: make the window the app's main window, raise it, then activate
-  the app. For an empty workspace it activates Kosmos, which holds no workspace window. No
-  public call fronts Finder with no key window, and activating Finder can key a hidden
-  Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
-  off the empty workspace on every switch. Concealing Finder's windows fully instead would
-  not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
-  A background accessory app that activated itself became the front process in 0 of 10
-  trials, as activate returned false (`kosmos-probe keying`, September 24, 2026), so on
-  macOS 27 this fallback leaves the previous app front; Kosmos logs the refusal. Open item:
-  another way to key nothing, such as fronting Finder with its hidden windows stripped of
-  their ordinary Space, or a small Kosmos window. The app
+- While the path is off, and for a request whose SkyLight call fails, focus takes the
+  public path on the app's worker: make the window the app's main window, raise it, then
+  activate the app. A background accessory app with no window, as Kosmos is, made another
+  app the front process in 10 of 10 trials with each of `activate`, yielding and then
+  `activate(from:)` itself, and `activate(from:)` the front app, and Finder in 10 of 10
+  with each (`kosmos-probe keying`, September 24, 2026). For an empty workspace it
+  activates Kosmos, which holds no workspace window, but an accessory app that activated
+  itself became the front process in 0 of 10 trials, as activate returned false, so on
+  macOS 27 this fallback leaves the previous app front; Kosmos logs the refusal. The app
   picks its key window, so the spec's assumption that the requested window becomes key no
   longer holds, and a wrong window is adopted like the user's choice. A public request's
   expectation ends at the first report from its app that is no echo, so a click on the
   requested window afterwards is the user's. Private requests keep theirs until matched
   (tla/README.md, change 6). The spec models exact keying only, so its TLC passes do not
   cover the public path. If the app keys the requested window late, after the user chose
-  another of its windows, that late report reads as the user's and pulls focus back, change
-  6's bounce in the fallback alone.
+  another of its windows, that late report reads as the user's and pulls focus back,
+  change 6's bounce in the fallback alone.
+- Open item: an empty workspace on either path. `kosmos_front_without_windows` fronts the
+  app with no window brought forward, but the app still keys its own last key window: it
+  did in 10 of 10 trials with a stub whose window was on screen. Finder keyed nothing only
+  because it had no window open. Activating Finder can key a hidden Finder window, and
+  one that keeps its ordinary Space for Command-Tab is the likeliest, and Kosmos would
+  follow it off the empty workspace on every switch. Concealing Finder's windows fully
+  would not reach one concealed earlier, as the conceal ledger leaves a concealed window
+  as it was. `kosmos-probe keying` now measures whether an app whose every window is
+  concealed keys one when fronted either way, with the windows kept in their ordinary Space
+  and without. That picks between stripping Finder's concealed windows of their ordinary
+  Space before an empty workspace fronts it, and a small Kosmos window keyed instead.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
