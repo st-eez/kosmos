@@ -175,9 +175,10 @@ private final class HidingStore: @unchecked Sendable {
         }
         let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
         let shown = batch.removals.allSatisfy { space, windows in windows.allSatisfy { !members[space]!.contains($0) } }
-        // An add that failed, followed by its removal, would leave the window on the active
-        // Space, which can be a native fullscreen one.
-        let placed = batch.adds.allSatisfy { displays?.isInOrdinarySpace($0) == true }
+        // An add that failed, followed by its removal, leaves the window on the active Space,
+        // which can be a native fullscreen one, whatever its Space list names. A window that
+        // closed needs no Space.
+        let placed = batch.adds.allSatisfy { displays?.isInOrdinarySpace($0) == true || SkyLight.rows([$0]).isEmpty }
         guard hidden && shown && placed else { return false }
         ledger.commit(batch, into: space)
         return true

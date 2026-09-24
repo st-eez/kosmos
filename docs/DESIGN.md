@@ -141,8 +141,11 @@ off the main thread).
   only managed Spaces, and the holding Space is not one, so the removal is still needed.
   The add goes first because a window removed from its only Space lands on the active
   Space, which can be a native fullscreen one (`kosmos-probe reveal`).
-  The barrier then confirms that each revealed window left the holding Space and each
-  added one has an ordinary Space.
+- The barrier then confirms that each revealed window left the holding Space, and that
+  each added window still open is in an ordinary Space. An add that failed, followed by
+  its removal, leaves the window on the active Space. The check compares the window's
+  Spaces with the displays' ordinary Spaces, so it catches a window left on a fullscreen
+  Space whether or not the window's Space list names fullscreen Spaces.
 - A window with no ordinary Space goes to the main display's current Space, else to the
   Space it had before its first hide if that still exists, else to the main display's
   first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
@@ -152,7 +155,7 @@ off the main thread).
 - Recovery adds each window without an ordinary Space to the current Space of the display
   under it, or to the Space a reveal would choose, then empties each recorded Space,
   destroys the Spaces and clears the record. It keeps the record while a window it added
-  is on no ordinary Space. Every step can safely run twice.
+  and still open is in no ordinary Space. Every step can safely run twice.
 
 ### 5.4 Focus
 
