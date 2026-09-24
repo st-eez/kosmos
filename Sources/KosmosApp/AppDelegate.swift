@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hiding: Hiding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
+        // and quits Kosmos with exit 0 once startup is done. Killed by the signal, Kosmos
+        // would count as crashed, and launch at login would restart it.
+        handleTerminationSignals()
         do {
             // The lock keeps a second Kosmos out and serializes recovery with the guardian,
             // which holds it for up to about a second after a crash.
@@ -52,7 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.error("\(error.localizedDescription, privacy: .public)")
             exit(1)
         }
-        handleTerminationSignals()
         guardian.start()
         startServer()
 
