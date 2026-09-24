@@ -120,12 +120,14 @@ off the main thread).
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
-  Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. A window a
-  sweep finds or loses that no event reported is logged as "missed by events", and so is a
-  known window whose ordered in state or candidate status (level 0, no parent) a sweep
-  corrects, so a gap in macOS's notifications shows in the log. The 3 s sweep this
-  replaced found and lost none on 2026-09-24, over a day of use and live tests. It counted
-  none of its corrections, which it logged only at debug or info level.
+  Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. Sweeps
+  asked for while one runs start one more when it ends, so a burst of Space events ends
+  with a sweep that started after the last of them. A window a sweep finds or loses that
+  no event reported is logged as "missed by events", and so is a known window whose
+  ordered in state or candidate status (level 0, no parent) a sweep corrects, so a gap in
+  macOS's notifications shows in the log. The 3 s sweep this replaced found and lost none
+  on 2026-09-24, over a day of use and live tests. It counted none of its corrections,
+  which it logged only at debug or info level.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift

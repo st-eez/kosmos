@@ -85,6 +85,9 @@ final class Inventory {
     /// Windows that events changed while a sweep was running. The sweep's snapshot is older
     /// than those events, so it skips them. Nil when no sweep is running.
     private var touchedDuringSweep: Set<UInt32>?
+    /// A sweep was asked for while one ran. The running sweep's snapshot may be older than
+    /// what asked, such as the last Space event of a burst, so one more runs after it.
+    private var sweepAgain = false
     private var swept = false
     private(set) var missedByEvents = 0
 
@@ -398,7 +401,8 @@ final class Inventory {
     /// windows first seen while locked, which an unlock sweep admits even when ordered out.
     /// The queries can block during a Space transition, so they run off the main thread.
     func sweep() {
-        guard !sessionLocked, touchedDuringSweep == nil else { return }
+        guard !sessionLocked else { return }
+        guard touchedDuringSweep == nil else { sweepAgain = true; return }
         touchedDuringSweep = []
         let tracked = Array(windows.keys) + arrivedWhileLocked.keys
         DispatchQueue.global(qos: .utility).async {
@@ -417,6 +421,7 @@ final class Inventory {
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
+        defer { if sweepAgain { sweepAgain = false; sweep() } }
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
@@ -444,8 +449,9 @@ final class Inventory {
         }
         // Accessibility lists no window on a Space that is not shown, such as another
         // fullscreen Space, so only the sweep after a Space change asks again, and only
-        // for windows ordered in. The others wait for a focus report or their unhide.
-        if spacesChanged {
+        // for windows ordered in. The others wait for a focus report or their unhide. When
+        // another sweep follows this one, that sweep asks instead, later in the Space change.
+        if spacesChanged, !sweepAgain {
             spacesChanged = false
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
