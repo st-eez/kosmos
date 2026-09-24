@@ -1,0 +1,262 @@
+# Kosmos config, translated from Steve's four AeroSpace profiles (home, office, single,
+# laptop in ~/Projects/Personal/dotfiles/aerospace/.config/aerospace/). One file replaces
+# the four profile files, set-profile.sh, apply-profile.sh and migrate-to-laptop.sh.
+#
+# Kosmos checks the whole file before it applies any of it. `kosmos check` prints each
+# problem with its line, column and key. Unknown keys and wrong types are errors.
+#
+# Commands in bindings use the CLI grammar, as a string or as an array of arguments. The
+# config keeps them as written, and Kosmos's command parser checks them when the file
+# loads. The command names below follow the research note on configuration and change
+# with the command grammar.
+
+config-version = 1
+start-at-login = true
+# Move the pointer into the focused window after a keyboard focus change. AutoRaise stays
+# the hover engine; Kosmos has no focus follows mouse.
+mouse-follows-focus = true
+
+# Workspace names, in order. A profile may replace the list.
+workspaces = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+
+# Normalization is always on in Kosmos: no container holds a single child, and nested
+# containers alternate orientation. AeroSpace needed two keys for that.
+
+# Names for displays. A matcher is one of: name (text the display's name contains,
+# ignoring case), serial (the EDID alphanumeric serial number) or built-in = true.
+[monitors]
+builtin = { built-in = true }
+# The twin ASUS VG279QE5A panels at home report the same name and differ only by serial.
+asus-left = { serial = 'T9LMTF156643' }
+asus-main = { serial = 'T9LMTF156633' }
+# Either VG279QE5A, when only one is connected.
+asus = { name = 'VG279QE5A' }
+ultrawide = { name = 'LG ULTRAWIDE' }
+office-asus = { name = 'ASUS VA24E' }
+
+# Where each workspace goes, as one monitor or a list in order of preference. This is the
+# home layout; other profiles replace it. With the lid closed at home, 8, 9 and 0 fall
+# back to the main panel.
+[workspace-monitor]
+1 = 'asus-main'
+2 = 'asus-main'
+3 = 'asus-main'
+4 = 'asus-main'
+5 = 'asus-left'
+6 = 'asus-left'
+7 = 'asus-left'
+8 = ['builtin', 'asus-main']
+9 = ['builtin', 'asus-main']
+0 = ['builtin', 'asus-main']
+
+[gaps]
+inner = 10
+# External displays: 25 points of SketchyBar and a 10 point gap.
+outer = { top = 35, left = 10, bottom = 10, right = 10 }
+# macOS already keeps windows below the built-in display's notch band, so 5 more points
+# put windows 10 points under the bar, as on the other sides.
+outer-per-monitor = { builtin = { top = 5 } }
+
+# Bindings of the main mode, the mode Kosmos starts in. Another mode is another table,
+# such as [mode.resize.binding], entered with a command. Kosmos pushes every change to
+# SketchyBar itself, so no binding runs `sketchybar --trigger`.
+[mode.main.binding]
+# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys).
+alt-left = 'focus left --across-monitors'
+alt-right = 'focus right --across-monitors'
+alt-up = 'focus up --across-monitors'
+alt-down = 'focus down --across-monitors'
+alt-h = 'focus left --across-monitors'
+alt-l = 'focus right --across-monitors'
+alt-k = 'focus up --across-monitors'
+alt-j = 'focus down --across-monitors'
+
+# Move the window within its monitor, and onto the next monitor at the edge. This replaces
+# the bash chain of move, move-node-to-monitor and move-mouse.
+alt-shift-left = 'move left --or-monitor --follow'
+alt-shift-right = 'move right --or-monitor --follow'
+alt-shift-up = 'move up --or-monitor --follow'
+alt-shift-down = 'move down --or-monitor --follow'
+alt-shift-h = 'move left --or-monitor --follow'
+alt-shift-l = 'move right --or-monitor --follow'
+alt-shift-k = 'move up --or-monitor --follow'
+alt-shift-j = 'move down --or-monitor --follow'
+
+# Switch workspace. On the laptop profile, 6 to 0 do not exist and these keys do nothing.
+alt-1 = 'workspace 1'
+alt-2 = 'workspace 2'
+alt-3 = 'workspace 3'
+alt-4 = 'workspace 4'
+alt-5 = 'workspace 5'
+alt-6 = 'workspace 6'
+alt-7 = 'workspace 7'
+alt-8 = 'workspace 8'
+alt-9 = 'workspace 9'
+alt-0 = 'workspace 0'
+
+# Move the window to a workspace and follow it.
+alt-shift-1 = 'move-to-workspace 1 --follow'
+alt-shift-2 = 'move-to-workspace 2 --follow'
+alt-shift-3 = 'move-to-workspace 3 --follow'
+alt-shift-4 = 'move-to-workspace 4 --follow'
+alt-shift-5 = 'move-to-workspace 5 --follow'
+alt-shift-6 = 'move-to-workspace 6 --follow'
+alt-shift-7 = 'move-to-workspace 7 --follow'
+alt-shift-8 = 'move-to-workspace 8 --follow'
+alt-shift-9 = 'move-to-workspace 9 --follow'
+alt-shift-0 = 'move-to-workspace 0 --follow'
+
+alt-tab = 'workspace next --wrap'
+alt-shift-tab = 'workspace prev --wrap'
+ctrl-alt-tab = 'workspace back-and-forth'
+
+alt-t = 'layout floating tiling'
+alt-f = 'fullscreen --no-outer-gaps'
+alt-equal = 'resize smart +100'
+alt-minus = 'resize smart -100'
+alt-shift-equal = 'resize smart +50'
+alt-shift-minus = 'resize smart -50'
+
+ctrl-alt-left = 'join-with left'
+ctrl-alt-right = 'join-with right'
+ctrl-alt-up = 'join-with up'
+ctrl-alt-down = 'join-with down'
+
+# Move the window to the next workspace on its monitor. AeroSpace needed a pipe from
+# list-workspaces for this.
+ctrl-alt-shift-left = 'move-to-workspace prev --on-monitor focused --wrap --follow'
+ctrl-alt-shift-right = 'move-to-workspace next --on-monitor focused --wrap --follow'
+ctrl-alt-shift-up = 'move-to-monitor up --wrap --follow'
+ctrl-alt-shift-down = 'move-to-monitor down --wrap --follow'
+ctrl-alt-shift-1 = 'move-to-monitor 1 --follow'
+ctrl-alt-shift-2 = 'move-to-monitor 2 --follow'
+ctrl-alt-shift-3 = 'move-to-monitor 3 --follow'
+
+ctrl-alt-j = 'layout tiles horizontal vertical'
+ctrl-alt-r = 'flatten-workspace-tree'
+ctrl-alt-c = 'reload'
+# Profiles follow the connected displays. These force one until the displays change.
+ctrl-alt-h = 'profile home'
+ctrl-alt-w = 'profile office'
+ctrl-alt-l = 'profile laptop'
+ctrl-alt-s = 'profile single'
+# AeroSpace's ctrl-alt-a swapped focus follows mouse and AutoRaise. Kosmos has no focus
+# follows mouse, so AutoRaise stays on and the binding is gone.
+
+# Window rules. The first rule that matches a new window applies, and Kosmos warns about a
+# rule an earlier one hides. app-id matches the bundle identifier; app-name matches names
+# containing the text, ignoring case.
+[[rule]]
+app-name = 'Finder'
+float = true
+
+[[rule]]
+app-name = 'IINA'
+float = true
+
+[[rule]]
+app-name = 'Pixea'
+float = true
+
+[[rule]]
+app-name = 'Numi'
+float = true
+
+[[rule]]
+app-name = 'TLauncher'
+float = true
+
+# Daily apps on fixed workspaces. A rule applies to new windows; a window moved by hand
+# stays where it is.
+[[rule]]
+app-id = 'com.mitchellh.ghostty'
+workspace = '1'
+
+[[rule]]
+app-id = 'com.openai.codex'
+workspace = '2'
+
+[[rule]]
+app-id = 'net.imput.helium'
+workspace = '3'
+
+[[rule]]
+app-id = 'com.microsoft.teams2'
+workspace = '5'
+
+[[rule]]
+app-id = 'com.spotify.client'
+workspace = '6'
+
+# The YouTube Safari web app. Its bundle identifier is a different UUID on each install.
+[[rule]]
+app-name = 'YouTube'
+workspace = '7'
+
+# Every Chrome window, including browser test launches, floats on workspace 4, away from
+# the current work.
+[[rule]]
+app-id = 'com.google.Chrome'
+float = true
+workspace = '4'
+
+[[rule]]
+app-id = 'com.google.chrome.for.testing'
+float = true
+workspace = '4'
+
+[[rule]]
+app-id = 'net.whatsapp.WhatsApp'
+float = true
+
+[[rule]]
+app-id = 'com.apple.MobileSMS'
+float = true
+
+[[rule]]
+app-id = 'com.bitwarden.desktop'
+float = true
+
+[[rule]]
+app-name = 'App Store'
+float = true
+
+[[rule]]
+app-name = 'FaceTime'
+float = true
+
+# Display profiles. The first profile whose `when` monitors are all connected applies; one
+# without `when` applies to any displays. A profile changes only the keys it sets, and its
+# rules come before the ones above.
+
+# Both ASUS panels, with or without the lid open. The base config above is this layout.
+[[profile]]
+name = 'home'
+when = ['asus-left', 'asus-main']
+
+[[profile]]
+name = 'single'
+when = ['asus']
+workspace-monitor = { 1 = 'asus', 2 = 'asus', 3 = 'asus', 4 = 'asus', 5 = 'asus', 6 = 'asus', 7 = 'asus', 8 = ['builtin', 'asus'], 9 = ['builtin', 'asus'], 0 = ['builtin', 'asus'] }
+
+[[profile]]
+name = 'office'
+when = ['ultrawide']
+workspace-monitor = { 1 = 'ultrawide', 2 = 'ultrawide', 3 = 'ultrawide', 4 = 'ultrawide', 5 = 'office-asus', 6 = 'office-asus', 7 = 'office-asus', 8 = 'builtin', 9 = 'builtin', 0 = 'builtin' }
+
+# The laptop alone, and any displays the profiles above do not know.
+[[profile]]
+name = 'laptop'
+workspaces = ['1', '2', '3', '4', '5']
+workspace-monitor = { 1 = 'builtin', 2 = 'builtin', 3 = 'builtin', 4 = 'builtin', 5 = 'builtin' }
+# Windows on the workspaces this profile leaves out move here, keeping their spacing.
+merge-workspaces = { 6 = '1', 7 = '2', 8 = '3', 9 = '4', 0 = '5' }
+
+# Spotify and YouTube share workspace 4 with Chrome on the laptop.
+[[profile.rule]]
+app-id = 'com.spotify.client'
+workspace = '4'
+
+[[profile.rule]]
+app-name = 'YouTube'
+workspace = '4'
