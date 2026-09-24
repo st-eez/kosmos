@@ -14,6 +14,8 @@ private let lockLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "lo
 final class LockWatch: NSObject {
     private var state = LockState()
     private var check: Timer?
+    /// The resync after a wake, held until the wake's other notifications are in.
+    private var wakeResync: DispatchWorkItem?
 
     /// Called with true when the session locks, and with false when it unlocks or the Mac or
     /// its displays wake while it is unlocked.
@@ -59,17 +61,29 @@ final class LockWatch: NSObject {
             lockLog.notice("session unlocked (\(String(describing: signal), privacy: .public))")
             check?.invalidate()
             check = nil
+            wakeResync?.cancel()   // the unlock resyncs
+            wakeResync = nil
             onChange?(false)
         case nil:
             break
         }
     }
 
-    /// A wake while locked waits for the unlock.
+    /// A wake can post both didWake and screensDidWake. Each one restarts a 0.5 s wait, so a
+    /// burst gets one resync. The wait is a guess; the log gives the gap between the two. A
+    /// wake while locked waits for the unlock.
     private func woke(_ name: Notification.Name) {
-        guard !state.isLocked else { return }
         lockLog.notice("\(name.rawValue, privacy: .public)")
-        onChange?(false)
+        wakeResync?.cancel()
+        let resync = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.wakeResync = nil
+                if !self.state.isLocked { self.onChange?(false) }
+            }
+        }
+        wakeResync = resync
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: resync)
     }
 
     /// Whether the screen is locked and whether this session has the console. Unlocked, the

@@ -131,7 +131,8 @@ off the main thread).
   commands. After an unlock, and after a wake while unlocked, the inventory sweeps, and
   Kosmos reads the main display again, lays the shown workspace out on its area as it is
   then, conceals and reveals every window again, requests the focus intent and publishes
-  the state. A wake
+  the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
+  wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. A wake
   gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
   locks its screen first.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0

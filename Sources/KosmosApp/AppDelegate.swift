@@ -205,11 +205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Locked: windows wait and nothing on screen changes. Unlocked, or awake while unlocked:
-    /// catch up (DESIGN.md, section 5.1).
+    /// the inventory sweeps and the Controller resyncs (DESIGN.md, section 5.1).
     private func lockChanged(_ locked: Bool) {
         inventory.sessionLocked = locked
-        controller?.sessionLocked = locked
-        if !locked { controller?.resync() }
+        guard !locked else { return }
+        inventory.sweep()
+        controller?.resync()
     }
 
     private func accessibilityGranted() {
@@ -242,7 +243,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         focusProblem = controller.focusProblem
         updateProblems()
-        controller.sessionLocked = lockWatch.isLocked
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.

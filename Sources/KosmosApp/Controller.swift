@@ -44,10 +44,9 @@ final class Controller {
     /// Called with a description when the private focus path turns off, and with nil when it
     /// turns back on.
     var onFocusProblem: (@MainActor (String?) -> Void)?
-    /// True while the session is locked or switched out. Kosmos then writes no frames, runs
-    /// no hides, requests no focus and takes no command; `resync` catches up (DESIGN.md,
-    /// section 5.1).
-    var sessionLocked = false
+    /// While the session is locked or switched out, Kosmos writes no frames, runs no hides,
+    /// requests no focus and takes no command; `resync` catches up (DESIGN.md, section 5.1).
+    private var sessionLocked: Bool { inventory.sessionLocked }
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
         self.inventory = inventory
@@ -135,7 +134,7 @@ final class Controller {
                 session.display = display
             }
         }
-        guard managing, !sessionLocked else { return publishState() }
+        guard managing else { return publishState() }
         // Reports received before now are older than the focus this asks for again.
         reports.commandExecuted(receivedAt: .now)
         var plan = Session.Plan()

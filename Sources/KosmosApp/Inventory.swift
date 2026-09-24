@@ -22,12 +22,10 @@ final class Inventory {
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
-    /// While the session is locked, no window is admitted or removed and no sweep runs; the
-    /// sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to known windows
-    /// still apply.
-    var sessionLocked = false {
-        didSet { if oldValue, !sessionLocked { sweep() } }
-    }
+    /// While the session is locked or switched out, no window is admitted or removed and no
+    /// sweep runs; the sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to
+    /// known windows still apply. The Controller reads it too.
+    var sessionLocked = false
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -218,7 +216,7 @@ final class Inventory {
     /// windows that are on no Space, such as one created but not yet shown, so tracked
     /// windows missing from it are queried directly before they count as gone. The queries
     /// can block during a Space transition, so they run off the main thread.
-    private func sweep() {
+    func sweep() {
         guard !sessionLocked, touchedDuringSweep == nil else { return }
         touchedDuringSweep = []
         let tracked = Array(windows.keys)
