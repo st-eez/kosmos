@@ -161,6 +161,10 @@ final class Controller {
                 let wider = result.readBack.width > result.target.width + 2
                 let taller = result.readBack.height > result.target.height + 2
                 if wider || taller {
+                    controllerLog.notice("""
+                        minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
+                        kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
+                        """)
                     execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
                                                                  height: taller ? result.readBack.height : 0)))
                 }
