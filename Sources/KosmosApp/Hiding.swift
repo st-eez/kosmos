@@ -20,7 +20,8 @@ final class Hiding {
         case confirmed
         /// Without a ready guardian nothing is concealed; windows were only revealed.
         case revealedOnly
-        /// A bridged operation was not confirmed and every concealed window was restored.
+        /// A bridged operation was not confirmed and recovery ran; windows it could not
+        /// restore stay concealed and recorded.
         case failed
     }
 
@@ -30,6 +31,10 @@ final class Hiding {
     /// The windows concealed after the last batch the bridge finished, for focus reports.
     /// The bridge queue's ledger is the truth; this copy only follows it.
     private var concealed: Set<UInt32> = []
+
+    /// Called with a description when concealed windows could not all be restored, and with
+    /// nil once they have been.
+    var onProblem: (@MainActor (String?) -> Void)?
 
     init(record: RecordFile, guardian: Guardian) {
         self.guardian = guardian
@@ -47,11 +52,12 @@ final class Hiding {
         let store = self.store
         bridge.async {
             let confirmed = store.apply(show: show, hide: hide)
-            if !confirmed { store.recover() }
+            let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     self.concealed = concealed
+                    if let outcome { self.report(outcome) }
                     done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed)
                 }
             }
@@ -62,11 +68,22 @@ final class Hiding {
     func restoreAll() {
         let store = self.store
         bridge.async {
-            store.recover()
+            let outcome = store.recover()
             let concealed = store.concealed
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self.concealed = concealed }
+                MainActor.assumeIsolated {
+                    self.concealed = concealed
+                    self.report(outcome)
+                }
             }
+        }
+    }
+
+    private func report(_ outcome: Recovery.Outcome) {
+        if case .incomplete(let remaining) = outcome {
+            onProblem?("\(remaining) hidden windows could not be restored; quitting Kosmos tries again")
+        } else {
+            onProblem?(nil)
         }
     }
 
@@ -104,13 +121,13 @@ private final class HidingStore: @unchecked Sendable {
             loaded = true
             return true
         }
-        let members = Dictionary(uniqueKeysWithValues: onFile.spaces.map { ($0, kosmos_space_windows($0) as? [UInt32]) })
-        guard let rebuilt = ConcealLedger.rebuilt(members: members, hasOrdinarySpace: Self.hasOrdinarySpace) else {
-            hidingLog.error("a recorded Space cannot be read; concealing waits for recovery")
-            return false
-        }
+        // A Space that no longer exists holds nothing and leaves the record.
+        let read = SpaceMembers.read(onFile.spaces)
+        guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) },
+                                                  hasOrdinarySpace: Self.hasOrdinarySpace) else { return false }
         state = onFile
         state!.manager = .current
+        state!.spaces.removeAll { read.gone.contains($0) }
         // The newest recorded Space is used again rather than adding one per attempt.
         space = onFile.spaces.last ?? 0
         ledger = rebuilt
@@ -122,18 +139,14 @@ private final class HidingStore: @unchecked Sendable {
         guard load() else { return false }
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
-        let batch = ledger.batch(show: show, hide: hide, into: space)
-        var moves = batch.moves
+        let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
         for (from, windows) in batch.removals {
-            // Removing a window with no ordinary Space would leave it on none; move it instead.
-            let (keep, lost) = (windows.filter(Self.hasOrdinarySpace), windows.filter { !Self.hasOrdinarySpace($0) })
-            moves += lost
-            var ids = keep
+            var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
-        if !moves.isEmpty {
+        if !batch.moves.isEmpty {
             guard let destination = Displays.current().mainCurrentSpace else { return false }
-            var ids = moves
+            var ids = batch.moves
             kosmos_add_windows(destination, &ids, ids.count, true)
         }
         var ids = batch.keep

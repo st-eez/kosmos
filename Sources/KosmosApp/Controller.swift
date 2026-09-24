@@ -190,7 +190,7 @@ final class Controller {
                     controllerLog.error("guardian not ready: windows were revealed but not concealed")
                     self.needsResync = true
                 case .failed:
-                    controllerLog.error("switch not confirmed; concealed windows restored")
+                    controllerLog.error("switch not confirmed; recovery ran")
                     self.needsResync = true
                     return
                 }

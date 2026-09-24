@@ -57,14 +57,18 @@ public struct ConcealLedger: Equatable, Sendable {
     }
 
     /// The operations that reveal `show` and conceal `hide` in `space`. A window that is
-    /// already concealed keeps its kind and its Space, whatever kind `hide` asks for.
-    public func batch(show: [UInt32], hide: [UInt32: Kind], into space: UInt64) -> Batch {
+    /// already concealed keeps its kind and its Space, whatever kind `hide` asks for. A
+    /// window revealed by removal must still have an ordinary Space, or removing it would
+    /// leave it on none; one that lost it is moved instead.
+    public func batch(show: [UInt32], hide: [UInt32: Kind], into space: UInt64,
+                      hasOrdinarySpace: (UInt32) -> Bool = { _ in true }) -> Batch {
         var batch = Batch()
         for window in show {
             guard let entry = entries[window] else { continue }
-            switch entry.kind {
-            case .keepOrdinary: batch.removals[entry.space, default: []].append(window)
-            case .exclusive: batch.moves.append(window)
+            if entry.kind == .keepOrdinary, hasOrdinarySpace(window) {
+                batch.removals[entry.space, default: []].append(window)
+            } else {
+                batch.moves.append(window)
             }
             batch.mustHaveLeft[window] = entry.space
         }

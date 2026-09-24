@@ -52,3 +52,10 @@ private let holding: UInt64 = 100
     #expect(ConcealLedger.rebuilt(members: [holding: [1], 7: nil], hasOrdinarySpace: { _ in true }) == nil)
     #expect(ConcealLedger.rebuilt(members: [:], hasOrdinarySpace: { _ in true }) == ConcealLedger())
 }
+
+@Test func aWindowThatLostItsOrdinarySpaceIsMovedNotRemoved() {
+    let ledger = ConcealLedger(entries: [1: .init(kind: .keepOrdinary, space: holding), 2: .init(kind: .keepOrdinary, space: holding)])
+    let batch = ledger.batch(show: [1, 2], hide: [:], into: holding, hasOrdinarySpace: { $0 == 1 })
+    #expect(batch.removals == [holding: [1]])
+    #expect(batch.moves == [2])
+}

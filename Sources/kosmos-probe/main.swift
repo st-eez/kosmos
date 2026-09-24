@@ -5,6 +5,10 @@
 //                                   conceal and reveal operations have landed?
 //   kosmos-probe bar                Checks SketchyBar's wire format with a read-only query,
 //                                   and times sends of an event no item subscribes to.
+//   kosmos-probe destroyed-space    What reading a destroyed Space's members returns: nil (a
+//                                   failed read) or an empty list.
+//   kosmos-probe gone-space-recovery  Recovery of a record that names a destroyed Space, as
+//                                   a crash between destroying and clearing would leave it.
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
@@ -21,8 +25,10 @@ case "panel": showPanel()
 case "barrier": barrier(cycles: arguments.dropFirst().first.flatMap(Int.init) ?? 50)
 case "survive-kill": surviveKill()
 case "bar": bar()
+case "destroyed-space": destroyedSpace()
+case "gone-space-recovery": goneSpaceRecovery()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery")
     exit(2)
 }
 
@@ -168,4 +174,36 @@ func bar() {
     }
     print(String(format: "trigger send: median %.4f ms, p95 %.4f ms (first includes the lookup: %.3f ms)",
                  percentile(Array(times.dropFirst()), 0.5), percentile(Array(times.dropFirst()), 0.95), times[0]))
+}
+
+@MainActor func destroyedSpace() {
+    _ = NSApplication.shared   // bridged operations need an AppKit client
+    let space = kosmos_holding_create()
+    guard space != 0 else { print("holding Space not created"); return }
+    let before = kosmos_space_windows(space) as? [UInt32]
+    print("live Space \(space): members \(before.map { "\($0)" } ?? "nil (read failed)")")
+    _ = kosmos_space_destroy(space)
+    _ = kosmos_barrier(space)
+    for delay in [0.0, 0.1, 1.0] {
+        Thread.sleep(forTimeInterval: delay)
+        let after = kosmos_space_windows(space) as? [UInt32]
+        print("after destroy (+\(delay) s): members \(after.map { "\($0)" } ?? "nil (read failed)"), barrier \(kosmos_barrier(space))")
+    }
+    let never: UInt64 = 0x7fff_ffff_0000
+    print("a Space id that never existed: members \((kosmos_space_windows(never) as? [UInt32]).map { "\($0)" } ?? "nil (read failed)")")
+}
+
+@MainActor func goneSpaceRecovery() {
+    _ = NSApplication.shared
+    let space = kosmos_holding_create()
+    guard space != 0 else { print("holding Space not created"); return }
+    _ = kosmos_space_destroy(space)
+    _ = kosmos_barrier(space)
+    let url = FileManager.default.temporaryDirectory.appending(path: "kosmos-gone-\(getpid()).record")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let file = try! RecordFile(url: url)
+    file.publish(RecoveryRecord(windowServer: ProcessIdentity.windowServer()!, manager: .current, spaces: [space]))
+    let start = ContinuousClock.now
+    let outcome = Recovery.run(file: file)
+    print("recovery of a record naming destroyed Space \(space): \(outcome) in \(String(format: "%.0f", elapsed(start))) ms; record cleared: \(file.read() == nil)")
 }

@@ -30,12 +30,10 @@ public enum Recovery {
             return .staleSession
         }
 
-        // A move Kosmos issued just before it died may still be landing. A Space whose
-        // members cannot be read might still hold windows, so nothing is cleared.
-        guard let members = settledMembers(of: record.spaces) else {
-            recoveryLog.error("could not read a recorded Space; keeping the record")
-            return .incomplete(remaining: 0)
-        }
+        // A move Kosmos issued just before it died may still be landing. A Space that no
+        // longer exists holds nothing and leaves the record.
+        let (members, gone) = settledMembers(of: record.spaces)
+        let liveSpaces = record.spaces.filter { !gone.contains($0) }
         let alive = Set(SkyLight.rows(Array(Set(members.values.joined()).union(record.windows.map(\.id)))).map(\.id))
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
         let stranded = record.windows.map(\.id).filter { alive.contains($0) && spaces(of: $0).isEmpty }
@@ -55,47 +53,39 @@ public enum Recovery {
         }
 
         let handled = Array(plan.moves.values.joined()) + Array(plan.removals.values.joined())
-        guard let after = currentMembers(of: record.spaces) else {
-            recoveryLog.error("could not read a recorded Space; keeping the record")
-            return .incomplete(remaining: 0)
-        }
-        let remaining = after.values.reduce(0) { $0 + $1.count }
+        let after = SpaceMembers.read(liveSpaces)
+        let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
             let withoutSpace = plan.windows.filter(onNoSpace).count
             recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
+            // The record keeps the Spaces that still exist, and every window.
+            var kept = record
+            kept.spaces = liveSpaces.filter { !after.gone.contains($0) }
+            file.publish(kept)
             return .incomplete(remaining: remaining + withoutSpace)
         }
         // Destroying an empty Space cannot be confirmed through the bridge. One left behind
         // is empty and hides nothing.
-        for space in record.spaces { kosmos_space_destroy(space) }
+        for space in liveSpaces { kosmos_space_destroy(space) }
         file.clear()
-        recoveryLog.notice("restored \(handled.count) windows, destroyed \(record.spaces.count) Spaces")
-        return .restored(windows: handled.count, spaces: record.spaces.count)
+        recoveryLog.notice("restored \(handled.count) windows, destroyed \(liveSpaces.count) Spaces")
+        return .restored(windows: handled.count, spaces: liveSpaces.count)
     }
 
-    /// Members of each Space once two reads 100 ms apart agree, for at most about 1 s. A
-    /// failed read is retried within that time; nil when the reads never succeed twice in a
-    /// row with the same answer, or the last one failed.
-    private static func settledMembers(of spaces: [UInt64]) -> [UInt64: [UInt32]]? {
-        var previous = currentMembers(of: spaces)
+    /// Members of each existing Space once two reads 100 ms apart agree, for at most about
+    /// 1 s; past that, the newest read, which the check after the moves backs up. Spaces
+    /// that are gone are listed apart.
+    private static func settledMembers(of spaces: [UInt64]) -> (members: [UInt64: [UInt32]], gone: Set<UInt64>) {
+        var previous = SpaceMembers.read(spaces)
+        let existing = spaces.filter { !previous.gone.contains($0) }
         for _ in 0..<10 {
             usleep(100_000)
-            let current = currentMembers(of: spaces)
-            if let current, current == previous { return current }
-            previous = current
+            let current = SpaceMembers.read(existing)
+            if current.members == previous.members { break }
+            previous.members = current.members
         }
-        return previous
-    }
-
-    /// Nil when any Space's members cannot be read: a failed read is not an empty Space.
-    private static func currentMembers(of spaces: [UInt64]) -> [UInt64: [UInt32]]? {
-        var members: [UInt64: [UInt32]] = [:]
-        for space in spaces {
-            guard let list = kosmos_space_windows(space) as? [UInt32] else { return nil }
-            members[space] = list.sorted()
-        }
-        return members
+        return (previous.members, previous.gone)
     }
 
     private static func spaces(of window: UInt32) -> [UInt64] {

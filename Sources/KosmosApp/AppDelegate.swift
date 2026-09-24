@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var managing = false
     private var configProblems: [String] = []
     private var hotkeyProblems: [String] = []
+    private var hidingProblem: String?
     private var hiding: Hiding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -156,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateProblems() {
-        statusItem?.problems = configProblems + hotkeyProblems
+        statusItem?.problems = configProblems + hotkeyProblems + (hidingProblem.map { [$0] } ?? [])
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
@@ -187,6 +188,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let names = config.map { $0.setup(for: displays).workspaces } ?? (1...9).map(String.init)
         let gaps = config.flatMap { config in displays.first.map { ConfigFile.gaps(config, on: $0) } } ?? Gaps()
         let hiding = Hiding(record: record, guardian: guardian)
+        hiding.onProblem = { [weak self] problem in
+            self?.hidingProblem = problem
+            self?.updateProblems()
+        }
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
