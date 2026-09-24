@@ -244,7 +244,7 @@ func bar() {
     _ = NSApplication.shared   // bridged operations need an AppKit client
     let (child, window) = spawnPanel("hidden-window")
     defer { child.terminate() }
-    guard let desktop = Displays.current().mainCurrentSpace else { print("the main display shows no ordinary Space"); return }
+    guard let desktop = Displays.current().ordinarySpace(original: nil) else { print("no ordinary Space"); return }
     let space = kosmos_holding_create()
     guard space != 0 else { print("holding Space not created"); return }
     var ids = [window]

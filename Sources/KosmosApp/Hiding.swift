@@ -143,9 +143,17 @@ private final class HidingStore: @unchecked Sendable {
         // Adds before removals: a window removed from its only Space lands on whichever
         // Space is active, which can be a native fullscreen one.
         if !batch.moves.isEmpty {
-            guard let destination = Displays.current().mainCurrentSpace else { return false }
-            var ids = batch.moves
-            kosmos_add_windows(destination, &ids, ids.count, true)
+            let displays = Displays.current()
+            let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
+            var destinations: [UInt64: [UInt32]] = [:]
+            for window in batch.moves {
+                guard let destination = displays.ordinarySpace(original: original[window]) else { return false }
+                destinations[destination, default: []].append(window)
+            }
+            for (destination, windows) in destinations {
+                var ids = windows
+                kosmos_add_windows(destination, &ids, ids.count, true)
+            }
         }
         for (from, windows) in batch.removals {
             var ids = windows

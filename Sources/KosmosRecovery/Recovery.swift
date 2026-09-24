@@ -94,16 +94,14 @@ public enum Recovery {
         kosmos_window_spaces(window) as? [UInt64] ?? []
     }
 
-    /// The current ordinary Space of the display under the window, else the window's
-    /// original Space if it still exists, else the main display's current Space, else any
-    /// ordinary Space; nil only when there is none.
+    /// The current ordinary Space of the display under the window, else the Space a reveal
+    /// would use; nil only when there is none.
     private static func destinationSpace(for window: UInt32, original: UInt64?) -> UInt64? {
         let displays = Displays.current()
         if let frame = SkyLight.rows([window]).first?.frame,
            let space = displays.currentSpace(at: CGPoint(x: frame.midX, y: frame.midY)) {
             return space
         }
-        if let original, displays.ordinarySpaces.contains(original) { return original }
-        return displays.mainCurrentSpace ?? displays.displays.lazy.flatMap(\.spaces).first
+        return displays.ordinarySpace(original: original)
     }
 }

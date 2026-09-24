@@ -5,6 +5,7 @@ import CKosmos
 public struct Displays {
     public struct Display: Sendable {
         public let identifier: String
+        /// Nil while the display shows a Space that is not ordinary, such as native fullscreen.
         public let currentSpace: UInt64?
         public let spaces: [UInt64]
     }
@@ -24,10 +25,15 @@ public struct Displays {
 
     public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.spaces)) }
 
-    /// With one display macOS names it "Main" instead of by UUID.
-    public var mainCurrentSpace: UInt64? {
-        let mainID = CGMainDisplayID()
-        return display(for: mainID)?.currentSpace ?? displays.first?.currentSpace
+    /// The ordinary Space for a window that has none: the main display's current Space,
+    /// else the window's `original` Space if it still exists, else the main display's first
+    /// ordinary Space. A native fullscreen Space on screen is never one, so a reveal works
+    /// while one is shown. Nil only when no ordinary Space exists.
+    public func ordinarySpace(original: UInt64?) -> UInt64? {
+        let main = display(for: CGMainDisplayID()) ?? displays.first
+        if let current = main?.currentSpace { return current }
+        if let original, ordinarySpaces.contains(original) { return original }
+        return main?.spaces.first ?? displays.lazy.flatMap(\.spaces).first
     }
 
     public func currentSpace(at point: CGPoint) -> UInt64? {
@@ -36,6 +42,7 @@ public struct Displays {
         return display(for: id)?.currentSpace
     }
 
+    /// With one display macOS names it "Main" instead of by UUID.
     private func display(for id: CGDirectDisplayID) -> Display? {
         guard let uuid = DisplayIdentity.uuid(of: id) else { return nil }
         return displays.first { $0.identifier == uuid } ?? displays.first { $0.identifier == "Main" }

@@ -142,10 +142,15 @@ off the main thread).
   window removed from its only Space lands on the active Space, which can be a native
   fullscreen one (`kosmos-probe reveal`). The barrier then confirms that each revealed
   window left the holding Space and each added one has an ordinary Space.
+- A window with no ordinary Space goes to the main display's current Space, else to the
+  Space it had before its first hide if that still exists, else to the main display's
+  first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
+  one is on screen.
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
-- Recovery empties each recorded Space, sends stranded windows to their display's current
-  Space, destroys the Spaces and clears the record. Every step can safely run twice.
+- Recovery adds each window without an ordinary Space to the current Space of the display
+  under it, or to the Space a reveal would choose, then empties each recorded Space,
+  destroys the Spaces and clears the record. Every step can safely run twice.
 
 ### 5.4 Focus
 
@@ -169,6 +174,16 @@ off the main thread).
   workspace is already queued, the older one lays out but doesn't focus.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
+- Open item: a switch requested while a native fullscreen Space is on screen. The private
+  path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
+  00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
+  until the user swiped 3.4 s later (WindowServer's SetManagedDisplayCurrentSpace log).
+  AeroSpace focuses with the public `NSRunningApplication.activate` on one monitor, which
+  lets the Dock switch to the Space that holds the window. The plan is that when the main
+  display's current Space is not ordinary and the target is a window, the focus queue
+  follows the private call with that public activation. An empty workspace would still
+  leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
+  fullscreen Space, which takes over the screen.
 
 ### 5.5 Tree
 
