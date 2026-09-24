@@ -14,9 +14,13 @@
 //                                   is back, the Space is gone and the record is clear.
 //   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
 //                                   out of the holding Space, and where does a window
-//                                   removed from its only Space land? Uses a window of its
-//                                   own, invisible and off every display, in an accessory
-//                                   app, which Kosmos does not manage.
+//                                   removed from its only Space land? Its window is
+//                                   invisible, off every display, in an app with the
+//                                   prohibited activation policy, so it runs beside a live
+//                                   session: the panel's regular app, and an accessory one,
+//                                   made itself the front process when it started and took
+//                                   the key window from the user's app for the second the
+//                                   probe ran (WindowServer log, 2026-09-24).
 //   kosmos-probe displays           Each display's identity as Kosmos reads it: EDID
 //                                   serial, framebuffer, and the bar number, checked against
 //                                   SketchyBar's own when it runs. Read only. Every
@@ -63,11 +67,11 @@ default:
     exit(0)
 }
 
-/// An invisible window off every display, in an accessory app. Prints its window id and
-/// stays until killed.
+/// An invisible window off every display, in an app that can never be the front process.
+/// Prints its window id and stays until killed.
 @MainActor func showHiddenWindow() -> Never {
     let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
+    app.setActivationPolicy(.prohibited)
     let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 60, height: 60),
                           styleMask: [.borderless], backing: .buffered, defer: false)
     window.alphaValue = 0
