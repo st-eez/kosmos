@@ -2,14 +2,6 @@
 /// conceals needs (DESIGN.md, section 5.3). Only the bridge queue changes it, in batch
 /// order, so a reveal always undoes what was really done.
 public struct ConcealLedger: Equatable, Sendable {
-    /// How a hide asks for a window to be concealed.
-    public enum Kind: Equatable, Sendable {
-        /// Also keeps its ordinary Space, so Command-Tab can pick it.
-        case keepOrdinary
-        /// In the concealing Space only.
-        case exclusive
-    }
-
     /// The operations for one batch.
     public struct Batch: Equatable, Sendable {
         /// Revealed windows, by the concealing Space to remove them from.
@@ -17,13 +9,25 @@ public struct ConcealLedger: Equatable, Sendable {
         /// Revealed windows with no ordinary Space, to add to one before their removal. The
         /// add strips only managed Spaces, so it leaves them in the concealing Space.
         public var adds: [UInt32] = []
-        /// Windows to conceal for the first time, by kind.
-        public var keep: [UInt32] = []
-        public var strip: [UInt32] = []
+        /// Windows to conceal for the first time. They keep their ordinary Space.
+        public var fresh: [UInt32] = []
         /// After the batch: each window to hide and the Space it must be in.
         public var mustBeIn: [UInt32: UInt64] = [:]
 
-        public var fresh: [UInt32] { keep + strip }
+        /// The Spaces the batch changes, which its confirmation reads.
+        public var touched: Set<UInt64> { Set(mustBeIn.values).union(removals.keys) }
+
+        /// Whether `members`, the windows each touched Space holds, show the batch done: each
+        /// revealed window out of the Space that concealed it, whatever other Space it is in,
+        /// and each window to hide in its Space. A Space `members` leaves out proves nothing.
+        public func isDone(members: [UInt64: Set<UInt32>]) -> Bool {
+            let hidden = mustBeIn.allSatisfy { members[$0.value]?.contains($0.key) == true }
+            let shown = removals.allSatisfy { space, windows in
+                guard let held = members[space] else { return false }
+                return windows.allSatisfy { !held.contains($0) }
+            }
+            return hidden && shown
+        }
 
         /// The removals to send once the adds are confirmed. An added window leaves the
         /// concealing Space only if `landed` says its add took: removed from its only Space,
@@ -55,10 +59,10 @@ public struct ConcealLedger: Equatable, Sendable {
     }
 
     /// The operations that reveal `show` and conceal `hide` in `space`. A window that is
-    /// already concealed keeps its Space, whatever kind `hide` asks for. A revealed window
-    /// must still have an ordinary Space, or removing it would leave it on none; one that
-    /// has none, as `hasOrdinarySpace` reads it now, is added to one first.
-    public func batch(show: [UInt32], hide: [UInt32: Kind], into space: UInt64,
+    /// already concealed keeps its Space. A revealed window must still have an ordinary
+    /// Space, or removing it would leave it on none; one that has none, as
+    /// `hasOrdinarySpace` reads it now, is added to one first.
+    public func batch(show: [UInt32], hide: [UInt32], into space: UInt64,
                       hasOrdinarySpace: (UInt32) -> Bool) -> Batch {
         var batch = Batch()
         for window in show {
@@ -66,12 +70,12 @@ public struct ConcealLedger: Equatable, Sendable {
             if !hasOrdinarySpace(window) { batch.adds.append(window) }
             batch.removals[held, default: []].append(window)
         }
-        for (window, kind) in hide.sorted(by: { $0.key < $1.key }) {
+        for window in Set(hide).sorted() {
             if let held = entries[window] {
                 batch.mustBeIn[window] = held
                 continue
             }
-            if kind == .keepOrdinary { batch.keep.append(window) } else { batch.strip.append(window) }
+            batch.fresh.append(window)
             batch.mustBeIn[window] = space
         }
         return batch

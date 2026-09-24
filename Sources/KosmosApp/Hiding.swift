@@ -12,9 +12,16 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 /// never races a batch still in flight.
 @MainActor
 final class Hiding {
-    /// How a window leaves the screen. An app's selected window keeps its ordinary Space
-    /// membership so Command-Tab still picks it; the app's other concealed windows lose it.
-    typealias Conceal = ConcealLedger.Kind
+    /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
+    /// preparing and sending its operations, confirming them, the recovery after a batch
+    /// that failed, and the way back to the main actor.
+    struct Timing: Sendable {
+        var queued = Duration.zero, sent = Duration.zero, confirmed = Duration.zero
+        var recovered = Duration.zero, returned = Duration.zero
+        /// The confirmation needed the barrier because direct reads did not show the batch
+        /// done in time; nil when the batch read nothing.
+        var barrier: Bool?
+    }
 
     enum Outcome: Sendable {
         case confirmed
@@ -44,21 +51,28 @@ final class Hiding {
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
-    /// Reveals `show`, then conceals `hide`, then reads the barrier, on the bridge queue.
+    /// Reveals `show`, then conceals `hide`, then confirms both, on the bridge queue.
     /// Concealing needs a ready guardian; revealing does not.
-    func apply(show: [UInt32], hide: [UInt32: Conceal], done: @escaping @MainActor (Outcome) -> Void) {
+    func apply(show: [UInt32], hide: [UInt32], done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady
-        let hide = canConceal ? hide : [:]
+        let hide = canConceal ? hide : []
         let store = self.store
+        let submitted = ContinuousClock.now
         bridge.async {
-            let confirmed = store.apply(show: show, hide: hide)
+            let started = ContinuousClock.now
+            let (confirmed, sent, barrier) = store.apply(show: show, hide: hide)
+            let applied = ContinuousClock.now
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
+            let finished = ContinuousClock.now
+            var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
+                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    timing.returned = .now - finished
                     self.concealed = concealed
                     if let outcome { self.report(outcome) }
-                    done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed)
+                    done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
                 }
             }
         }
@@ -147,10 +161,49 @@ private final class HidingStore: @unchecked Sendable {
         return true
     }
 
-    func apply(show: [UInt32], hide: [UInt32: ConcealLedger.Kind]) -> Bool {
-        guard load() else { return false }
-        let fresh = hide.keys.filter { ledger.entries[$0] == nil }
-        if !fresh.isEmpty, !prepare(fresh) { return false }
+    /// Whether the batch was confirmed, when it had sent its operations (nil if it stopped
+    /// before), and whether its confirmation needed the barrier (nil if it read nothing).
+    func apply(show: [UInt32], hide: [UInt32]) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?) {
+        guard let (batch, sent) = send(show: show, hide: hide) else { return (false, nil, nil) }
+        let touched = batch.touched
+        guard let any = touched.first else { return (true, sent, nil) }
+        /// Whether the touched Spaces show the batch done. A failed read leaves its Space out,
+        /// which proves nothing.
+        func done() -> Bool {
+            var members: [UInt64: Set<UInt32>] = [:]
+            for space in touched {
+                if let list = kosmos_space_windows(space) as? [UInt32] { members[space] = Set(list) }
+            }
+            return batch.isDone(members: members)
+        }
+        // Reads on Kosmos's own connection show the operations once WindowServer applied
+        // them, usually within a millisecond. A bridged read also waits behind
+        // WindowManager.app, which rebuilds its window model when a window joins or leaves
+        // an ordinary Space, as a reveal that adds does. So the batch reads directly
+        // for up to readBound, and only then sends the barrier, after which the bridge has
+        // run every operation and one read decides.
+        let deadline = ContinuousClock.now + Self.readBound
+        var confirmed = done()
+        while !confirmed && ContinuousClock.now < deadline {
+            usleep(100)
+            confirmed = done()
+        }
+        if !confirmed {
+            guard kosmos_barrier(any), done() else { return (false, sent, true) }
+        }
+        ledger.commit(batch, into: space)
+        return (true, sent, !confirmed)
+    }
+
+    /// How long a batch reads the Spaces directly before it sends the barrier.
+    private static let readBound: Duration = .milliseconds(10)
+
+    /// Sends a batch's operations: adds, removals, then conceals. Nil when it stops before,
+    /// with the batch and the time it had sent them otherwise.
+    private func send(show: [UInt32], hide: [UInt32]) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
+        guard load() else { return nil }
+        let fresh = Set(hide).filter { ledger.entries[$0] == nil }
+        if !fresh.isEmpty, !prepare(Array(fresh)) { return nil }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
         // Adds land before any removal is sent: a window removed from its only Space lands on
         // whichever Space is active, which can be a native fullscreen one. The add's return
@@ -162,39 +215,24 @@ private final class HidingStore: @unchecked Sendable {
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
             var destinations: [UInt64: [UInt32]] = [:]
             for window in batch.adds {
-                guard let destination = displays.ordinarySpace(original: original[window]) else { return false }
+                guard let destination = displays.ordinarySpace(original: original[window]) else { return nil }
                 destinations[destination, default: []].append(window)
             }
             for (destination, windows) in destinations {
                 var ids = windows
                 kosmos_add_windows(destination, &ids, ids.count, true)
             }
-            guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
+            guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return nil }
             removals = batch.removals(landed: displays.isInOrdinarySpace)
         }
         for (from, windows) in removals {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
-        var ids = batch.keep
+        // An add that keeps their other Spaces, the ordinary one included.
+        var ids = batch.fresh
         kosmos_add_windows(space, &ids, ids.count, false)
-        ids = batch.strip
-        kosmos_add_windows(space, &ids, ids.count, true)
-        // One barrier after every operation of the batch: the bridge runs them in order.
-        let touched = Set(batch.mustBeIn.values).union(batch.removals.keys)
-        guard let any = touched.first else { return true }
-        guard kosmos_barrier(any) else { return false }
-        var members: [UInt64: Set<UInt32>] = [:]
-        for space in touched {
-            // A failed read proves nothing, so it fails the batch.
-            guard let list = kosmos_space_windows(space) as? [UInt32] else { return false }
-            members[space] = Set(list)
-        }
-        let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
-        let shown = batch.removals.allSatisfy { space, windows in windows.allSatisfy { !members[space]!.contains($0) } }
-        guard hidden && shown else { return false }
-        ledger.commit(batch, into: space)
-        return true
+        return (batch, .now)
     }
 
     func forget(_ windows: [UInt32]) {
