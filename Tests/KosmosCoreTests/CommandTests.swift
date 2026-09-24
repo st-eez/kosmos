@@ -163,10 +163,11 @@ import Testing
     var right = Workspace("h[1 2 3]")
     #expect(right.joinWith(1, .right) == true)
     #expect(right.tree == "h[v[1 2] 3]")
-    #expect(right.shares == [0.5, 0.5])
+    #expect(right.shares == [0.667, 0.333])      // 3 keeps its third
     var left = Workspace("h[1 2 3]")
     #expect(left.joinWith(3, .left) == true)
     #expect(left.tree == "h[1 v[2 3]]")
+    #expect(left.shares == [0.333, 0.667])
 }
 
 @Test func joinWithContainerJoinsIt() {
@@ -349,4 +350,20 @@ import Testing
     var empty = Workspace()
     empty.flattenWorkspaceTree()
     #expect(empty.tree == "h[]")
+}
+
+/// Joining a window into its neighbor and back out, as Ctrl-Alt-Left then Ctrl-Alt-Up does,
+/// must not grow the window left alone. It grew by a sixth of the width on every cycle.
+@Test func joinAndUnjoinLeaveOtherWindowsAlone() {
+    let screen = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    var w = Workspace("h[1 2 3]")
+    for _ in 1...5 {
+        #expect(w.joinWith(3, .left) == true)
+        var f = w.frames(in: screen, gaps: Gaps(), minimums: [:])
+        #expect(f[1]!.width == 576)                       // untouched by the join
+        #expect(f[2]!.width == 1152 && f[3]!.width == 1152)
+        #expect(w.joinWith(3, .up) == true)                // unjoin
+        f = w.frames(in: screen, gaps: Gaps(), minimums: [:])
+        #expect([f[1]!.width, f[2]!.width, f[3]!.width] == [576, 576, 576])
+    }
 }

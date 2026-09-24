@@ -1,6 +1,7 @@
 import AppKit
 import KosmosCore
 import KosmosRecovery
+import KosmosSkyLight
 
 /// The config file at ~/.config/kosmos/kosmos.toml and what it resolves to on the connected
 /// displays (DESIGN.md, section 5.8).
@@ -45,18 +46,14 @@ enum ConfigFile {
             loaded.config = config
             loaded.source = "the last good config"
         }
-        if let config = loaded.config, config.monitors.values.contains(where: { if case .serial = $0 { true } else { false } }) {
-            loaded.warnings.append("serial matchers do not match yet: displays carry no serial until multi-monitor support")
-        }
         return loaded
     }
 
-    /// The displays as the config's monitor matchers see them. Serial numbers come with
-    /// several monitors.
+    /// The displays as the config's monitor matchers see them.
     static func displays() -> [Display] {
         NSScreen.screens.map { screen in
-            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            return Display(name: screen.localizedName, isBuiltIn: CGDisplayIsBuiltin(id) != 0)
+            Display(name: screen.localizedName, serial: DisplayIdentity.serial(of: screen.displayID),
+                    isBuiltIn: CGDisplayIsBuiltin(screen.displayID) != 0)
         }
     }
 
@@ -65,5 +62,11 @@ enum ConfigFile {
         return Gaps(inner: CGFloat(config.gaps.inner),
                     outer: Insets(top: CGFloat(outer.top), left: CGFloat(outer.left),
                                   bottom: CGFloat(outer.bottom), right: CGFloat(outer.right)))
+    }
+}
+
+extension NSScreen {
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 }

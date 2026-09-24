@@ -43,6 +43,9 @@ final class Controller {
     var mouseFollowsFocus = false
     /// The active display profile, for the bar.
     var profile: String?
+    /// The display the session tiles, as the bar numbers it. Read at launch, as the session's
+    /// display is.
+    private let barDisplay: BarSnapshot.Display
     var publish: (@MainActor (Data) -> Void)?
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
@@ -50,6 +53,7 @@ final class Controller {
         self.hiding = hiding
         self.managing = managing
         session = Session(names: names, display: Controller.displayRect(), gaps: gaps)
+        barDisplay = Controller.barDisplay()
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered in self?.fullscreenChanged(id, entered) }
@@ -110,6 +114,14 @@ final class Controller {
         guard let main = NSScreen.main, let primary = NSScreen.screens.first else { return .zero }
         let visible = main.visibleFrame
         return CGRect(x: visible.minX, y: primary.frame.height - visible.maxY, width: visible.width, height: visible.height)
+    }
+
+    /// The main display, the one `displayRect()` measures, by SketchyBar's number for it.
+    static func barDisplay() -> BarSnapshot.Display {
+        guard let main = NSScreen.main else { return BarSnapshot.Display(id: 1, name: "Display") }
+        let number = BarSnapshot.displayNumber(uuid: DisplayIdentity.uuid(of: main.displayID),
+                                               active: DisplayIdentity.active().count, managed: DisplayIdentity.managed())
+        return BarSnapshot.Display(id: number, name: main.localizedName)
     }
 
     // MARK: Events
@@ -241,6 +253,10 @@ final class Controller {
                 let wider = result.readBack.width > result.target.width + 2
                 let taller = result.readBack.height > result.target.height + 2
                 if wider || taller {
+                    controllerLog.notice("""
+                        minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
+                        kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
+                        """)
                     execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
                                                                  height: taller ? result.readBack.height : 0)))
                 }
@@ -378,7 +394,7 @@ final class Controller {
     /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.
     private func stateJSON() -> Data {
         let snapshot = session.barSnapshot(
-            profile: profile, displayName: NSScreen.main?.localizedName ?? "Display",
+            profile: profile, display: barDisplay,
             app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
             frame: { [inventory] id in inventory.windows[id]?.frame })
         let encoder = JSONEncoder()

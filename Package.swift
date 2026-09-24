@@ -5,14 +5,15 @@ let package = Package(
     name: "Kosmos",
     platforms: [.macOS("27.0")],
     targets: [
-        // Private SkyLight declarations, and the holding Space and focus operations. The
-        // framework ships with macOS.
+        // Private SkyLight and CoreDisplay declarations, and the holding Space and focus
+        // operations. Both frameworks ship with macOS.
         .target(
             name: "CKosmos",
             cSettings: [.unsafeFlags(["-fobjc-arc"])],
             linkerSettings: [
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
                 .linkedFramework("Carbon"),
+                .linkedFramework("CoreDisplay"),
             ]
         ),
         // The model: trees, layout and commands. No AppKit and no Accessibility.
@@ -34,7 +35,7 @@ let package = Package(
         ),
         .executableTarget(name: "kosmos-guardian", dependencies: ["KosmosRecovery"]),
         // Measurements of private behaviour that the design depends on (DESIGN.md, section 6).
-        .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosRecovery", "KosmosSkyLight"]),
+        .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
         .testTarget(name: "KosmosIPCTests", dependencies: ["KosmosIPC"]),
         .testTarget(name: "KosmosRecoveryTests", dependencies: ["KosmosRecovery"]),
