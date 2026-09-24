@@ -17,7 +17,7 @@ private let signature: OSType = 0x4B53_4D53
 /// Presses arrive on the main thread through the event dispatcher and go straight to the
 /// handler, which should only enqueue a command.
 @MainActor
-final class Hotkeys {
+final class Hotkeys: NSObject {
     struct Problem: Equatable, CustomStringConvertible {
         var mode: String
         /// The binding's combination as the config writes it.
@@ -44,6 +44,7 @@ final class Hotkeys {
         self.handler = handler
         self.layoutProblems = layoutProblems
         layout = Self.currentLayout()
+        super.init()
         var pressedEvent = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
             var id = EventHotKeyID()
@@ -59,10 +60,12 @@ final class Hotkeys {
         }, 1, &pressedEvent, Unmanaged.passRetained(self).toOpaque(), nil)
         if status != noErr { hotkeysLog.error("InstallEventHandler failed: \(status)") }
 
-        let layoutChanged = Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String)
-        DistributedNotificationCenter.default().addObserver(forName: layoutChanged, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.layoutChanged() }
-        }
+        // AppKit holds distributed notifications for an app that is not active unless they
+        // are delivered immediately. Kosmos is active only while onboarding shows.
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(layoutChanged),
+            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil, suspensionBehavior: .deliverImmediately)
     }
 
     /// Replaces every mode's bindings, as after a config load, and activates mode main. The
@@ -166,7 +169,7 @@ final class Hotkeys {
         return problems
     }
 
-    private func layoutChanged() {
+    @objc private func layoutChanged() {
         let current = Self.currentLayout()
         guard current != layout else { return }
         layout = current
