@@ -101,16 +101,22 @@ final class Inventory {
     /// `lateBound` is logged, as it may be the event for the change the sweep read, late.
     private var countedMissed: [UInt32: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)
-    /// Whether each app is regular. LaunchServices answers each read with a synchronous XPC
+    /// Whether each process is a regular app, false for a process LaunchServices does not
+    /// know, such as JankyBorders. LaunchServices answers each read with a synchronous XPC
     /// call, which a sample of workspace switches caught on the main thread at every window
-    /// event and at every row of a sweep (2026-09-24), so each app is read once: from the
-    /// running apps at start, as it launches, or at its first window. Its exit drops it, so a
-    /// reused pid is read again.
+    /// event and at every row of a sweep (2026-09-24), so each process is read once: from the
+    /// running apps at start, as it launches, or at its first window. Its exit source drops
+    /// it: NSWorkspace reports no exit of a background-only or LSUIElement app, and pids come
+    /// round again, about every 7 hours on the development Mac.
     ///
     /// Ceiling: an app that changes its activation policy while it runs keeps the policy read
     /// first, as it keeps the Accessibility worker Apps gave it by its policy at launch.
     /// Observing each app's activationPolicy with key-value observing would follow a change.
     private var regularApps: [pid_t: Bool] = [:]
+    private var exitSources: [pid_t: any DispatchSourceProcess] = [:]
+    /// Apps whose launch found them regular after their windows were left out, until the
+    /// sweep that admits those windows, which then counts none of them as missed by events.
+    private var launchedLate: Set<pid_t> = []
 
     /// WindowServer tracking needs no permission and starts at once.
     func start() {
@@ -118,13 +124,13 @@ final class Inventory {
         // NSRunningApplication(processIdentifier:) returned nil for a running app at startup
         // (Apps), so the running apps come from their list.
         for app in NSWorkspace.shared.runningApplications {
-            regularApps[app.processIdentifier] = app.activationPolicy == .regular
+            remember(app.processIdentifier, regular: app.activationPolicy == .regular)
         }
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier, regular = app.activationPolicy == .regular
-            MainActor.assumeIsolated { self?.regularApps[pid] = regular }
+            MainActor.assumeIsolated { self?.launched(pid, regular: regular) }
         }
         center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
@@ -417,14 +423,39 @@ final class Inventory {
 
     private func appExited(_ pid: pid_t) {
         for (id, row) in windows where row.pid == pid { remove(id, reason: "app exited") }
-        regularApps[pid] = nil
     }
 
     private func ownedByRegularApp(_ row: WindowRow) -> Bool {
         if let regular = regularApps[row.pid] { return regular }
         let regular = NSRunningApplication(processIdentifier: row.pid)?.activationPolicy == .regular
-        regularApps[row.pid] = regular
+        remember(row.pid, regular: regular)
         return regular
+    }
+
+    /// Keeps whether the process is a regular app until it exits. A process that exited
+    /// before its source started reports its exit at once (checked on macOS 27).
+    private func remember(_ pid: pid_t, regular: Bool) {
+        regularApps[pid] = regular
+        guard exitSources[pid] == nil else { return }
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                self?.regularApps[pid] = nil
+                self?.exitSources.removeValue(forKey: pid)?.cancel()
+            }
+        }
+        exitSources[pid] = source
+        source.resume()
+    }
+
+    /// An app that turns out regular at its launch may have had windows left out before, as
+    /// not regular or unknown to LaunchServices; a sweep admits them.
+    private func launched(_ pid: pid_t, regular: Bool) {
+        let wasRegular = regularApps[pid]
+        remember(pid, regular: regular)
+        guard regular, wasRegular == false else { return }
+        launchedLate.insert(pid)
+        sweep()
     }
 
     /// Parentless level 0 windows. Accessibility role checks come with the per-app workers.
@@ -479,9 +510,10 @@ final class Inventory {
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
         countedMissed = countedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
-        // Windows the lock held back were reported, so the unlock sweep does not count them.
+        // Windows the lock held back were reported, and so were those of an app found regular
+        // only at its launch, so the sweep does not count them.
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
-            if swept, arrivedWhileLocked[row.id] == nil {
+            if swept, arrivedWhileLocked[row.id] == nil, !launchedLate.contains(row.pid) {
                 countMissed(row.id)
                 inventoryLog.notice("sweep found \(row.id), missed by events")
             }
@@ -515,6 +547,9 @@ final class Inventory {
             spacesChanged = false
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
+        // A sweep that follows was asked for after this one's snapshot, so it may be the one
+        // that finds a late app's windows.
+        if !sweepAgain { launchedLate = [] }
         if !swept { atLaunch = seen }
         swept = true
         if awaitingUnlockSweep {
