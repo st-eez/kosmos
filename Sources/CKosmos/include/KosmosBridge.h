@@ -32,3 +32,5 @@ CFArrayRef kosmos_window_spaces(uint32_t window) CF_RETURNS_RETAINED;
 bool kosmos_make_key(pid_t pid, uint32_t window);
 // Fronts a process with no key window (Finder for an empty workspace).
 bool kosmos_front_without_windows(pid_t pid);
+// The front process's pid, as yabai reads it, or 0. About 1.6 us.
+pid_t kosmos_front_pid(void);

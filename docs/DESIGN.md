@@ -71,7 +71,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | --- | --- | --- |
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
 | One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads, and raises before focus | Touch the model directly |
-| Focus queue, serial | Front-process calls and key records, generation checks | Wait on a worker's raise longer than 30 ms |
+| Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | Bridged Space operations and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
@@ -195,8 +195,15 @@ off the main thread).
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again.
-- Skip activation when the target is already key. When a newer command for another
-  workspace is already queued, the older one lays out but doesn't focus.
+- Skip activation when the target is already key, checked by the focus queue when the
+  request runs: the target's app is the front process and its focused window, read on the
+  app's worker, is the target. A skipped request forgets its expected echo. The key window
+  last reported can be older than a request still in flight: after `workspace 2` then
+  `workspace 1` in quick succession, a skip against it dropped the request for w1 before
+  w3's report arrived, and w3's echo then left macOS keying w3 while Kosmos focused w1
+  (kosmos-hover's TLC counterexample; tla/Kosmos.tla, ExecFocus). The front process lookup
+  takes 1.6 us, and only a request for the front app pays an AX read. When a newer command
+  for another workspace is already queued, the older one lays out but doesn't focus.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
   - A crash guard. A byte in a file mapped shared is set during each private call and

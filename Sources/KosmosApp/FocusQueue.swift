@@ -18,14 +18,15 @@ final class FocusQueue: Sendable {
     }
 
     /// Uses the private path when `privately`, as the kill switch said on the main actor, and
-    /// the public path otherwise or when a SkyLight call fails. `worker` belongs to the window's app: it raises the window
-    /// before the private path keys it, and runs the public path. `dropped` runs on the main
-    /// actor when the request is not performed, so the caller can forget the echo it expected.
+    /// the public path otherwise or when a SkyLight call fails. `worker` belongs to the
+    /// target's app: it reads the app's focused window, raises the window before the private
+    /// path keys it, and runs the public path. `dropped` runs on the main actor when the
+    /// request is not performed, so the caller can forget the echo it expected.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, generation: UInt64,
                  dropped: @escaping @MainActor () -> Void) {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
-            guard isCurrent() else { return Self.onMain(dropped) }
+            guard isCurrent(), !Self.isKey(key, pid: pid, worker: worker) else { return Self.onMain(dropped) }
             if privately {
                 if case .window(let id) = key, let worker {
                     Self.raise(id, on: worker, isCurrent)
@@ -60,6 +61,27 @@ final class FocusQueue: Sendable {
         let raised = DispatchSemaphore(value: 0)
         worker.raise(id, isCurrent: isCurrent) { raised.signal() }
         _ = raised.wait(timeout: .now() + .milliseconds(30))
+    }
+
+    /// Whether the target is already key, checked when the request runs rather than against
+    /// the key window last reported, which can be older than a request still in flight
+    /// (tla/Kosmos.tla, ExecFocus). The app's focused window is read on its worker only when
+    /// the app is the front process, so a request for another app costs one 1.6 us front
+    /// process lookup and no AX read. The queue waits for the read no longer than for a raise,
+    /// and an unanswered read lets the request go ahead.
+    private static func isKey(_ key: KeyWindow, pid: pid_t, worker: AppWorker?) -> Bool {
+        let front = kosmos_front_pid() == pid
+        var focused: UInt32?? = nil
+        if front, let worker {
+            let answer = Mutex<UInt32??>(nil)
+            let read = DispatchSemaphore(value: 0)
+            worker.readFocusedWindow { window in
+                answer.withLock { $0 = window }
+                read.signal()
+            }
+            if read.wait(timeout: .now() + .milliseconds(30)) == .success { focused = answer.withLock { $0 } }
+        }
+        return key.isAlreadyKey(appIsFront: front, focused: focused)
     }
 
     private static func onMain(_ dropped: @escaping @MainActor () -> Void) {

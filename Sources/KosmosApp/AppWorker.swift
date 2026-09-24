@@ -144,6 +144,12 @@ actor AppWorker {
         }
     }
 
+    /// Reads the app's focused window for the focus queue, which waits for it at most 30 ms
+    /// (FocusQueue.swift). `done` gets nil when the app did not answer.
+    nonisolated func readFocusedWindow(_ done: @escaping @Sendable (UInt32??) -> Void) {
+        executor.perform { self.assumeIsolated { done($0.focusedWindow()) } }
+    }
+
     /// Starts asking the app every 0.5 s, for an app that did not answer during its launch
     /// retries.
     func askLater() {
