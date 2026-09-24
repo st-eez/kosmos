@@ -17,6 +17,19 @@ public enum ReportVerdict: Equatable, Sendable {
     case follow(UInt32)
     /// No key window and nothing to do.
     case ignore
+    /// The verdict depends on whether the window key before the report left the screen,
+    /// which is not known yet: hold the report until the departure arrives or a short grace
+    /// ends, then classify it again (tla/Kosmos.tla, Hold).
+    case undecided
+}
+
+/// Whether the window key before a report has left the screen: it closed or minimized, or
+/// its app hid. WindowServer can still show a hidden app's window after macOS keyed the next
+/// one, so a departure can be unknown for a moment.
+public enum Departure: Sendable {
+    case left
+    case stayed
+    case unknown
 }
 
 /// Classifies key window reports against the focus requests Kosmos made. Hotkeys, requests
@@ -53,12 +66,11 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     ///   - onCurrentWorkspace: the window belongs to the workspace Kosmos shows.
     ///   - wasHidden: the window was concealed when it became key, so only Command-Tab
     ///     could have reached it.
-    ///   - keyLeft: the window key before this report has just left the screen: it
-    ///     closed or minimized, or its app hid. macOS keyed this window itself, so it is
-    ///     not a Command-Tab to follow; Kosmos keeps its workspace and focuses it again
-    ///     (tla/Kosmos.tla, KeyLeft).
+    ///   - keyLeft: whether the window key before this report has just left the screen. If
+    ///     it has, macOS keyed this window itself, so it is not a Command-Tab to follow;
+    ///     Kosmos keeps its workspace and focuses it again (tla/Kosmos.tla, KeyLeft).
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp,
-                                  onCurrentWorkspace: Bool, wasHidden: Bool, keyLeft: Bool) -> ReportVerdict {
+                                  onCurrentWorkspace: Bool, wasHidden: Bool, keyLeft: Departure) -> ReportVerdict {
         // An echo names the requested window and arrives after the request. Earlier
         // expectations are dropped with it; a report that matches none leaves them all.
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) {
@@ -66,8 +78,15 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
             return .echo
         }
         if isStale(stamp) { return .reassert }
-        guard case .window(let id) = key else { return keyLeft ? .reassert : .ignore }
+        // No key window: if the key window left, its departure focuses when this came
+        // first.
+        guard case .window(let id) = key else { return keyLeft == .left ? .reassert : .ignore }
         if onCurrentWorkspace { return .adopt(id) }
-        return wasHidden && !keyLeft ? .follow(id) : .reassert
+        guard wasHidden else { return .reassert }
+        switch keyLeft {
+        case .left: return .reassert
+        case .stayed: return .follow(id)
+        case .unknown: return .undecided
+        }
     }
 }

@@ -29,6 +29,10 @@ final class Controller {
     private var fullscreenParked: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
+    /// A report whose verdict waits for the departure of the window key before it, with
+    /// the number of its grace timer (tla/Kosmos.tla, Hold).
+    private var held: (report: KeyReport, number: Int)?
+    private var holds = 0
     /// A focus request found its window gone from the screen, so the window's departure
     /// focuses again (tla/Kosmos.tla, RequestFocus).
     private var refocus = false
@@ -154,6 +158,7 @@ final class Controller {
             fullscreenParked.remove(id)
             ledger.forget(id)
             execute(session.remove(id))
+            decideHeld(departed: [id])
         }
     }
 
@@ -183,15 +188,24 @@ final class Controller {
         execute(plan)
     }
 
-    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). macOS keys another
-    /// window itself, and that report has Kosmos keep its workspace and focus it again.
-    /// Focusing here first could put Kosmos's own echo between the departure and that
-    /// report. Only when a focus request found these windows already gone does the
-    /// departure focus the workspace's next window, or Finder.
+    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When the key window
+    /// leaves, macOS keys another window itself, and that report has Kosmos keep its
+    /// workspace and focus it again. Focusing here first could put Kosmos's own echo
+    /// between the departure and that report. The departure focuses the workspace's next
+    /// window, or Finder, only when no such report is on its way: the key window macOS last
+    /// reported stayed, or a focus request found these windows already gone.
     private func depart(_ windows: [WindowID]) {
         let focusLeft = session.focused.map(windows.contains) == true
         execute(session.park(windows))
-        if focusLeft, refocus { requestFocus(intent) }
+        if focusLeft, refocus || !keyLeaving(windows) { requestFocus(intent) }
+        decideHeld(departed: windows)
+    }
+
+    /// Whether the key window macOS last reported is among `windows` or left the screen
+    /// too, so that macOS's report of the next key window is still on its way.
+    private func keyLeaving(_ windows: [WindowID]) -> Bool {
+        guard case .window(let id)? = key else { return false }
+        return windows.contains(id) || inventory.leftScreen(id, within: .seconds(1))
     }
 
     /// An app hid its windows: they leave the layout, and switches leave them alone.
@@ -224,36 +238,19 @@ final class Controller {
         switch report.kind {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
-            // The window key before this report left the screen just now, and Kosmos did
-            // not conceal it: macOS keyed this window after that one closed, minimized or
-            // hid (DESIGN.md, section 5.4). The bound covers macOS's delay: after a
-            // minimize, the new key window was reported 0.73 s after the minimize.
-            var keyLeft = false
-            if case .window(let previous)? = key, previous != id,
-               session.workspace(of: previous).map({ $0 == session.visible || session.isParked(previous) }) ?? true {
-                keyLeft = inventory.leftScreen(previous, within: .seconds(1))
-            }
+            let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             key = reported
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
             if let id, session.workspace(of: id) == nil || session.isParked(id) { return }
-            let verdict = reports.classify(reported, receivedAt: report.received,
-                                           onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
-                                           wasHidden: id.map(hiding.isConcealed) ?? false, keyLeft: keyLeft)
-            controllerLog.debug("focus report \(String(describing: reported), privacy: .public): \(String(describing: verdict), privacy: .public)")
-            switch verdict {
-            case .echo, .ignore:
-                break
-            case .reassert:
-                requestFocus(intent)
-            case .adopt(let window):
-                session.adopt(window)
-                touch(window)
-                publishState()
-            case .follow(let window):
-                touch(window)
-                execute(session.follow(window))
-            }
+            // The window key before this report left the screen just now: macOS keyed this
+            // window after that one closed, minimized or hid (DESIGN.md, section 5.4). The
+            // bound covers macOS's delay: after a minimize, the new key window was reported
+            // 0.73 s after the minimize. Concealing a window leaves it ordered in, so a
+            // concealed window counts only if it left too.
+            let keyLeft: Departure = previous.map { inventory.leftScreen($0, within: .seconds(1)) ? .left : .unknown } ?? .stayed
+            decide(KeyReport(key: reported, received: report.received, previous: previous,
+                             wasHidden: id.map(hiding.isConcealed) ?? false), keyLeft: keyLeft)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -278,6 +275,74 @@ final class Controller {
         case .windowCreated, .windowDestroyed, .titleChanged:
             break
         }
+    }
+
+    /// A key window report as classification reads it.
+    private struct KeyReport {
+        let key: KeyWindow
+        let received: ContinuousClock.Instant
+        /// The window key before it, when that was another window.
+        let previous: WindowID?
+        /// The reported window was concealed when it became key.
+        let wasHidden: Bool
+    }
+
+    /// How long a report waits to learn whether the window key before it left. macOS keyed
+    /// the next app before WindowServer ordered a hidden app's window out, which the
+    /// departures probe measured 17 ms after the hide. Every follow of a Command-Tab waits
+    /// this long.
+    private static let grace: Duration = .milliseconds(100)
+
+    /// Acts on a key window report. A report whose verdict depends on a departure that is
+    /// not known yet is held until the departure arrives or the grace ends
+    /// (tla/Kosmos.tla, Adopt and Hold).
+    private func decide(_ report: KeyReport, keyLeft: Departure) {
+        let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
+        let verdict = reports.classify(report.key, receivedAt: report.received,
+                                       onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
+                                       wasHidden: report.wasHidden, keyLeft: keyLeft)
+        controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
+        // A newer activation of a window ends a held report. Kosmos's own echo and a report
+        // of no key window leave it held.
+        if id != nil, verdict != .echo { held = nil }
+        switch verdict {
+        case .echo, .ignore:
+            break
+        case .undecided:
+            holds += 1
+            let number = holds
+            held = (report, number)
+            Task { [weak self] in
+                try? await Task.sleep(for: Self.grace)
+                self?.decideHeld(number: number)
+            }
+        case .reassert:
+            requestFocus(intent)
+        case .adopt(let window):
+            session.adopt(window)
+            touch(window)
+            publishState()
+        case .follow(let window):
+            touch(window)
+            execute(session.follow(window))
+        }
+    }
+
+    /// Decides the held report when the window key before it departs, or when its grace
+    /// (`number`) ends, by what WindowServer says of that window then.
+    private func decideHeld(number: Int? = nil, departed: [WindowID] = []) {
+        guard let (report, heldNumber) = held, let previous = report.previous,
+              number.map({ $0 == heldNumber }) ?? departed.contains(previous) else { return }
+        held = nil
+        // The reported window left or stopped being managed meanwhile.
+        if case .window(let id) = report.key, session.workspace(of: id) == nil || session.isParked(id) { return }
+        let left = departed.contains(previous) || inventory.leftScreen(previous, within: .seconds(1))
+        controllerLog.notice("""
+            held focus report \(String(describing: report.key), privacy: .public): \
+            \(previous) \(left ? "left" : "stayed", privacy: .public) \
+            after \(Self.ms(ContinuousClock.now - report.received), privacy: .public) ms
+            """)
+        decide(report, keyLeft: left ? .left : .stayed)
     }
 
     // MARK: Plans

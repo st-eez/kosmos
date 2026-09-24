@@ -19,8 +19,9 @@ final class Inventory {
     private(set) var focused: UInt32?
     /// Windows in a native fullscreen Space.
     private(set) var fullscreen: Set<UInt32> = []
-    /// When windows left the screen: closed, or ordered out as when they minimize or their
-    /// app hides.
+    /// When windows left the screen: closed, minimized, or hidden with their app. The first
+    /// word of a departure counts: Accessibility reports a minimize as it starts, and macOS
+    /// can key the next app before WindowServer orders a hidden app's windows out.
     private var leftAt: [UInt32: ContinuousClock.Instant] = [:]
     /// When each window's Space membership first changed since its fullscreen state was last
     /// read. A window leaving fullscreen leaves its Space before it joins the desktop's, and
@@ -61,6 +62,13 @@ final class Inventory {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
             MainActor.assumeIsolated { self?.appExited(pid) }
+        }
+        for (name, hidden) in [(NSWorkspace.didHideApplicationNotification, true), (NSWorkspace.didUnhideApplicationNotification, false)] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                let pid = app.processIdentifier
+                MainActor.assumeIsolated { self?.appHidden(pid, hidden) }
+            }
         }
         sweepTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sweep() }
@@ -106,6 +114,7 @@ final class Inventory {
         case .minimized(let id, let minimized):
             inventoryLog.info("\(id) \(minimized ? "minimized" : "restored", privacy: .public)")
             ax[id]?.minimized = minimized
+            if minimized, windows[id]?.orderedIn == true { noteLeft(id) } else if !minimized { leftAt[id] = nil }
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
@@ -144,14 +153,22 @@ final class Inventory {
         onFullscreenChange?(id, state, since)
     }
 
-    /// Whether the window left the screen within `limit`: it closed, or was ordered out as
-    /// when it minimizes or its app hides. WindowServer may have ordered it out in an event
-    /// not handled yet, which counts as now.
+    /// Whether the window left the screen within `limit`: it closed, minimized, or hid with
+    /// its app. WindowServer may have ordered it out in an event not handled yet, which
+    /// counts as now.
     func leftScreen(_ id: UInt32, within limit: Duration) -> Bool {
         if let at = leftAt[id] { return ContinuousClock.now - at <= limit }
         guard windows[id]?.orderedIn == true else { return false }
         guard let row = SkyLight.rows([id]).first else { return true }
         return !row.orderedIn
+    }
+
+    /// An app hid or came back. Its windows leave or return with it.
+    private func appHidden(_ pid: pid_t, _ hidden: Bool) {
+        inventoryLog.info("\(self.appName(pid), privacy: .public) \(hidden ? "hid" : "unhid", privacy: .public)")
+        for (id, row) in windows where row.pid == pid {
+            if !hidden { leftAt[id] = nil } else if row.orderedIn { noteLeft(id) }
+        }
     }
 
     private func noteLeft(_ id: UInt32) {
@@ -208,7 +225,9 @@ final class Inventory {
         guard ownedByRegularApp(row) else { return }
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
-        if row.orderedIn { leftAt[row.id] = nil } else if old?.orderedIn == true { noteLeft(row.id) }
+        // Back on screen only once WindowServer orders it in again: before WindowServer orders
+        // a hidden app's windows out, their rows still read ordered in.
+        if row.orderedIn, old?.orderedIn == false { leftAt[row.id] = nil } else if !row.orderedIn, old?.orderedIn == true { noteLeft(row.id) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX(row.id, pid: row.pid) }
             inventoryLog.info("""

@@ -157,10 +157,16 @@ off the main thread).
   - A window that was hidden when it became key was reached with Command-Tab, and Kosmos
     follows it to its workspace. That excludes the report right after the key window
     left, when it closed or minimized or its app hid. macOS then keys another window
-    itself, sometimes a concealed one. Kosmos reads from WindowServer that the window key
-    before the report left the screen within the last second. It keeps its workspace
-    and focuses it again, and does the same when macOS keys no window. A Command-Tab
-    after that report follows as usual.
+    itself, sometimes a concealed one, and Kosmos keeps its workspace and focuses it
+    again. The window key before the report left the screen within the last second if
+    WindowServer ordered it out or destroyed it, Accessibility reported it minimized, or
+    NSWorkspace reported its app hidden.
+  - macOS can key the next app before WindowServer orders a hidden app's windows out, so
+    a report that would follow waits up to 100 ms for that evidence. The departure of the
+    window key before it ends the wait at once, and a report of another window replaces
+    it. A Command-Tab after that report follows as usual, 100 ms late. This happened
+    live: Command-H on the only window of workspace 2 took Kosmos to workspace 1, where
+    macOS keyed Ghostty.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again.
@@ -173,8 +179,10 @@ off the main thread).
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
   next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
-  replaced only in that case, because focusing earlier could put Kosmos's echo between
-  the departure and the report of the window macOS keys next.
+  replaced at once too, unless the key window macOS last reported left with it: then
+  macOS's report of the next key window is still on its way and focuses. Focusing earlier
+  could put Kosmos's echo between the departure and that report. When macOS keys no
+  window, the departure focuses.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 
