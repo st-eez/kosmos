@@ -13,9 +13,10 @@ import Testing
     #expect(KeyWindow.window(1).goesAhead(appIsFront: false, focused: nil))
 }
 
-@Test func aReadWithNoAnswerStopsTheRequest() {
+@Test func aReadWithNoAnswerStopsAWindowRequestButNotAnEmptyWorkspace() {
     #expect(!KeyWindow.window(1).goesAhead(appIsFront: true, focused: nil))
-    #expect(!KeyWindow.none.goesAhead(appIsFront: true, focused: nil))
+    // Stopping would leave a hidden Finder window key on the empty workspace.
+    #expect(KeyWindow.none.goesAhead(appIsFront: true, focused: nil))
 }
 
 @Test func anEmptyWorkspaceIsKeyWhenFinderIsFrontWithNoWindowFocused() {

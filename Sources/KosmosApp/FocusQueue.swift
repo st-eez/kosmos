@@ -59,12 +59,10 @@ final class FocusQueue: Sendable {
                     else { return }
                     stamp = decided
                 case .none:
-                    // `FocusStart`: Finder with no window, keyed at once unless it is already,
-                    // or Finder does not answer the read (KeyWindow.goesAhead).
-                    if front, let worker {
-                        let focused = Self.focusedWindow(on: worker)
-                        if focused == nil { focusLog.notice("Finder did not answer the focused window read; the empty workspace keeps the key window") }
-                        guard KeyWindow.none.goesAhead(appIsFront: true, focused: focused) else { return }
+                    // `FocusStart`: Finder with no window, keyed at once unless it is already
+                    // (KeyWindow.goesAhead).
+                    if front, let worker, !KeyWindow.none.goesAhead(appIsFront: true, focused: Self.focusedWindow(on: worker)) {
+                        return
                     }
                     stamp = ContinuousClock.now
                 }
