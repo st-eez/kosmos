@@ -4,8 +4,10 @@ A tree tiling window manager for macOS, built for fast workspace switching.
 
 *Kosmos* is Greek for order and arrangement, the root of "cosmetic".
 
-**Status:** design. There is no code to run yet. The design is in
-[docs/DESIGN.md](docs/DESIGN.md).
+**Status:** early development. Kosmos runs in observer mode: it tracks every window and
+follows focus next to another window manager, and moves nothing yet. The design is in
+[docs/DESIGN.md](docs/DESIGN.md), and the TLA+ spec of the workspace switch is in
+[tla/](tla/README.md).
 
 ## Goals
 
@@ -35,6 +37,32 @@ A tree tiling window manager for macOS, built for fast workspace switching.
 ## Requirements
 
 macOS 27 on Apple Silicon.
+
+## Building
+
+With Xcode 27:
+
+```sh
+swift build                 # debug build of every target
+swift test                  # unit tests
+./script/bundle.sh          # .build/dist/Kosmos.app and .build/dist/bin/kosmos
+```
+
+`script/bundle.sh` signs with your first Apple Development certificate, or the identity in
+`KOSMOS_SIGN_IDENTITY`. Keep using the same one: macOS ties the Accessibility grant to it.
+
+## What works
+
+| Part | State | Evidence |
+| --- | --- | --- |
+| Window tracking from WindowServer events | Working | A 64 s run next to AeroSpace handled 41 events and missed none |
+| Per-app Accessibility workers | Working | Found every standard window and followed each focus change |
+| Holding Space and barrier | Working in probes | 50 of 50 conceals and reveals confirmed by one 1.3 ms read |
+| Recovery after `kill -9` | Working in probes | The guardian restored a concealed window in 130 ms |
+| SketchyBar push | Working in probes | 0.02 ms per send |
+| Tiling, switching, hotkeys, config, CLI | In progress | |
+
+The probes are in `Sources/kosmos-probe`. Each acts only on a window it creates.
 
 ## Credits
 
