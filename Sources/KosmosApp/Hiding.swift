@@ -13,10 +13,11 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 @MainActor
 final class Hiding {
     /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
-    /// preparing and sending its operations, confirming them, and the way back to the main
-    /// actor.
+    /// preparing and sending its operations, confirming them, the recovery after a batch
+    /// that failed, and the way back to the main actor.
     struct Timing: Sendable {
-        var queued = Duration.zero, sent = Duration.zero, confirmed = Duration.zero, returned = Duration.zero
+        var queued = Duration.zero, sent = Duration.zero, confirmed = Duration.zero
+        var recovered = Duration.zero, returned = Duration.zero
         /// The confirmation needed the barrier because direct reads did not show the batch
         /// done in time; nil when the batch read nothing.
         var barrier: Bool?
@@ -60,11 +61,12 @@ final class Hiding {
         bridge.async {
             let started = ContinuousClock.now
             let (confirmed, sent, barrier) = store.apply(show: show, hide: hide)
+            let applied = ContinuousClock.now
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
             let finished = ContinuousClock.now
-            var timing = Timing(queued: started - submitted, sent: (sent ?? finished) - started,
-                                confirmed: finished - (sent ?? finished), barrier: barrier)
+            var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
+                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     timing.returned = .now - finished
