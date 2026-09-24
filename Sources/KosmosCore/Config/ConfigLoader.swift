@@ -1,12 +1,9 @@
 extension Config {
     /// Parses and checks a whole config file. `config` is nil when any diagnostic is an error,
     /// so a caller applies all of a file or none of it; warnings can come with a config.
-    /// Diagnostics are in file order. `commandError` checks a binding's command with the CLI's
-    /// parser and returns why it is invalid, or nil, so a bad command fails the load instead
-    /// of the key press.
-    public static func load(_ text: String, commandError: (Binding.Command) -> String? = { _ in nil })
-        -> (config: Config?, diagnostics: [Diagnostic])
-    {
+    /// Diagnostics are in file order. Binding commands go through `Command.parse`, so a bad
+    /// command fails the load instead of the key press.
+    public static func load(_ text: String) -> (config: Config?, diagnostics: [Diagnostic]) {
         let root: TOMLTable
         do {
             root = try parseTOML(text)
@@ -14,16 +11,13 @@ extension Config {
             return (nil, [error])
         }
         var decoder = ConfigDecoder()
-        let config = decoder.config(root, commandError: commandError)
+        let config = decoder.config(root)
         let diagnostics = decoder.diagnostics.enumerated()
             .sorted { ($0.element.position, $0.offset) < ($1.element.position, $1.offset) }
             .map(\.element)
         return (diagnostics.contains { $0.severity == .error } ? nil : config, diagnostics)
     }
 }
-
-/// Words the command grammar uses where a workspace name can stand, so they cannot name one.
-private let reservedWorkspaceNames: Set<String> = ["next", "prev", "back-and-forth", "focused"]
 
 /// Checks the TOML tree against the schema. It reports every problem it finds and returns a
 /// config that is complete only when it reported no error.
@@ -35,7 +29,7 @@ private struct ConfigDecoder {
     /// mistake is reported once.
     private var monitorNames: [String] = []
 
-    mutating func config(_ root: TOMLTable, commandError: (Binding.Command) -> String?) -> Config {
+    mutating func config(_ root: TOMLTable) -> Config {
         let path = ValuePath()
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
@@ -73,7 +67,7 @@ private struct ConfigDecoder {
             config.gaps = gaps(entry.value, path.key(entry.key))
         }
         if let entry = root["mode"] {
-            config.modes = modes(entry.value, path.key(entry.key), commandError: commandError)
+            config.modes = modes(entry.value, path.key(entry.key))
         }
         var rules: [(rule: WindowRule, position: SourcePosition, path: ValuePath)] = []
         if let entry = root["rule"] {
@@ -143,7 +137,7 @@ private struct ConfigDecoder {
         if name.hasPrefix("-") {
             return "workspace names cannot start with '-', which starts an option"
         }
-        if reservedWorkspaceNames.contains(name) {
+        guard case .success(.workspace(.named)) = Command.parse(["workspace", name]) else {
             return "'\(name)' is a command keyword and cannot name a workspace"
         }
         return nil
@@ -204,8 +198,7 @@ private struct ConfigDecoder {
         return points
     }
 
-    private mutating func modes(_ value: TOMLValue, _ path: ValuePath,
-                                commandError: (Binding.Command) -> String?) -> [String: [Binding]] {
+    private mutating func modes(_ value: TOMLValue, _ path: ValuePath) -> [String: [Binding]] {
         guard let table = table(value, path) else { return [:] }
         var modes: [String: [Binding]] = [:]
         for mode in table.entries {
@@ -233,11 +226,8 @@ private struct ConfigDecoder {
                         continue
                     }
                     seen[combo] = binding
-                    guard let command = command(binding.value, bindingPath) else { continue }
-                    if let problem = commandError(command) {
-                        fail(problem, at: binding.value.position, bindingPath)
-                    }
-                    bindings.append(Binding(key: binding.key, combo: combo, command: command))
+                    guard let arguments = command(binding.value, bindingPath) else { continue }
+                    bindings.append(Binding(key: binding.key, combo: combo, arguments: arguments))
                 }
             }
             modes[mode.key] = bindings
@@ -245,24 +235,29 @@ private struct ConfigDecoder {
         return modes
     }
 
-    private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> Binding.Command? {
+    /// A command's arguments, from a string of words or an array, after `Command.parse`
+    /// accepts them. A string splits at whitespace and has no quoting, so an argument that
+    /// contains a space needs the array form.
+    private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> [String]? {
+        var arguments: [String] = []
         switch value.kind {
         case .string:
-            return string(value, path).map(Binding.Command.string)
+            guard let line = string(value, path) else { return nil }
+            arguments = line.split(whereSeparator: \.isWhitespace).map(String.init)
         case .array(let items):
-            guard !items.isEmpty else {
-                fail("the command is empty", at: value.position, path)
-                return nil
-            }
-            var arguments: [String] = []
             for (index, item) in items.enumerated() {
                 if let argument = string(item, path.index(index)) { arguments.append(argument) }
             }
-            return arguments.count == items.count ? .argv(arguments) : nil
+            guard arguments.count == items.count else { return nil }
         default:
             fail("expected a command as a string or an array of arguments, found \(kindName(value))", at: value.position, path)
             return nil
         }
+        if case .failure(let error) = Command.parse(arguments) {
+            fail(error.message, at: value.position, path)
+            return nil
+        }
+        return arguments
     }
 
     /// Rules in file order, with a warning for each rule an earlier one shadows.

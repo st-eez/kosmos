@@ -2,7 +2,7 @@ import Testing
 @testable import KosmosCore
 
 private func binding(_ key: String, _ command: String) throws -> Binding {
-    Binding(key: key, combo: try KeyCombo(key), command: .string(command))
+    Binding(key: key, combo: try KeyCombo(key), arguments: command.split(separator: " ").map(String.init))
 }
 
 /// Dvorak types h with the key a US keyboard has j on.
@@ -35,7 +35,7 @@ private let azerty: [Character: UInt16] = ["-": 22]
         #expect(changes.unregister == [PhysicalKey(code: 15, modifiers: .alt)])
         #expect(changes.register == [PhysicalKey(code: 53, modifiers: [])])
         // alt-h stays registered; the new table supplies its new command.
-        #expect(resize.bindings[PhysicalKey(code: 4, modifiers: .alt)]?.command == .string("resize width -50"))
+        #expect(resize.bindings[PhysicalKey(code: 4, modifiers: .alt)]?.arguments == ["resize", "width", "-50"])
         // The same table twice changes nothing.
         let none = main.changes(from: main.bindings.keys)
         #expect(none.unregister.isEmpty && none.register.isEmpty)

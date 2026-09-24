@@ -4,8 +4,8 @@ import Testing
 private let header = "config-version = 1\nworkspaces = ['1', '2', '3']\n"
 
 /// Loads `header` followed by `body`, so line 3 is the first line of `body`.
-private func load(_ body: String, commandError: (Binding.Command) -> String? = { _ in nil }) -> (config: Config?, diagnostics: [String]) {
-    let result = Config.load(header + body, commandError: commandError)
+private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
+    let result = Config.load(header + body)
     return (result.config, result.diagnostics.map(\.description))
 }
 
@@ -116,15 +116,18 @@ private func load(_ body: String, commandError: (Binding.Command) -> String? = {
         let body = """
         [mode.main.binding]
         alt-h = 'focus left'
-        alt-shift-1 = ['move-to-workspace', '1']
+        alt-shift-1 = ['move-node-to-workspace', '--focus-follows-window', '1']
+        alt-equal = "  resize\tsmart   +100 "
         [mode.resize.binding]
-        esc = 'mode main'
+        esc = 'balance-sizes'
         """
         let config = try #require(load(body).config)
         let main = try #require(config.modes["main"])
-        #expect(main.map(\.key) == ["alt-h", "alt-shift-1"])
-        #expect(main[0].command == .string("focus left"))
-        #expect(main[1].command == .argv(["move-to-workspace", "1"]))
+        #expect(main.map(\.key) == ["alt-h", "alt-shift-1", "alt-equal"])
+        #expect(main[0].arguments == ["focus", "left"])
+        #expect(main[1].arguments == ["move-node-to-workspace", "--focus-follows-window", "1"])
+        // A string splits at any run of whitespace.
+        #expect(main[2].arguments == ["resize", "smart", "+100"])
         #expect(try main[1].combo == KeyCombo("shift-alt-1"))
         #expect(config.modes["resize"]?.first?.combo.modifiers == [])
     }
@@ -132,10 +135,10 @@ private func load(_ body: String, commandError: (Binding.Command) -> String? = {
     @Test func badBindings() {
         let body = """
         [mode.main.binding]
-        alt-hh = 'a'
-        opt-h = 'a'
-        alt-shift-j = 'a'
-        shift-alt-j = 'a'
+        alt-hh = 'fullscreen'
+        opt-h = 'fullscreen'
+        alt-shift-j = 'fullscreen'
+        shift-alt-j = 'fullscreen'
         alt-k = ''
         alt-l = []
         alt-m = 3
@@ -148,25 +151,26 @@ private func load(_ body: String, commandError: (Binding.Command) -> String? = {
             "5:1: error: mode.main.binding.opt-h: 'opt' is not a modifier; use cmd, ctrl, alt or shift; did you mean 'alt'?",
             "7:1: error: mode.main.binding.shift-alt-j: 'shift-alt-j' is the same combination as 'alt-shift-j' on line 6",
             "8:9: error: mode.main.binding.alt-k: the string is empty",
-            "9:9: error: mode.main.binding.alt-l: the command is empty",
+            "9:9: error: mode.main.binding.alt-l: no command",
             "10:9: error: mode.main.binding.alt-m: expected a command as a string or an array of arguments, found an integer",
             "11:7: error: mode.\"two words\": mode names cannot be empty or contain whitespace",
             "13:1: error: mode.x.bindings: unknown key; did you mean 'binding'?",
         ])
     }
 
-    @Test func commandErrorsFailTheLoad() {
+    @Test func invalidCommandsFailTheLoad() {
         let body = """
         [mode.main.binding]
         alt-h = 'focus left'
         alt-j = 'fcous down'
+        alt-k = ['resize', 'smart', '100']
         """
-        let result = load(body) { command in
-            guard case .string(let line) = command, !line.hasPrefix("focus") else { return nil }
-            return "unknown command '\(line.split(separator: " ")[0])'"
-        }
+        let result = load(body)
         #expect(result.config == nil)
-        #expect(result.diagnostics == ["5:9: error: mode.main.binding.alt-j: unknown command 'fcous'"])
+        #expect(result.diagnostics == [
+            "5:9: error: mode.main.binding.alt-j: unknown command or arguments: fcous down",
+            "6:9: error: mode.main.binding.alt-k: resize: amount must be +N or -N points, got 100",
+        ])
     }
 
     @Test func rulesNeedAMatcherAndAnAction() {

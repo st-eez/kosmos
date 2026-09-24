@@ -77,19 +77,12 @@ public struct MonitorOuterGaps: Equatable, Sendable {
 }
 
 public struct Binding: Equatable, Sendable {
-    /// A command in the CLI grammar. Kosmos's command parser reads it; the config keeps it as
-    /// written.
-    public enum Command: Equatable, Sendable {
-        /// A command line, such as `workspace 1`.
-        case string(String)
-        /// A command's arguments, as the CLI passes them.
-        case argv([String])
-    }
-
     /// The combination as written in the config, such as `alt-shift-h`.
     public var key: String
     public var combo: KeyCombo
-    public var command: Command
+    /// The command's arguments, as the CLI passes them. `Command.parse` accepted them when the
+    /// config loaded.
+    public var arguments: [String]
 }
 
 public struct WindowRule: Equatable, Sendable {
