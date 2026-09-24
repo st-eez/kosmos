@@ -12,9 +12,9 @@
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
-//   kosmos-probe secure-input [keys]  Which Carbon hotkeys fire while Secure Input is on, with
-//                                   synthetic presses, or real ones with `keys`, and what
-//                                   detecting Secure Input costs (SecureInput.swift).
+//   kosmos-probe secure-input       Which Carbon hotkeys fire while Secure Input is on, from
+//                                   real key presses its window asks for, and what detecting
+//                                   Secure Input costs (SecureInput.swift).
 import AppKit
 import CKosmos
 import KosmosRecovery
@@ -32,7 +32,7 @@ case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
 case "secure-input": secureInput(arguments.dropFirst().first)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | secure-input [keys]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | secure-input")
     exit(2)
 }
 

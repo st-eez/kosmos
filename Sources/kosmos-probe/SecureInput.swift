@@ -1,13 +1,16 @@
 // kosmos-probe secure-input: which Carbon hotkeys fire while Secure Input is on, and how
 // Kosmos can learn that it turned on (DESIGN.md, section 5.6).
 //
-// The probe registers each key below as an exclusive hotkey and presses it in three phases:
-// Secure Input off, the probe's own password field focused, and another process holding
-// Secure Input while the probe's plain field is focused. Every press lands in the probe's
-// own window: a hotkey that fires consumes the key, and one that does not lets the key reach
-// the window, where a local monitor sees it. So each press has an answer without a timeout.
-// Without `keys` the probe posts synthetic presses. With `keys` its window asks the person at
-// the keyboard for the keys a laptop has, in the first two phases.
+// The probe registers each key below as an exclusive hotkey, and its window asks the person
+// at the keyboard to press each one in three phases: Secure Input off, the probe's own
+// password field focused, and another process holding Secure Input while the probe's plain
+// field is focused. Every press lands in the probe's own window: a hotkey that fires consumes
+// the key, and one that does not lets the key reach the window, where a local monitor sees
+// it. So each press has an answer without a timeout.
+//
+// Real presses only. Synthetic presses gave a different answer depending on how the event
+// was built: made from the HID state, every hotkey on a character key missed even with
+// Secure Input off. They also type into whatever app is in front if the probe loses focus.
 //
 // Secure Input ends when its holder exits (measured: WindowServer sends event 753 at the
 // exit), so a crash or a kill leaves it off. The holder child exits when the probe's pipe
@@ -23,38 +26,26 @@ private struct TestKey {
     let label: String
     let carbon: Int
     let flags: NSEvent.ModifierFlags
-    /// The interactive run asks for it: a laptop has the key, and the key stands for others.
-    var asked = true
 
-    init(_ name: String, _ carbon: Int, _ flags: NSEvent.ModifierFlags, code: Int = kVK_ANSI_Y, label: String = "Y", asked: Bool = true) {
-        (self.name, self.carbon, self.flags, self.code, self.label, self.asked) = (name, carbon, flags, code, label, asked)
+    init(_ name: String, _ carbon: Int, _ flags: NSEvent.ModifierFlags, code: Int = kVK_ANSI_Y, label: String = "Y") {
+        (self.name, self.carbon, self.flags, self.code, self.label) = (name, carbon, flags, code, label)
     }
 }
 
-/// Y with each modifier set, then Option on keys of other kinds. None of them is bound in
-/// Steve's config or the sample config, or is a macOS shortcut.
+/// Y with each kind of modifier set, then Option on keys of other kinds, all on a laptop
+/// keyboard. None of them is bound in Steve's config or the sample config, or is a macOS
+/// shortcut.
 private let testKeys: [TestKey] = [
     TestKey("alt-y", optionKey, [.option]),
     TestKey("alt-shift-y", optionKey | shiftKey, [.option, .shift]),
-    TestKey("ctrl-y", controlKey, [.control], asked: false),
-    TestKey("cmd-y", cmdKey, [.command], asked: false),
     TestKey("ctrl-alt-y", controlKey | optionKey, [.control, .option]),
     TestKey("ctrl-alt-shift-y", controlKey | optionKey | shiftKey, [.control, .option, .shift]),
     TestKey("cmd-alt-y", cmdKey | optionKey, [.command, .option]),
     TestKey("ctrl-cmd-y", controlKey | cmdKey, [.control, .command]),
-    TestKey("ctrl-alt-cmd-y", controlKey | optionKey | cmdKey, [.control, .option, .command], asked: false),
-    TestKey("ctrl-alt-cmd-shift-y", controlKey | optionKey | cmdKey | shiftKey, [.control, .option, .command, .shift], asked: false),
     TestKey("alt-comma", optionKey, [.option], code: kVK_ANSI_Comma, label: ","),
     TestKey("alt-space", optionKey, [.option], code: kVK_Space, label: "Space"),
-    TestKey("alt-shift-space", optionKey | shiftKey, [.option, .shift], code: kVK_Space, label: "Space", asked: false),
     TestKey("alt-enter", optionKey, [.option], code: kVK_Return, label: "Return"),
-    TestKey("alt-esc", optionKey, [.option], code: kVK_Escape, label: "Esc", asked: false),
     TestKey("alt-backspace", optionKey, [.option], code: kVK_Delete, label: "Delete"),
-    TestKey("alt-pagedown", optionKey, [.option], code: kVK_PageDown, label: "Page Down", asked: false),
-    TestKey("alt-f13", optionKey, [.option], code: kVK_F13, label: "F13", asked: false),
-    TestKey("alt-keypad1", optionKey, [.option], code: kVK_ANSI_Keypad1, label: "keypad 1", asked: false),
-    TestKey("alt-keypadEnter", optionKey, [.option], code: kVK_ANSI_KeypadEnter, label: "keypad Enter", asked: false),
-    TestKey("f13", 0, [], code: kVK_F13, label: "F13", asked: false),
 ]
 
 private enum Phase: CaseIterable {
@@ -69,6 +60,15 @@ private enum Phase: CaseIterable {
         case .otherProcess: "another process"
         }
     }
+
+    /// What the window says about the phase.
+    var explanation: String {
+        switch self {
+        case .off: "Secure Input is off"
+        case .ownField: "Secure Input is on, from this window's password field"
+        case .otherProcess: "Secure Input is on, held by another process"
+        }
+    }
 }
 
 private enum Outcome: String {
@@ -76,12 +76,10 @@ private enum Outcome: String {
     case fired
     /// The key reached the probe's window: the hotkey did not fire.
     case typed
-    /// Neither, within the wait: another app or macOS took the key, or it was skipped.
+    /// Skipped: the person pressed Return, for example because nothing happened.
     case none
     /// Registration failed: another app holds the combination.
     case taken
-    /// Left out of the interactive run.
-    case skipped = "-"
 }
 
 private let signatureY: OSType = 0x4B53_5059   // 'KSPY'
@@ -100,11 +98,10 @@ private func stamp() -> String {
 
 @MainActor func secureInput(_ mode: String?) -> Never {
     switch mode {
-    case nil: secureInputProbe(interactive: false)
-    case "keys": secureInputProbe(interactive: true)
+    case nil: secureInputProbe()
     case "hold": holdSecureInput()
     default:
-        print("usage: kosmos-probe secure-input [keys]")
+        print("usage: kosmos-probe secure-input")
         exit(2)
     }
 }
@@ -120,14 +117,10 @@ private func holdSecureInput() -> Never {
     exit(0)
 }
 
-@MainActor private func secureInputProbe(interactive: Bool) -> Never {
+@MainActor private func secureInputProbe() -> Never {
     print("\(stamp()) start")
     if IsSecureEventInputEnabled() {
         print("Secure Input is already on, held by \(holderDescription()); release it and run again")
-        exit(1)
-    }
-    if !interactive && !CGPreflightPostEventAccess() {
-        print("posting key events needs Accessibility for the terminal; run `kosmos-probe secure-input keys` instead")
         exit(1)
     }
     let app = NSApplication.shared
@@ -135,7 +128,7 @@ private func holdSecureInput() -> Never {
     app.finishLaunching()
     let previous = NSWorkspace.shared.frontmostApplication
     // A person who walks away would leave Secure Input on.
-    alarm(interactive ? 600 : 60)
+    alarm(600)
 
     print("checks with Secure Input off:")
     timeChecks()
@@ -161,10 +154,7 @@ private func holdSecureInput() -> Never {
     var results: [String: [Phase: Outcome]] = [:]
     var holders: [Phase: String] = [:]
     var holder: Process?
-    // Real presses check the synthetic answer; the phase with another holder answered the
-    // same as the probe's own field in every synthetic run, so a person is asked for two.
-    let phases: [Phase] = interactive ? [.off, .ownField] : Phase.allCases
-    for phase in phases {
+    for phase in Phase.allCases {
         switch phase {
         case .off:
             window.focus(secure: false)
@@ -189,13 +179,7 @@ private func holdSecureInput() -> Never {
                 results[key.name, default: [:]][phase] = .taken
                 continue
             }
-            guard key.asked || !interactive else {
-                results[key.name, default: [:]][phase] = .skipped
-                continue
-            }
-            let outcome = interactive ? askForPress(key, phase: phase, window: window) : postPress(key, phase: phase, window: window)
-            results[key.name, default: [:]][phase] = outcome
-            if !interactive { print("  \(key.name): \(outcome.rawValue)") }
+            results[key.name, default: [:]][phase] = askForPress(key, phase: phase, window: window)
         }
     }
 
@@ -210,15 +194,15 @@ private func holdSecureInput() -> Never {
 
     print("")
     print("Secure Input during each phase:")
-    for phase in phases { print("  \(phase.title): \(holders[phase]!)") }
+    for phase in Phase.allCases { print("  \(phase.title): \(holders[phase]!)") }
     print("")
-    print("Hotkeys (\(interactive ? "real key presses" : "synthetic presses posted at the HID level")):")
+    print("Hotkeys:")
     let width = testKeys.map(\.name.count).max()! + 2
     print("key".padding(toLength: width, withPad: " ", startingAt: 0)
-          + phases.map { $0.title.padding(toLength: 20, withPad: " ", startingAt: 0) }.joined())
+          + Phase.allCases.map { $0.title.padding(toLength: 20, withPad: " ", startingAt: 0) }.joined())
     for key in testKeys {
         print(key.name.padding(toLength: width, withPad: " ", startingAt: 0)
-              + phases.map { results[key.name]![$0]!.rawValue.padding(toLength: 20, withPad: " ", startingAt: 0) }.joined())
+              + Phase.allCases.map { results[key.name]![$0]!.rawValue.padding(toLength: 20, withPad: " ", startingAt: 0) }.joined())
     }
     print("")
     print("Secure Input after the probe: \(IsSecureEventInputEnabled() ? "ON, held by \(holderDescription())" : "off")")
@@ -310,46 +294,11 @@ private func holderDescription() -> String {
     return process
 }
 
-/// Posts one synthetic press, only while the probe's window is key so a press the hotkey
-/// does not consume lands there.
-@MainActor private func postPress(_ key: TestKey, phase: Phase, window: ProbeWindow) -> Outcome {
-    guard window.isKey else {
-        print("the probe's window lost focus; stopping without posting")
-        exit(1)
-    }
-    guard IsSecureEventInputEnabled() == phase.secureInput else {
-        print("Secure Input changed during phase \(phase.title); stopping")
-        exit(1)
-    }
-    firedID = nil
-    typed = nil
-    // The flags a keyboard sends: each modifier with its left key's device bit, and the fn and
-    // keypad flags that keys such as F13 carry and their hotkeys need to match. The event is
-    // made from a private state: an event made from the HID state carries the modifier bits
-    // the last key event anywhere left, and with them presses missed their hotkeys.
-    var flags = CGEventFlags.maskNonCoalesced
-    if key.flags.contains(.command) { flags.formUnion([.maskCommand, CGEventFlags(rawValue: UInt64(NX_DEVICELCMDKEYMASK))]) }
-    if key.flags.contains(.control) { flags.formUnion([.maskControl, CGEventFlags(rawValue: UInt64(NX_DEVICELCTLKEYMASK))]) }
-    if key.flags.contains(.option) { flags.formUnion([.maskAlternate, CGEventFlags(rawValue: UInt64(NX_DEVICELALTKEYMASK))]) }
-    if key.flags.contains(.shift) { flags.formUnion([.maskShift, CGEventFlags(rawValue: UInt64(NX_DEVICELSHIFTKEYMASK))]) }
-    let source = CGEventSource(stateID: .privateState)
-    for down in [true, false] {
-        guard let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key.code), keyDown: down) else { continue }
-        event.flags = event.flags.intersection([.maskSecondaryFn, .maskNumericPad]).union(flags)
-        event.post(tap: .cghidEventTap)
-    }
-    pump(until: { firedID != nil || typed != nil }, timeout: 0.5)
-    let outcome: Outcome = firedID != nil ? .fired : typed?.code == key.code ? .typed : .none
-    pump(until: { false }, timeout: 0.05)   // the key up
-    return outcome
-}
-
 /// Asks the person at the keyboard for one press and waits for it. Return skips the key.
 @MainActor private func askForPress(_ key: TestKey, phase: Phase, window: ProbeWindow) -> Outcome {
-    let asked = testKeys.filter(\.asked)
-    let prompt = "Phase \(phase == .off ? 1 : 2) of 2, Secure Input \(phase.title).\n"
-        + "Press \(key.name) (\(symbols(key.flags)) \(key.label)), key \(asked.firstIndex { $0.name == key.name }! + 1) "
-        + "of \(asked.count). Return skips it."
+    let prompt = "Phase \(Phase.allCases.firstIndex(of: phase)! + 1) of 3: \(phase.explanation).\n"
+        + "Press \(key.name) (\(symbols(key.flags)) \(key.label)), key \(testKeys.firstIndex { $0.name == key.name }! + 1) "
+        + "of \(testKeys.count). Return skips it."
     var note = ""
     while true {
         firedID = nil
