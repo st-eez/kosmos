@@ -296,6 +296,12 @@ actor AppWorker {
             if let id = track(element) { send(.windowCreated(id)) }
         case kAXFocusedWindowChangedNotification:
             // Only the front app's focused window is the key window (tla/Kosmos.tla, Observe).
+            // The model reads the front process when the app sends the report; this callback
+            // reads it when the worker gets to it, which can be later while the worker is
+            // busy. A late read can take a user's same-app click that races Kosmos's
+            // activation of another app for a background report, and drop it. The check
+            // stays here for the common case it exists for: apps opening or focusing windows
+            // in the background.
             let id = track(element)
             if !backoff.backedOff { send(kosmos_front_pid() == pid ? .focusedWindowChanged(id) : .backgroundFocus(id)) }
         case kAXUIElementDestroyedNotification:
