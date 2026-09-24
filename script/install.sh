@@ -60,12 +60,13 @@ run() {
 was_running=false
 stop_kosmos() {
     local pids pid
-    pids=$(lsof -t -a -d txt "$app/Contents/MacOS/Kosmos" 2>/dev/null || true)
+    # -c keeps out other processes that map the file, such as lldb, sample or ReportCrash.
+    pids=$(lsof -t -a -d txt -c Kosmos "$app/Contents/MacOS/Kosmos" 2>/dev/null || true)
     if [[ -z $pids ]]; then return; fi
     was_running=true
-    run kill -TERM $pids
+    run kill -TERM $pids 2>/dev/null || true
     if $dry_run; then return; fi
-    pids="$pids $(lsof -t -a -d txt "$app/Contents/Helpers/kosmos-guardian" 2>/dev/null || true)"
+    pids="$pids $(lsof -t -a -d txt -c kosmos-guardian "$app/Contents/Helpers/kosmos-guardian" 2>/dev/null || true)"
     for _ in {1..100}; do
         local alive=false
         for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive=true; done
@@ -88,10 +89,38 @@ if [[ $mode == rollback && ! -d $previous ]]; then
     echo "There is no previous copy at $previous." >&2
     exit 1
 fi
+# The new build is copied beside the app before anything stops, since the copy is the step
+# most likely to fail. Every later step renames on that one volume.
 if [[ $mode == install ]]; then
     run script/bundle.sh
+    run mkdir -p "$app_dir"
+    run rm -rf "$stage"
+    run ditto .build/dist/Kosmos.app "$stage"
 fi
 
+status=not-registered
+start_kosmos() {
+    if [[ $status == enabled ]]; then
+        # Registering starts Kosmos through launchd.
+        run "$app/Contents/MacOS/Kosmos" launch-at-login on
+    elif $was_running; then
+        run open "$app"
+    fi
+}
+# Between quitting Kosmos or turning off launch at login and starting Kosmos again, a failed
+# step would leave Kosmos stopped, so the exit trap starts it from whichever copy is at $app.
+start_pending=false
+recover_start() {
+    if ! $start_pending || { ! $was_running && [[ $status != enabled ]]; }; then return; fi
+    if [[ -d $app ]]; then
+        echo "A step failed; starting Kosmos from $app again." >&2
+        start_kosmos || true
+    else
+        echo "A step failed and $app is missing; the replaced copy is at $previous." >&2
+    fi
+}
+trap 'if (($?)); then recover_start; fi' EXIT
+if [[ $mode != uninstall ]]; then start_pending=true; fi
 stop_kosmos
 if ! $dry_run && pgrep -qx Kosmos; then
     echo "Another Kosmos is running. Only one Kosmos runs at a time."
@@ -100,12 +129,12 @@ fi
 # Launch at login is handled only for /Applications. A copy elsewhere has the same bundle
 # identifier and certificate, so Background Task Management may report and change the
 # installed copy's registration through it.
-status=not-registered
 if [[ $app_dir == /Applications && -d $app ]]; then
     status=$("$app/Contents/MacOS/Kosmos" launch-at-login status)
 fi
 # SMAppService.h asks for a new registration when the agent's executable changes, with an
-# unregister first. A copy the user turned off in Login Items stays as it is.
+# unregister first. A copy the user turned off in Login Items stays as it is, since nothing
+# documents whether register() would keep it off (docs/INSTALL.md, open questions).
 if [[ $status == enabled || ($mode == uninstall && $status == requires-approval) ]]; then
     run "$app/Contents/MacOS/Kosmos" launch-at-login off
 fi
@@ -118,12 +147,8 @@ if [[ $mode == uninstall ]]; then
     exit 0
 fi
 
-# The incoming copy waits beside the app, so every step of the swap renames on one volume.
-run mkdir -p "$app_dir" "$bin_dir"
-run rm -rf "$stage"
-if [[ $mode == install ]]; then
-    run ditto .build/dist/Kosmos.app "$stage"
-else
+if [[ $mode == rollback ]]; then
+    run rm -rf "$stage"
     run mv "$previous" "$stage"
 fi
 if [[ -d $app ]]; then
@@ -131,14 +156,10 @@ if [[ -d $app ]]; then
     run mv "$app" "$previous"
 fi
 run mv "$stage" "$app"
+run mkdir -p "$bin_dir"
 run ln -sfn "$cli" "$link"
-
-if [[ $status == enabled ]]; then
-    # Registering starts Kosmos through launchd.
-    run "$app/Contents/MacOS/Kosmos" launch-at-login on
-elif $was_running; then
-    run open "$app"
-fi
+start_pending=false
+start_kosmos
 
 $dry_run && exit 0
 echo "Kosmos $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist") is in $app, and $link runs its CLI."

@@ -12,7 +12,8 @@ script/install.sh             # build, install and link
 
 `script/install.sh`:
 
-1. Builds `.build/dist/Kosmos.app` with `script/bundle.sh`.
+1. Builds `.build/dist/Kosmos.app` with `script/bundle.sh` and copies it beside the app
+   before anything stops.
 2. Quits a Kosmos running from `/Applications/Kosmos.app` with SIGTERM, which restores its
    hidden windows, and waits for it and its guardian to exit. A Kosmos running from
    anywhere else, such as a development build, keeps running.
@@ -26,6 +27,8 @@ script/install.sh             # build, install and link
 5. Starts Kosmos again if it quit Kosmos in step 2. With launch at login on, it registers
    the login agent again instead, which starts Kosmos through launchd. Apple's
    `SMAppService.h` asks for a new registration whenever the agent's executable changes.
+   If a step after step 2 fails, the script still starts Kosmos, from whichever copy is
+   at `/Applications/Kosmos.app`.
 
 `--app-dir` and `--bin-dir` install somewhere else, for example into a temporary directory
 to try the script, as `script/test-install.sh` does. Outside `/Applications` the script
@@ -121,3 +124,32 @@ rollback undoes the first.
 `/Applications/Kosmos.app`, `/Applications/Kosmos-previous` and the `kosmos` link if it
 points into the app. The config in `~/.config/kosmos` and the state in
 `~/Library/Application Support/Kosmos` stay.
+
+## Open questions
+
+These need a live run on the Mac. The scripts and `script/test-install.sh` do not reach
+them.
+
+1. Accessibility: does `/Applications/Kosmos.app` keep a grant made for a development
+   build with the same bundle identifier and certificate, or does macOS ask again?
+2. Registering from the menu: a background items notification appears,
+   `launchctl print gui/$(id -u)/io.github.st-eez.kosmos` shows the job, and the agent's
+   copy logs "another Kosmos is running" and stays stopped.
+3. Registering from a terminal: with launch at login on, `script/install.sh` runs
+   `Kosmos launch-at-login off` and `on` from the terminal. The registration should
+   succeed, and launchd should start the new build.
+4. Login: after logging out and in, launchd starts Kosmos, and the menu item says
+   "Turning it off quits Kosmos".
+5. Crash restart: after `kill -9` of a Kosmos that ran 30 s or more, the guardian restores
+   hidden windows and launchd starts Kosmos at once. A second kill within 30 s restarts it
+   about 30 s later.
+6. The guardian after an unregister: turning Launch at Login off in a Kosmos that launchd
+   started quits Kosmos with its hidden windows back. If launchd kills Kosmos before it
+   quits, the guardian, in its own process group, has to restore them.
+7. A copy turned off in Login Items: turn Kosmos off in System Settings > General > Login
+   Items & Extensions, run `script/install.sh`, turn Kosmos back on there, log out and in,
+   and check that `launchctl print gui/$(id -u)/io.github.st-eez.kosmos` names the new
+   executable as the program. `SMAppService.h` does not say whether `register()` keeps a
+   copy the user turned off, so the script leaves that registration as it is.
+8. `script/install.sh --uninstall` unregisters launch at login and removes everything it
+   installed.
