@@ -35,7 +35,7 @@ extension Workspace {
     /// Frames ignore the minimum sizes of apps. A window that refuses a narrower frame
     /// overlaps its neighbor until layout solves each axis with the minimums the geometry
     /// layer observes.
-    public func frames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
+    func frames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         func place(_ container: Container, in rect: CGRect) {
             for (child, frame) in zip(container.children, split(rect, container, gap: gaps.inner)) {

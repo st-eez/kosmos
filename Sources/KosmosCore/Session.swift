@@ -21,7 +21,7 @@ public struct Session: Sendable {
 
     /// In the order `next` and `prev` walk.
     public let names: [String]
-    public private(set) var workspaces: [String: Workspace]
+    private(set) var workspaces: [String: Workspace]
     public private(set) var visible: String
     private var previous: String?
     private var home: [WindowID: String] = [:]

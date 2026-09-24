@@ -4,13 +4,13 @@
 ///
 /// A value type: the main actor mutates its copy, and a copy sent to another thread is a
 /// snapshot.
-public struct Workspace: Sendable {
+struct Workspace: Sendable {
     /// It may be empty or hold a single window. A root left holding a single container is
     /// replaced by that container.
-    public internal(set) var root: Container
-    public internal(set) var floating: [WindowID] = []
+    var root: Container
+    var floating: [WindowID] = []
     /// The tiled window that covers the whole display rectangle.
-    public internal(set) var fullscreenWindow: WindowID?
+    var fullscreenWindow: WindowID?
     /// Oldest first.
     var parked: [Parked] = []
     /// Where a window that left the tree to float or park returns to.
@@ -20,7 +20,7 @@ public struct Workspace: Sendable {
     var clock: UInt64 = 0
     var lastContainerID = 0
 
-    public init(orientation: Orientation = .horizontal) {
+    init(orientation: Orientation = .horizontal) {
         root = Container(id: 0, orientation: orientation, children: [])
     }
 }
@@ -49,18 +49,18 @@ enum NodeRef: Sendable {
 
 extension Workspace {
     /// Whether the window is tiled, floating or parked here.
-    public func contains(_ window: WindowID) -> Bool {
+    func contains(_ window: WindowID) -> Bool {
         root.path(to: window) != nil || floating.contains(window) || parked.contains { $0.window == window }
     }
 
     /// The most recently focused window that is tiled or floating.
-    public var focusedWindow: WindowID? {
+    var focusedWindow: WindowID? {
         (root.windows + floating).filter { stamps[$0] != nil }.max { stamps[$0]! < stamps[$1]! }
     }
 
     /// Records that a tiled or floating window took focus. Focus on another tiled window
     /// ends fullscreen, because macOS raises the focused window over it.
-    public mutating func focus(_ window: WindowID) {
+    mutating func focus(_ window: WindowID) {
         let tiled = root.path(to: window) != nil
         guard tiled || floating.contains(window) else { return }
         stamp(window)
@@ -70,7 +70,7 @@ extension Workspace {
 
     /// Tiles a new window after the most recently focused tiled window, in that window's
     /// container, with the mean share of its new siblings (i3's `tree_open_con`).
-    public mutating func insert(_ window: WindowID) {
+    mutating func insert(_ window: WindowID) {
         precondition(!contains(window), "window \(window) is already in the workspace")
         insertAfterMostRecent(window)
         normalize()
@@ -79,7 +79,7 @@ extension Workspace {
 
     /// Forgets a window. Call it only when the WindowServer reports the window gone.
     @discardableResult
-    public mutating func remove(_ window: WindowID) -> Bool {
+    mutating func remove(_ window: WindowID) -> Bool {
         if let path = root.path(to: window) {
             root[path.dropLast()].children.remove(at: path.last!)
         } else if let index = floating.firstIndex(of: window) {
@@ -99,7 +99,7 @@ extension Workspace {
 
     /// Takes a tiled or floating window out of the layout, keeping where it stood.
     @discardableResult
-    public mutating func park(_ window: WindowID) -> Bool {
+    mutating func park(_ window: WindowID) -> Bool {
         if root.path(to: window) != nil {
             detach(window)
             parked.append(Parked(window: window, floating: false))
@@ -117,7 +117,7 @@ extension Workspace {
     /// Returns parked windows to where they stood. They return in the reverse of the order
     /// they parked, which undoes the parking exactly when nothing else changed, as when an
     /// app hides and unhides its windows together.
-    public mutating func unpark(_ windows: [WindowID]) {
+    mutating func unpark(_ windows: [WindowID]) {
         for entry in parked.reversed() where windows.contains(entry.window) {
             parked.removeAll { $0.window == entry.window }
             if entry.floating {
@@ -132,7 +132,7 @@ extension Workspace {
 
     /// Moves a tiled window to the floating list, keeping where it stood.
     @discardableResult
-    public mutating func float(_ window: WindowID) -> Bool {
+    mutating func float(_ window: WindowID) -> Bool {
         guard root.path(to: window) != nil else { return false }
         detach(window)
         floating.append(window)
@@ -144,7 +144,7 @@ extension Workspace {
     /// Tiles a floating window where it stood before it floated, or after the most recently
     /// focused tiled window if it never was tiled.
     @discardableResult
-    public mutating func tile(_ window: WindowID) -> Bool {
+    mutating func tile(_ window: WindowID) -> Bool {
         guard let index = floating.firstIndex(of: window) else { return false }
         floating.remove(at: index)
         restore(window)
@@ -156,7 +156,7 @@ extension Workspace {
     /// The broken invariants: those of DESIGN 5.5, plus consistent focus stamps,
     /// fullscreen window and restore hints. Empty when the workspace is sound. Every
     /// mutation checks it in debug builds.
-    public func validate() -> [String] {
+    func validate() -> [String] {
         var problems: [String] = []
         var places: [WindowID: Int] = [:]
         var ids: Set<Int> = []

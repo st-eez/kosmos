@@ -5,7 +5,7 @@ public enum Orientation: Sendable {
     case horizontal
     case vertical
 
-    public var opposite: Orientation { self == .horizontal ? .vertical : .horizontal }
+    var opposite: Orientation { self == .horizontal ? .vertical : .horizontal }
 }
 
 public enum Direction: Sendable {
@@ -18,28 +18,28 @@ public enum Direction: Sendable {
 }
 
 /// A window or a container in a workspace tree, with its share of the parent.
-public struct Node: Sendable {
-    public enum Kind: Sendable {
+struct Node: Sendable {
+    enum Kind: Sendable {
         case window(WindowID)
         case container(Container)
     }
 
-    public internal(set) var kind: Kind
+    var kind: Kind
     /// The share of the parent's length along the parent's orientation. Siblings sum to 1.
-    public internal(set) var weight: Double
+    var weight: Double
 }
 
 /// An i3 `tiles` container: its children side by side along its orientation.
-public struct Container: Sendable {
+struct Container: Sendable {
     /// Unique within a workspace, so a restore hint can find the container again.
     let id: Int
-    public internal(set) var orientation: Orientation
-    public internal(set) var children: [Node]
+    var orientation: Orientation
+    var children: [Node]
 }
 
 extension Container: CustomStringConvertible {
     /// The arrangement without weights, for example `h[1 v[2 3]]`.
-    public var description: String {
+    var description: String {
         let items = children.map { child in
             switch child.kind {
             case .window(let id): "\(id)"

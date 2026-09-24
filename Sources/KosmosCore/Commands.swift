@@ -14,7 +14,7 @@ extension Workspace {
     /// at the edge of the workspace. Like i3's `focus`, it walks up to the nearest container
     /// that runs along the direction and has a sibling on that side, then descends into the
     /// sibling by focus order.
-    public mutating func focus(_ direction: Direction, from window: WindowID) -> WindowID? {
+    mutating func focus(_ direction: Direction, from window: WindowID) -> WindowID? {
         guard let path = neighbor(of: window, direction) else { return nil }
         let target = mostRecentWindow(in: root.node(at: path))
         focus(target)
@@ -24,7 +24,7 @@ extension Workspace {
     /// Exchanges the window with the one `focus` reaches in the direction. Each takes the
     /// other's place and share.
     @discardableResult
-    public mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
+    mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
         let other = mostRecentWindow(in: root.node(at: neighbor))
         let path = root.path(to: window)!, otherPath = root.path(to: other)!
@@ -42,7 +42,7 @@ extension Workspace {
     /// direction. Returns false at the edge of the workspace, where i3 would move the window
     /// to the next display.
     @discardableResult
-    public mutating func move(_ window: WindowID, _ direction: Direction) -> Bool {
+    mutating func move(_ window: WindowID, _ direction: Direction) -> Bool {
         // A lone window has nowhere to go. Wrapping the root would only flip its orientation.
         guard root.path(to: window) != nil, root.children.count > 1, moveTiled(window, direction) else { return false }
         normalize()
@@ -55,7 +55,7 @@ extension Workspace {
     /// runs across, so the window joins it. The window goes first when joining right or
     /// down and last when joining left or up.
     @discardableResult
-    public mutating func joinWith(_ window: WindowID, _ direction: Direction) -> Bool {
+    mutating func joinWith(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let target = neighbor(of: window, direction) else { return false }
         let parent = target.dropLast(), index = target.last!
         let joined: Container
@@ -79,7 +79,7 @@ extension Workspace {
     /// parent's orientation is spliced into the parent, and so is a child container that
     /// ends up with its orientation.
     @discardableResult
-    public mutating func layout(_ window: WindowID, _ orientation: Orientation) -> Bool {
+    mutating func layout(_ window: WindowID, _ orientation: Orientation) -> Bool {
         guard let path = root.path(to: window), root[path.dropLast()].orientation != orientation else { return false }
         root[path.dropLast()].orientation = orientation
         normalize()
@@ -88,7 +88,7 @@ extension Workspace {
     }
 
     @discardableResult
-    public mutating func toggleLayout(_ window: WindowID) -> Bool {
+    mutating func toggleLayout(_ window: WindowID) -> Bool {
         guard let path = root.path(to: window) else { return false }
         return layout(window, root[path.dropLast()].orientation.opposite)
     }
@@ -96,7 +96,7 @@ extension Workspace {
     /// Makes a tiled window cover the display rectangle, taking over from any other
     /// fullscreen window, or returns it to its tile.
     @discardableResult
-    public mutating func toggleFullscreen(_ window: WindowID) -> Bool {
+    mutating func toggleFullscreen(_ window: WindowID) -> Bool {
         guard root.path(to: window) != nil else { return false }
         fullscreenWindow = fullscreenWindow == window ? nil : window
         if fullscreenWindow == window { stamp(window) }
@@ -110,7 +110,7 @@ extension Workspace {
     /// resizes. `rect` and `gaps` are the ones `frames` gets, to turn points into shares.
     /// Returns false when the change would leave any sibling under one point, as i3 does.
     @discardableResult
-    public mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
+    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let path = root.path(to: window) else { return false }
         let orientation = switch dimension {
             case .width: Orientation.horizontal
@@ -136,14 +136,14 @@ extension Workspace {
     }
 
     /// Gives every child of every container an equal share.
-    public mutating func balanceSizes() {
+    mutating func balanceSizes() {
         root.balance()
         check()
     }
 
     /// Puts every tiled window directly under the root in depth first order, with equal
     /// shares.
-    public mutating func flattenWorkspaceTree() {
+    mutating func flattenWorkspaceTree() {
         let windows = root.windows
         root.children = windows.map { Node(kind: .window($0), weight: 1 / Double(windows.count)) }
         check()
