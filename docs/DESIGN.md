@@ -199,11 +199,16 @@ off the main thread).
     path off too.
   - Wrong windows. A request misses when its app reports another of its windows key and no
     echo of any request arrives before Kosmos's next request. Five misses in a row turn the
-    path off. The private path keyed the right window in 60 of 60 trials on this Mac, so its
-    miss rate is at most about 5% at 95% confidence, and five misses in a row at 5% come
-    once in about 3 million runs. The public path chose the wrong window in 9 of 9 trials,
-    so a false trip costs more than a few late wrong windows (wm-research focus note,
-    section 4). A request with no report neither misses nor clears the count.
+    path off. On this Mac AXRaise and then the private sequence keyed the right window in 60
+    of 60 AutoRaise trials, 9 of them between two windows of the active app, so the miss
+    rate is at most about 5% at 95% confidence, and five misses in a row at 5% come once in
+    about 3 million runs. Those trials posted a down and up record pair, and Kosmos posts
+    the down alone; `kosmos-probe keying` measures Kosmos's own sequence. The public path
+    chose the wrong window in 9 of 9 trials, so a false trip costs more than a few late
+    wrong windows (wm-research focus note, section 4; autoraise-steez trial results,
+    September 8, 2026). A request with no report neither misses nor clears the count, so a
+    record that changes nothing, as the record alone did inside the active app, goes
+    uncounted.
 - The private path raises the window with AXRaise on its app's worker before the key
   record. On macOS 27 the record alone leaves the key window unchanged inside the app that
   is already frontmost, for stacked and side by side windows alike, while AXRaise and then

@@ -543,11 +543,12 @@ func focusedWindow(of pid: pid_t) -> UInt32? {
             }
         }
     }
-    print("\nsummary, keyed and on top out of the trials run:")
+    print("\nsummary: a hit keys the target window; a miss leaves another window key")
     for test in cases {
         for order in Order.allCases {
             let row = "\(test.name) | \(order.rawValue)"
-            print("  \(row): keyed \(keyed[row] ?? 0)/\(trials[row] ?? 0), on top \(raised[row] ?? 0)/\(trials[row] ?? 0)")
+            let hits = keyed[row] ?? 0, runs = trials[row] ?? 0
+            print("  \(row): \(hits) hits, \(runs - hits) misses, on top \(raised[row] ?? 0) of \(runs)")
         }
     }
 }

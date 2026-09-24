@@ -7,11 +7,14 @@
 /// Silence is no evidence: a request that changes no report, as when the app does not
 /// answer, neither misses nor clears the count.
 public struct FocusMisses<Stamp: Comparable & Sendable>: Sendable {
-    /// On this Mac the private path keyed the right window in 60 of 60 trials, so its miss
-    /// rate is at most about 5% at 95% confidence, and the public path keyed the wrong one in
-    /// 9 of 9 (wm-research focus note, section 4). A false trip costs the better path until
-    /// a reload and a late one a few wrong windows. Five misses in a row at 5% come once in
-    /// about 3 million runs.
+    /// On this Mac AXRaise and then the private sequence keyed the right window in 60 of 60
+    /// AutoRaise trials, 9 of them between two windows of the active app, so the miss rate
+    /// is at most about 5% at 95% confidence (autoraise-steez trial results, September 8,
+    /// 2026). Those trials posted a down and up record pair where Kosmos posts the down
+    /// alone, which keyed every case of the hover branch's `kosmos-probe raise` once the
+    /// window was raised first. The public path keyed the wrong window in 9 of 9. A false
+    /// trip costs the better path until a reload and a late one a few wrong windows. Five
+    /// misses in a row at 5% come once in about 3 million runs.
     public static var limit: Int { 5 }
 
     private var pending: (window: UInt32, pid: Int32, requested: Stamp, wrongWindow: Bool)?
