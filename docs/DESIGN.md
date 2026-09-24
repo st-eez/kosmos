@@ -227,6 +227,63 @@ off the main thread).
 - Notarization needs a Developer ID certificate. Adding it would remove the need to strip
   quarantine.
 
+### 5.11 Focus follows mouse
+
+Kosmos replaces AutoRaise for hover focus. AutoRaise needed a local patch to key the
+hovered window instead of the app's most recent one; Kosmos's focus path already does.
+
+- The window under the pointer becomes key as soon as the pointer enters it, through the
+  same exact-window path as a focus command, as Hyprland's `follow_mouse = 1` does.
+  Tiled windows never overlap, so only focus moves; a floating window is also raised.
+- Instant focus has one cost on macOS that it lacks on Linux: focusing another app's
+  window activates the app, and activations cost macOS's app usage daemons CPU (section
+  2). Sweeping the pointer across several windows activates each of them. AutoRaise waits
+  for the pointer to rest on a window for about 100 ms to avoid that. Kosmos starts
+  without a delay, measures a sweep's CPU and daemon activity, and adds the shortest dwell
+  that the measurement justifies, if any.
+- The pointer must move at least 2 pt to count, holding Control pauses it, and chosen apps
+  are ignored: the settings an AutoRaise user has today.
+- Kosmos finds the window under the pointer in its own model: floating windows first, then
+  the shown workspace's tiled frames, which never overlap. Moving the pointer queries no
+  window list.
+- Pointer movement arrives through a listen-only event tap on its own thread, so a pointer
+  at rest costs nothing. AutoRaise polls 20 times a second.
+- Nothing is raised while a mouse button is down, while the front app is in native
+  fullscreen (AeroSpace's focus follows mouse raised tiled windows over fullscreen video),
+  over a window Kosmos does not manage (menus, the bar, panels), or during Mission Control.
+- A hover focus counts as a command: the session adopts the window, and its focus
+  request's echo is consumed like any other.
+- The pointer follows focus the other way too. A command that focuses a window moves the
+  pointer to its center unless the pointer is already inside it, and so does Command-Tab
+  to a window that is not under the pointer. A click always happens under the pointer, so
+  it never moves it.
+- `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
+  the command `focus-follows-mouse on|off|toggle` switches it at run time.
+
+### 5.12 Other tools
+
+- **Status bar (SketchyBar).** Kosmos sends one `kosmos_state` event per change, holding
+  everything a bar draws: every workspace with its display, whether it is shown and
+  focused, and its windows' ids, app names and positions; the focused window and app; the
+  active profile; and the displays. The bar runs no command on a switch. A bar that starts
+  after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
+  runs `kosmos workspace <name>`.
+- **Borders (JankyBorders).** They work unchanged while inactive borders are transparent.
+  With visible inactive borders, Kosmos would have to conceal each border window along with
+  its window, as the AeroSpace fork did. Borders drawn by Kosmos itself are on the later
+  list (section 7).
+- **Display profile scripts.** Scripts that rewrite another window manager's config when
+  displays change give way to Kosmos's profiles, once Kosmos matches displays by serial,
+  switches profile when displays change, and puts the profile name in the bar event.
+- **Launchers and cheat sheets.** `kosmos list-bindings` prints the loaded bindings as JSON,
+  so a launcher's keybinding list reads them instead of keeping its own copy.
+- **Switching from another window manager.** Install Kosmos.app to /Applications and the CLI
+  on the PATH; grant Accessibility to Kosmos itself; launch it at login; turn off the other
+  window manager's login item and the helpers Kosmos has replaced by then (profile
+  watchers at the switch; AutoRaise once focus follows mouse lands). Rolling back reverses
+  those steps, so the other manager's config and the bar's code for it stay until the
+  switch is final.
+
 ## 6. Verification
 
 - **TLA+ first.** Before the scheduler exists, specify it:
@@ -264,9 +321,13 @@ off the main thread).
 4. **Hiding and recovery.** Holding Space, guardian, durable record, switch protocol.
 5. **Focus.** Private focus path, echo classifier, empty workspaces.
 6. **Hotkeys, config and bar.** Carbon hotkeys, TOML, profiles, SketchyBar push.
-7. **Daily driver.** Multi-monitor, floating windows, rules, fullscreen, mouse follows
-   focus. Timing compared against the AeroSpace fork.
-8. **Later.** A native bar as a separate process, borders from Kosmos's own model,
+7. **Parity with AeroSpace.** Multi-monitor with display profiles that follow the
+   connected displays, floating windows, rules, fullscreen, returning windows, the status
+   bar event, and switching over (section 5.12). Other tools keep running beside Kosmos
+   until their replacement lands. Timing compared against the AeroSpace fork.
+8. **Beyond AeroSpace.** Replace what needed a workaround: focus follows mouse (retiring
+   AutoRaise) and `kosmos list-bindings` for launchers.
+9. **Later.** A native bar as a separate process, borders from Kosmos's own model,
    persistence across restarts.
 
 ## 8. Left out of the first version
