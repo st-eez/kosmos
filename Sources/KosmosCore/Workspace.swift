@@ -1,3 +1,5 @@
+import CoreGraphics
+
 /// A workspace: tiled windows in a tree under one root container, floating windows, and
 /// parked windows. A parked window is out of the layout while it is minimized, hidden with
 /// its app or in native fullscreen, and remembers where to return.
@@ -128,14 +130,15 @@ extension Workspace {
 
     /// Returns parked windows to where they stood. They return in the reverse of the order
     /// they parked, which undoes the parking exactly when nothing else changed, as when an
-    /// app hides and unhides its windows together.
-    mutating func unpark(_ windows: [WindowID]) {
+    /// app hides and unhides its windows together. `rect` and `gaps` are the ones `frames`
+    /// gets, to keep windows at one point when a hint is stale.
+    mutating func unpark(_ windows: [WindowID], in rect: CGRect, gaps: Gaps) {
         for entry in parked.reversed() where windows.contains(entry.window) {
             parked.removeAll { $0.window == entry.window }
             if entry.floating {
                 floating.append(entry.window)
             } else {
-                restore(entry.window)
+                restore(entry.window, in: rect, gaps: gaps)
             }
             normalize()
         }
@@ -154,12 +157,12 @@ extension Workspace {
     }
 
     /// Tiles a floating window where it stood before it floated, or after the most recently
-    /// focused tiled window if it never was tiled.
+    /// focused tiled window if it never was tiled. `rect` and `gaps` are as for `unpark`.
     @discardableResult
-    mutating func tile(_ window: WindowID) -> Bool {
+    mutating func tile(_ window: WindowID, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let index = floating.firstIndex(of: window) else { return false }
         floating.remove(at: index)
-        restore(window)
+        restore(window, in: rect, gaps: gaps)
         normalize()
         check()
         return true
@@ -307,15 +310,71 @@ extension Workspace {
     /// Puts a window back where its hint says, or after the most recently focused tiled
     /// window if it has none. Returning with a stale hint, or none, changes the tree like
     /// an insert.
-    mutating func restore(_ window: WindowID) {
+    ///
+    /// A stale hint's share no longer matches the space around the window. The window then
+    /// returns beside its siblings, or after the most recently focused tiled window when
+    /// none are tiled, only if no window that had a point along each axis ends with less,
+    /// the floor resize keeps. Beside the siblings, the share halves until that holds.
+    /// Otherwise the window takes half of the window with the most room, in a new container
+    /// across that window's container. Adding a child to a container can shrink its gaps
+    /// and move every edge in it, and the new container adds a child to none.
+    mutating func restore(_ window: WindowID, in rect: CGRect, gaps: Gaps) {
         guard let index = hints.firstIndex(where: { $0.window == window }) else {
             insertAfterMostRecent(window)
             edits += 1
             return
         }
         let hint = hints.remove(at: index)
-        place(hint)
-        if hint.edits != edits { edits += 1 }
+        guard hint.edits != edits else {
+            place(hint)
+            return
+        }
+        edits += 1
+        let before = tileFrames(in: rect, gaps: gaps)
+        let tiled = Set(root.windows)
+        let bySiblings = hint.levels.contains { !present($0, tiled).isEmpty }
+        var scale = 1.0
+        while true {
+            var attempt = self
+            attempt.place(hint, scale: scale)
+            attempt.normalize()
+            let frames = attempt.tileFrames(in: rect, gaps: gaps)
+            let own = frames[window]!, fits = own.width >= 1 && own.height >= 1
+            let kept = frames.allSatisfy { id, frame in
+                id == window || (frame.width >= min(1, before[id]!.width) && frame.height >= min(1, before[id]!.height))
+            }
+            if fits, kept {
+                self = attempt
+                return
+            }
+            // A smaller share only helps beside the siblings, and only while the window
+            // still gets a point.
+            guard bySiblings, fits else { break }
+            scale /= 2
+        }
+        split(roomiest: window, in: rect, gaps: gaps)
+    }
+
+    /// Puts the window with the tiled window that has the most room, in a new container
+    /// across that window's container, so no other window moves. With nothing tiled, the
+    /// window goes into the root.
+    private mutating func split(roomiest window: WindowID, in rect: CGRect, gaps: Gaps) {
+        let frames = tileFrames(in: rect, gaps: gaps)
+        // The shorter side of each half: the length along the container, or half the
+        // length across it.
+        func room(_ id: WindowID) -> CGFloat {
+            let frame = frames[id]!
+            return root[root.path(to: id)!.dropLast()].orientation == .horizontal
+                ? min(frame.width, frame.height / 2) : min(frame.height, frame.width / 2)
+        }
+        guard let roomiest = root.windows.max(by: { room($0) < room($1) }) else {
+            root.insert(.window(window), at: 0)
+            return
+        }
+        let path = root.path(to: roomiest)!
+        let across = root[path.dropLast()].orientation.opposite
+        let pair = makeContainer(across, [Node(kind: .window(roomiest), weight: 1), Node(kind: .window(window), weight: 1)])
+        root[path.dropLast()].children[path.last!].kind = .container(pair)
     }
 
     /// Where the window stands in the tree with every window that has a fresh hint put
@@ -344,8 +403,9 @@ extension Workspace {
     }
 
     /// Puts the window at the lowest level of its hint where some of its old siblings are
-    /// tiled, or after the most recently focused tiled window when none are.
-    private mutating func place(_ hint: RestoreHint) {
+    /// tiled, with its recorded share times `scale`, or after the most recently focused
+    /// tiled window when none are.
+    private mutating func place(_ hint: RestoreHint, scale: Double = 1) {
         let tiled = Set(root.windows)
         guard let level = hint.levels.first(where: { !present($0, tiled).isEmpty }) else {
             insertAfterMostRecent(hint.window)
@@ -360,7 +420,7 @@ extension Workspace {
         }
         let parent = paths[0].prefix(depth), container = root[parent]
         let holders = Set(paths.map { $0[depth] })
-        let share = level.slots[level.index].weight / present.reduce(0) { $0 + level.slots[$1].weight }
+        let share = scale * level.slots[level.index].weight / present.reduce(0) { $0 + level.slots[$1].weight }
         let earlier = present.last { $0 < level.index }
 
         func children(_ slot: Int) -> [Int] {

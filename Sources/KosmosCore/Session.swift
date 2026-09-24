@@ -96,7 +96,7 @@ public struct Session: Sendable {
     /// A parked window returns to its own workspace at its saved position.
     public mutating func unpark(_ window: WindowID) -> Plan {
         guard let name = home[window] else { return Plan() }
-        workspaces[name]!.unpark([window])
+        workspaces[name]!.unpark([window], in: display, gaps: gaps)
         var plan = Plan()
         plan.frames = frames(of: name)
         if name != visible { plan.hide = [window] }
@@ -162,7 +162,7 @@ public struct Session: Sendable {
             guard workspace.toggleLayout(window) else { return nil }
         case .layout(.toggleFloating):
             let floating = workspace.floating.contains(window)
-            guard floating ? workspace.tile(window) : workspace.float(window) else { return nil }
+            guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
         case .fullscreen:
             guard workspace.toggleFullscreen(window) else { return nil }
         case .resize(let dimension, let amount):

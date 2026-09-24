@@ -141,6 +141,30 @@ func unparkInAnyOrderRestoresTheTree(parking: [WindowID], unparking: [WindowID])
     #expect(workspace.tree == "h[1 v[2 3] 5 4]")
 }
 
+@Test func staleRestoreKeepsEveryWindowAtOnePoint() {
+    var workspace = Workspace("h[1:9 2:1]")
+    workspace.park(1)
+    workspace.insert(3)
+    #expect(workspace.resize(2, .width, by: -497, in: screen, gaps: Gaps()) == true)
+    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 3)
+    workspace.unpark([1], in: screen, gaps: Gaps())
+    #expect(workspace.tree == "h[1 2 3]")
+    let frames = workspace.frames(in: screen, gaps: Gaps())
+    #expect(frames.values.allSatisfy { $0.width >= 1 && $0.height >= 1 }, "\(frames)")
+}
+
+@Test func staleRestoreWithNoRoomSplitsTheRoomiestWindow() {
+    var workspace = Workspace("h[1:1 2:1]")
+    workspace.park(1)
+    workspace.insert(3)
+    #expect(workspace.resize(2, .width, by: -499, in: screen, gaps: Gaps()) == true)
+    workspace.unpark([1], in: screen, gaps: Gaps())
+    #expect(workspace.tree == "h[2 v[3 1]]")
+    let frames = workspace.frames(in: screen, gaps: Gaps())
+    #expect(frames[2]!.width == 1)
+    #expect([3, 1].map { frames[$0]!.size } == [CGSize(width: 999, height: 300), CGSize(width: 999, height: 300)])
+}
+
 @Test func unparkRebuildsContainerBelowRoot() {
     var workspace = Workspace("h[1 v[2:1 h[3 4]:3]]")
     workspace.park(2)

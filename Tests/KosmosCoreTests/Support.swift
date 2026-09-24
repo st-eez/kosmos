@@ -50,6 +50,17 @@ extension Workspace {
 
     var tree: String { root.description }
 
+    /// `unpark` on `screen` with no gaps, which only matter for stale hints.
+    mutating func unpark(_ windows: [WindowID]) {
+        unpark(windows, in: screen, gaps: Gaps())
+    }
+
+    /// `tile` on `screen` with no gaps, which only matter for stale hints.
+    @discardableResult
+    mutating func tile(_ window: WindowID) -> Bool {
+        tile(window, in: screen, gaps: Gaps())
+    }
+
     /// Everything a failed operation must leave alone, with weights at full precision.
     var detailed: String {
         "\(describe(root) { "\($0)" }) floating \(floating) parked \(parked.map(\.window)) fullscreen \(fullscreenWindow ?? 0)"

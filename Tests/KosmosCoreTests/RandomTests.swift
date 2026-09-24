@@ -20,6 +20,15 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         }
     }
 
+    func returning(_ window: WindowID, _ operation: (inout Workspace) -> Bool) {
+        let stale = workspace.hints.contains { $0.window == window && $0.edits != workspace.edits }
+        let before = workspace.tileFrames(in: screen, gaps: gaps)
+        attempt(operation)
+        if stale, workspace.root.windows.contains(window) {
+            #expect(keepsOnePoint(before, workspace.tileFrames(in: screen, gaps: gaps), returning: window), "seed \(seed)")
+        }
+    }
+
     for _ in 0..<4000 {
         let known = workspace.root.windows + workspace.floating + workspace.parked.map(\.window)
         let window = known.randomElement(using: &random) ?? 0
@@ -32,9 +41,15 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
             }
         case 6: attempt { $0.remove(window) }
         case 7: attempt { $0.park(window) }
-        case 8, 9: workspace.unpark(Array(workspace.parked.map(\.window).shuffled(using: &random).prefix(2)))
+        case 8, 9:
+            for parked in workspace.parked.map(\.window).shuffled(using: &random).prefix(2) {
+                returning(parked) {
+                    $0.unpark([parked], in: screen, gaps: gaps)
+                    return true
+                }
+            }
         case 10: attempt { $0.float(window) }
-        case 11: attempt { $0.tile(window) }
+        case 11: returning(window) { $0.tile(window, in: screen, gaps: gaps) }
         case 12: workspace.focus(window)
         case 13, 14: attempt { $0.focus(direction, from: window) != nil }
         case 15..<20:
@@ -81,7 +96,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         guard workspace.fullscreenWindow == nil else { continue }
         let values = Array(frames.values)
         for (index, frame) in values.enumerated() {
-            #expect(frame.width >= 0 && frame.height >= 0 && (area.contains(frame) || frame.isEmpty), "seed \(seed)")
+            #expect(frame.width >= 0 && frame.height >= 0 && area.contains(frame), "seed \(seed)")
             for other in values[(index + 1)...] {
                 let overlap = frame.intersection(other)
                 #expect(overlap.isNull || overlap.width * overlap.height == 0, "seed \(seed)")
@@ -91,14 +106,16 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
 }
 
 /// Shapes random trees, then parks or floats a random set of windows in random order and
-/// returns them one at a time in another random order. The tree and every share come back.
+/// returns them one at a time in another random order. With nothing else in between, the
+/// tree and every share come back. With other commands in between, the hints are stale,
+/// and each return must leave every window that had a point with one.
 @Test(arguments: 1...20 as ClosedRange<UInt64>)
-func leavingAndReturningInAnyOrderRestoresTheTree(seed: UInt64) {
+func leavingAndReturningInAnyOrder(seed: UInt64) {
     var random = SplitMix64(state: seed)
     var workspace = Workspace()
     var nextWindow: WindowID = 1
-    for _ in 0..<40 {
-        for _ in 0..<12 {
+    func shape(_ count: Int) {
+        for _ in 0..<count {
             let tiled = workspace.root.windows
             let window = tiled.randomElement(using: &random) ?? 0
             let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
@@ -117,6 +134,9 @@ func leavingAndReturningInAnyOrderRestoresTheTree(seed: UInt64) {
                 workspace.resize(window, .smart, by: amount, in: screen, gaps: Gaps())
             }
         }
+    }
+    for _ in 0..<40 {
+        shape(12)
         let before = workspace
         let tiled = workspace.root.windows
         guard !tiled.isEmpty else { continue }
@@ -124,9 +144,27 @@ func leavingAndReturningInAnyOrderRestoresTheTree(seed: UInt64) {
         for window in leaving {
             if Bool.random(using: &random) { workspace.park(window) } else { workspace.float(window) }
         }
+        shape(Bool.random(using: &random) ? Int.random(in: 1...4, using: &random) : 0)
         for window in leaving.shuffled(using: &random) {
+            let stale = workspace.hints.contains { $0.window == window && $0.edits != workspace.edits }
+            let frames = workspace.tileFrames(in: screen, gaps: Gaps())
             if workspace.floating.contains(window) { workspace.tile(window) } else { workspace.unpark([window]) }
+            if stale {
+                #expect(keepsOnePoint(frames, workspace.tileFrames(in: screen, gaps: Gaps()), returning: window), "seed \(seed)")
+            }
         }
-        #expect(workspace.sameTree(as: before), "seed \(seed)")
+        #expect(workspace.validate().isEmpty, "seed \(seed)")
+        if workspace.edits == before.edits {
+            #expect(workspace.sameTree(as: before), "seed \(seed)")
+        }
+    }
+}
+
+/// Whether every window that had a point along each axis still has one, and the returning
+/// window got one.
+func keepsOnePoint(_ before: [WindowID: CGRect], _ after: [WindowID: CGRect], returning window: WindowID) -> Bool {
+    after.allSatisfy { id, frame in
+        let floor = before[id].map { CGSize(width: min(1, $0.width), height: min(1, $0.height)) } ?? CGSize(width: 1, height: 1)
+        return frame.width >= floor.width && frame.height >= floor.height
     }
 }
