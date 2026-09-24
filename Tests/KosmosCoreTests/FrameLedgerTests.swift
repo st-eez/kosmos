@@ -58,3 +58,15 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     ledger.observe(1, frame: resized)
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
 }
+
+@Test func aPositionWriteReplacingAnUnwrittenFrameWriteWritesTheWholeFrame() {
+    var ledger = FrameLedger()
+    let first = ledger.writes(for: [1: a])[1]!
+    // The ledger takes `a`'s size as landed, so the next target of that size moves only.
+    let second = ledger.writes(for: [1: moved])[1]!
+    #expect(second == .position(moved.origin))
+    // Both wait in the worker's queue: the size must still be written.
+    #expect(second.replacing(first, target: moved) == .frame(moved))
+    #expect(second.replacing(.position(a.origin), target: moved) == .position(moved.origin))
+    #expect(FrameWrite.frame(resized).replacing(.position(a.origin), target: resized) == .frame(resized))
+}

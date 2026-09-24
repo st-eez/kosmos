@@ -7,6 +7,14 @@ public enum FrameWrite: Equatable, Sendable {
     /// The size changes: write size, then position, then size again, because an app may
     /// clamp the size against the old position.
     case frame(CGRect)
+
+    /// This write in place of `queued`, a write for the same window that has not run. The
+    /// ledger chose a position write assuming the size of the write before it had landed, so
+    /// after a frame write that has not run it writes its whole target instead.
+    public func replacing(_ queued: FrameWrite, target: CGRect) -> FrameWrite {
+        if case .position = self, case .frame = queued { return .frame(target) }
+        return self
+    }
 }
 
 /// Decides which windows need a frame write (DESIGN.md, section 5.2). It remembers the frame

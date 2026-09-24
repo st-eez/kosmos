@@ -196,7 +196,7 @@ actor AppWorker {
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
     /// gets only its newest target.
     func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
-        queuedWrites.merge(writes) { _, new in new }
+        queuedWrites.merge(writes) { queued, new in (new.write.replacing(queued.write, target: new.target), new.target) }
         guard !drainScheduled else { return }
         drainScheduled = true
         Task { self.drainWrites() }
