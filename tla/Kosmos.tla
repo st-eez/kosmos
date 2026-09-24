@@ -476,13 +476,12 @@ Adopt(t, ev, final, miss) ==
        ELSE IF ev.hid /\ follows /\ ~KeyLeft(t, ev) THEN IF wait THEN Hold(t, ev) ELSE StartSwitch(taken, WsOf[w], w)
        ELSE Reassert(t0)   \* visible mid-switch, or a re-key after the key window left
 
-\* A report stamped before the last one taken for the user's was overtaken by it. A newer
-\* activation of a window ends a held report; with SplitQueue reports of different apps
-\* arrive out of order, so only one stamped after the held report is newer.
+\* A report stamped before the last one taken for the user's, or before the report held
+\* for the grace, was overtaken by it: with SplitQueue reports of different apps arrive out
+\* of order. A newer activation of a window ends a held report.
 UserReport(t, ev, miss) ==
-    IF SplitQueue /\ ev.ts < t.lastRep THEN t
-    ELSE LET newer == /\ ev.w # NoWin /\ ev.w \notin t.left
-                      /\ (SplitQueue /\ t.held # <<>> => ev.ts > t.held[1].ts)
+    IF SplitQueue /\ (ev.ts < t.lastRep \/ (t.held # <<>> /\ ev.ts < t.held[1].ts)) THEN t
+    ELSE LET newer == ev.w # NoWin /\ ev.w \notin t.left
          IN Adopt(IF newer THEN [t EXCEPT !.held = <<>>] ELSE t, ev, FALSE, miss)
 
 Holds(t, ev) ==
@@ -533,7 +532,10 @@ ObserveSplit(t, ev0) ==
         settles == ks # {} /\ ev.act /\ ev.w # NoWin /\ ~joins
         h == IF settles THEN t.noteHeld[a] ELSE NoEv
         t3 == IF settles THEN [t2 EXCEPT !.noteHeld[a] = NoEv] ELSE t2
-        again == t.held # <<>> /\ ev.w = t.held[1].w /\ ev.prev = ev.w
+        \* A repeat of the held window after a miss. Inside the front app the worker's raise
+        \* keys the window, so requests do not miss, and a repeat of the window Kosmos last
+        \* heard of can be the other report of one activation, or a newer one.
+        again == MissRule /\ t.held # <<>> /\ ev.w = t.held[1].w /\ ev.prev = ev.w
         miss == MissRule /\ ks = {} /\ Missed(t, ev)
         tm == IF miss THEN DropMissed(tk, ev) ELSE tk
     IN IF ks # {}
