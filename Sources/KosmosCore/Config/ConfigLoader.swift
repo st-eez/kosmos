@@ -197,6 +197,8 @@ private struct ConfigDecoder {
     private mutating func modes(_ value: TOMLValue, _ path: ValuePath) -> [String: [Binding]] {
         guard let table = table(value, path) else { return [:] }
         var modes: [String: [Binding]] = [:]
+        // Modes that `mode` commands name, checked once every mode is known.
+        var targets: [Located] = []
         for mode in table.entries {
             let modePath = path.key(mode.key)
             if mode.key.isEmpty || mode.key.unicodeScalars.contains(where: \.properties.isWhitespace) {
@@ -222,29 +224,39 @@ private struct ConfigDecoder {
                         continue
                     }
                     seen[combo] = binding
-                    guard let arguments = command(binding.value, bindingPath) else { continue }
-                    bindings.append(Binding(key: binding.key, combo: combo, arguments: arguments))
+                    guard let parsed = command(binding.value, bindingPath) else { continue }
+                    if case .mode(let target) = parsed.command {
+                        targets.append((target, binding.value.position, bindingPath))
+                    }
+                    bindings.append(Binding(key: binding.key, combo: combo, arguments: parsed.arguments))
                 }
             }
             modes[mode.key] = bindings
         }
+        // Mode main always exists, with no bindings when the config gives it none.
+        for target in targets where target.value != "main" && modes[target.value] == nil {
+            fail("no mode named '\(target.value)'" + suggestion(for: target.value, from: modes.keys),
+                 at: target.position, target.path)
+        }
         return modes
     }
 
-    /// A command's arguments, after `Command.parse` accepts them. The string splits at
+    /// A command and its arguments, after `Command.parse` accepts them. The string splits at
     /// whitespace with no quoting; no command takes an argument that contains a space.
-    private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> [String]? {
+    private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> (arguments: [String], command: Command)? {
         guard case .string = value.kind else {
             fail("expected a command as a string, found \(kindName(value))", at: value.position, path)
             return nil
         }
         guard let line = string(value, path) else { return nil }
         let arguments = line.split(whereSeparator: \.isWhitespace).map(String.init)
-        if case .failure(let error) = Command.parse(arguments) {
+        switch Command.parse(arguments) {
+        case .success(let command):
+            return (arguments, command)
+        case .failure(let error):
             fail(error.message, at: value.position, path)
             return nil
         }
-        return arguments
     }
 
     /// Rules in file order, with a warning for each rule an earlier one shadows.

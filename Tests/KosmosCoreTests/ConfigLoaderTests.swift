@@ -118,9 +118,9 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         alt-h = 'focus left'
         alt-shift-1 = 'move-node-to-workspace --focus-follows-window 1'
         alt-equal = "  resize\tsmart   +100 "
-        alt-r = 'balance-sizes'
+        alt-r = 'mode resize'
         [mode.resize.binding]
-        esc = 'fullscreen'
+        esc = 'mode main'
         """
         let config = try #require(load(body).config)
         let main = try #require(config.modes["main"])
@@ -174,6 +174,19 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "5:9: error: mode.main.binding.alt-j: unknown command or arguments: fcous down",
             "6:9: error: mode.main.binding.alt-k: resize: amount must be +N or -N points, got 100",
         ])
+    }
+
+    @Test func modeCommandsNameDefinedModes() {
+        let body = """
+        [mode.main.binding]
+        alt-r = 'mode resize'
+        alt-s = 'mode resise'
+        [mode.resize.binding]
+        esc = 'mode main'
+        """
+        #expect(load(body).diagnostics == ["5:9: error: mode.main.binding.alt-s: no mode named 'resise'; did you mean 'resize'?"])
+        // Mode main exists even when the config gives it no bindings.
+        #expect(load("[mode.resize.binding]\nesc = 'mode main'").diagnostics.isEmpty)
     }
 
     @Test func rulesNeedAMatcherAndAnAction() {

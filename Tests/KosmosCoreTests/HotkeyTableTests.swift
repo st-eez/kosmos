@@ -1,8 +1,12 @@
 import Testing
 @testable import KosmosCore
 
-private func binding(_ key: String, _ command: String) throws -> Binding {
-    Binding(key: key, combo: try KeyCombo(key), arguments: command.split(separator: " ").map(String.init))
+/// Each mode's bindings from `[mode.*.binding]` tables, through the loader, so every command
+/// is one the parser accepts.
+private func modes(_ tables: String) throws -> [String: [Binding]] {
+    let result = Config.load("config-version = 1\nworkspaces = ['1']\n" + tables)
+    #expect(result.diagnostics.isEmpty)
+    return try #require(result.config).modes
 }
 
 /// Dvorak types h with the key a US keyboard has j on.
@@ -12,7 +16,11 @@ private let azerty: [Character: UInt16] = ["-": 22]
 
 @Suite struct HotkeyTableTests {
     @Test func bindingsOnOnePhysicalKeyCollide() throws {
-        let bindings = [try binding("alt-minus", "resize smart -100"), try binding("alt-6", "workspace 6")]
+        let bindings = try #require(try modes("""
+        [mode.main.binding]
+        alt-minus = 'resize smart -100'
+        alt-6 = 'workspace 6'
+        """)["main"])
         let us = HotkeyTable(bindings, layout: [:])
         #expect(us.bindings.count == 2 && us.collisions.isEmpty)
         let french = HotkeyTable(bindings, layout: azerty)
@@ -21,16 +29,18 @@ private let azerty: [Character: UInt16] = ["-": 22]
     }
 
     @Test func modeSwitchTouchesOnlyTheKeysThatDiffer() throws {
-        let main = HotkeyTable([
-            try binding("alt-h", "focus left"),
-            try binding("alt-l", "focus right"),
-            try binding("alt-r", "mode resize"),
-        ], layout: [:])
-        let resize = HotkeyTable([
-            try binding("alt-h", "resize width -50"),
-            try binding("alt-l", "resize width +50"),
-            try binding("esc", "mode main"),
-        ], layout: [:])
+        let modes = try modes("""
+        [mode.main.binding]
+        alt-h = 'focus left'
+        alt-l = 'focus right'
+        alt-r = 'mode resize'
+        [mode.resize.binding]
+        alt-h = 'resize width -50'
+        alt-l = 'resize width +50'
+        esc = 'mode main'
+        """)
+        let main = HotkeyTable(modes["main"] ?? [], layout: [:])
+        let resize = HotkeyTable(modes["resize"] ?? [], layout: [:])
         let changes = resize.changes(from: main.bindings.keys)
         #expect(changes.unregister == [PhysicalKey(code: 15, modifiers: .alt)])
         #expect(changes.register == [PhysicalKey(code: 53, modifiers: [])])
@@ -42,7 +52,12 @@ private let azerty: [Character: UInt16] = ["-": 22]
     }
 
     @Test func layoutChangeMovesOnlyCharacterKeys() throws {
-        let bindings = [try binding("alt-h", "focus left"), try binding("alt-left", "focus left"), try binding("alt-1", "workspace 1")]
+        let bindings = try #require(try modes("""
+        [mode.main.binding]
+        alt-h = 'focus left'
+        alt-left = 'focus left'
+        alt-1 = 'workspace 1'
+        """)["main"])
         let us = HotkeyTable(bindings, layout: [:])
         let changes = HotkeyTable(bindings, layout: dvorak).changes(from: us.bindings.keys)
         #expect(changes.unregister == [PhysicalKey(code: 4, modifiers: .alt)])
@@ -52,7 +67,7 @@ private let azerty: [Character: UInt16] = ["-": 22]
     @Test func failedRegistrationsAreRetried() throws {
         // Changes are computed against what is registered, so a key that failed to register
         // last time is registered again.
-        let table = HotkeyTable([try binding("alt-h", "focus left")], layout: [:])
-        #expect(table.changes(from: []).register == [PhysicalKey(code: 4, modifiers: .alt)])
+        let bindings = try #require(try modes("[mode.main.binding]\nalt-h = 'focus left'")["main"])
+        #expect(HotkeyTable(bindings, layout: [:]).changes(from: []).register == [PhysicalKey(code: 4, modifiers: .alt)])
     }
 }

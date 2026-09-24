@@ -29,6 +29,8 @@ public enum Command: Equatable, Sendable {
     case balanceSizes
     case flattenWorkspaceTree
     case reloadConfig
+    /// Switches the hotkeys to another binding mode from the config.
+    case mode(String)
 
     public struct ParseError: Error, Equatable, Sendable {
         public let message: String
@@ -96,6 +98,7 @@ public enum Command: Equatable, Sendable {
         case "balance-sizes": return rest.isEmpty ? .success(.balanceSizes) : usage
         case "flatten-workspace-tree": return rest.isEmpty ? .success(.flattenWorkspaceTree) : usage
         case "reload-config": return rest.isEmpty ? .success(.reloadConfig) : usage
+        case "mode": return rest.count == 1 ? .success(.mode(rest[0])) : usage
         default: return usage
         }
     }

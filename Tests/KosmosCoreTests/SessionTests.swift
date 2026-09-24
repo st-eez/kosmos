@@ -26,6 +26,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
         (["resize", "width", "-50"], .resize(.width, by: -50)),
         (["flatten-workspace-tree"], .flattenWorkspaceTree),
         (["reload-config"], .reloadConfig),
+        (["mode", "resize"], .mode("resize")),
     ]
     for (arguments, command) in cases {
         #expect(Command.parse(arguments) == .success(command), "\(arguments)")
@@ -35,7 +36,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func rejectsWhatItDoesNotKnow() {
     for arguments in [[], ["focus"], ["focus", "sideways"], ["resize", "smart", "100"], ["resize", "smart", "+0"],
                       ["fullscreen", "--no-outer-gaps"], ["layout", "accordion"], ["move-node-to-workspace"],
-                      ["workspace", "1", "2"], ["exec-and-forget", "true"],
+                      ["workspace", "1", "2"], ["exec-and-forget", "true"], ["mode"], ["mode", "a", "b"],
                       ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"]] {
         guard case .failure = Command.parse(arguments) else {
             Issue.record("accepted \(arguments)")

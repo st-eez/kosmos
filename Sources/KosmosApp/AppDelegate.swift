@@ -87,12 +87,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let problems = reloadConfig()
             return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.joined(separator: "\n"))
         default:
+            if case .success(.mode(let name)) = Command.parse(arguments) { return switchMode(to: name) }
             guard let controller else {
                 return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission")
             }
             let result = controller.run(arguments, received: received)
             return result.code == 0 ? Response(stdout: result.text) : Response(exitCode: result.code, stderr: "kosmos: " + result.text)
         }
+    }
+
+    private func switchMode(to name: String) -> Response {
+        guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
+        let problems = hotkeys.switchMode(to: name)
+        logHotkeyProblems(problems)
+        return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
     }
 
     /// Applies the config file, or keeps the running one when it has errors.

@@ -135,8 +135,8 @@ public struct Session: Sendable {
                   !workspaces[source]!.parked.contains(where: { $0.window == window }),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
-        case .reloadConfig:
-            return nil   // the app reloads
+        case .reloadConfig, .mode:
+            return nil   // the app reloads the config or switches hotkeys
         default:
             return performOnFocused(command)
         }
@@ -171,7 +171,7 @@ public struct Session: Sendable {
             workspace.balanceSizes()
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
-        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig:
+        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode:
             return nil
         }
         workspaces[visible] = workspace
