@@ -141,12 +141,14 @@ off the main thread).
   reorder, order change or Space change, or at the next sweep, which logs the change as
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
   level change is unmeasured, as the probe keeps its window invisible.
-- Open item: every switch posts 815 about twice for every watched window, including
-  windows of apps the switch never touched, such as Wispr Flow, Activity Monitor and
-  Ghostty: 640 of them in 40 switches, with 82 of 808 (`kosmos-probe events`, 2026-09-24).
-  Each one reads its window's row synchronously on the main thread, about 0.8 ms a switch
-  (33 of about 66 busy main thread samples). One query for every window named in a run
-  loop turn would cut that if it ever matters.
+- Open item: every switch posts 815 about twice for each watched window, including windows
+  the switch never touched. Kosmos watches only the windows it tracks, those of regular
+  apps. In 40 switches (`kosmos-probe events`, 2026-09-24) they got 278 of 815 and 41 of
+  808: Activity Monitor's, Ghostty's, Helium's and ChatGPT's windows. The probe watches
+  every window, so it also counted JankyBorders' (279 and 41) and Wispr Flow's (83), which
+  Kosmos never gets. Each event reads its window's row synchronously on the main thread,
+  about 0.8 ms a switch (33 of about 66 busy main thread samples). One query for every
+  window named in a run loop turn would cut that if it ever matters.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
