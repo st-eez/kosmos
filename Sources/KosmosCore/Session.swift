@@ -619,24 +619,20 @@ public struct Session: Sendable {
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {
-            let home = monitor(of: name)
+            let own = monitor(of: name)
             for window in workspaces[name]!.floating {
                 guard let frame = frames[window] else { continue }
                 let center = CGPoint(x: frame.midX, y: frame.midY)
-                guard let under = monitors.first(where: { $0.frame.contains(center) }), under.id != home.id else { continue }
-                targets[window] = floatingFrame(frame, movingTo: home.area)
+                guard let under = monitors.first(where: { $0.frame.contains(center) }), under.id != own.id else { continue }
+                targets[window] = floatingFrame(frame, from: under.area, movingTo: own.area)
             }
         }
         return targets
     }
 
-    /// Where a floating window at `frame` goes on the display whose area is `area`: at the
-    /// same place relative to the area of the display under its center, scaled with the
-    /// areas, and kept inside `area`. Off every display, it keeps its offset and size as they
-    /// fit.
-    func floatingFrame(_ frame: CGRect, movingTo area: CGRect) -> CGRect {
-        let center = CGPoint(x: frame.midX, y: frame.midY)
-        let from = monitors.first { $0.frame.contains(center) }?.area ?? area
+    /// Where a floating window at `frame` in the area `from` goes in `area`: at the same
+    /// place relative to the areas, scaled with them, and kept inside `area`.
+    func floatingFrame(_ frame: CGRect, from: CGRect, movingTo area: CGRect) -> CGRect {
         guard from.width > 0, from.height > 0 else { return frame }
         let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
         let x = area.minX + (frame.minX - from.minX) * area.width / from.width
