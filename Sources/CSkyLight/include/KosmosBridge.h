@@ -12,16 +12,19 @@
 // partial Space destroyed.
 uint64_t kosmos_holding_create(void);
 bool kosmos_space_destroy(uint64_t space);
-// Adds windows to the Space. Each app's selected window keeps its ordinary Space
-// membership, so Command-Tab still picks it; the app's other concealed windows lose it,
-// or macOS may pick one of them instead (the fork's np4 finding).
-bool kosmos_conceal(const uint32_t *windows, size_t count, uint64_t space, bool keepOrdinary);
-// Removes windows from the Space.
-bool kosmos_reveal(const uint32_t *windows, size_t count, uint64_t space);
+// Adds windows to a Space. With exclusive false they keep their other Space memberships:
+// Kosmos conceals each app's selected window that way, so Command-Tab still picks it, and
+// the app's other concealed windows exclusively, or macOS may pick one of them instead
+// (the fork's np4 finding). Exclusive true also moves windows back to an ordinary Space.
+bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive);
+// Removes windows from a Space.
+bool kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count);
 // A bridged read of the Space's alpha. Returns true when the read succeeds.
 bool kosmos_barrier(uint64_t space);
 // The windows in the Space, or NULL if the query fails.
 CFArrayRef kosmos_space_windows(uint64_t space) CF_RETURNS_RETAINED;
+// The Spaces a window belongs to. Auxiliary Spaces such as the holding Space are not listed.
+CFArrayRef kosmos_window_spaces(uint32_t window) CF_RETURNS_RETAINED;
 
 // Makes the window key: fronts its process, then posts one mouse-down key record far off
 // every window.

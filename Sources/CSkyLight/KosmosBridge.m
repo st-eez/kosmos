@@ -111,17 +111,17 @@ fail:
     return 0;
 }
 
-bool kosmos_conceal(const uint32_t *windows, size_t count, uint64_t space, bool keepOrdinary) {
+bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive) {
     if (!count) return true;
     @try {
         Class cls = operationClass(@"SLSBridgedSpaceAddWindowsAndRemoveFromSpacesOperation",
                                    @selector(initWithSpaceID:windows:options:));
         return perform([[cls alloc] initWithSpaceID:space windows:windowNumbers(windows, count)
-                                             options:keepOrdinary ? 0 : 7]) != nil;
+                                             options:exclusive ? 7 : 0]) != nil;
     } @catch (NSException *exception) { return false; }
 }
 
-bool kosmos_reveal(const uint32_t *windows, size_t count, uint64_t space) {
+bool kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count) {
     if (!count) return true;
     @try {
         Class cls = operationClass(@"SLSBridgedRemoveWindowsFromSpacesOperation", @selector(initWithWindows:spaces:));
@@ -139,6 +139,12 @@ CFArrayRef kosmos_space_windows(uint64_t space) {
     uint64_t setTags = 0, clearTags = 0;
     return SLSCopyWindowsWithOptionsAndTags(SLSMainConnectionID(), 0, (__bridge CFArrayRef)@[@(space)], 7,
                                             &setTags, &clearTags);
+}
+
+extern CFArrayRef SLSCopySpacesForWindows(SLSConnectionID cid, int selector, CFArrayRef windows);
+
+CFArrayRef kosmos_window_spaces(uint32_t window) {
+    return SLSCopySpacesForWindows(SLSMainConnectionID(), 7, (__bridge CFArrayRef)@[@(window)]);
 }
 
 // Focus. The same front-process call as yabai and Amethyst.

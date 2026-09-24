@@ -1,4 +1,5 @@
 import AppKit
+import KosmosSkyLight
 import os
 
 private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "inventory")

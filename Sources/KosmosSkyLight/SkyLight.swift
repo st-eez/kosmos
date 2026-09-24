@@ -1,10 +1,13 @@
 import CSkyLight
 import CoreGraphics
 import Foundation
+import os
+
+private let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "skylight")
 
 /// A window change reported by WindowServer on Kosmos's own connection. Event ids and
 /// payloads were measured on macOS 27 (wm-research discovery note, section 2).
-enum WindowServerEvent: Sendable {
+public enum WindowServerEvent: Sendable {
     case created(UInt32)
     case destroyed(UInt32)
     case changed(UInt32)   // ordered in or out, moved, resized or reordered
@@ -12,9 +15,9 @@ enum WindowServerEvent: Sendable {
     case spacesChanged     // a Space was created or destroyed, or the active Space changed
     case frontAppChanged
 
-    static let ids: [UInt32] = [804, 806, 807, 808, 811, 815, 816, 1325, 1326, 1327, 1328, 1401, 1508]
+    public static let ids: [UInt32] = [804, 806, 807, 808, 811, 815, 816, 1325, 1326, 1327, 1328, 1401, 1508]
 
-    init?(id: UInt32, payload: UnsafeRawBufferPointer) {
+    public init?(id: UInt32, payload: UnsafeRawBufferPointer) {
         func u32(at offset: Int) -> UInt32? {
             payload.count >= offset + 4 ? payload.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : nil
         }
@@ -32,20 +35,20 @@ enum WindowServerEvent: Sendable {
 }
 
 /// One window as WindowServer describes it.
-struct WindowRow: Sendable, Equatable {
-    let id: UInt32
-    let pid: pid_t
-    let parent: UInt32
-    let level: Int32
-    let orderedIn: Bool
-    let frame: CGRect
+public struct WindowRow: Sendable, Equatable {
+    public let id: UInt32
+    public let pid: pid_t
+    public let parent: UInt32
+    public let level: Int32
+    public let orderedIn: Bool
+    public let frame: CGRect
 }
 
-enum SkyLight {
-    static let connection = SLSMainConnectionID()
+public enum SkyLight {
+    public static let connection = SLSMainConnectionID()
 
     /// Delivers every event on the main queue in the order WindowServer sent it. Call once.
-    static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) {
+    public static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) {
         let sink = Unmanaged.passRetained(EventSink(handler)).toOpaque()   // lives for the process
         for id in WindowServerEvent.ids {
             let result = SLSRegisterConnectionNotifyProc(connection, { id, data, length, context, _ in
@@ -59,7 +62,7 @@ enum SkyLight {
 
     /// Replaces the list of windows whose per-window events (804, 806 to 808, 815, 816) are
     /// delivered. WindowServer keeps only the latest list.
-    static func watch(_ windows: [UInt32]) {
+    public static func watch(_ windows: [UInt32]) {
         var windows = windows
         let result = SLSRequestNotificationsForWindows(connection, &windows, Int32(windows.count))
         if result != .success { log.error("watch list of \(windows.count) windows rejected: \(result.rawValue)") }
@@ -67,7 +70,7 @@ enum SkyLight {
 
     /// Every window on every Space of every display. It can block during a Space
     /// transition, so the inventory calls it off the main thread.
-    static func allWindowIDs() -> [UInt32] {
+    public static func allWindowIDs() -> [UInt32] {
         let displays = SLSCopyManagedDisplaySpaces(connection)?.takeRetainedValue() as? [[String: Any]] ?? []
         let spaces = displays.flatMap { ($0["Spaces"] as? [[String: Any]] ?? []).compactMap { $0["id64"] as? UInt64 } }
         var setTags: UInt64 = 0, clearTags: UInt64 = 0
@@ -77,7 +80,7 @@ enum SkyLight {
     }
 
     /// Rows for the given windows. Windows that no longer exist are left out.
-    static func rows(_ ids: [UInt32]) -> [WindowRow] {
+    public static func rows(_ ids: [UInt32]) -> [WindowRow] {
         guard !ids.isEmpty, let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return [] }
         defer { query.release() }
         guard let iterator = SLSWindowQueryResultCopyWindows(query.takeUnretainedValue()) else { return [] }

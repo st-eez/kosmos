@@ -3,8 +3,13 @@
 //
 //   kosmos-probe barrier [cycles]   Does one bridged read return only after earlier
 //                                   conceal and reveal operations have landed?
+//   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
+//                                   itself with SIGKILL. Check afterwards that the panel
+//                                   is back, the Space is gone and the record is clear.
 import AppKit
 import CSkyLight
+import KosmosRecovery
+import KosmosSkyLight
 
 setvbuf(stdout, nil, _IOLBF, 0)
 let arguments = CommandLine.arguments.dropFirst()
@@ -12,8 +17,9 @@ let arguments = CommandLine.arguments.dropFirst()
 switch arguments.first {
 case "panel": showPanel()
 case "barrier": barrier(cycles: arguments.dropFirst().first.flatMap(Int.init) ?? 50)
+case "survive-kill": surviveKill()
 default:
-    print("usage: kosmos-probe barrier [cycles]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill")
     exit(2)
 }
 
@@ -69,7 +75,7 @@ func barrier(cycles: Int) {
     print("holding Space \(space) created in \(String(format: "%.2f", elapsed(start))) ms, panel window \(window)")
     defer {
         var ids = [window]
-        _ = kosmos_reveal(&ids, 1, space)
+        _ = kosmos_remove_windows(space, &ids, 1)
         _ = kosmos_space_destroy(space)
         panel.terminate()
     }
@@ -80,14 +86,14 @@ func barrier(cycles: Int) {
         var opTimes: [Double] = [], barrierTimes: [Double] = []
         for _ in 0..<cycles {
             var t = ContinuousClock.now
-            _ = kosmos_conceal(&ids, 1, space, true)
+            _ = kosmos_add_windows(space, &ids, 1, false)
             opTimes.append(elapsed(t))
             if useBarrier { t = .now; _ = kosmos_barrier(space); barrierTimes.append(elapsed(t)) }
             if inSpace(window, space) { concealed += 1 }
             Thread.sleep(forTimeInterval: 0.02)
 
             t = .now
-            _ = kosmos_reveal(&ids, 1, space)
+            _ = kosmos_remove_windows(space, &ids, 1)
             opTimes.append(elapsed(t))
             if useBarrier { t = .now; _ = kosmos_barrier(space); barrierTimes.append(elapsed(t)) }
             if !inSpace(window, space) { revealed += 1 }
@@ -101,4 +107,37 @@ func barrier(cycles: Int) {
                          percentile(barrierTimes, 0.5), percentile(barrierTimes, 0.95), percentile(barrierTimes, 1)))
         }
     }
+}
+
+func surviveKill() -> Never {
+    guard let lock = try? FileLock(KosmosFiles.lock) else { print("Kosmos is running; quit it first"); exit(1) }
+    let file = try! RecordFile(url: KosmosFiles.record)
+    guard case .nothingRecorded = Recovery.run(file: file) else { print("a previous record needed recovery; run again"); exit(1) }
+
+    let (panel, window) = spawnPanel()
+    print("panel pid \(panel.processIdentifier) window \(window)")
+    let guardian = Process()
+    guardian.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appending(path: "kosmos-guardian")
+    guardian.arguments = ["watch", String(getpid())]
+    let ready = Pipe()
+    guardian.standardOutput = ready
+    try! guardian.run()
+    guard ready.fileHandleForReading.readData(ofLength: 1) == Data("R".utf8) else { print("guardian not ready"); exit(1) }
+    print("guardian \(guardian.processIdentifier) ready, process group \(getpgid(guardian.processIdentifier)) (mine \(getpgrp()))")
+
+    // The record names the Space before any window enters it, and the window before its first hide.
+    var record = RecoveryRecord(windowServer: ProcessIdentity.windowServer()!, manager: .current)
+    let space = kosmos_holding_create()
+    record.spaces = [space]
+    let original = (kosmos_window_spaces(window) as? [UInt64])?.first ?? 0
+    record.windows = [.init(id: window, owner: ProcessIdentity.of(panel.processIdentifier)!, originalSpace: original)]
+    file.publish(record)
+
+    var ids = [window]
+    kosmos_add_windows(space, &ids, 1, false)
+    _ = kosmos_barrier(space)
+    print("panel concealed in Space \(space): \(inSpace(window, space)); killing myself")
+    withExtendedLifetime(lock) {}
+    kill(getpid(), SIGKILL)
+    exit(1)
 }
