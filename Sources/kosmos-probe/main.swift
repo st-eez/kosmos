@@ -12,8 +12,13 @@
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
+//   kosmos-probe displays           Each display's identity as Kosmos reads it: EDID
+//                                   serial, framebuffer, and the bar number, checked against
+//                                   SketchyBar's own when it runs. Read only.
 import AppKit
 import CKosmos
+import IOKit
+import KosmosCore
 import KosmosRecovery
 import KosmosSkyLight
 
@@ -27,8 +32,9 @@ case "survive-kill": surviveKill()
 case "bar": bar()
 case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
+case "displays": displays()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | displays")
     exit(2)
 }
 
@@ -206,4 +212,57 @@ func bar() {
     let start = ContinuousClock.now
     let outcome = Recovery.run(file: file)
     print("recovery of a record naming destroyed Space \(space): \(outcome) in \(String(format: "%.0f", elapsed(start))) ms; record cleared: \(file.read() == nil)")
+}
+
+@MainActor func displays() {
+    let active = DisplayIdentity.active(), managed = DisplayIdentity.managed()
+    print("active displays (CGGetActiveDisplayList): \(active)")
+    print("managed displays (SLSCopyManagedDisplays): \(managed)")
+    let sketchyBar = sketchyBarNumbers()
+    let screens = NSScreen.screens
+    for id in active {
+        let screen = screens.firstIndex { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }
+        let uuid = DisplayIdentity.uuid(of: id)
+        let number = BarSnapshot.displayNumber(uuid: uuid, active: active.count, managed: managed)
+        let start = ContinuousClock.now
+        let serial = DisplayIdentity.serial(of: id)
+        let readTime = elapsed(start)
+        let info = CoreDisplay_DisplayCreateInfoDictionary(id)?.takeRetainedValue() as? [String: Any] ?? [:]
+        print("display \(id): bar number \(number), SketchyBar says \(sketchyBar.map { $0[id].map(String.init) ?? "none" } ?? "(not running)")")
+        print("  name '\(screen.map { screens[$0].localizedName } ?? "no NSScreen")', NSScreen index \(screen.map(String.init) ?? "none"), built-in \(CGDisplayIsBuiltin(id) != 0), main \(CGDisplayIsMain(id) != 0), bounds \(CGDisplayBounds(id))")
+        print("  vendor \(CGDisplayVendorNumber(id)), model \(CGDisplayModelNumber(id)), numeric serial \(CGDisplaySerialNumber(id)), uuid \(uuid ?? "none")")
+        print(String(format: "  EDID serial %@ (read in %.3f ms)", serial.map { "'\($0)'" } ?? "none", readTime))
+        print("  framebuffer \(DisplayIdentity.framebuffer(of: id) ?? "none")")
+        print("  CoreDisplay DisplaySerialString \(info["DisplaySerialString"].map { "\($0)" } ?? "none")")
+    }
+    // Every framebuffer the display controller published, with or without a display. Each
+    // display above must name a different one; identical monitors are told apart that way.
+    var iterator: io_iterator_t = 0
+    guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOMobileFramebufferShim"), &iterator) == KERN_SUCCESS else { return }
+    defer { IOObjectRelease(iterator) }
+    while case let entry = IOIteratorNext(iterator), entry != IO_OBJECT_NULL {
+        defer { IOObjectRelease(entry) }
+        var path = [CChar](repeating: 0, count: MemoryLayout<io_string_t>.size)
+        IORegistryEntryGetPath(entry, kIOServicePlane, &path)
+        let attributes = IORegistryEntryCreateCFProperty(entry, "DisplayAttributes" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? [String: Any]
+        let product = attributes?["ProductAttributes"].map { "\($0)".split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ") }
+        print("framebuffer \(String(decoding: path.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)): ProductAttributes \(product ?? "none")")
+    }
+}
+
+/// SketchyBar's arrangement id for each display, from `--query displays`, or nil when no bar answers.
+func sketchyBarNumbers() -> [UInt32: Int]? {
+    let query: [CChar] = ["--query", "displays"].flatMap { $0.utf8CString } + [0]
+    var reply = [CChar](repeating: 0, count: 16384)
+    let count = query.withUnsafeBufferPointer {
+        kosmos_bar_query("git.felix.sketchybar", $0.baseAddress, UInt32($0.count), &reply, UInt32(reply.count), 500)
+    }
+    guard count > 0 else { return nil }
+    let data = Data(reply.prefix(Int(count)).prefix { $0 != 0 }.map { UInt8(bitPattern: $0) })
+    let displays = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+    return Dictionary(displays.compactMap { display in
+        guard let id = display["DirectDisplayID"] as? Int, let number = display["arrangement-id"] as? Int else { return nil }
+        return (UInt32(id), number)
+    }, uniquingKeysWith: { first, _ in first })
 }

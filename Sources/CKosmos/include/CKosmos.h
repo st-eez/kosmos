@@ -1,7 +1,7 @@
-// The C and Objective-C layer under Kosmos: private SkyLight and HIServices declarations,
-// the holding Space and focus operations (KosmosBridge.h) and the SketchyBar transport
-// (KosmosBar.h). Each private signature was checked by a probe on macOS 27 (26A428) before
-// use; none needs SIP disabled.
+// The C and Objective-C layer under Kosmos: private SkyLight, HIServices and CoreDisplay
+// declarations, the holding Space and focus operations (KosmosBridge.h) and the SketchyBar
+// transport (KosmosBar.h). Each private signature was checked by a probe on macOS 27
+// (26A428) before use; none needs SIP disabled.
 #pragma once
 
 #include <ApplicationServices/ApplicationServices.h>
@@ -17,6 +17,14 @@ typedef void SLSNotifyProc(uint32_t event, void *data, size_t length, void *cont
 extern CGError SLSRegisterConnectionNotifyProc(SLSConnectionID cid, SLSNotifyProc *proc, uint32_t event, void *context);
 // Replaces the watch list, so every call carries the whole list.
 extern CGError SLSRequestNotificationsForWindows(SLSConnectionID cid, uint32_t *windows, int count);
+
+// Display UUID strings in WindowServer's order. SketchyBar numbers displays by their
+// position here (display_arrangement in its src/display.c).
+extern CFArrayRef SLSCopyManagedDisplays(SLSConnectionID cid);
+
+// CoreDisplay ships in /System/Library/Frameworks without headers. The dictionary's
+// IODisplayLocation is the IORegistry path of the framebuffer that drives the display.
+extern CFDictionaryRef CoreDisplay_DisplayCreateInfoDictionary(CGDirectDisplayID display);
 
 // Window queries.
 extern CFArrayRef SLSCopyManagedDisplaySpaces(SLSConnectionID cid);

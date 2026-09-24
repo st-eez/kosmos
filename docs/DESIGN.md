@@ -203,6 +203,10 @@ off the main thread).
   keeps the running config, and a bad file at login falls back to the last good config.
 - Display profiles are built in and matched by monitor name or serial. Runtime toggles are
   commands and never rewrite the file.
+- A serial is the EDID alphanumeric serial number, which the display controller publishes
+  on the framebuffer that drives the display. CoreDisplay names each display's framebuffer,
+  so identical monitors, whose vendor, model and numeric serial are the same, get their own
+  serials (`kosmos-probe displays`).
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
   rule shadows a later one.
 
@@ -265,7 +269,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - **Status bar (SketchyBar).** Kosmos sends one `kosmos_state` event per change, holding
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
-  active profile; and the displays. The bar runs no command on a switch. A bar that starts
+  active profile; and the displays, numbered as SketchyBar numbers them, from the same
+  WindowServer display list. The bar runs no command on a switch. A bar that starts
   after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
   runs `kosmos workspace <name>`.
 - **Borders (JankyBorders).** They work unchanged while inactive borders are transparent.
