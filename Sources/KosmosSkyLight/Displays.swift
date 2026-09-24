@@ -41,9 +41,6 @@ public struct Displays {
 
     public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.spaces)) }
 
-    /// Whether every display shows an ordinary Space, so none shows native fullscreen.
-    public var showOrdinarySpaces: Bool { displays.allSatisfy { $0.currentSpace != nil } }
-
     /// The ordinary Space for a window that has none: the main display's current Space,
     /// else the window's `original` Space if it still exists, else the main display's first
     /// ordinary Space. A native fullscreen Space on screen is never one, so a reveal works

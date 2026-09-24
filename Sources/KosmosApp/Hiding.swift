@@ -175,13 +175,10 @@ private final class HidingStore: @unchecked Sendable {
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
-        // Adds go before removals: a window removed from its only Space lands on whichever
-        // Space is active. While a display shows one that is not ordinary, such as native
-        // fullscreen, the removals also wait for the adds to land; the add's return says only
-        // that it was sent, so a barrier and a read confirm it. With an ordinary Space on every
-        // display, a removal after an add that did not land still leaves the window on one,
-        // so the removals go at once. The displays are read, up to 7 ms on the development
-        // Mac, only in a batch that adds.
+        // Adds land before any removal is sent: a window removed from its only Space lands on
+        // whichever Space is active, which can be a native fullscreen one. The add's return
+        // says only that it was sent, so a barrier and a read confirm it, about 1.3 ms, and
+        // the displays are read, up to 7 ms on the development Mac, only in a batch that adds.
         var removals = batch.removals
         if !batch.adds.isEmpty {
             let displays = Displays.current()
@@ -195,10 +192,8 @@ private final class HidingStore: @unchecked Sendable {
                 var ids = windows
                 kosmos_add_windows(destination, &ids, ids.count, true)
             }
-            if !displays.showOrdinarySpaces {
-                guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
-                removals = batch.removals(landed: displays.isInOrdinarySpace)
-            }
+            guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return false }
+            removals = batch.removals(landed: displays.isInOrdinarySpace)
         }
         for (from, windows) in removals {
             var ids = windows

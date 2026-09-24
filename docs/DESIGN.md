@@ -220,16 +220,12 @@ off the main thread).
   only managed Spaces, and the holding Space is not one, so the removal is still needed.
   The add goes first because a window removed from its only Space lands on the active
   Space, which can be a native fullscreen one (`kosmos-probe reveal`).
-- While a display shows a Space that is not ordinary, such as native fullscreen, a window
-  leaves the holding Space only once its add landed. The add's return says only that it
-  was sent, so a barrier after the adds and a read of each added window's Spaces come
-  before the removals. The read compares the window's Spaces with the displays' ordinary
-  Spaces, whether or not the window's Space list names fullscreen Spaces. A window whose
-  add did not land stays in the holding Space, so the batch fails its confirmation and
-  recovery adds it again. With an ordinary Space on every display, the removals follow
-  the adds without that barrier: after an add that did not land, the removal leaves the
-  window on the active Space, which is then ordinary, and the batch saves a bridged round
-  trip.
+- A window leaves the holding Space only once its add landed. The add's return says only
+  that it was sent, so a barrier after the adds, about 1.3 ms and only in a batch that
+  adds, and a read of each added window's Spaces come before the removals. The read
+  compares the window's Spaces with the displays' ordinary Spaces, whether or not the
+  window's Space list names fullscreen Spaces. A window whose add did not land stays in
+  the holding Space, so the batch fails its confirmation and recovery adds it again.
 - A batch is confirmed when the Spaces it touched show each revealed window out of them
   and each concealed window in them. Kosmos reads them directly, on its own connection,
   every 0.1 ms for up to 10 ms, and only then sends the barrier and reads once more. A
