@@ -15,6 +15,10 @@ public enum ReportVerdict: Equatable, Sendable {
     case adopt(UInt32)
     /// The user reached a hidden window with Command-Tab: switch to its workspace.
     case follow(UInt32)
+    /// A hidden window whose app has this window on the shown workspace. Command-Tab to that
+    /// app lands on this one (DESIGN.md, section 5.3), so macOS keyed the hidden one itself:
+    /// this window becomes the focus intent and is requested.
+    case redirect(UInt32)
     /// No key window and nothing to do.
     case ignore
     /// The verdict depends on whether the window key before the report left the screen,
@@ -64,13 +68,18 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
 
     /// - Parameters:
     ///   - onCurrentWorkspace: the window belongs to the workspace Kosmos shows.
-    ///   - wasHidden: the window was concealed when it became key, so only Command-Tab
-    ///     could have reached it.
+    ///   - reachable: the window of another workspace became key by the user's choice. It
+    ///     was concealed, so only Command-Tab could have reached it, or recovery had shown
+    ///     it, so a click could. Otherwise it is key only during a switch.
+    ///   - repeated: the report names the key window Kosmos last heard of, so no key change
+    ///     and no Command-Tab made it: a focus request of Kosmos's missed.
+    ///   - shownSibling: a concealed window's app has this window on the shown workspace.
     ///   - keyLeft: whether the window key before this report has just left the screen. If
     ///     it has, macOS keyed this window itself, so it is not a Command-Tab to follow;
     ///     Kosmos keeps its workspace and focuses it again (tla/Kosmos.tla, KeyLeft).
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp,
-                                  onCurrentWorkspace: Bool, wasHidden: Bool, keyLeft: Departure) -> ReportVerdict {
+                                  onCurrentWorkspace: Bool, reachable: Bool, repeated: Bool = false,
+                                  shownSibling: UInt32? = nil, keyLeft: Departure) -> ReportVerdict {
         // An echo names the requested window and arrives after the request. Earlier
         // expectations are dropped with it; a report that matches none leaves them all.
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) {
@@ -82,7 +91,8 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         // first.
         guard case .window(let id) = key else { return keyLeft == .left ? .reassert : .ignore }
         if onCurrentWorkspace { return .adopt(id) }
-        guard wasHidden else { return .reassert }
+        guard reachable, !repeated else { return .reassert }
+        if let shownSibling { return .redirect(shownSibling) }
         switch keyLeft {
         case .left: return .reassert
         case .stayed: return .follow(id)

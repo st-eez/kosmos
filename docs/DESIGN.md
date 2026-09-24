@@ -167,9 +167,21 @@ off the main thread).
     it. A Command-Tab after that report follows as usual, 100 ms late. This happened
     live: Command-H on the only window of workspace 2 took Kosmos to workspace 1, where
     macOS keyed Ghostty.
+  - Command-Tab to an app with a window on the shown workspace lands on that window,
+    because the app's concealed windows lose their Space (5.3). A report of a concealed
+    window whose app has a window on the shown workspace is therefore macOS's own
+    choice, and Kosmos focuses the app's shown window instead.
+  - A report that repeats the key window Kosmos last heard of is no key change, so no
+    Command-Tab made it. Fronting another window of the app that is already key can
+    leave that app's key window in place, and the app reports it again. Kosmos requests
+    its focus again. This happened live: Kosmos fronted Ghostty for a window of
+    workspace 1, Ghostty reported the window a switch had just concealed on workspace
+    3, and Kosmos followed it there.
   - A visible window of another workspace is key only during a switch: macOS re-keyed
     after a hide, or the user clicked or Command-Tabbed to a window about to be
-    concealed. The switch wins, and its focus is requested again.
+    concealed. The switch wins, and its focus is requested again. After a batch fails,
+    recovery shows every workspace's windows until a switch conceals them again. A
+    click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
 - Skip activation when the target is already key. When a newer command for another
   workspace is already queued, the older one lays out but doesn't focus.
 - While macOS shows a native fullscreen window's Space, only a command requests focus,

@@ -239,18 +239,21 @@ final class Controller {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
+            let repeated = key == reported
             key = reported
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
             if let id, session.workspace(of: id) == nil || session.isParked(id) { return }
+            // The held window again, as after a miss: the same activation, still held.
+            if repeated, held?.report.key == reported { return }
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4). The
             // bound covers macOS's delay: after a minimize, the new key window was reported
             // 0.73 s after the minimize. Concealing a window leaves it ordered in, so a
             // concealed window counts only if it left too.
             let keyLeft: Departure = previous.map { inventory.leftScreen($0, within: .seconds(1)) ? .left : .unknown } ?? .stayed
-            decide(KeyReport(key: reported, received: report.received, previous: previous,
-                             wasHidden: id.map(hiding.isConcealed) ?? false), keyLeft: keyLeft)
+            decide(KeyReport(key: reported, received: report.received, previous: previous, repeated: repeated,
+                             concealed: id.map(hiding.isConcealed) ?? false), keyLeft: keyLeft)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -283,8 +286,10 @@ final class Controller {
         let received: ContinuousClock.Instant
         /// The window key before it, when that was another window.
         let previous: WindowID?
+        /// It names the key window Kosmos last heard of.
+        let repeated: Bool
         /// The reported window was concealed when it became key.
-        let wasHidden: Bool
+        let concealed: Bool
     }
 
     /// How long a report waits to learn whether the window key before it left. macOS keyed
@@ -298,9 +303,12 @@ final class Controller {
     /// (tla/Kosmos.tla, Adopt and Hold).
     private func decide(_ report: KeyReport, keyLeft: Departure) {
         let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
+        // After a failed batch, recovery showed the windows of hidden workspaces, and a click
+        // reaches one as Command-Tab reaches a concealed one.
         let verdict = reports.classify(report.key, receivedAt: report.received,
                                        onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
-                                       wasHidden: report.wasHidden, keyLeft: keyLeft)
+                                       reachable: report.concealed || needsResync, repeated: report.repeated,
+                                       shownSibling: report.concealed ? id.flatMap(shownSibling) : nil, keyLeft: keyLeft)
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report
         // of no key window leave it held.
@@ -325,7 +333,18 @@ final class Controller {
         case .follow(let window):
             touch(window)
             execute(session.follow(window))
+        case .redirect(let window):
+            session.adopt(window)
+            requestFocus(.window(window))
+            publishState()
         }
+    }
+
+    /// The most recently focused window on the shown workspace of the app that owns
+    /// `window`, where Command-Tab to that app lands (DESIGN.md, section 5.3).
+    private func shownSibling(of window: WindowID) -> WindowID? {
+        guard let pid = owner[window] else { return nil }
+        return mostRecent(session.windows(of: session.visible).filter { owner[$0] == pid })
     }
 
     /// Decides the held report when the window key before it departs, or when its grace
