@@ -411,6 +411,9 @@ final class Inventory {
         }
     }
 
+    /// Ceiling: an event handled after this, for a change the sweep's snapshot already had,
+    /// came late and still counts as missed. Logging an event that arrives soon after the
+    /// sweep counted its window would tell the two apart.
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
@@ -426,7 +429,19 @@ final class Inventory {
             inventoryLog.notice("sweep lost \(id), missed by events")
             remove(id, reason: "absent from sweep")
         }
-        for row in rows where windows[row.id] != nil { apply(row) }
+        // A known window whose order or candidate status the sweep corrects is one an event
+        // missed too.
+        for row in rows {
+            guard let old = windows[row.id] else { continue }
+            apply(row)
+            guard let new = windows[row.id], new.orderedIn != old.orderedIn || isCandidate(new) != isCandidate(old) else { continue }
+            missedByEvents += 1
+            inventoryLog.notice("""
+                sweep corrected \(row.id), missed by events: \(self.appName(row.pid), privacy: .public) \
+                ordered in \(old.orderedIn) to \(new.orderedIn), level \(old.level) to \(new.level), \
+                parent \(old.parent) to \(new.parent)
+                """)
+        }
         // Accessibility lists no window on a Space that is not shown, such as another
         // fullscreen Space, so only the sweep after a Space change asks again, and only
         // for windows ordered in. The others wait for a focus report or their unhide.
