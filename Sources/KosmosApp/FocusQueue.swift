@@ -20,17 +20,27 @@ final class FocusQueue: Sendable {
     /// Uses the private path when `privately`, as the kill switch said on the main actor, and
     /// the public path otherwise or when a SkyLight call fails. `worker` belongs to the
     /// target's app: it reads the app's focused window, raises the window before the private
-    /// path keys it, and runs the public path. `dropped` runs on the main actor when the
-    /// request is not performed, so the caller can forget the echo it expected.
+    /// path keys it, and runs the public path.
+    ///
+    /// A request that is stale, or whose target is already key, makes no call and records
+    /// nothing. Otherwise `performing` runs on the main actor with a stamp taken just before
+    /// the calls, so the caller records the echo it expects, and `dropped` runs with that
+    /// stamp when the calls fail, so the caller forgets it (tla/Kosmos.tla, ExecFocus). The
+    /// main queue runs `performing` before any report of the change, which reaches main only
+    /// after the change starts. Recording when the request is made instead failed TLC: a
+    /// request still queued took a click on its window for its echo.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, generation: UInt64,
-                 dropped: @escaping @MainActor () -> Void) {
+                 performing: @escaping @MainActor (ContinuousClock.Instant) -> Void,
+                 dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
-            guard isCurrent(), !Self.isKey(key, pid: pid, worker: worker) else { return Self.onMain(dropped) }
+            guard isCurrent(), !Self.isKey(key, pid: pid, worker: worker) else { return }
+            let stamp = ContinuousClock.now
+            Self.onMain { performing(stamp) }
             if privately {
                 if case .window(let id) = key, let worker {
                     Self.raise(id, on: worker, isCurrent)
-                    guard isCurrent() else { return Self.onMain(dropped) }
+                    guard isCurrent() else { return Self.onMain { dropped(stamp) } }
                 }
                 let performed = killSwitch.guarded {
                     switch key {
@@ -42,10 +52,10 @@ final class FocusQueue: Sendable {
             }
             switch key {
             case .window(let id):
-                guard let worker else { return Self.onMain(dropped) }
-                worker.focusPublicly(id, isCurrent: isCurrent) { Self.onMain(dropped) }
+                guard let worker else { return Self.onMain { dropped(stamp) } }
+                worker.focusPublicly(id, isCurrent: isCurrent) { Self.onMain { dropped(stamp) } }
             case .none:
-                NSRunningApplication(processIdentifier: pid)?.activate(options: [])
+                if NSRunningApplication(processIdentifier: pid)?.activate(options: []) != true { Self.onMain { dropped(stamp) } }
             }
         }
     }
@@ -84,7 +94,7 @@ final class FocusQueue: Sendable {
         return key.isAlreadyKey(appIsFront: front, focused: focused)
     }
 
-    private static func onMain(_ dropped: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.async { MainActor.assumeIsolated { dropped() } }
+    private static func onMain(_ callback: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.async { MainActor.assumeIsolated { callback() } }
     }
 }

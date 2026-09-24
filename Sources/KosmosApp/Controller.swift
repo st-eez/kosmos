@@ -329,18 +329,25 @@ final class Controller {
             pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
         }
         guard let pid else { return }
-        let stamp = ContinuousClock.now
+        let privately = focusQueue.killSwitch.isOn
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately,
+                           generation: focusQueue.newGeneration(),
+                           performing: { [weak self] stamp in self?.performing(target, pid: pid, privately: privately, at: stamp) },
+                           dropped: { [weak self] stamp in
+                               self?.reports.requestDropped(target, at: stamp)
+                               self?.misses.requestDropped(at: stamp)
+                           })
+    }
+
+    /// The focus queue is about to key `target`: records the echo that will come back, and
+    /// counts a private request toward the kill switch (DESIGN.md, section 5.4).
+    private func performing(_ target: KeyWindow, pid: pid_t, privately: Bool, at stamp: ContinuousClock.Instant) {
         reports.focusRequested(target, at: stamp)
-        if focusQueue.killSwitch.isOn, case .window(let id) = target, misses.willRequest(id, pid: pid, at: stamp) {
-            focusQueue.killSwitch.turnOff(.wrongWindows)
-            controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
-            onFocusProblem?(focusProblem)
-        }
-        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
-                           generation: focusQueue.newGeneration()) { [weak self] in
-            self?.reports.requestDropped(target, at: stamp)
-            self?.misses.requestDropped(at: stamp)
-        }
+        guard privately, focusQueue.killSwitch.isOn, case .window(let id) = target,
+              misses.willRequest(id, pid: pid, at: stamp) else { return }
+        focusQueue.killSwitch.turnOff(.wrongWindows)
+        controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
+        onFocusProblem?(focusProblem)
     }
 
     /// Moves the pointer to the window's center unless it is already inside the window,

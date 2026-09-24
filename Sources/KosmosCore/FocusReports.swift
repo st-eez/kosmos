@@ -31,7 +31,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         lastCommand = stamp
     }
 
-    /// Records a request when it is queued, before it can come back.
+    /// Records a request just before the focus queue makes its calls, before it can come back.
     public mutating func focusRequested(_ key: KeyWindow, at stamp: Stamp) {
         expected.append((key, stamp))
     }

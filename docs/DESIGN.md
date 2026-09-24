@@ -197,12 +197,18 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again.
 - Skip activation when the target is already key, checked by the focus queue when the
   request runs: the target's app is the front process and its focused window, read on the
-  app's worker, is the target. A skipped request forgets its expected echo. The key window
-  last reported can be older than a request still in flight: after `workspace 2` then
-  `workspace 1` in quick succession, a skip against it dropped the request for w1 before
-  w3's report arrived, and w3's echo then left macOS keying w3 while Kosmos focused w1
-  (kosmos-hover's TLC counterexample; tla/Kosmos.tla, ExecFocus). The front process lookup
-  takes 1.6 us, and only a request for the front app pays an AX read. When a newer command
+  app's worker, is the target. The key window last reported can be older than a request
+  still in flight: after `workspace 2` then `workspace 1` in quick succession, a skip
+  against it dropped the request for w1 before w3's report arrived, and w3's echo then left
+  macOS keying w3 while Kosmos focused w1 (kosmos-hover's TLC counterexample; tla/Kosmos.tla,
+  ExecFocus). The front process lookup takes 1.6 us, and only a request for the front app
+  pays an AX read.
+- The focus queue records the echo it expects just before its calls, through the main
+  queue, which runs the record before any report of the change. A stale or skipped
+  request records nothing, and a failed call forgets its record. Recording when the
+  request was made failed TLC's `user` config. The user clicked w2, and Kosmos requested
+  w2 again. Before the queue ran that request, the user clicked w1 and then w2, the second
+  click on w2 was taken for the queued request's echo, and Kosmos stayed on w1. When a newer command
   for another workspace is already queued, the older one lays out but doesn't focus.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
