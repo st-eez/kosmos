@@ -2,6 +2,7 @@ import AppKit
 import KosmosCore
 import KosmosIPC
 import KosmosRecovery
+import KosmosSkyLight
 import os
 
 let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "app")
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyProblems: [String] = []
     private var hidingProblem: String?
     private var hiding: Hiding?
+    private var secureInput: SecureInput?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -53,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusItem = StatusItem()
         self.statusItem = statusItem
+        SkyLight.watchSecureInput { [weak self] in self?.secureInputChanged() }
+        secureInputChanged()
         // WindowServer tracking needs no permission, so it starts before the Accessibility grant.
         inventory.start()
         if AXIsProcessTrusted() {
@@ -161,6 +165,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.problems = configProblems + hotkeyProblems + (hidingProblem.map { [$0] } ?? [])
     }
 
+    /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
+    /// polls, so this never runs on a switch (DESIGN.md, section 5.6).
+    private func secureInputChanged() {
+        let current = SecureInput.current()
+        guard current != secureInput else { return }
+        secureInput = current
+        log.notice("secure input \(current.map { "on, held by \($0)" } ?? "off", privacy: .public)")
+        statusItem?.secureInput = current
+        controller?.secureInput = current
+    }
+
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
     private func handleTerminationSignals() {
         for signalNumber in [SIGTERM, SIGINT] {
@@ -196,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
+        controller.secureInput = secureInput
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.

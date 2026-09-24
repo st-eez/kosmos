@@ -60,6 +60,20 @@ public enum SkyLight {
         }
     }
 
+    /// Calls `changed` on the main queue when Secure Input turns on (event 752) or off (753),
+    /// whichever process changes it. The events follow the session's state: a second or
+    /// nested enable sends none, and the last holder's exit sends 753 (kosmos-probe
+    /// secure-input). Call once.
+    @MainActor public static func watchSecureInput(_ changed: @escaping @MainActor () -> Void) {
+        secureInputChanged = changed
+        for id: UInt32 in [752, 753] {
+            let result = SLSRegisterConnectionNotifyProc(connection, { _, _, _, _, _ in
+                DispatchQueue.main.async { MainActor.assumeIsolated { secureInputChanged?() } }
+            }, id, nil)
+            if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
+        }
+    }
+
     /// Replaces the list of windows whose per-window events (804, 806 to 808, 815, 816) are
     /// delivered. WindowServer keeps only the latest list.
     public static func watch(_ windows: [UInt32]) {
@@ -96,6 +110,8 @@ public enum SkyLight {
         return rows
     }
 }
+
+@MainActor private var secureInputChanged: (@MainActor () -> Void)?
 
 private final class EventSink: Sendable {
     private let handler: @MainActor (WindowServerEvent) -> Void

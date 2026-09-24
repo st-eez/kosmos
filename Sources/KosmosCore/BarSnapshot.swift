@@ -41,6 +41,30 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
     public var workspaces: [Workspace]
     /// Nil on an empty workspace.
     public var focused: Focus?
+    /// Set while Secure Input is on, when some bindings stop (DESIGN.md, section 5.6).
+    public var secureInput: SecureInput?
+}
+
+/// The process holding Secure Input, which a password field turns on.
+public struct SecureInput: Codable, Equatable, Sendable, CustomStringConvertible {
+    /// The process WindowServer names. When a process with no windows of its own turns Secure
+    /// Input on, WindowServer names the frontmost app instead (kosmos-probe secure-input).
+    public var pid: Int32?
+    /// Nil when the process is no app.
+    public var app: String?
+
+    public init(pid: Int32?, app: String?) {
+        self.pid = pid
+        self.app = app
+    }
+
+    public var description: String {
+        switch (app, pid) {
+        case let (app?, pid?): "\(app) (pid \(pid))"
+        case let (nil, pid?): "pid \(pid)"
+        default: "an unnamed process"
+        }
+    }
 }
 
 extension Session {

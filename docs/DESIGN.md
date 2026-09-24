@@ -31,7 +31,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Every focus change makes an app frontmost, which costs macOS's app-usage daemons about 80% of one core at four switches per second | Skip activations that change nothing and coalesce bursts |
 | A SwiftUI menu bar label cost 6 to 10 ms of main-thread time per switch. A label that changes width makes macOS 27's MenuBarAgent lay out the whole menu bar, about 60 ms of CPU per switch | A static status item that is never written during a switch |
 | A shell hook that notifies a status bar launches 3 to 8 processes per switch; a direct Mach message costs 1 to 4 µs | Push state to the bar from inside the manager |
-| Option-only Carbon hotkeys stop while another app holds Secure Input, for example a password prompt | Surface Secure Input, and test which modifiers survive it |
+| While any process holds Secure Input, for example a password prompt, Carbon hotkeys whose modifiers are Option or Option and Shift stop on keys that type a character. With Control or Command, or on Space, Return, Esc, Delete, Page Down, F13 and keypad Enter, they fire (`kosmos-probe secure-input`) | Show Secure Input and its holder. A binding that must work during password entry uses Control or Command |
 | Pixel-based container weights produce wrong and negative sizes | Store fractions |
 | After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read confirms a switch, where the fork polled |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
@@ -184,9 +184,34 @@ off the main thread).
 
 - Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
   at 8 µs per call.
-- Secure Input (a password field in any app) blocks Option-only hotkeys. Kosmos shows when
-  Secure Input is active and which app holds it. A probe will show whether bindings that
-  include Control or Command still work.
+- Secure Input (a password field in any app) stops some hotkeys. `kosmos-probe
+  secure-input` registers 21 test hotkeys and presses each one with Secure Input off, with
+  its own password field focused, and while another process holds Secure Input. In three
+  runs of synthetic presses:
+  - hotkeys whose modifiers are Option or Option and Shift stopped on keys that type a
+    character (Y, comma, keypad 1), and the key reached the focused field instead;
+  - Option on Space, Return, Esc, Delete, Page Down, F13 and keypad Enter still fired;
+  - every hotkey with Control or Command fired.
+
+  Which process held Secure Input made no difference. `kosmos-probe secure-input keys`
+  asks for real presses of ten of the keys, to check the synthetic answer. In the sample
+  config, 34 of 52 bindings stop (alt and alt-shift on letters, digits, equal and minus);
+  the ctrl-alt bindings keep working. Tab and the arrows were not tested, because the
+  running Kosmos holds them. They type no character, like Return and Page Down, so they
+  should keep working too.
+- WindowServer sends event 752 when Secure Input turns on and 753 when it turns off,
+  whichever process changes it, and 753 when the last holder exits. Kosmos registers both
+  on its own connection, then reads `IsSecureEventInputEnabled` (0.04 µs) and names the
+  holder from the session dictionary (about 60 µs). Nothing polls and nothing runs on a
+  switch. Checks on app activation or focus reports would miss a password field focused
+  inside the active app.
+- While Secure Input is on, the status item shows a lock, names the holder and says which
+  bindings wait. The bar snapshot carries the holder too, for a Mac that hides the menu
+  bar, and the log records each change. For a holder with no windows of its own,
+  WindowServer names the frontmost app instead.
+- A reload does not warn about bindings that stop. They stop only while Secure Input is
+  on, and the sample config binds 34 on purpose, so the warning would come with every
+  reload.
 
 ### 5.7 IPC and bar
 
@@ -209,7 +234,7 @@ off the main thread).
 ### 5.9 Status item and onboarding
 
 - The status item is a static template icon at square length. Its image changes only for
-  three states: paused, Accessibility missing, and config error.
+  four states: paused, Accessibility missing, Secure Input on, and config error.
   - A test asserts that switches write nothing to it.
   - Kosmos keeps running when the user removes the item.
 - Onboarding is an Accessibility window. Launch at login uses `SMAppService` with a
@@ -265,9 +290,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - **Status bar (SketchyBar).** Kosmos sends one `kosmos_state` event per change, holding
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
-  active profile; and the displays. The bar runs no command on a switch. A bar that starts
-  after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
-  runs `kosmos workspace <name>`.
+  active profile; the displays; and the process holding Secure Input while it is on. The
+  bar runs no command on a switch. A bar that starts after Kosmos runs `kosmos state` once
+  for the current snapshot, and clicking a workspace runs `kosmos workspace <name>`.
 - **Borders (JankyBorders).** They work unchanged while inactive borders are transparent.
   With visible inactive borders, Kosmos would have to conceal each border window along with
   its window, as the AeroSpace fork did. Borders drawn by Kosmos itself are on the later
