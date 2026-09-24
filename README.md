@@ -60,7 +60,7 @@ AeroSpace and rolling back.
 | --- | --- | --- |
 | Window tracking from WindowServer events | Working | A 64 s run next to AeroSpace handled 41 events and missed none |
 | Per-app Accessibility workers | Working | Found every standard window and followed each focus change |
-| Holding Space and barrier | Working in probes | 50 of 50 conceals and reveals confirmed by one 1.3 ms read |
+| Holding Space and confirmation | Working | 120 live switches confirmed by direct reads at 2.1 to 3.0 ms median; the barrier alone took 3.3 to 3.4 ms |
 | Recovery after `kill -9` | Working in probes | The guardian restored a concealed window in 130 ms |
 | SketchyBar push | Working in probes | 0.02 ms per send |
 | Tiling, switching, hotkeys, config, CLI | In progress | |

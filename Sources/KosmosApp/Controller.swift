@@ -7,8 +7,8 @@ private let controllerLog = Logger(subsystem: "io.github.st-eez.kosmos", categor
 private let signposter = OSSignposter(subsystem: "io.github.st-eez.kosmos", category: .pointsOfInterest)
 
 /// Carries out the Session's plans: frame writes through the app workers, reveals and
-/// conceals through Hiding, and focus through the focus queue once the switch's barrier
-/// confirms it (DESIGN.md, section 4.3; tla/Kosmos.tla).
+/// conceals through Hiding, and focus through the focus queue once the switch is confirmed
+/// (DESIGN.md, section 4.3; tla/Kosmos.tla).
 @MainActor
 final class Controller {
     private var session: Session
@@ -19,7 +19,7 @@ final class Controller {
     private let hiding: Hiding
     private let focusQueue = FocusQueue()
     private let bar = BarPush()
-    /// Bumped by every switch; a switch whose barrier returns after a newer one does not focus.
+    /// Bumped by every switch; a switch confirmed after a newer one does not focus.
     private var switchGeneration = 0
     private var owner: [WindowID: pid_t] = [:]
     /// Window ids by most recent focus, newest last.
@@ -646,14 +646,17 @@ final class Controller {
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
-            hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome in
+            hiding.apply(show: show, hide: hide) { [weak self] outcome, timing in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
                     switch to \(self.session.visible, privacy: .public): \(show.count) shown, \(hide.count) hidden, \
-                    before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms, \
+                    before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms \
+                    (queued \(Self.ms(timing.queued), privacy: .public), sent \(Self.ms(timing.sent), privacy: .public), \
+                    confirmed \(Self.ms(timing.confirmed), privacy: .public) \(timing.barrier.map { $0 ? "by barrier" : "by read" } ?? "without reads", privacy: .public), \
+                    recovered \(Self.ms(timing.recovered), privacy: .public), back \(Self.ms(timing.returned), privacy: .public)), \
                     total \(Self.ms(total), privacy: .public) ms, \(String(describing: outcome), privacy: .public)
                     """)
                 switch outcome {
@@ -685,20 +688,6 @@ final class Controller {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
             inventory.worker(pid)?.enqueueFrames(batch)
         }
-    }
-
-    /// Each app's most recently focused hidden window keeps its ordinary Space membership
-    /// so Command-Tab picks it, unless the app has a window on the shown workspace; every
-    /// other concealed window loses it (DESIGN.md, section 5.3).
-    private func concealment(of windows: [WindowID]) -> [WindowID: Hiding.Conceal] {
-        let shownApps = Set(session.windows(of: session.visible).compactMap { owner[$0] })
-        var kinds: [WindowID: Hiding.Conceal] = [:]
-        for (pid, group) in Dictionary(grouping: windows, by: { owner[$0] ?? 0 }) {
-            let selected = shownApps.contains(pid) ? nil
-                : mostRecent(group)
-            for window in group { kinds[window] = window == selected ? .keepOrdinary : .exclusive }
-        }
-        return kinds
     }
 
     /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
