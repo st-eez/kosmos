@@ -227,7 +227,7 @@ final class Controller {
             plan.hide.removeAll { $0 == id }
         }
         // Reported key before it had a place, as at launch: that report was dropped.
-        if inventory.focused == id, session.workspace(of: id) == session.focusedWorkspace { session.adopt(id) }
+        if inventory.focused == id, session.workspace(of: id).map(session.isShown) == true { session.adopt(id) }
         execute(plan)
     }
 
@@ -506,7 +506,7 @@ final class Controller {
         // After a failed batch, recovery showed the windows of hidden workspaces, so a click
         // reaches them (needsResync).
         let verdict = reports.classify(report.key, receivedAt: report.received,
-                                       onCurrentWorkspace: id.map { session.workspace(of: $0) == session.focusedWorkspace } ?? false,
+                                       onShownWorkspace: id.flatMap(session.workspace(of:)).map(session.isShown) ?? false,
                                        concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft)
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report

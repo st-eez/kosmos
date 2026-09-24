@@ -666,6 +666,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   5.4). After the key window leaves, macOS can key a window on another display; Kosmos
   adopts that too, as AeroSpace does, and every display keeps its workspace. Holding such
   reports for the departure grace would delay every click on another display by 100 ms.
+  TLC passes two displays with every input of the one display configs (tla/README.md,
+  change 14). A macOS re-key after a hide, never seen on hardware, would find a window
+  on the other display and read as a click there (`displays-fallback`).
 - Display changes arrive as `NSApplication.didChangeScreenParametersNotification`.
   AppKit posts it on the main thread once it has rebuilt `NSScreen.screens`, where Kosmos
   reads each display's visible area and name, and it also covers changes to the visible
