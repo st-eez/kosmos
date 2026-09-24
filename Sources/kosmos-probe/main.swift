@@ -19,7 +19,9 @@
 //   kosmos-probe departures         When the key window leaves, which does macOS report
 //                                   first: the window leaving (ordered out or destroyed) or
 //                                   the next key window? Minimizes, closes and hides a
-//                                   window of its own accessory app, with one clock.
+//                                   window of its own accessory app, with one clock, and
+//                                   minimizes the app's last window, after which macOS may
+//                                   report no key window at all.
 //                                   The window belongs to an accessory app, which Kosmos
 //                                   does not manage.
 //   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
@@ -337,8 +339,10 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
 /// Milliseconds since boot, the same in every process.
 func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
 
-/// Two windows of an accessory app. The first is minimized and restored, then closed,
-/// then the app hides; each key change is printed with its uptime.
+/// Two windows of an accessory app. The first is minimized and restored, then closed.
+/// The second, the app's last window, is minimized and restored: does macOS report any
+/// key window then, or does the app stay front with none? Then the app hides. Each key
+/// change is printed with its uptime.
 @MainActor func departuresWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -363,8 +367,10 @@ func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("minimize A"); first.miniaturize(nil) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { say("restore A"); first.deminiaturize(nil) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { say("close A"); first.close() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { say("hide app"); app.hide(nil) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { exit(0) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { say("minimize B, the last window"); other.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { say("restore B"); other.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 8.5) { say("hide app"); app.hide(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { exit(0) }
     app.run()
     exit(0)
 }
@@ -410,7 +416,7 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
             print(String(format: "%.1f workspace %@ %@", uptime(), short, app?.localizedName ?? "?"))
         }
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 8) { exit(0) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 11) { exit(0) }
     app.run()
     exit(0)
 }
@@ -428,11 +434,13 @@ nonisolated(unsafe) var departureWindows: Set<UInt32> = []
         _ = kosmos_space_destroy(space)
     }
     print("window \(window), ordinary Space \(desktop), holding Space \(space)")
-    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier.
+    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier,
+    /// and whether WindowServer still reads it ordered in, as the inventory does.
     func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
         _ = kosmos_barrier(space)
         let ordinary = (kosmos_window_spaces(window) as? [UInt64]) ?? [], held = inSpace(window, space)
-        print("\(step): ordinary Spaces \(ordinary), in holding \(held)")
+        let orderedIn = SkyLight.rows([window]).first.map { "\($0.orderedIn)" } ?? "no row"
+        print("\(step): ordinary Spaces \(ordinary), in holding \(held), ordered in \(orderedIn)")
         return (ordinary, held)
     }
     let cycles = 3
