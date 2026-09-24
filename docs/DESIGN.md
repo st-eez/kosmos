@@ -701,8 +701,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   pointer to its center unless the pointer is already inside it, and so does Command-Tab
   to a window that is not under the pointer. A click always happens under the pointer, so
   it never moves it. The focus queue moves the pointer right before it keys the window,
-  and reads the window's frame there, off the main thread; a request that is stale or
-  names a concealed window moves nothing.
+  and reads the window's frame there, off the main thread; a request already stale when
+  the focus queue reaches it, or one naming a concealed window, moves nothing.
 - `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
   the command `focus-follows-mouse on|off|toggle` switches it at run time.
 
