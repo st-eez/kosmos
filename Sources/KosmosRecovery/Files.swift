@@ -24,10 +24,8 @@ public final class FileLock {
     public init?(_ url: URL) throws {
         fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
-            close(fd)
-            return nil
-        }
+        // A failed init of a class still runs deinit, which closes fd.
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return nil }
     }
 
     deinit { close(fd) }
