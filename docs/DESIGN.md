@@ -120,28 +120,26 @@ off the main thread).
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
-- The inventory tracks windows of regular apps only. Whether a process is one comes from
-  LaunchServices, a synchronous XPC call, which a sample of workspace switches caught on
-  the main thread at every window event and every row of a sweep, so it is read once per
-  process: from the running apps at start, at launch, or at the process's first window. A
-  process exit source drops the answer, since NSWorkspace reports no exit of a
-  background-only or LSUIElement app and pids come round again. An app found regular only
-  at its launch gets a sweep for the windows left out before it.
+- The inventory reads each process's activation policy once, since each read is a
+  synchronous LaunchServices call, and forgets it when the process's exit source fires. An
+  app that changes its policy while it runs keeps the one read first, as it keeps the
+  Accessibility worker Apps gave it at launch; observing activationPolicy with key-value
+  observing would follow a change. An app found regular only at its launch gets a sweep
+  for the windows left out before it.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
   Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. A workspace
-  switch posts no Space event, so it starts no sweep: `kosmos-probe events` saw no 1327,
-  1328 or 1401 in 40 switches on 2026-09-24. Sweeps asked for while one runs start one
-  more when it ends, so a burst of Space events ends with a sweep that started after the
-  last of them. A window a sweep finds or loses that no event reported is logged as
-  "missed by events", and so is a known window whose ordered in state or candidate status
-  (level 0, no parent) a sweep corrects, so a gap in macOS's notifications shows in the
-  log. The unlock sweep counts none of the windows the lock held back: one that arrived
-  while locked, and one destroyed while locked or whose app exited then. An event handled
-  after a sweep, for a change its snapshot already had, came late and still counts, so an
-  event for a window within 1 s after a sweep counted it is logged too, and the count can
-  be corrected by eye. The 3 s sweep this replaced found and lost none on 2026-09-24, over
-  a day of use and live tests. It counted none of its corrections, which it logged only at
-  debug or info level.
+  switch posts no Space event, so it starts no sweep (`kosmos-probe events`, 40 switches
+  on 2026-09-24). Sweeps asked for while one runs start one more when it ends, so a burst
+  of Space events ends with a sweep that started after the last of them. A window a sweep
+  finds or loses that no event reported is logged as "missed by events", and so is a known
+  window whose ordered in state or candidate status (level 0, no parent) a sweep corrects,
+  so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
+  windows the lock held back: one that arrived while locked, and one destroyed while
+  locked or whose app exited then. An event handled after a sweep, for a change its
+  snapshot already had, came late and still counts, so an event for a window within 1 s
+  after a sweep counted it is logged too, and the count can be corrected by eye. The 3 s
+  sweep this replaced found and lost none on 2026-09-24, over a day of use and live tests.
+  It counted none of its corrections, which it logged only at debug or info level.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
   other app's window came or went. In three runs while other apps' windows came and went,
@@ -268,15 +266,19 @@ off the main thread).
   WindowManager.app. WindowServer applies a batch's operations in order, so a window
   seen out of the holding Space implies the add sent before its removal.
 - A batch's completion and the focus request after it run on the main actor, so work
-  queued there delays them. On 2026-09-24, 40 switches back to back under the same load
-  (load average 5 to 8) took 3.53 ms from keypress to the end at the median and 8.42 ms at
-  most on main (636a019), and 3.75 and 10.25 ms with the main thread fixes in 5.1, 5.4 and
-  5.11 (367cd28), the same within noise. The completion waited over 1 ms for the main
-  actor in 12 switches before them and in 3 after. In samples of 40 switches, busy main
-  thread samples fell from about 290 to about 66, though 50 of the 290 were sweeps: that
-  build still ran the 3 s sweep timer, which caused a 6 to 10 ms stall after 1 switch in
-  10 until 248f668 removed it. On a quiet machine, 53dc6af took 1.81 ms at the median and
-  2.50 ms at most.
+  queued there delays both. Three reads had kept the main actor busy after a switch. Each
+  app's activation policy is now read once (section 5.1), the departure of the window key
+  before a report only when its verdict needs it (5.4), and the pointer's target frame on
+  the focus queue (5.11). Live on 2026-09-24, 40 alternating switches between two
+  workspaces of one window each, back to back under the same load (load average 5 to 8):
+  main at 636a019 took 3.53 ms from keypress to the end at the median and 8.42 ms at most,
+  and the completion waited over 1 ms for the main actor in 12 switches; with the three
+  changes (367cd28), 3.75 and 10.25 ms, and 3 such waits, so the switch time is the same
+  within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
+  but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
+  10 ms stalls until 248f668 removed it. Half of the about 66 left are the 815 reads in
+  section 5.1. On a quiet machine, 53dc6af took 1.81 ms at the median, 2.21 ms at p90 and
+  2.50 ms at most, and the completion waited at most 0.39 ms.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
   else to that display's first ordinary Space. A display missing from WindowServer's Space
