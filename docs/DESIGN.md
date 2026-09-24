@@ -526,6 +526,10 @@ off the main thread).
   keeps the running config, and a bad file at login falls back to the last good config.
 - Display profiles are built in and matched by monitor name or serial. Runtime toggles are
   commands and never rewrite the file.
+- A command naming a workspace the active profile leaves out fails with a message, as
+  `workspace 6` does on a profile with workspaces 1 to 5. AeroSpace creates a workspace on
+  demand; a profile's list is fixed, and its `merge-workspaces` moves the windows of the
+  workspaces it leaves out onto its own.
 - A serial is the EDID alphanumeric serial number, which the display controller publishes
   on the framebuffer that drives the display. CoreDisplay names each display's framebuffer,
   so identical monitors, whose vendor, model and numeric serial are the same, should get
