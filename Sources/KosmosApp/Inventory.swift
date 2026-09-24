@@ -19,6 +19,9 @@ final class Inventory {
     private(set) var focused: UInt32?
     /// Windows in a native fullscreen Space.
     private(set) var fullscreen: Set<UInt32> = []
+    /// When windows left the screen: closed, or ordered out as when they minimize or their
+    /// app hides.
+    private var leftAt: [UInt32: ContinuousClock.Instant] = [:]
     /// Space queries for fullscreen checks, in the order the events asked for them.
     private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
@@ -130,6 +133,22 @@ final class Inventory {
         if isManaged(id) { onFullscreenChange?(id, state) }
     }
 
+    /// Whether the window left the screen within `limit`: it closed, or was ordered out as
+    /// when it minimizes or its app hides. WindowServer may have ordered it out in an event
+    /// not handled yet, which counts as now.
+    func leftScreen(_ id: UInt32, within limit: Duration) -> Bool {
+        if let at = leftAt[id] { return ContinuousClock.now - at <= limit }
+        guard windows[id]?.orderedIn == true else { return false }
+        guard let row = SkyLight.rows([id]).first else { return true }
+        return !row.orderedIn
+    }
+
+    private func noteLeft(_ id: UInt32) {
+        let now = ContinuousClock.now
+        leftAt = leftAt.filter { now - $0.value < .seconds(10) }
+        leftAt[id] = now
+    }
+
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
         guard let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)
@@ -175,6 +194,7 @@ final class Inventory {
         guard ownedByRegularApp(row) else { return }
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
+        if row.orderedIn { leftAt[row.id] = nil } else if old?.orderedIn == true { noteLeft(row.id) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX(row.id, pid: row.pid) }
             inventoryLog.info("""
@@ -192,6 +212,7 @@ final class Inventory {
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
         fullscreen.remove(id)
+        if row.orderedIn { noteLeft(id) }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()

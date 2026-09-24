@@ -47,8 +47,12 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     ///   - onCurrentWorkspace: the window belongs to the workspace Kosmos shows.
     ///   - wasHidden: the window was concealed when it became key, so only Command-Tab
     ///     could have reached it.
+    ///   - keyLeft: the window key before this report has just left the screen: it
+    ///     closed or minimized, or its app hid. macOS keyed this window itself, so it is
+    ///     not a Command-Tab to follow; Kosmos keeps its workspace and focuses it again
+    ///     (tla/Kosmos.tla, KeyLeft).
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp,
-                                  onCurrentWorkspace: Bool, wasHidden: Bool) -> ReportVerdict {
+                                  onCurrentWorkspace: Bool, wasHidden: Bool, keyLeft: Bool) -> ReportVerdict {
         // An echo names the requested window and arrives after the request. Earlier
         // expectations are dropped with it; a report that matches none leaves them all.
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) {
@@ -56,8 +60,8 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
             return .echo
         }
         if let lastCommand, stamp < lastCommand { return .reassert }
-        guard case .window(let id) = key else { return .ignore }
+        guard case .window(let id) = key else { return keyLeft ? .reassert : .ignore }
         if onCurrentWorkspace { return .adopt(id) }
-        return wasHidden ? .follow(id) : .reassert
+        return wasHidden && !keyLeft ? .follow(id) : .reassert
     }
 }

@@ -29,6 +29,9 @@ final class Controller {
     private var fullscreenParked: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
+    /// A focus request found its window gone from the screen, so the window's departure
+    /// focuses again (tla/Kosmos.tla, RequestFocus).
+    private var refocus = false
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
@@ -156,12 +159,23 @@ final class Controller {
         }
     }
 
+    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). macOS keys another
+    /// window itself, and that report has Kosmos keep its workspace and focus it again.
+    /// Focusing here first could put Kosmos's own echo between the departure and that
+    /// report. Only when a focus request found these windows already gone does the
+    /// departure focus the workspace's next window, or Finder.
+    private func depart(_ windows: [WindowID]) {
+        let focusLeft = session.focused.map(windows.contains) == true
+        execute(session.park(windows))
+        if focusLeft, refocus { requestFocus(intent) }
+    }
+
     /// An app hid its windows: they leave the layout, and switches leave them alone.
     private func appHidden(_ pid: pid_t) {
         let windows = owner.filter { $0.value == pid && session.workspace(of: $0.key) != nil && !session.isParked($0.key) }.map(\.key)
         guard !windows.isEmpty else { return }
         hiddenApps[pid, default: []] += windows
-        execute(session.park(windows))
+        depart(windows)
     }
 
     /// The app is back: its windows return to their places, and Kosmos follows the one the
@@ -182,13 +196,22 @@ final class Controller {
         switch report.kind {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
+            // The window key before this report left the screen just now, and Kosmos did
+            // not conceal it: macOS keyed this window after that one closed, minimized or
+            // hid (DESIGN.md, section 5.4). The bound covers macOS's delay: after a
+            // minimize, the new key window was reported 0.73 s after the minimize.
+            var keyLeft = false
+            if case .window(let previous)? = key, previous != id,
+               session.workspace(of: previous).map({ $0 == session.visible || session.isParked(previous) }) ?? true {
+                keyLeft = inventory.leftScreen(previous, within: .seconds(1))
+            }
             key = reported
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
             if let id, session.workspace(of: id) == nil || session.isParked(id) { return }
             let verdict = reports.classify(reported, receivedAt: report.received,
                                            onCurrentWorkspace: id.map { session.workspace(of: $0) == session.visible } ?? false,
-                                           wasHidden: id.map(hiding.isConcealed) ?? false)
+                                           wasHidden: id.map(hiding.isConcealed) ?? false, keyLeft: keyLeft)
             controllerLog.debug("focus report \(String(describing: reported), privacy: .public): \(String(describing: verdict), privacy: .public)")
             switch verdict {
             case .echo, .ignore:
@@ -204,7 +227,7 @@ final class Controller {
                 execute(session.follow(window))
             }
         case .minimized(let id, true):
-            execute(session.park([id]))
+            depart([id])
         case .minimized(let id, false):
             // A restored window returns to its own workspace, and Kosmos follows it there
             // (DESIGN.md, section 5.5).
@@ -303,6 +326,13 @@ final class Controller {
     }
 
     private func requestFocus(_ target: KeyWindow, movePointer: Bool = false) {
+        // A window that just left the screen, before Kosmos heard: fronting it would
+        // unminimize it or unhide its app. Its departure focuses again.
+        if case .window(let id) = target, inventory.leftScreen(id, within: .seconds(1)) {
+            refocus = true
+            return
+        }
+        refocus = false
         if movePointer, case .window(let id) = target { centerPointer(on: id) }
         guard target != key else { return }   // already key: activating again costs the system work
         let pid: pid_t?
