@@ -230,13 +230,17 @@ off the main thread).
   the window key. The queue and the job share the request's state under one lock
   (KosmosCore's KeyRequest): whichever takes it out of pending first decides it. While it
   is pending, the job's stale or already key answer skips the request, and the queue then
-  keys nothing. When the job has not answered in 30 ms, the queue records and posts the key
-  record, and the job, when it runs, no longer checks for staleness and raises, since in the
-  front app the key record alone keys nothing. If it then finds the target key already, it
-  forgets the record, for no echo will come. A failed call forgets its record too. Once
-  recorded, a private request finishes even if a newer one arrived: the newer one follows
-  in the queue and wins, and dropping the older one would leave its raise's report
-  unmatched and adopted, with Kosmos and macOS apart at rest. Recording when
+  keys nothing; the job checks the generation again after its read, which can be slow.
+  When the job has not answered in 30 ms, the queue records and posts the key record. The
+  job, when it runs, raises only if the request is still current, since in the front app
+  the key record alone keys nothing. A stale one is never raised: a newer request has keyed
+  its own target, and the raise could report this window key and have it adopted against
+  that one. If the app was front, the stale request's key record keyed nothing and the job
+  forgets the record; otherwise the record keyed the target and its echo clears it. A late
+  job that finds the target key already forgets the record too, and so does a failed call.
+  A request whose job raised before the queue decided finishes even if a newer one
+  arrived: the newer one follows in the queue and wins, and dropping the older one would
+  leave its raise's report unmatched and adopted, with Kosmos and macOS apart at rest. Recording when
   the request was made failed TLC's `user` config. The user clicked w2, and Kosmos
   requested w2 again. Before the queue ran that request, the user clicked w1 and then w2,
   the second click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.

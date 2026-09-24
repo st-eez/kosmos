@@ -121,9 +121,9 @@ final class SharedKeyRequest: Sendable {
     }
 
     /// Returns whether the worker raises.
-    func workerRead(alreadyKey: Bool) -> Bool {
+    func workerDecides(isCurrent: Bool, alreadyKey: Bool, appWasFront: Bool) -> Bool {
         state.withLock { request in
-            switch request.workerRead(alreadyKey: alreadyKey, now: .now) {
+            switch request.workerDecides(isCurrent: isCurrent, alreadyKey: alreadyKey, appWasFront: appWasFront, now: .now) {
             case .stop: return false
             case .record(let stamp):
                 performing(stamp)

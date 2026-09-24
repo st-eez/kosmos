@@ -170,7 +170,9 @@ actor AppWorker {
                 defer { done() }
                 guard request.workerStarts(isCurrent: isCurrent()) else { return }
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
-                if request.workerRead(alreadyKey: key.isAlreadyKey(appIsFront: readFocus, focused: focused)),
+                // The generation is checked again after the read, which can be slow.
+                if request.workerDecides(isCurrent: isCurrent(), alreadyKey: key.isAlreadyKey(appIsFront: readFocus, focused: focused),
+                                         appWasFront: readFocus),
                    case .window(let id) = key {
                     worker.raiseWindow(id)
                 }
