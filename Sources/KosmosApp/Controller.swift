@@ -189,6 +189,13 @@ final class Controller {
 
     private func handle(_ report: AXReport) {
         switch report.kind {
+        case .backgroundFocus(let id):
+            // An app that is not front changed its own focused window, as after AXRaise in
+            // it: no key window report, and never the last one seen. It can still be
+            // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe).
+            let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
+            guard !sessionLocked, reports.consumeEcho(reported, receivedAt: report.received) else { return }
+            misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: true)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             key = reported
@@ -341,19 +348,19 @@ final class Controller {
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
                            concealed: concealed, generation: focusQueue.newGeneration(),
-                           performing: { [weak self] stamp, exact in self?.performing(target, pid: pid, exact: exact, at: stamp) },
+                           performing: { [weak self] stamp, path in self?.performing(target, pid: pid, path: path, at: stamp) },
                            dropped: { [weak self] stamp in
                                self?.reports.requestDropped(target, at: stamp)
                                self?.misses.requestDropped(at: stamp)
                            })
     }
 
-    /// The focus queue is about to key `target`, exactly on the private path: records the echo
-    /// that will come back, and counts a private request toward the kill switch (DESIGN.md,
-    /// section 5.4).
-    private func performing(_ target: KeyWindow, pid: pid_t, exact: Bool, at stamp: ContinuousClock.Instant) {
-        reports.focusRequested(target, at: stamp, publicIn: exact ? nil : pid)
-        guard exact, focusQueue.killSwitch.isOn, case .window(let id) = target,
+    /// A call that changes the key window to `target` is about to be made: records the echo
+    /// that will come back, inexact for the public activation, and counts the private key
+    /// record toward the kill switch (DESIGN.md, section 5.4).
+    private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, at stamp: ContinuousClock.Instant) {
+        reports.focusRequested(target, at: stamp, publicIn: path == .activation ? pid : nil)
+        guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
               misses.willRequest(id, pid: pid, at: stamp) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)
         controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")

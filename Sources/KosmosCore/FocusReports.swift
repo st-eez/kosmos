@@ -48,6 +48,17 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         expected.removeAll { $0.publicIn == app && $0.requested <= stamp }
     }
 
+    /// Consumes the expectation `key` answers, if any. An echo names the requested window and
+    /// arrives after the request. Earlier expectations are dropped with it; a report that
+    /// matches none leaves them all. A report from an app that is not front calls this alone:
+    /// it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
+    /// Observe).
+    public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
+        guard let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) else { return false }
+        expected.removeFirst(index + 1)
+        return true
+    }
+
     /// Forgets every request, as when their echoes may have come and gone unclassified.
     public mutating func forgetRequests() {
         expected.removeAll()
@@ -66,12 +77,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     ///     could have reached it.
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp,
                                   onCurrentWorkspace: Bool, wasHidden: Bool) -> ReportVerdict {
-        // An echo names the requested window and arrives after the request. Earlier
-        // expectations are dropped with it; a report that matches none leaves them all.
-        if let index = expected.firstIndex(where: { $0.key == key && $0.requested <= stamp }) {
-            expected.removeFirst(index + 1)
-            return .echo
-        }
+        if consumeEcho(key, receivedAt: stamp) { return .echo }
         if let lastCommand, stamp < lastCommand { return .reassert }
         guard case .window(let id) = key else { return .ignore }
         if onCurrentWorkspace { return .adopt(id) }

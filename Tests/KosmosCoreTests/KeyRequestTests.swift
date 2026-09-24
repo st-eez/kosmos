@@ -1,97 +1,83 @@
 import Testing
 @testable import KosmosCore
 
-// Every order in which the worker's job and the queue's 30 ms wait can meet. Stamps: the
-// worker decides at 2 or 4, the queue decides at 3.
+// The split model's steps (tla/Kosmos.tla: WorkerStart, WorkerRead, WorkerRaise,
+// FocusDecide) in each order they can meet. The worker raises at 2, the queue decides at 3.
 
-@Test func theWorkerRecordsAndRaisesThenTheQueueKeys() {
-    var request = KeyRequest<Int>()
-    let reads = request.workerStarts(isCurrent: true)
-    let step = request.workerDecides(isCurrent: true, alreadyKey: false, appWasFront: true, now: 2)
-    let decision = request.queueDecides(now: 3)
-    #expect(reads && step == .record(2))
-    #expect(decision?.stamp == 2 && decision?.recordsItself == false)
+@Test func inTheFrontAppTheWorkerRecordsAndRaisesAndTheQueueKeysNothing() {
+    var request = KeyRequest<Int>(appWasFront: true)
+    let goesOn = request.workerStarts(isCurrent: true) && request.workerRead(isCurrent: true, targetFocused: false)
+    let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 2)
+    let key = request.queueDecides(isCurrent: true, appIsFront: true, now: 3)
+    #expect(goesOn && step == .recordAndRaise(2) && key == nil)
 }
 
-@Test func aStaleRequestIsSkippedBeforeTheRead() {
-    var request = KeyRequest<Int>()
-    let reads = request.workerStarts(isCurrent: false)
-    let decision = request.queueDecides(now: 3)
-    #expect(!reads && decision == nil)
+@Test func inTheFrontAppTheQueueKeysNothingEvenWhenTheWorkerIsLate() {
+    // The key record does nothing inside the front app; only the late raise keys.
+    var request = KeyRequest<Int>(appWasFront: true)
+    let key = request.queueDecides(isCurrent: true, appIsFront: true, now: 3)
+    let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 4)
+    #expect(key == nil && step == .recordAndRaise(4))
 }
 
-@Test func aRequestStaleAfterASlowReadIsSkippedBeforeTheRaise() {
-    var request = KeyRequest<Int>()
-    _ = request.workerStarts(isCurrent: true)
-    let step = request.workerDecides(isCurrent: false, alreadyKey: false, appWasFront: true, now: 2)
-    let decision = request.queueDecides(now: 3)
-    #expect(step == .stop && decision == nil)
+@Test func aFrontAppsFocusedTargetIsKeyAlready() {
+    let request = KeyRequest<Int>(appWasFront: true)
+    #expect(!request.workerRead(isCurrent: true, targetFocused: true))
 }
 
-@Test func aTargetAlreadyKeyIsSkippedBeforeTheQueueDecides() {
-    var request = KeyRequest<Int>()
-    _ = request.workerStarts(isCurrent: true)
-    let step = request.workerDecides(isCurrent: true, alreadyKey: true, appWasFront: true, now: 2)
-    let decision = request.queueDecides(now: 3)
-    #expect(step == .stop && decision == nil)
+@Test func aBackgroundAppIsRaisedWithoutARecordAndKeyedByTheQueue() {
+    var request = KeyRequest<Int>(appWasFront: false)
+    // The read is not made, so its answer does not matter.
+    let goesOn = request.workerStarts(isCurrent: true) && request.workerRead(isCurrent: true, targetFocused: true)
+    let step = request.workerRaises(isCurrent: true, appIsFront: false, now: 2)
+    let key = request.queueDecides(isCurrent: true, appIsFront: false, now: 3)
+    #expect(goesOn && step == .raise && key == 3)
 }
 
-@Test func onceTheQueueRecordsALateCurrentJobRaises() {
-    // The queue recorded and keyed; in the front app the record alone keys nothing, so the
-    // late job raises while the request is still the current one.
-    var request = KeyRequest<Int>()
-    let decision = request.queueDecides(now: 3)
-    let reads = request.workerStarts(isCurrent: true)
-    let step = request.workerDecides(isCurrent: true, alreadyKey: false, appWasFront: true, now: 4)
-    #expect(decision?.stamp == 3 && decision?.recordsItself == true)
-    #expect(reads && step == .raise)
+@Test func onceTheQueueHasKeyedTheLateWorkerRaisesNothing() {
+    // Counterexample 5: a raise recorded after the queue keyed the window changed nothing,
+    // and its record swallowed a later Command-Tab.
+    var request = KeyRequest<Int>(appWasFront: false)
+    let key = request.queueDecides(isCurrent: true, appIsFront: false, now: 3)
+    let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 4)
+    #expect(key == 3 && step == .stop)
 }
 
-@Test func onceTheQueueRecordsALateStaleJobInTheFrontAppForgetsTheRecord() {
-    // Focus left then right while the front app's worker drains frames: the key record keyed
-    // nothing, so no echo will come; a raise would report the window key against the newer
-    // request.
-    var request = KeyRequest<Int>()
-    _ = request.queueDecides(now: 3)
-    _ = request.workerStarts(isCurrent: false)
-    let step = request.workerDecides(isCurrent: false, alreadyKey: false, appWasFront: true, now: 4)
-    #expect(step == .drop(3))
+@Test func theQueueLeavesARequestTheWorkerIsKeying() {
+    // The app came front before the worker's raise: the worker records and keys it.
+    var request = KeyRequest<Int>(appWasFront: false)
+    let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 2)
+    let key = request.queueDecides(isCurrent: true, appIsFront: true, now: 3)
+    #expect(step == .recordAndRaise(2) && key == nil)
 }
 
-@Test func onceTheQueueRecordsALateStaleJobInABackgroundAppDoesNothing() {
-    // The review's cross-app race: the key record keyed the target and its echo clears the
-    // record. A late raise could report the window key after a newer request keyed another
-    // app's window, and Kosmos would adopt it.
-    var request = KeyRequest<Int>()
-    _ = request.queueDecides(now: 3)
-    _ = request.workerStarts(isCurrent: false)
-    let step = request.workerDecides(isCurrent: false, alreadyKey: false, appWasFront: false, now: 4)
-    #expect(step == .stop)
+@Test func theQueueLeavesAnAppThatCameFrontOrAStaleRequest() {
+    var cameFront = KeyRequest<Int>(appWasFront: false)
+    #expect(cameFront.queueDecides(isCurrent: true, appIsFront: true, now: 3) == nil)
+    var stale = KeyRequest<Int>(appWasFront: false)
+    #expect(stale.queueDecides(isCurrent: false, appIsFront: false, now: 3) == nil)
 }
 
-@Test func onceTheQueueRecordsALateAlreadyKeyAnswerForgetsTheRecord() {
-    var request = KeyRequest<Int>()
-    _ = request.queueDecides(now: 3)
-    _ = request.workerStarts(isCurrent: true)
-    let step = request.workerDecides(isCurrent: true, alreadyKey: true, appWasFront: true, now: 4)
-    #expect(step == .drop(3))
+@Test func aStaleRequestRecordsNothingAtAnyStep() {
+    // Counterexamples 3 and 4: a record taken by a stale request matched the user's own
+    // Command-Tab or click on that window.
+    var request = KeyRequest<Int>(appWasFront: true)
+    #expect(!request.workerStarts(isCurrent: false))
+    #expect(!request.workerRead(isCurrent: false, targetFocused: false))
+    #expect(request.workerRaises(isCurrent: false, appIsFront: true, now: 2) == .stop)
+    #expect(request.phase == .pending)
 }
 
-@Test func theQueueDecidesWhileTheWorkerReads() {
-    var raising = KeyRequest<Int>()
-    _ = raising.workerStarts(isCurrent: true)
-    let recordsItself = raising.queueDecides(now: 3)?.recordsItself
-    #expect(recordsItself == true)
-    #expect(raising.workerDecides(isCurrent: true, alreadyKey: false, appWasFront: true, now: 4) == .raise)
-
-    var dropping = KeyRequest<Int>()
-    _ = dropping.workerStarts(isCurrent: true)
-    _ = dropping.queueDecides(now: 3)
-    #expect(dropping.workerDecides(isCurrent: true, alreadyKey: true, appWasFront: true, now: 4) == .drop(3))
+@Test func aRequestForTheFrontAppIsNeverKeyedByTheQueueEvenAfterItLeftTheFront() {
+    // The user switched away before the queue decided: the front app's request was the
+    // worker's to key, and the queue's key record would be an unrecorded change.
+    var request = KeyRequest<Int>(appWasFront: true)
+    #expect(request.queueDecides(isCurrent: true, appIsFront: false, now: 3) == nil)
 }
 
-@Test func withNoWorkerJobTheQueueRecords() {
-    var request = KeyRequest<Int>()
-    let decision = request.queueDecides(now: 3)
-    #expect(decision?.stamp == 3 && decision?.recordsItself == true)
+@Test func theQueueLeavesARequestTheWorkerKeyedEvenAfterTheAppLeftTheFront() {
+    var request = KeyRequest<Int>(appWasFront: false)
+    let step = request.workerRaises(isCurrent: true, appIsFront: true, now: 2)
+    let key = request.queueDecides(isCurrent: true, appIsFront: false, now: 3)
+    #expect(step == .recordAndRaise(2) && key == nil)
 }

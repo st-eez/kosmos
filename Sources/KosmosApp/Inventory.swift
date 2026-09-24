@@ -98,7 +98,7 @@ final class Inventory {
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
-        case .framesApplied:
+        case .framesApplied, .backgroundFocus:
             break
         }
         onReport?(report)

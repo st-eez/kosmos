@@ -101,3 +101,13 @@ import Testing
     reports.forgetRequests()
     #expect(reports.classify(.window(1), receivedAt: 20, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
 }
+
+@Test func aBackgroundReportConsumesOnlyAnEcho() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), at: 10)
+    let other = reports.consumeEcho(.window(2), receivedAt: 11)
+    let echo = reports.consumeEcho(.window(1), receivedAt: 12)
+    #expect(!other && echo)
+    // Consumed: a later report of window 1 is the user's.
+    #expect(reports.classify(.window(1), receivedAt: 13, onCurrentWorkspace: true, wasHidden: false) == .adopt(1))
+}

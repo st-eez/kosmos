@@ -8,7 +8,11 @@ struct AXReport: Sendable {
     enum Kind: Sendable {
         case windowCreated(UInt32)
         case windowDestroyed(UInt32)
+        /// The key window: the focused window of the app that is front.
         case focusedWindowChanged(UInt32?)
+        /// The focused window of an app that is not front when it reports it, as after
+        /// AXRaise in it. It is no key window report, but it can be Kosmos's echo.
+        case backgroundFocus(UInt32?)
         case minimized(UInt32, Bool)
         /// Frames read back after writes, with the target each write aimed for.
         case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
@@ -157,27 +161,34 @@ actor AppWorker {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
-    /// The worker's part of a private focus request, as one job the focus queue waits on at
-    /// most 30 ms (FocusQueue.swift). It reads the app's focused window when `readFocus`, as
-    /// the app is the front process, and unless the target is key already, the shared request
-    /// records the echo before the job raises a window target, as the raise can report the
-    /// window key itself. Stale and late answers resolve under the request's lock
-    /// (KosmosCore's KeyRequest).
-    nonisolated func prepareKey(_ key: KeyWindow, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
-                                request: SharedKeyRequest, done: @escaping @Sendable () -> Void) {
+    /// The worker's part of a private focus request for a window, as one job the focus queue
+    /// waits on at most 30 ms (FocusQueue.swift). Its steps are the split model's `WorkerStart`,
+    /// `WorkerRead` and `WorkerRaise` (KosmosCore's KeyRequest). The app's focused window is
+    /// read only when the app was front, the generation is checked at each step, and just
+    /// before AXRaise the request, under its lock, records the echo if the app is front,
+    /// where the raise keys the window. A raise that fails after its record forgets it.
+    nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool,
+                                    request: SharedKeyRequest, done: @escaping @Sendable () -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
                 defer { done() }
                 guard request.workerStarts(isCurrent: isCurrent()) else { return }
-                let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
-                // The generation is checked again after the read, which can be slow.
-                if request.workerDecides(isCurrent: isCurrent(), alreadyKey: key.isAlreadyKey(appIsFront: readFocus, focused: focused),
-                                         appWasFront: readFocus),
-                   case .window(let id) = key {
-                    worker.raiseWindow(id)
+                let focused: UInt32?? = request.appWasFront ? worker.focusedWindow() : nil
+                guard request.workerRead(isCurrent: isCurrent(), targetFocused: focused == id),
+                      worker.elements[id] != nil else { return }
+                switch request.workerRaises(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == worker.pid) {
+                case .stop: break
+                case .raise: worker.raiseWindow(id)
+                case .recordAndRaise(let stamp): if !worker.raiseWindow(id) { request.dropped(stamp) }
                 }
             }
         }
+    }
+
+    /// Reads the app's focused window for the focus queue, which waits for it at most 30 ms.
+    /// `done` gets nil when the app did not answer.
+    nonisolated func readFocusedWindow(_ done: @escaping @Sendable (UInt32??) -> Void) {
+        executor.perform { self.assumeIsolated { done($0.focusedWindow()) } }
     }
 
     /// The public focus path for a window, for when the private one is off or its call fails
@@ -209,10 +220,13 @@ actor AppWorker {
         }
     }
 
-    private func raiseWindow(_ id: UInt32) {
-        guard let element = elements[id] else { return }
+    /// Returns whether the raise went through.
+    @discardableResult
+    private func raiseWindow(_ id: UInt32) -> Bool {
+        guard let element = elements[id] else { return false }
         let error = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
         if error != .success, !backoff.backedOff { log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)") }
+        return error == .success
     }
 
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
@@ -281,8 +295,9 @@ actor AppWorker {
         case kAXWindowCreatedNotification:
             if let id = track(element) { send(.windowCreated(id)) }
         case kAXFocusedWindowChangedNotification:
+            // Only the front app's focused window is the key window (tla/Kosmos.tla, Observe).
             let id = track(element)
-            if !backoff.backedOff { send(.focusedWindowChanged(id)) }
+            if !backoff.backedOff { send(kosmos_front_pid() == pid ? .focusedWindowChanged(id) : .backgroundFocus(id)) }
         case kAXUIElementDestroyedNotification:
             if let id = elements.first(where: { CFEqual($0.value, element) })?.key {
                 elements[id] = nil

@@ -1,91 +1,71 @@
-/// One private focus request, decided together by the focus queue and the app's worker
-/// under one lock (DESIGN.md, section 5.4). Whichever side moves the request out of
-/// `pending` first decides it, so neither acts on an outcome the other has overtaken.
+/// One private focus request for a window, shared by the focus queue and the target app's
+/// worker under one lock (DESIGN.md, section 5.4). It follows the split model in
+/// tla/Kosmos.tla step for step, and each method names the action it implements. Each side
+/// records the echo right before its own call that changes the key window, and never for
+/// the other side's call, so nothing is ever recorded that must be forgotten later.
 ///
-/// The steps, in the order a model of the queue and worker split would take them:
-/// 1. The queue checks the generation and whether the target's app is the front process,
-///    then hands the worker one job and waits for it at most 30 ms.
-/// 2. `workerStarts`: before its read, the job skips a request that is stale while pending.
-/// 3. The job reads the app's focused window when the app was front.
-/// 4. `workerDecides`: right before the raise, with the generation checked again, the job
-///    records the echo and raises, skips the request, or settles one the queue recorded.
-/// 5. `queueDecides`: when the job answers or 30 ms pass, the queue records the echo itself
-///    if the request is still pending, and posts the key record unless it was skipped.
+/// - `FocusStart` (FocusQueue.request): the queue ends a stale or concealed request, reads
+///   whether the target's app is front, creates this request and hands the worker its job.
+/// - `WorkerStart`: `workerStarts`.
+/// - `WorkerRead`: `workerRead`, after the app's focused window is read when it was front.
+/// - `WorkerRaise`: `workerRaises`, just before AXRaise.
+/// - `FocusDecide`: `queueDecides`, once the job finished or 30 ms passed.
 public struct KeyRequest<Stamp: Sendable>: Sendable {
-    public enum Phase: Sendable {
+    public enum Phase: Equatable, Sendable {
         case pending
-        /// The echo is recorded with this stamp, and the queue posts the key record.
-        case recorded(Stamp)
-        /// Stale, or the target key already: nothing is recorded or keyed.
-        case skipped
+        /// The worker records and raises: inside the front app only the raise keys a window.
+        case raising
+        /// The queue records and posts the key record, which activates a background app with
+        /// the named window.
+        case sent
     }
 
-    public enum WorkerStep: Sendable {
+    public enum RaiseStep: Sendable {
         case stop
-        /// Post the record with this stamp, then raise.
-        case record(Stamp)
-        /// The queue recorded already, and the request is current: raise, so the request
-        /// finishes, since in the front app the key record alone keys nothing.
+        /// Record with this stamp, then raise.
+        case recordAndRaise(Stamp)
+        /// Raise without a record: in a background app the raise changes only the app's own
+        /// focused window, and the queue's key record keys it.
         case raise
-        /// The queue recorded and keyed already, and no echo will come: forget the record.
-        case drop(Stamp)
     }
 
+    /// Whether the target's app was the front process when the queue took the request.
+    public let appWasFront: Bool
     public private(set) var phase: Phase = .pending
 
-    public init() {}
-
-    /// The worker's job starts. Returns whether it reads on: a request stale while pending
-    /// is skipped before a read that can be slow.
-    public mutating func workerStarts(isCurrent: Bool) -> Bool {
-        switch phase {
-        case .pending:
-            guard isCurrent else {
-                phase = .skipped
-                return false
-            }
-            return true
-        case .recorded: return true
-        case .skipped: return false
-        }
+    public init(appWasFront: Bool) {
+        self.appWasFront = appWasFront
     }
 
-    /// Right before the raise. `isCurrent` is checked after the read, which can be slow;
-    /// `appWasFront` says the target's app was the front process when the queue looked.
-    ///
-    /// A request the queue recorded and then found stale is never raised: a newer request
-    /// has keyed its own target, and a raise could report this window key and be adopted
-    /// against it. When the app was front, the key record keyed nothing and no echo will
-    /// come, so the record is forgotten; otherwise the record keyed the target, and its echo
-    /// clears the record.
-    public mutating func workerDecides(isCurrent: Bool, alreadyKey: Bool, appWasFront: Bool, now: Stamp) -> WorkerStep {
-        switch phase {
-        case .pending:
-            guard isCurrent, !alreadyKey else {
-                phase = .skipped
-                return .stop
-            }
-            phase = .recorded(now)
-            return .record(now)
-        case .recorded(let stamp):
-            guard isCurrent else { return appWasFront ? .drop(stamp) : .stop }
-            return alreadyKey ? .drop(stamp) : .raise
-        case .skipped:
-            return .stop
-        }
+    /// `WorkerStart`: a stale request ends.
+    public func workerStarts(isCurrent: Bool) -> Bool {
+        isCurrent
     }
 
-    /// The queue is done waiting, answered or not. Returns the stamp to key with, and
-    /// whether the queue records it itself, or nil when the worker skipped the request.
-    public mutating func queueDecides(now: Stamp) -> (stamp: Stamp, recordsItself: Bool)? {
-        switch phase {
-        case .pending:
-            phase = .recorded(now)
-            return (now, true)
-        case .recorded(let stamp): return (stamp, false)
-        case .skipped: return nil
-        }
+    /// `WorkerRead`: a stale request ends, and so does one whose app was front with the
+    /// target as its focused window, which is key already.
+    public func workerRead(isCurrent: Bool, targetFocused: Bool) -> Bool {
+        isCurrent && !(appWasFront && targetFocused)
+    }
+
+    /// `WorkerRaise`, under the lock just before AXRaise. A stale request, or one the queue
+    /// has keyed, raises nothing. In the front app the raise keys the window, so the worker
+    /// records first and tells the queue it is keying.
+    public mutating func workerRaises(isCurrent: Bool, appIsFront: Bool, now: Stamp) -> RaiseStep {
+        guard isCurrent, phase != .sent else { return .stop }
+        guard appIsFront else { return .raise }
+        phase = .raising
+        return .recordAndRaise(now)
+    }
+
+    /// `FocusDecide`. For a front app the queue only moves on. For a background app, unless
+    /// the request went stale, the app came front meanwhile, or the worker is keying it,
+    /// the queue records and posts the key record. Returns the record's stamp, or nil.
+    public mutating func queueDecides(isCurrent: Bool, appIsFront: Bool, now: Stamp) -> Stamp? {
+        guard !appWasFront, isCurrent, !appIsFront, phase != .raising else { return nil }
+        phase = .sent
+        return now
     }
 }
 
-extension KeyRequest.WorkerStep: Equatable where Stamp: Equatable {}
+extension KeyRequest.RaiseStep: Equatable where Stamp: Equatable {}

@@ -201,8 +201,11 @@ off the main thread).
 
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
-- Every report names the key window. For an app activation, the app's worker reads the
-  app's focused window. Hotkeys, socket commands and reports are stamped on receipt.
+- Every report names the key window, the front app's focused window. For an app
+  activation, the app's worker reads the app's focused window. A focus change reported by
+  an app that is not front, as AXRaise in a background app causes, is no key window report:
+  it consumes an echo it matches, is otherwise ignored, and never counts as the last report
+  (tla/Kosmos.tla, Observe). Hotkeys, socket commands and reports are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
     app alone would take a Command-Tab to another window of that app for an echo.
@@ -219,33 +222,37 @@ off the main thread).
   request runs: the target's app is the front process and its focused window, read on the
   app's worker, is the target. The key window last reported can be older than a request
   still in flight: after `workspace 2` then `workspace 1` in quick succession, a skip
-  against it dropped the request for w1 before w3's report arrived, and w3's echo then left
-  macOS keying w3 while Kosmos focused w1 (kosmos-hover's TLC counterexample; tla/Kosmos.tla,
-  ExecFocus). The front process lookup takes 1.6 us, and only a request for the front app
-  pays an AX read.
-- The echo a request expects is recorded before its first call that can change the key
-  window, through the main queue, which runs the record before any report of that change.
-  On the private path the app's worker does the read and the raise as one job the focus
-  queue waits on at most 30 ms, and records between them, as the raise can itself report
-  the window key. The queue and the job share the request's state under one lock
-  (KosmosCore's KeyRequest): whichever takes it out of pending first decides it. While it
-  is pending, the job's stale or already key answer skips the request, and the queue then
-  keys nothing; the job checks the generation again after its read, which can be slow.
-  When the job has not answered in 30 ms, the queue records and posts the key record. The
-  job, when it runs, raises only if the request is still current, since in the front app
-  the key record alone keys nothing. A stale one is never raised: a newer request has keyed
-  its own target, and the raise could report this window key and have it adopted against
-  that one. If the app was front, the stale request's key record keyed nothing and the job
-  forgets the record; otherwise the record keyed the target and its echo clears it. A late
-  job that finds the target key already forgets the record too, and so does a failed call.
-  A request whose job raised before the queue decided finishes even if a newer one
-  arrived: the newer one follows in the queue and wins, and dropping the older one would
-  leave its raise's report unmatched and adopted, with Kosmos and macOS apart at rest. Recording when
-  the request was made failed TLC's `user` config. The user clicked w2, and Kosmos
-  requested w2 again. Before the queue ran that request, the user clicked w1 and then w2,
-  the second click on w2 was taken for the queued request's echo, and Kosmos stayed on w1.
-  An expectation whose echo arrived while the session was locked is never consumed, since
-  reports are not classified then, so a resync forgets every pending one.
+  against it dropped the request for w1 before w3's report arrived, and w3's echo then
+  left macOS keying w3 while Kosmos focused w1 (kosmos-hover's TLC counterexample;
+  tla/Kosmos.tla, ExecFocus). The front process lookup takes 1.6 us, and only a request for
+  the front app pays an AX read.
+- A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
+  one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
+  WorkerRaise, FocusDecide). Each side records the echo, through the main queue, right
+  before its own call that changes the key window, and never for the other side's call.
+  The queue checks the generation, reads whether the target's app is front, hands the app's
+  worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
+  - Inside the front app the key record changes nothing and only AXRaise keys a window, so
+    the worker keys it and the queue posts no key record. The worker ends a stale request,
+    and one whose front app already has the target focused; then, under the request's lock
+    just before the raise, it records and marks the request raising while the app is front.
+  - For a background app the worker raises without a record, as the raise changes only the
+    app's own focused window, and the queue keys it. Unless the request went stale, the app
+    came front meanwhile, or the worker is raising it, the queue marks it sent, records, and
+    posts the key record, which activates the app with the named window. A worker that
+    finds it sent raises nothing.
+  - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
+    serves only a call that fails.
+  - TLC passes every split config with RaiseReports true and false, the 30 ms timeout
+    nondeterministic for a busy app. tla/README.md lists the six counterexamples that shaped
+    it. The protocol rests on AXRaise alone keying the target inside the front app, a model
+    constant that `kosmos-probe keying`'s "AXRaise alone" order checks.
+  - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
+    Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
+    then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
+    stayed on w1.
+  - An expectation whose echo arrived while the session was locked is never consumed, since
+    reports are not classified then, so a resync forgets every pending one.
 - The focus queue never names a concealed window (tla/Kosmos.tla, ExecFocus). A request for
   a window Hiding held concealed when the request was made still supersedes older requests,
   and then keys nothing; the switch that reveals the window requests focus once its barrier
@@ -259,8 +266,10 @@ off the main thread).
     cleared after it, and a byte found set at launch turns the path off. The two stores
     cost about 1.4 ns and make no system call. A kill that lands inside the call turns the
     path off too.
-  - Wrong windows. A request misses when its app reports another of its windows key and no
-    echo of any request arrives before Kosmos's next request. Five misses in a row turn the
+  - Wrong windows. Only the private key record counts, which keys a background app's
+    window; inside the front app the raise keys it. A request misses when its app reports
+    another of its windows key and no echo of any request arrives before Kosmos's next
+    request. Five misses in a row turn the
     path off. On this Mac AXRaise and then the private sequence keyed the right window in 60
     of 60 AutoRaise trials, 9 of them between two windows of the active app, so the miss
     rate is at most about 5% at 95% confidence, and five misses in a row at 5% come once in
@@ -271,13 +280,13 @@ off the main thread).
     September 8, 2026). A request with no report neither misses nor clears the count, so a
     record that changes nothing, as the record alone did inside the active app, goes
     uncounted.
-- The private path raises the window with AXRaise on its app's worker before the key
-  record. On macOS 27 the record alone leaves the key window unchanged inside the app that
-  is already frontmost, for stacked and side by side windows alike, while AXRaise and then
-  the record keyed the right window in every case, same app or not (`kosmos-probe raise` on
-  the hover branch). yabai and alt-tab raise after the record, an order no probe has
-  checked on macOS 27. A slow app's raise lands after the key record, and a hung app holds
-  only its own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
+- AXRaise runs on the app's worker, before the queue's key record for a background app. On
+  macOS 27 the record alone leaves the key window unchanged inside the app that is already
+  frontmost, for stacked and side by side windows alike, while AXRaise and then the record
+  keyed the right window in every case, same app or not (`kosmos-probe raise` on the hover
+  branch). yabai and alt-tab raise after the record, an order no probe has checked on
+  macOS 27. A slow app's raise lands after the key record, and a hung app holds only its
+  own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the public
   path on the app's worker: make the window the app's main window, raise it, then activate
   the app. For an empty workspace it activates Kosmos, which holds no workspace window. No
@@ -286,14 +295,15 @@ off the main thread).
   off the empty workspace on every switch. Concealing Finder's windows fully instead would
   not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
   Whether macOS 27 lets a background agent activate itself is unmeasured; Kosmos logs a
-  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app picks its key window, so
-  the spec's assumption that the requested window becomes key no longer holds, and a wrong
-  window is adopted like the user's choice. A public request's expectation ends at the
-  first report from its app that is no echo, so a click on the requested window afterwards
-  is the user's. Private requests keep theirs until matched (tla/README.md, change 6). The
-  spec models exact keying only, so its TLC passes do not cover the public path. If the app
-  keys the requested window late, after the user chose another of its windows, that late
-  report reads as the user's and pulls focus back, change 6's bounce in the fallback alone.
+  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app
+  picks its key window, so the spec's assumption that the requested window becomes key no
+  longer holds, and a wrong window is adopted like the user's choice. A public request's
+  expectation ends at the first report from its app that is no echo, so a click on the
+  requested window afterwards is the user's. Private requests keep theirs until matched
+  (tla/README.md, change 6). The spec models exact keying only, so its TLC passes do not
+  cover the public path. If the app keys the requested window late, after the user chose
+  another of its windows, that late report reads as the user's and pulls focus back, change
+  6's bounce in the fallback alone.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
