@@ -83,7 +83,9 @@ final class Controller {
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
         inventory.onKeptOrderedOut = { [weak self] id in self?.keptOrderedOut(id) }
-        inventory.onOrderChange = { [weak self] id, pid, orderedIn, at in self?.orderChanged(id, pid: pid, orderedIn, at: at) }
+        inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
+            self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
+        }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
     }
 
@@ -207,7 +209,7 @@ final class Controller {
             // tab is, takes its group's place.
             switch tabs.admitting(id) {
             case .hidden: return
-            case .takes(let old): if tabSwitched(from: old, to: id) { return }
+            case .takes(let old): if tabSwitched(from: old, to: id, frame: inventory.windows[id]?.frame) { return }
             case .own: break
             }
             place(id, pid: pid, ruled: true)
@@ -271,14 +273,16 @@ final class Controller {
         }
     }
 
-    /// A candidate window was ordered in or out, or destroyed. A window of an app ordered in
-    /// as another is ordered out or destroyed is a switch between native tabs. A window
-    /// ordered in with no tab leaving, a hidden member or one its app had closed and kept,
-    /// is back a pairing window later if it is still ordered in: a hidden member dragged out
-    /// of its group takes a place of its own, and a closed window returns to its place, and
-    /// Kosmos follows it. A reopened Settings window returns 250 ms late for that.
-    private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, at: ContinuousClock.Instant) {
-        if let change = tabSwitches.ordered(id, in: orderedIn, app: pid, at: at), tabSwitched(from: change.old, to: change.new) {
+    /// A candidate window with `frame` was ordered in or out, or destroyed. A window of an app
+    /// ordered in as another with its frame is ordered out or destroyed is a switch between
+    /// native tabs. A window ordered in with no tab leaving, a hidden member or one its app
+    /// had closed and kept, is back a pairing window later if it is still ordered in: a
+    /// hidden member dragged out of its group takes a place of its own, and a closed window
+    /// returns to its place, and Kosmos follows it. A reopened Settings window returns
+    /// 250 ms late for that.
+    private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
+        if let change = tabSwitches.ordered(id, in: orderedIn, frame: frame, app: pid, at: at),
+           tabSwitched(from: change.old, to: change.new, frame: frame) {
             return
         }
         guard orderedIn, tabs.hidden.contains(id) || closedByApp.contains(id) else { return }
@@ -295,11 +299,12 @@ final class Controller {
     /// The selected tab changed from `old` to `new`: `new` takes the place of `old`, with no
     /// reflow and no follow, and `old` waits out of the session as a hidden member
     /// (DESIGN.md, section 5.5). A tab not admitted yet takes the place once it is. False
-    /// when `old` holds no place.
-    private func tabSwitched(from deselected: WindowID, to new: WindowID) -> Bool {
+    /// when `old` holds no place. `frame` is the tabs' frame.
+    private func tabSwitched(from deselected: WindowID, to new: WindowID, frame: CGRect?) -> Bool {
         let old: WindowID
         switch tabs.switched(from: deselected, to: new, admitted: owner[new] != nil,
-                             placed: { self.session.workspace(of: $0) != nil }) {
+                             placed: { self.session.workspace(of: $0) != nil },
+                             sharesFrame: { frame != nil && self.inventory.windows[$0]?.frame == frame }) {
         case .none: return false
         case .pending: return true
         case .replace(let holder): old = holder

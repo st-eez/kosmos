@@ -451,16 +451,28 @@ off the main thread).
   for the incoming tab, 816 and 1326 for the outgoing, then 815 for the incoming, all
   within 0.2 ms (`kosmos-probe tabs`, macOS 27). Closing a tab can destroy it instead.
   - Kosmos pairs the two within 250 ms, in either order, as the yabai forks that follow
-    tabs do. The incoming tab takes the outgoing tab's place, share, focus and workspace,
-    with no reflow and no follow, and gets that place's frame. The outgoing tab leaves
-    the session, a hidden member of the place.
+    tabs do, and only when they have one frame. Tabs share theirs: a tab that joined its
+    group at another size took the group's, and a frame set on the selected tab alone,
+    0.3 s before a switch or in the same turn, was the incoming tab's at every event of
+    the switch (`kosmos-probe tabs`, macOS 27). A
+    native fullscreen window's toolbar window, a window leaving fullscreen and a new
+    window cascaded from one closing have frames of their own. Before frames counted, a
+    Terminal window leaving fullscreen paired with another Terminal window's order change
+    as its toolbar windows went, and took the other fullscreen window's parked place
+    (live log, September 24, 2026). Changes of other frames between a switch's two halves
+    do not part them.
+  - The incoming tab takes the outgoing tab's place, share, focus and workspace, with no
+    reflow and no follow, and gets that place's frame. The outgoing tab leaves the
+    session, a hidden member of the place.
   - A deselected tab leaves every Space, the holding Space too, whether Kosmos stripped
     its ordinary Space or kept it, and selected again it lands on its ordinary Space
     (`kosmos-probe tabs strip` and `keep`). A switch forgets the deselected tab in the
     concealment ledger and the recovery record, and conceals the selected tab again when
     its place is on a hidden workspace.
   - A switch inside a native fullscreen group swaps the parked tab: the new tab is the one
-    in fullscreen, and returns to the place when the group leaves fullscreen.
+    in fullscreen, and returns to the place when the group leaves fullscreen. A claim
+    passes a place on only to a holder with the switch's frame, so no window takes a
+    fullscreen tab's parked place without its fullscreen frame.
   - A tab inherits the minimum of the tab it replaces, since tabs share a size, so a
     switch in a tight layout does not reflow to learn it again. A fullscreen tab's would
     fill the display, so a fullscreen switch passes none.
@@ -486,10 +498,14 @@ off the main thread).
     A window its app had closed and kept returns to its place, and Kosmos follows it, so
     a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
     windows that way, and selecting one's tab brings it to the group's place.
-  - Kosmos does not read the AXTabGroup of the selected tab: that read costs a round trip
-    to the app on every switch, and the pairing needs none. Two windows of one app, one
-    leaving and one arriving within 250 ms, read as a switch; if that shows up, the
-    AXTabs of the incoming window would tell the cases apart.
+  - Kosmos does not read the AXTabGroup of the selected tab. Frames tell the cases seen
+    so far apart at no cost, and a false switch now needs two windows of one app with one
+    frame, one leaving and one arriving within 250 ms. The AXTabs of the incoming window
+    name tabs by title, not by window, so they cannot say which window left, and the read
+    costs a round trip on every switch, on the worker that private focus waits on.
+    Whether a fullscreen group's tab bar is in the tab's AX tree or its toolbar window's
+    is unmeasured. If a false switch between windows with one frame shows up, that read
+    is the next step.
 
 ### 5.6 Hotkeys and Secure Input
 

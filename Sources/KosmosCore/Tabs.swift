@@ -1,27 +1,49 @@
+import CoreGraphics
+
 /// Switches between native tabs, told from windows that come and go (DESIGN.md, section
 /// 5.5). AppKit orders the deselected tab's window out: it keeps its id and leaves every
 /// Space (kosmos-probe tabs), and WindowServer tags it as it tags a window its app ordered
 /// out (alt-tab's measurements on macOS 26). A switch posts 1325 for the incoming tab, 816
 /// and 1326 for the outgoing, then 815 for the incoming, within 0.2 ms (kosmos-probe tabs,
 /// macOS 27). Closing a tab can destroy it instead, before or after the next tab arrives.
+///
+/// The tabs of a group share one frame. A tab that joined the group at another size took
+/// the group's, and a frame set on the selected tab alone, 0.3 s before a switch or in the
+/// same turn, was the incoming tab's at every event of the switch (kosmos-probe tabs,
+/// macOS 27). So only two windows with one frame pair. A native fullscreen window's toolbar
+/// window, a window leaving native fullscreen and a new window cascaded from one closing
+/// have frames of their own (live log, September 24, 2026: a Terminal window leaving
+/// fullscreen paired as its toolbar windows went).
 public struct TabSwitches: Sendable {
     /// Two changes this close form one switch. The yabai forks that follow tabs pair within
     /// 250 ms.
     public static let window: Duration = .milliseconds(250)
-    /// Each app's last change of order not yet paired.
-    private var last: [Int32: (window: WindowID, orderedIn: Bool, at: ContinuousClock.Instant)] = [:]
+    private struct Change {
+        let window: WindowID
+        let orderedIn: Bool
+        let frame: CGRect
+        let at: ContinuousClock.Instant
+    }
+    /// Each app's changes of order not yet paired, oldest first, within the pairing window.
+    /// Changes of other frames stay apart, so one between a tab's two halves does not part
+    /// them.
+    private var unpaired: [Int32: [Change]] = [:]
 
     public init() {}
 
-    /// A window of `app` was ordered in, or ordered out or destroyed. Returns the switch it
-    /// completes: `old`, the tab ordered out or destroyed, and `new`, the tab ordered in.
-    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, app: Int32,
+    /// A window of `app` with `frame` was ordered in, or ordered out or destroyed. Returns
+    /// the switch it completes: `old`, the tab ordered out or destroyed, and `new`, the tab
+    /// ordered in.
+    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, frame: CGRect, app: Int32,
                                  at now: ContinuousClock.Instant) -> (old: WindowID, new: WindowID)? {
-        if let prior = last[app], prior.orderedIn != orderedIn, prior.window != window, now - prior.at <= Self.window {
-            last[app] = nil
+        // A window's newer change replaces its older one: a window back is no switch.
+        var changes = (unpaired[app] ?? []).filter { now - $0.at <= Self.window && $0.window != window }
+        defer { unpaired[app] = changes.isEmpty ? nil : changes }
+        if let index = changes.lastIndex(where: { $0.orderedIn != orderedIn && $0.frame == frame }) {
+            let prior = changes.remove(at: index)
             return orderedIn ? (prior.window, window) : (window, prior.window)
         }
-        last[app] = (window, orderedIn, now)
+        changes.append(Change(window: window, orderedIn: orderedIn, frame: frame, at: now))
         return nil
     }
 }
@@ -37,12 +59,14 @@ public struct HeldOrder: Sendable {
         public let window: WindowID
         public let app: Int32
         public let orderedIn: Bool
+        public let frame: CGRect
         public let at: ContinuousClock.Instant
 
-        public init(window: WindowID, app: Int32, orderedIn: Bool, at: ContinuousClock.Instant) {
+        public init(window: WindowID, app: Int32, orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
             self.window = window
             self.app = app
             self.orderedIn = orderedIn
+            self.frame = frame
             self.at = at
         }
     }
@@ -58,23 +82,25 @@ public struct HeldOrder: Sendable {
     /// A window's row was read at `now`. `was` is its order before, nil for a window not
     /// seen before, which counts as ordered out. Returns whether to report its order now;
     /// while locked a change is held instead.
-    public mutating func ordered(_ window: WindowID, app: Int32, in orderedIn: Bool, was: Bool?,
+    public mutating func ordered(_ window: WindowID, app: Int32, in orderedIn: Bool, was: Bool?, frame: CGRect,
                                  at now: ContinuousClock.Instant, locked: Bool) -> Bool {
         let last = heard.removeValue(forKey: window) ?? was ?? false
         guard locked else { return last != orderedIn }
         heard[window] = orderedIn
-        if last != orderedIn { held.append(Change(window: window, app: app, orderedIn: orderedIn, at: now)) }
+        if last != orderedIn {
+            held.append(Change(window: window, app: app, orderedIn: orderedIn, frame: frame, at: now))
+        }
         return false
     }
 
     /// A window was destroyed at `now`, ordered in or not as its row says. Returns whether
     /// to report it ordered out now; while locked that is held instead.
-    public mutating func removed(_ window: WindowID, app: Int32, orderedIn: Bool,
+    public mutating func removed(_ window: WindowID, app: Int32, orderedIn: Bool, frame: CGRect,
                                  at now: ContinuousClock.Instant, locked: Bool) -> Bool {
         let last = heard.removeValue(forKey: window) ?? orderedIn
         guard locked else { return last }
         heard[window] = false
-        if last { held.append(Change(window: window, app: app, orderedIn: false, at: now)) }
+        if last { held.append(Change(window: window, app: app, orderedIn: false, frame: frame, at: now)) }
         return false
     }
 
@@ -121,14 +147,19 @@ public struct TabGroups: Sendable {
     public init() {}
 
     /// The selected tab changed from `old` to `new`. `admitted`: Kosmos admitted `new`.
-    /// `placed`: whether a tab holds a place.
+    /// `placed`: whether a tab holds a place. `sharesFrame`: whether a window has the
+    /// switch's frame, as the tabs of one group do. It is asked of the holder a claim passes
+    /// the place to, since the pairing compared only the two windows that switched: so a
+    /// window never takes a native fullscreen tab's parked place unless it has that tab's
+    /// fullscreen frame.
     public mutating func switched(from old: WindowID, to new: WindowID, admitted: Bool,
-                                  placed: (WindowID) -> Bool) -> Switch {
+                                  placed: (WindowID) -> Bool, sharesFrame: (WindowID) -> Bool) -> Switch {
         var holder = old
         // A tab deselected before its admission never took its place: its claim passes on,
         // as when Finder opens several tabs or Command-T is pressed twice.
         if let claim = pending.removeValue(forKey: old) {
             hidden.insert(old)
+            guard sharesFrame(claim) else { return .none }
             holder = claim
         }
         guard holder != new, placed(holder) else { return .none }

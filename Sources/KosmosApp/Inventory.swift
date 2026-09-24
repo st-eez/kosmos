@@ -45,15 +45,15 @@ final class Inventory {
         didSet {
             guard oldValue, !sessionLocked else { return }
             for change in heldOrder.unlocked() {
-                onOrderChange?(change.window, change.app, change.orderedIn, change.at)
+                onOrderChange?(change.window, change.app, change.orderedIn, change.frame, change.at)
             }
             awaitingUnlockSweep = true
         }
     }
     private var heldOrder = HeldOrder()
-    /// Windows first seen while locked, and their apps. The unlock sweep admits them; until
+    /// Windows first seen while locked, with their rows. The unlock sweep admits them; until
     /// then they are watched, so their order changes are held as they happen.
-    private var arrivedWhileLocked: [UInt32: pid_t] = [:]
+    private var arrivedWhileLocked: [UInt32: WindowRow] = [:]
     /// Known windows destroyed while locked, or whose app exited then. The unlock sweep
     /// removes them, and no event was missed.
     private var removedWhileLocked: Set<UInt32> = []
@@ -70,8 +70,8 @@ final class Inventory {
     /// deselected its native tab.
     var onKeptOrderedOut: (@MainActor (UInt32) -> Void)?
     /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
-    /// in (false), and when: what a switch between native tabs is made of.
-    var onOrderChange: (@MainActor (UInt32, pid_t, Bool, ContinuousClock.Instant) -> Void)?
+    /// in (false), with its frame, and when: what a switch between native tabs is made of.
+    var onOrderChange: (@MainActor (UInt32, pid_t, Bool, CGRect, ContinuousClock.Instant) -> Void)?
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
@@ -328,9 +328,10 @@ final class Inventory {
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
             // The unlock sweep admits it. Its order changes are held till then.
-            if arrivedWhileLocked.updateValue(row.pid, forKey: row.id) == nil { scheduleWatch() }
+            if arrivedWhileLocked.updateValue(row, forKey: row.id) == nil { scheduleWatch() }
             if isCandidate(row) {
-                _ = heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: nil, at: .now, locked: true)
+                _ = heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: nil, frame: row.frame,
+                                      at: .now, locked: true)
             }
             return
         }
@@ -339,8 +340,9 @@ final class Inventory {
         departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
         // A new tab can be seen first already ordered in.
         if isCandidate(row),
-           heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: old?.orderedIn, at: .now, locked: sessionLocked) {
-            onOrderChange?(row.id, row.pid, row.orderedIn, .now)
+           heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: old?.orderedIn, frame: row.frame,
+                             at: .now, locked: sessionLocked) {
+            onOrderChange?(row.id, row.pid, row.orderedIn, row.frame, .now)
         }
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
         // Shown now, as the second window an app launched hidden restored, with no report of
@@ -362,9 +364,9 @@ final class Inventory {
             // The unlock sweep removes it. Its order change is held now, with its time.
             if windows[id] != nil { removedWhileLocked.insert(id) }
             if let row = windows[id], isCandidate(row) {
-                _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, at: .now, locked: true)
-            } else if let pid = arrivedWhileLocked.removeValue(forKey: id) {
-                _ = heldOrder.removed(id, app: pid, orderedIn: false, at: .now, locked: true)
+                _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now, locked: true)
+            } else if let row = arrivedWhileLocked.removeValue(forKey: id) {
+                _ = heldOrder.removed(id, app: row.pid, orderedIn: false, frame: row.frame, at: .now, locked: true)
             }
             return
         }
@@ -376,8 +378,9 @@ final class Inventory {
         spaceChangedAt[id] = nil
         if row.orderedIn { departures.left(id, at: .now) }
         // Before the removal, so a tab that replaces this one takes its place.
-        if isCandidate(row), heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, at: .now, locked: false) {
-            onOrderChange?(id, row.pid, false, .now)
+        if isCandidate(row),
+           heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now, locked: false) {
+            onOrderChange?(id, row.pid, false, row.frame, .now)
         }
         if wasManaged { onManagedChange?(id, row.pid, false) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
