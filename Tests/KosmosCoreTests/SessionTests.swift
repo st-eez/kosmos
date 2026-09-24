@@ -478,3 +478,15 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.unpark([7], follow: 7)
     #expect(s.frames(of: "1")[7] == before[2])
 }
+
+@Test func aTabInheritsTheMinimumOfTheTabItReplaces() {
+    // Tabs share a size: without it, every switch in a tight layout would reflow twice, as
+    // the new tab refuses its share and Kosmos learns the minimum again.
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    _ = s.setMinimum(2, CGSize(width: 700, height: 0))
+    let before = s.frames(of: "1")
+    let plan = s.replace(2, with: 7)!
+    #expect(s.minimums[7] == CGSize(width: 700, height: 0) && s.minimums[2] == nil)
+    #expect(plan.frames[7] == before[2])
+}

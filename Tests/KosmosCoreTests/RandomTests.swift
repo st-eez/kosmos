@@ -81,11 +81,13 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 30: workspace.balanceSizes()
         case 31: workspace.flattenWorkspaceTree()
         case 32:
-            // A tab switch: another window takes this one's place, and every frame stays.
+            // A tab switch: another window takes this one's place, and every frame stays. The
+            // new tab inherits a tiled tab's minimum, as Session.replace gives it.
             let before = workspace.frames(in: screen, gaps: gaps)
+            let parked = workspace.parked.contains { $0.window == window }
             attempt { $0.replace(window, with: nextWindow) }
             if workspace.contains(nextWindow) {
-                minimums[nextWindow] = minimums.removeValue(forKey: window)
+                if let minimum = minimums.removeValue(forKey: window), !parked { minimums[nextWindow] = minimum }
                 var expected = before
                 expected[nextWindow] = expected.removeValue(forKey: window)
                 #expect(workspace.frames(in: screen, gaps: gaps) == expected, "seed \(seed)")

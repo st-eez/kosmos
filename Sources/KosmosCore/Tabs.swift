@@ -33,8 +33,8 @@ public struct TabSwitches: Sendable {
 public struct TabGroups: Sendable {
     /// What a switch from one tab to another does.
     public enum Switch: Equatable, Sendable {
-        /// The new tab takes the old tab's place now.
-        case replace
+        /// The new tab takes the place of this tab now.
+        case replace(WindowID)
         /// The new tab takes it once Kosmos admits it.
         case pending
         /// The old tab holds no place.
@@ -57,16 +57,22 @@ public struct TabGroups: Sendable {
     public init() {}
 
     /// The selected tab changed from `old` to `new`. `admitted`: Kosmos admitted `new`.
-    /// `placed`: `old` holds a place.
-    public mutating func switched(from old: WindowID, to new: WindowID, admitted: Bool, placed: Bool) -> Switch {
-        // A tab deselected before its admission never took its place.
-        if pending.removeValue(forKey: old) != nil { hidden.insert(old) }
-        guard placed else { return .none }
+    /// `placed`: whether a tab holds a place.
+    public mutating func switched(from old: WindowID, to new: WindowID, admitted: Bool,
+                                  placed: (WindowID) -> Bool) -> Switch {
+        var holder = old
+        // A tab deselected before its admission never took its place: its claim passes on,
+        // as when Finder opens several tabs or Command-T is pressed twice.
+        if let claim = pending.removeValue(forKey: old) {
+            hidden.insert(old)
+            holder = claim
+        }
+        guard holder != new, placed(holder) else { return .none }
         guard admitted else {
-            pending[new] = old
+            pending[new] = holder
             return .pending
         }
-        return .replace
+        return .replace(holder)
     }
 
     /// `new` took the place of `old`, which waits as a hidden member.

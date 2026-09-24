@@ -93,12 +93,15 @@ private let t0 = ContinuousClock.now
 
 // Only an admitted window takes a place (review of 5107ed0, (a) and (d)).
 
+private let places: Set<WindowID> = [2]
+private func placed(_ window: WindowID) -> Bool { places.contains(window) }
+
 @Test func aTabSelectedBeforeItsAdmissionTakesThePlaceOnceAdmitted() {
     var tabs = TabGroups()
-    // Cmd-T: the new tab 7 is selected before Kosmos reads its Accessibility role.
-    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: true) == .pending)
+    // Command-T: the new tab 7 is selected before Kosmos reads its Accessibility role.
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed) == .pending)
     #expect(tabs.admitting(7) == .takes(2))
-    #expect(tabs.switched(from: 2, to: 7, admitted: true, placed: true) == .replace)
+    #expect(tabs.switched(from: 2, to: 7, admitted: true, placed: placed) == .replace(2))
     tabs.replaced(2, with: 7)
     #expect(tabs.hidden == [2])
     #expect(tabs.admitting(9) == .own)   // a window that took no tab's place
@@ -106,12 +109,25 @@ private let t0 = ContinuousClock.now
 
 @Test func aTabDeselectedBeforeItsAdmissionStaysAHiddenMember() {
     var tabs = TabGroups()
-    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: true) == .pending)
-    // Back to tab 2 before 7's admission: 7 never took the place.
-    #expect(tabs.switched(from: 7, to: 2, admitted: true, placed: false) == .none)
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed) == .pending)
+    // Back to tab 2 before 7's admission: 7 never took the place, and 2 keeps it.
+    #expect(tabs.switched(from: 7, to: 2, admitted: true, placed: placed) == .none)
     #expect(tabs.admitting(7) == .hidden)
     // A switch from a tab that holds no place, as one destroyed first, places nothing.
-    #expect(tabs.switched(from: 3, to: 4, admitted: true, placed: false) == .none)
+    #expect(tabs.switched(from: 3, to: 4, admitted: true, placed: placed) == .none)
+}
+
+@Test func aClaimPassesAlongTabsSelectedBeforeTheirAdmission() {
+    var tabs = TabGroups()
+    // Command-T twice, or Finder opening several tabs, before either new tab is admitted.
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed) == .pending)
+    #expect(tabs.switched(from: 7, to: 8, admitted: false, placed: placed) == .pending)
+    #expect(tabs.admitting(7) == .hidden)
+    #expect(tabs.admitting(8) == .takes(2))
+    // Admitted already, the next tab takes the place at once.
+    var admitted = TabGroups()
+    _ = admitted.switched(from: 2, to: 7, admitted: false, placed: placed)
+    #expect(admitted.switched(from: 7, to: 5, admitted: true, placed: placed) == .replace(2))
 }
 
 @Test func aHiddenMemberDraggedOutOrGoneLeavesTheGroup() {
@@ -119,7 +135,7 @@ private let t0 = ContinuousClock.now
     tabs.replaced(2, with: 7)
     #expect(tabs.detached(2) && !tabs.detached(2))
     tabs.replaced(7, with: 8)
-    _ = tabs.switched(from: 8, to: 9, admitted: false, placed: true)   // 9 pending on 8
+    _ = tabs.switched(from: 8, to: 9, admitted: false, placed: { _ in true })   // 9 pending on 8
     tabs.forget(8)
     #expect(tabs.admitting(9) == .own)
     tabs.forget(7)

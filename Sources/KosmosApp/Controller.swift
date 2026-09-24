@@ -35,6 +35,10 @@ final class Controller {
     /// The last key report of a window with no place, decided again if a tab switch gives
     /// that window a place: macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
+    /// Tabs a switch placed on a hidden workspace before their conceal landed. macOS keyed
+    /// such a tab by the user's or the app's choice, so its report counts as one of a
+    /// concealed window, followed as a Command-Tab is.
+    private var placedHidden: Set<WindowID> = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
     /// A report whose verdict waits for the departure of the window key before it
@@ -143,31 +147,37 @@ final class Controller {
             case .takes(let old): if tabSwitched(from: old, to: id) { return }
             case .own: break
             }
-            let app = inventory.appIdentity(pid)
-            let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
-            var plan = session.add(id, to: rule?.workspace)
-            if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
-            // Already minimized, in native fullscreen or hidden with its app, as at launch:
-            // it waits parked for its return, with no frame and no concealing. A minimized or
-            // fullscreen window of a hidden app returns on its own, not when the app unhides.
-            if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
-                                                   minimized: inventory.isMinimized(id),
-                                                   appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {
-                if reason == .fullscreen { fullscreenParked.insert(id) }
-                if reason == .appHidden { hiddenApps[pid, default: []].append(id) }
-                plan.frames = session.park([id]).frames
-                plan.hide.removeAll { $0 == id }
-            }
-            // Reported key before it was managed, as at launch: that report was dropped.
-            if inventory.focused == id, session.workspace(of: id) == session.visible { session.adopt(id) }
-            execute(plan)
-        } else if session.workspace(of: id) != nil, !session.isParked(id), inventory.hasOrderedOutWindows(pid, besides: id) {
-            // Perhaps the selected tab closed before the next tab came in: its place waits
-            // for that tab for the pairing window.
+            place(id, pid: pid, ruled: true)
+        } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
+            // Perhaps the selected tab closed before the next tab came in, in native
+            // fullscreen too: its place waits for that tab for the pairing window.
             after(TabSwitches.window) { $0.forget(id, pid: pid) }
         } else {
             forget(id, pid: pid)
         }
+    }
+
+    /// Gives a window a place of its own: on the workspace a rule names, when `ruled`, or
+    /// the shown one. Already minimized, in native fullscreen or hidden with its app, as at
+    /// launch or as a tab that lost its group, it waits parked for its return, with no frame
+    /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
+    /// own, not when the app unhides.
+    private func place(_ id: WindowID, pid: pid_t, ruled: Bool) {
+        let app = inventory.appIdentity(pid)
+        let rule = ruled ? rules.first { $0.matches(appID: app.bundleID, appName: app.name) } : nil
+        var plan = session.add(id, to: rule?.workspace)
+        if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
+        if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
+                                               minimized: inventory.isMinimized(id),
+                                               appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {
+            if reason == .fullscreen { fullscreenParked.insert(id) }
+            if reason == .appHidden { hiddenApps[pid, default: []].append(id) }
+            plan.frames = session.park([id]).frames
+            plan.hide.removeAll { $0 == id }
+        }
+        // Reported key before it had a place, as at launch: that report was dropped.
+        if inventory.focused == id, session.workspace(of: id) == session.visible { session.adopt(id) }
+        execute(plan)
     }
 
     /// The window is gone for good.
@@ -178,6 +188,7 @@ final class Controller {
         fullscreenParked.remove(id)
         closedByApp.remove(id)
         tabs.forget(id)
+        placedHidden.remove(id)
         ledger.forget(id)
         execute(session.remove(id))
     }
@@ -212,8 +223,8 @@ final class Controller {
             guard controller.inventory.windows[id]?.orderedIn == true else { return }
             if controller.closedByApp.remove(id) != nil {
                 controller.returned([id], follow: id, at: at)
-            } else if controller.tabs.detached(id) {
-                controller.execute(controller.session.add(id))
+            } else if controller.tabs.detached(id), let pid = controller.owner[id] {
+                controller.place(id, pid: pid, ruled: false)
             }
         }
     }
@@ -222,13 +233,16 @@ final class Controller {
     /// reflow and no follow, and `old` waits out of the session as a hidden member
     /// (DESIGN.md, section 5.5). A tab not admitted yet takes the place once it is. False
     /// when `old` holds no place.
-    private func tabSwitched(from old: WindowID, to new: WindowID) -> Bool {
-        switch tabs.switched(from: old, to: new, admitted: owner[new] != nil, placed: session.workspace(of: old) != nil) {
+    private func tabSwitched(from deselected: WindowID, to new: WindowID) -> Bool {
+        let old: WindowID
+        switch tabs.switched(from: deselected, to: new, admitted: owner[new] != nil,
+                             placed: { self.session.workspace(of: $0) != nil }) {
         case .none: return false
         case .pending: return true
-        case .replace: break
+        case .replace(let holder): old = holder
         }
         guard let plan = session.replace(old, with: new) else { return false }
+        if plan.hide.contains(new) { placedHidden.insert(new) }
         controllerLog.info("tab \(new) replaces \(old)")
         tabs.replaced(old, with: new)
         // Parked as closed by its app, as a window Merge All Windows made a tab.
@@ -248,6 +262,7 @@ final class Controller {
         // is key in its own Space, as any parked window.
         if let report = unplacedKey, report.key == .window(new), !session.isParked(new) {
             unplacedKey = nil
+            placedHidden.remove(new)
             decide(KeyReport(key: report.key, received: report.received, previous: report.previous,
                              concealed: session.workspace(of: new) != session.visible, miss: .none), keyLeft: .stayed)
         }
@@ -359,7 +374,8 @@ final class Controller {
             // it left too.
             let keyLeft: Departure = previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed
             decide(KeyReport(key: reported, received: report.received, previous: previous,
-                             concealed: id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
+                             concealed: id.map { hiding.isConcealed($0) || placedHidden.remove($0) != nil } ?? false,
+                             miss: miss), keyLeft: keyLeft)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):

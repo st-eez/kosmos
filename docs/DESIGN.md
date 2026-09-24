@@ -261,6 +261,14 @@ off the main thread).
     window still ordered out a second later for none of the other reasons as one. A
     conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
     fullscreen transition. A deselected tab is not one: it has left the session.
+  - A return received before the latest command is stale, as a Command-Tab is (5.4). The
+    window goes back, Kosmos stays where the command took it, and it requests the
+    command's focus again. A return from fullscreen is stamped at the window's first
+    Space event, not at the 1325 that ends the transition.
+  - A window in native fullscreen moves to a Space of its own, and Accessibility has no
+    notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
+    later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
+  - A `summon` command brings a window to the current workspace on purpose.
 - Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
   id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
   window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325
@@ -276,20 +284,25 @@ off the main thread).
     concealment ledger and the recovery record, and conceals the selected tab again when
     its place is on a hidden workspace.
   - A switch inside a native fullscreen group swaps the parked tab: the new tab is the one
-    in fullscreen, and returns to the place when the group leaves fullscreen. A tab learns
-    its own minimum; a fullscreen tab's would fill the display.
+    in fullscreen, and returns to the place when the group leaves fullscreen.
+  - A tab inherits the minimum of the tab it replaces, since tabs share a size, so a
+    switch in a tight layout does not reflow to learn it again. A fullscreen tab's would
+    fill the display, so a fullscreen switch passes none.
   - macOS can report the new tab key before the switch pairs, when the tab has no place.
     Kosmos decides that report again once the tab takes its place, and follows it to a
     place on a hidden workspace. The window key before it is the deselected tab, which
-    did not depart.
+    did not depart. A report that comes after the tab took a place on a hidden workspace,
+    before its conceal landed, counts as one of a concealed window too.
   - Only an admitted window takes a place. A new tab, and a tab selected for the first
     time, which Accessibility reports created then, take the place once Kosmos admits
-    them, and a tab deselected before that stays a hidden member.
+    them, and a tab deselected before that stays a hidden member and passes its claim on,
+    as when Finder opens several tabs or Command-T is pressed twice.
   - Closing the selected tab is a switch. When the destroy comes before the next tab, the
     closed tab's place waits the pairing window for it, if the app has windows ordered
-    out. Closing the group's last tab is a close.
+    out, in native fullscreen too. Closing the group's last tab is a close.
   - A window ordered in with no tab leaving is back after the pairing window if it is
-    still ordered in. A hidden member dragged out of its group takes a place of its own.
+    still ordered in. A hidden member dragged out of its group takes a place of its own,
+    parked at once when it is minimized, in native fullscreen or hidden with its app.
     A window its app had closed and kept returns to its place, and Kosmos follows it, so
     a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
     windows that way, and selecting one's tab brings it to the group's place.
@@ -297,14 +310,6 @@ off the main thread).
     to the app on every switch, and the pairing needs none. Two windows of one app, one
     leaving and one arriving within 250 ms, read as a switch; if that shows up, the
     AXTabs of the incoming window would tell the cases apart.
-  - A return received before the latest command is stale, as a Command-Tab is (5.4). The
-    window goes back, Kosmos stays where the command took it, and it requests the
-    command's focus again. A return from fullscreen is stamped at the window's first
-    Space event, not at the 1325 that ends the transition.
-  - A window in native fullscreen moves to a Space of its own, and Accessibility has no
-    notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
-    later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
-  - A `summon` command brings a window to the current workspace on purpose.
 
 ### 5.6 Hotkeys and Secure Input
 
