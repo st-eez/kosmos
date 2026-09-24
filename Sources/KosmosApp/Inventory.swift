@@ -139,6 +139,8 @@ final class Inventory {
             // AX alone never removes a window; WindowServer decides.
             refresh(id)
         case .focusedWindowChanged(let id):
+            // The worker knows a window its app reports focused.
+            if let id { readIfUnknown(id) }
             // Repeats still go to the controller, which counts echoes.
             if id != focused {
                 focused = id
@@ -156,7 +158,9 @@ final class Inventory {
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
             if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
-        case .framesApplied, .backgroundFocus:
+        case .backgroundFocus(let id):
+            if let id { readIfUnknown(id) }
+        case .framesApplied:
             break
         }
         onReport?(report)
@@ -173,7 +177,10 @@ final class Inventory {
         }
     }
 
-    /// A candidate whose facts no read has returned yet.
+    /// A candidate whose facts no read has returned yet. Terminal, launched hidden, restored
+    /// a window that no read answered for and no creation report named while it stayed
+    /// hidden (live log, September 24, 2026): its unhide, a focus report naming the window
+    /// and the sweep read it again (DESIGN.md, section 5.1).
     private func readIfUnknown(_ id: UInt32) {
         guard ax[id] == nil, let row = windows[id], isCandidate(row) else { return }
         readAX(id, pid: row.pid)
@@ -234,7 +241,12 @@ final class Inventory {
     private func appHidden(_ pid: pid_t, _ hidden: Bool, at received: ContinuousClock.Instant) {
         inventoryLog.info("\(self.appName(pid), privacy: .public) \(hidden ? "hid" : "unhid", privacy: .public)")
         for (id, row) in windows where row.pid == pid {
-            if !hidden { departures.returned(id) } else if row.orderedIn { departures.left(id, at: .now) }
+            if !hidden {
+                departures.returned(id)
+                readIfUnknown(id)
+            } else if row.orderedIn {
+                departures.left(id, at: .now)
+            }
         }
         onAppHidden?(pid, hidden, received)
     }
@@ -404,6 +416,9 @@ final class Inventory {
             remove(id, reason: "absent from sweep")
         }
         for row in rows where windows[row.id] != nil { apply(row) }
+        // An ordered-out window no read has answered for, as a window its app never shows,
+        // waits for a report or its unhide, so the sweep does not ask its app every time.
+        for (id, row) in windows where row.orderedIn { readIfUnknown(id) }
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false

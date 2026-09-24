@@ -45,6 +45,17 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     }
 }
 
+@Test func aCommandNamingAWorkspaceTheProfileLeavesOutFails() {
+    // The laptop profile lists 1 to 5; `workspace 6` exited 0 and did nothing.
+    let s = session(["1", "2", "3", "4", "5"])
+    #expect(s.missingWorkspace(in: .workspace(.named("6"))) == "6")
+    #expect(s.missingWorkspace(in: .moveNodeToWorkspace(.named("0"), focusFollowsWindow: true)) == "0")
+    #expect(s.missingWorkspace(in: .workspace(.named("5"))) == nil)
+    #expect(s.missingWorkspace(in: .moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 42)) == nil)
+    #expect(s.missingWorkspace(in: .workspace(.next)) == nil)
+    #expect(s.missingWorkspace(in: .focus(.left)) == nil)
+}
+
 @Test func newWindowsJoinTheShownWorkspaceAndGetFrames() {
     var s = session()
     let plan = s.add(1)
