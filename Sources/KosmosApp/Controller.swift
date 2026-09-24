@@ -628,7 +628,7 @@ final class Controller {
                     switch to \(self.session.visible, privacy: .public): \(show.count) shown, \(hide.count) hidden, \
                     before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms \
                     (queued \(Self.ms(timing.queued), privacy: .public), sent \(Self.ms(timing.sent), privacy: .public), \
-                    confirmed \(Self.ms(timing.confirmed), privacy: .public), back \(Self.ms(timing.returned), privacy: .public)), \
+                    confirmed \(Self.ms(timing.confirmed), privacy: .public) by \(timing.barrier ? "barrier" : "read", privacy: .public), back \(Self.ms(timing.returned), privacy: .public)), \
                     total \(Self.ms(total), privacy: .public) ms, \(String(describing: outcome), privacy: .public)
                     """)
                 switch outcome {

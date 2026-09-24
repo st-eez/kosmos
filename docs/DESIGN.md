@@ -87,10 +87,10 @@ on its own and never delays another app.
    One batched SkyLight query validates its windows; layout runs only if something changed,
    and changed frames go to their apps' workers.
 3. The bridge queue sends the reveal of the incoming windows and the conceal of the
-   outgoing windows back to back, then the barrier read. Revealing first shows windows of
-   both workspaces for the length of one bridged operation; concealing first would show an
-   empty desktop for the same time.
-4. Once the barrier confirms the target window is revealed, and the switch generation is
+   outgoing windows back to back, then reads the holding Space until it shows them done.
+   Revealing first shows windows of both workspaces for the length of one bridged
+   operation; concealing first would show an empty desktop for the same time.
+4. Once the reads confirm the target window is revealed, and the switch generation is
    still current, the focus queue fronts the target, or Finder with no window for an empty
    workspace, and reads back the key window.
 5. The main actor publishes one bar snapshot and one `subscribe` frame.
@@ -227,7 +227,17 @@ off the main thread).
   the adds without that barrier: after an add that did not land, the removal leaves the
   window on the active Space, which is then ordinary, and the batch saves a bridged round
   trip.
-- The barrier at the end confirms that each revealed window left the holding Space.
+- A batch is confirmed when the Spaces it touched show each revealed window out of them
+  and each concealed window in them. Kosmos reads them directly, on its own connection,
+  every 0.1 ms for up to 3 ms, and only then sends the barrier and reads once more. A
+  direct read never shows an operation at once (0 in 60 tries on the development Mac),
+  but it shows it as soon as WindowServer applied it: 0.47 ms at the median for a window
+  that is not key, against 0.50 ms for the barrier. The barrier goes through
+  WindowManager.app, which rebuilds its window model when a window joins or leaves an
+  ordinary Space, as a stripped window's reveal does. On 2026-09-24 the switches that
+  revealed a stripped window took 5 to 16 ms while WindowManager logged that work, for
+  30 to 80 ms after each. WindowServer applies a batch's operations in order, so a
+  window seen out of the holding Space implies the add sent before its removal.
 - A window with no ordinary Space goes to the main display's current Space, else to the
   Space it had before its first hide if that still exists, else to the main display's
   first ordinary Space. A native fullscreen Space is never chosen, so a switch works while
