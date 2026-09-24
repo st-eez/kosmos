@@ -141,6 +141,8 @@ off the main thread).
   wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. A wake
   gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
   locks its screen first.
+- The model can still change while locked, as when a window minimizes or returns, its app
+  hides, or a report held before the lock is decided; the resync carries out those plans.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
   and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
@@ -322,18 +324,17 @@ off the main thread).
     window; inside the front app the raise keys it. A request misses when its app reports
     another of its windows key, and neither an echo of any request nor a report of the
     requested window arrives first, before Kosmos's next request. A background report that
-    consumes the echo leaves the count alone. A miss that Kosmos requests again counts,
-    and the retry counts again if it misses too. Five misses in a row turn the
-    path off. On this Mac AXRaise and then the private sequence keyed the right window in 60
-    of 60 AutoRaise trials, 9 of them between two windows of the active app, so the miss
-    rate is at most about 5% at 95% confidence, and five misses in a row at 5% come once in
-    about 3 million runs. Those trials posted a down and up record pair, and Kosmos posts
-    the down alone; `kosmos-probe keying` measures Kosmos's own sequence. The public path
-    chose the wrong window in 9 of 9 trials, so a false trip costs more than a few late
-    wrong windows (wm-research focus note, section 4; autoraise-steez trial results,
-    September 8, 2026). A request with no report neither misses nor clears the count, so a
-    record that changes nothing, as the record alone did inside the active app, goes
-    uncounted.
+    consumes the echo leaves the count alone. A miss and a retry that misses too count as
+    one miss. Five misses in a row turn the path off. On this Mac AXRaise and then the
+    private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
+    between two windows of the active app, so the miss rate is at most about 5% at 95%
+    confidence, and five misses in a row at 5% come once in about 3 million runs. Those
+    trials posted a down and up record pair, and Kosmos posts the down alone;
+    `kosmos-probe keying` measures Kosmos's own sequence. The public path chose the wrong
+    window in 9 of 9 trials, so a false trip costs more than a few late wrong windows
+    (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
+    A request with no report neither misses nor clears the count, so a record that changes
+    nothing, as the record alone did inside the active app, goes uncounted.
 - AXRaise runs on the app's worker, before the queue's key record for a background app. On
   macOS 27 the record alone leaves the key window unchanged inside the app that is already
   frontmost, for stacked and side by side windows alike, while AXRaise and then the record

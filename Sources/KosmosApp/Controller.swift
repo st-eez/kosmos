@@ -403,7 +403,7 @@ final class Controller {
                 if let report = controller.held.expire(number) { controller.decideHeld(report) }
             }
         case .reassert:
-            requestFocus(intent)
+            requestFocus(intent, retry: report.miss == .retry)
         case .adopt(let window):
             session.adopt(window)
             touch(window)
@@ -530,8 +530,10 @@ final class Controller {
         return kinds
     }
 
-    /// Every focus request goes through here. `fromCommand`: a command asked for it.
-    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false, fromCommand: Bool = false) {
+    /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
+    /// it follows a miss, which the kill switch then counts once.
+    private func requestFocus(_ target: KeyWindow, movePointer: Bool = false, fromCommand: Bool = false,
+                              retry: Bool = false) {
         guard !sessionLocked else { return }
         // Focusing a desktop window takes the user out of a fullscreen Space: only a command
         // does that, not a window closing or hiding behind it, nor an unhide that conceals
@@ -555,7 +557,9 @@ final class Controller {
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
                            concealed: concealed, generation: focusQueue.newGeneration(),
-                           performing: { [weak self] stamp, path in self?.performing(target, pid: pid, path: path, at: stamp) },
+                           performing: { [weak self] stamp, path in
+                               self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
+                           },
                            dropped: { [weak self] stamp in
                                self?.reports.requestDropped(target, at: stamp)
                                self?.misses.requestDropped(at: stamp)
@@ -565,10 +569,11 @@ final class Controller {
     /// A call that changes the key window to `target` is about to be made: records the echo
     /// that will come back, inexact for the public activation, and counts the private key
     /// record toward the kill switch (DESIGN.md, section 5.4).
-    private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, at stamp: ContinuousClock.Instant) {
+    private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, retry: Bool,
+                            at stamp: ContinuousClock.Instant) {
         reports.focusRequested(target, app: pid, at: stamp, publicly: path == .activation)
         guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
-              misses.willRequest(id, pid: pid, at: stamp) else { return }
+              misses.willRequest(id, pid: pid, at: stamp, retry: retry) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)
         controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
         onFocusProblem?(focusProblem)
