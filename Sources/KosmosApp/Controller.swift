@@ -36,10 +36,6 @@ final class Controller {
     var mouseFollowsFocus = false
     /// The active display profile, for the bar.
     var profile: String?
-    /// The holder of Secure Input while it is on, for the bar.
-    var secureInput: SecureInput? {
-        didSet { if secureInput != oldValue { publishState() } }
-    }
     var publish: (@MainActor (Data) -> Void)?
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
@@ -294,11 +290,10 @@ final class Controller {
 
     /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.
     private func stateJSON() -> Data {
-        var snapshot = session.barSnapshot(
+        let snapshot = session.barSnapshot(
             profile: profile, displayName: NSScreen.main?.localizedName ?? "Display",
             app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
             frame: { [inventory] id in inventory.windows[id]?.frame })
-        snapshot.secureInput = secureInput
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(snapshot)) ?? Data("{}".utf8)

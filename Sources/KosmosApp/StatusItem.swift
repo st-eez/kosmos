@@ -1,5 +1,4 @@
 import AppKit
-import KosmosCore
 import KosmosIPC
 
 /// A static menu bar icon. It changes only when Kosmos's state changes, never during a

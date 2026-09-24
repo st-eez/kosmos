@@ -208,14 +208,29 @@ private func carbonModifiers(_ modifiers: KeyCombo.Modifiers) -> UInt32 {
     return UInt32(flags)
 }
 
-extension SecureInput {
-    /// Nil while Secure Input is off. The check costs 0.04 µs, and naming the holder, which
-    /// copies the session dictionary (about 60 µs), runs only while it is on (kosmos-probe
-    /// secure-input).
+/// The process holding Secure Input, which a password field turns on. While it is on, some
+/// bindings stop (DESIGN.md, section 5.6).
+struct SecureInput: Equatable, CustomStringConvertible {
+    /// The process WindowServer names. When a process with no windows of its own turns Secure
+    /// Input on, WindowServer names the frontmost app instead (measured on macOS 27 with a
+    /// command line probe).
+    var pid: pid_t?
+    var appName: String?
+
+    /// Nil while Secure Input is off. Naming the holder, which copies the session dictionary,
+    /// runs only while Secure Input is on.
     static func current() -> SecureInput? {
         guard IsSecureEventInputEnabled() else { return nil }
         let session = CGSessionCopyCurrentDictionary() as? [String: Any]
         let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
-        return SecureInput(pid: pid, app: pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName })
+        return SecureInput(pid: pid, appName: pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName })
+    }
+
+    var description: String {
+        switch (appName, pid) {
+        case let (name?, pid?): "\(name) (pid \(pid))"
+        case let (nil, pid?): "pid \(pid)"
+        default: "an unnamed process"
+        }
     }
 }

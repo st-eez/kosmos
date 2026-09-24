@@ -173,7 +173,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         secureInput = current
         log.notice("secure input \(current.map { "on, held by \($0)" } ?? "off", privacy: .public)")
         statusItem?.secureInput = current
-        controller?.secureInput = current
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
@@ -211,7 +210,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
-        controller.secureInput = secureInput
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.

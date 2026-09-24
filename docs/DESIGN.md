@@ -209,9 +209,9 @@ off the main thread).
   switch. Checks on app activation or focus reports would miss a password field focused
   inside the active app.
 - While Secure Input is on, the status item shows a lock, names the holder and says which
-  bindings wait. The bar snapshot carries the holder too, for a Mac that hides the menu
-  bar, and the log records each change. For a holder with no windows of its own,
-  WindowServer names the frontmost app instead.
+  bindings wait, and the log records each change. For a holder with no windows of its own,
+  WindowServer names the frontmost app instead. Showing it in the bar, for a Mac that hides
+  the menu bar, is a later option: the snapshot can gain a field without a new version.
 - A reload does not warn about bindings that stop. They stop only while Secure Input is
   on, and the sample config binds 34 of them on purpose, so the warning would come with
   every reload.
@@ -293,9 +293,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - **Status bar (SketchyBar).** Kosmos sends one `kosmos_state` event per change, holding
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
-  active profile; the displays; and the process holding Secure Input while it is on. The
-  bar runs no command on a switch. A bar that starts after Kosmos runs `kosmos state` once
-  for the current snapshot, and clicking a workspace runs `kosmos workspace <name>`.
+  active profile; and the displays. The bar runs no command on a switch. A bar that starts
+  after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
+  runs `kosmos workspace <name>`.
 - **Borders (JankyBorders).** They work unchanged while inactive borders are transparent.
   With visible inactive borders, Kosmos would have to conceal each border window along with
   its window, as the AeroSpace fork did. Borders drawn by Kosmos itself are on the later

@@ -51,14 +51,3 @@ private let display = CGRect(x: 0, y: 0, width: 1000, height: 800)
     let json = String(decoding: try encoder.encode(snapshot), as: UTF8.self)
     #expect(json == #"{"displays":[{"id":1,"name":"Built-in"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","id":10,"x":0,"y":0}]}]}"#)
 }
-
-/// A bar shows Secure Input from this key, which is absent while Secure Input is off.
-@Test func secureInputAppearsOnlyWhileOn() throws {
-    var snapshot = Session(names: ["1"], display: display)
-        .barSnapshot(profile: nil, displayName: "Built-in", app: { _ in nil }, frame: { _ in nil })
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    #expect(!String(decoding: try encoder.encode(snapshot), as: UTF8.self).contains("secureInput"))
-    snapshot.secureInput = SecureInput(pid: 812, app: "1Password")
-    #expect(String(decoding: try encoder.encode(snapshot), as: UTF8.self).contains(#""secureInput":{"app":"1Password","pid":812}"#))
-}
