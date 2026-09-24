@@ -17,6 +17,9 @@ final class Apps {
     }
 
     func start() {
+        // Covers every element, including ones copied out of an app's attributes, which do
+        // not take their app element's timeout (paneru's finding, wm-research geometry note).
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), AppWorker.timeout)
         for app in NSWorkspace.shared.runningApplications { add(app) }
         // The key window at launch produces no notification; ask for it.
         if let front = NSWorkspace.shared.frontmostApplication { activated(front.processIdentifier, received: .now) }
@@ -51,7 +54,7 @@ final class Apps {
         identities[pid] = (app.bundleIdentifier, app.localizedName)
         Task {
             // Apps answer Accessibility some time after launch: retry for about a second,
-            // as yabai and Hammerspoon do.
+            // as yabai and Hammerspoon do, then every 0.5 s.
             for attempt in 1...10 {
                 if await worker.start() {
                     appsLog.debug("\(name, privacy: .public) observed after \(attempt) attempts")
@@ -59,7 +62,8 @@ final class Apps {
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            appsLog.error("\(name, privacy: .public) did not answer Accessibility")
+            appsLog.error("\(name, privacy: .public) did not answer Accessibility in 1 s; asking every 0.5 s")
+            await worker.askLater()
         }
     }
 
@@ -74,7 +78,8 @@ final class Apps {
         guard let worker = workers[pid] else { return }
         let report = self.report
         Task {
-            let window = await worker.focusedWindow()
+            // Unknown when the app did not answer: then nothing is reported.
+            guard let window = await worker.focusedWindow() else { return }
             report(AXReport(pid: pid, kind: .focusedWindowChanged(window), received: received))
         }
     }

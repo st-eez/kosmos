@@ -35,6 +35,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Pixel-based container weights produce wrong and negative sizes | Store fractions |
 | After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read confirms a switch, where the fork polled |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
+| An AX call to a hung app returns kAXErrorCannotComplete 5 ms after its messaging timeout, and with none set macOS 27 waits 1.5 s. An app still launching fails with the same error in under 9 ms and answers about 60 ms after it starts. An answered read takes 13 µs (`kosmos-probe ax-timeout`) | Time out every call at 1 s, and back an app off only after a call that waited out the timeout |
 
 ## 3. Primitive decisions
 
@@ -114,9 +115,13 @@ off the main thread).
   - One AX observer per app: creation, focus, main window, title, destroy and minimize.
   - NSWorkspace app lifecycle events, plus a process exit source for each app.
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
-  lock screen never do, and while the session is locked, creation and destruction wait.
+  lock screen never do, and while the session is locked, creation and destruction wait. A
+  read that gets no answer leaves the window's AX facts as they were.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
-  and passes the popup and dialog checks. Apps whose AX is late get bounded retries.
+  and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
+  apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
+  read has returned is read again when its app's worker reports it created, or reports
+  that the app answers again.
 
 ### 5.2 Geometry
 
@@ -126,8 +131,16 @@ off the main thread).
   position alone. Read the frame back once per batch.
 - A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
   until the target changes.
-- AX calls time out after 1 s, reads after 50 ms. An app that times out is backed off and
-  probed.
+- Every AX call times out after 1 s, set once for the whole process, so elements copied
+  out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
+  on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
+  leave its window unknown.
+- A call that waited out at least half the timeout backs its app off. The worker then makes
+  no call to the app, keeps only the newest frame target of each window, and asks for the
+  app's role with a 50 ms timeout every 0.5 s. When the app answers, the worker tracks the
+  windows created meanwhile, writes the held frames and reports that the app answers, and
+  the inventory reads the facts it could not read before. A launching app fails fast and is
+  left to the launch retries.
 
 ### 5.3 Hiding and recovery
 

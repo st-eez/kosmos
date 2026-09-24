@@ -54,10 +54,10 @@ final class Inventory {
         sweep()
     }
 
-    /// Starts the per-app Accessibility workers. Needs the Accessibility grant.
+    /// Starts the per-app Accessibility workers. Needs the Accessibility grant. Each worker
+    /// reports `answering` once it starts, and its app's windows are read then.
     func startAccessibility() {
         apps.start()
-        for (id, row) in windows where isCandidate(row) { readAX(id, pid: row.pid) }
     }
 
     /// A window is managed when it is a candidate and Accessibility calls it a standard
@@ -71,6 +71,10 @@ final class Inventory {
         switch report.kind {
         case .windowCreated(let id):
             refresh(id)
+            // WindowServer can report the window before its app's worker knows it.
+            readIfUnknown(id)
+        case .answering:
+            for (id, row) in windows where row.pid == report.pid { readIfUnknown(id) }
         case .windowDestroyed(let id):
             // AX alone never removes a window; WindowServer decides.
             refresh(id)
@@ -104,8 +108,15 @@ final class Inventory {
         }
     }
 
+    /// A candidate whose facts no read has returned yet.
+    private func readIfUnknown(_ id: UInt32) {
+        guard ax[id] == nil, let row = windows[id], isCandidate(row) else { return }
+        readAX(id, pid: row.pid)
+    }
+
+    /// Nil info means the app did not answer; what was known stays (DESIGN.md, section 5.1).
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
-        guard let pid = windows[id]?.pid else { return }
+        guard let info, let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)
         ax[id] = info
         if isManaged(id) != wasManaged {
@@ -113,7 +124,7 @@ final class Inventory {
             inventoryLog.info("""
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
-                role \(info?.role ?? "-", privacy: .public) subrole \(info?.subrole ?? "-", privacy: .public)
+                role \(info.role ?? "-", privacy: .public) subrole \(info.subrole ?? "-", privacy: .public)
                 """)
         }
     }

@@ -13,6 +13,9 @@ struct AXReport: Sendable {
         case titleChanged(UInt32)
         /// Frames read back after writes, with the target each write aimed for.
         case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
+        /// The app answers Accessibility: it started, or answered again after a timeout.
+        /// Reads that failed before can be made again.
+        case answering
     }
 
     let pid: pid_t
@@ -30,71 +33,122 @@ struct AXWindowInfo: Sendable {
 
 /// Owns one app's Accessibility elements and observer on the app's own thread. It never
 /// touches the model: it reports to the main actor and answers reads.
+///
+/// An app that lets a call wait out the messaging timeout is backed off: the worker makes no
+/// call to it, keeps only the newest frame target of each window, and asks it for its role
+/// with a 50 ms timeout every 0.5 s. When it answers, the worker writes the held frames and
+/// reports `answering` (DESIGN.md, section 5.2).
 actor AppWorker {
+    /// Every call waits this long at most, set system wide in `Apps.start`. A call to a hung
+    /// app returns kAXErrorCannotComplete 5 ms after its timeout; with none set, macOS 27
+    /// waits 1.5 s (`kosmos-probe ax-timeout`).
+    static let timeout: Float = 1.0
+
     let pid: pid_t
+    private let name: String
     private let executor: RunLoopExecutor
     private let report: @MainActor (AXReport) -> Void
     private let app: AXUIElement
     private var observer: AXObserver?
+    private var started = false
     private var elements: [UInt32: AXUIElement] = [:]
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
+    /// Set while the app is backed off.
+    private var askingSince: ContinuousClock.Instant?
+    private var probe: CFRunLoopTimer?
+    private let probeElement: AXUIElement
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
 
     init(pid: pid_t, name: String, report: @escaping @MainActor (AXReport) -> Void) {
         self.pid = pid
+        self.name = name
         self.report = report
         executor = RunLoopExecutor(name: "kosmos.ax.\(name)")
         app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 1.0)
+        probeElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(probeElement, 0.05)
     }
 
-    /// Registers the app's observer and reads its current windows. Returns false when the
-    /// app does not answer Accessibility yet.
+    /// Registers the app's observer and reads its current windows, then reports `answering`.
+    /// Returns false when the app does not answer Accessibility yet.
     func start() -> Bool {
-        var observer: AXObserver?
-        guard AXObserverCreate(pid, { _, element, notification, refcon in
-            guard let refcon else { return }
-            let worker = Unmanaged<AppWorker>.fromOpaque(refcon).takeUnretainedValue()
-            let name = notification as String
-            // The callback runs on the worker's own run loop thread, so the element never
-            // leaves it.
-            nonisolated(unsafe) let element = element
-            worker.assumeIsolated { $0.handle(name, element) }
-        }, &observer) == .success, let observer else { return false }
-        self.observer = observer
-        CFRunLoopAddSource(executor.runLoop, AXObserverGetRunLoopSource(observer), .defaultMode)
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        for name in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
-            let result = AXObserverAddNotification(observer, app, name as CFString, refcon)
+        if observer == nil {
+            var created: AXObserver?
+            guard AXObserverCreate(pid, { _, element, notification, refcon in
+                guard let refcon else { return }
+                let worker = Unmanaged<AppWorker>.fromOpaque(refcon).takeUnretainedValue()
+                let name = notification as String
+                // The callback runs on the worker's own run loop thread, so the element never
+                // leaves it.
+                nonisolated(unsafe) let element = element
+                worker.assumeIsolated { $0.handle(name, element) }
+            }, &created) == .success, let created else { return false }
+            observer = created
+            CFRunLoopAddSource(executor.runLoop, AXObserverGetRunLoopSource(created), .defaultMode)
+        }
+        for notification in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
+            let result = observe(app, notification)
             if result != .success, result != .notificationAlreadyRegistered { return false }
         }
-        for window in copy(app, kAXWindowsAttribute) as? [AXUIElement] ?? [] { track(window) }
+        guard trackWindows() else { return false }
+        started = true
+        send(.answering)
+        return true
+    }
+
+    /// Tracks every window the app lists. False when the app did not answer.
+    private func trackWindows() -> Bool {
+        let windows: CFTypeRef?
+        do { windows = try copy(app, kAXWindowsAttribute) } catch { return false }
+        for window in windows as? [AXUIElement] ?? [] { track(window) }
         return true
     }
 
     func stop() {
         if let observer { CFRunLoopRemoveSource(executor.runLoop, AXObserverGetRunLoopSource(observer), .defaultMode) }
+        if let probe { CFRunLoopTimerInvalidate(probe) }
         observer = nil
+        probe = nil
         elements = [:]
         executor.stop()
     }
 
+    /// Nil when the window is unknown to the worker or the app did not answer. The caller
+    /// keeps what it knew: an unanswered read never makes a window unmanaged.
     func info(_ id: UInt32) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
-        return AXWindowInfo(role: copy(element, kAXRoleAttribute) as? String,
-                            subrole: copy(element, kAXSubroleAttribute) as? String,
-                            title: copy(element, kAXTitleAttribute) as? String,
-                            minimized: copy(element, kAXMinimizedAttribute) as? Bool ?? false)
+        do {
+            return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
+                                subrole: try copy(element, kAXSubroleAttribute) as? String,
+                                title: try copy(element, kAXTitleAttribute) as? String,
+                                minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false)
+        } catch {
+            return nil
+        }
     }
 
     var windowIDs: [UInt32] { Array(elements.keys) }
 
-    func focusedWindow() -> UInt32? {
-        guard let element = copy(app, kAXFocusedWindowAttribute).map({ $0 as! AXUIElement }) else { return nil }
-        return track(element)
+    /// The app's focused window, which is nil when it has none. The outer nil means the app
+    /// did not answer, so its focus is unknown.
+    func focusedWindow() -> UInt32?? {
+        do {
+            guard let element = try copy(app, kAXFocusedWindowAttribute) else { return .some(nil) }
+            let id = track(element as! AXUIElement)
+            return askingSince == nil ? .some(id) : nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// Starts asking the app every 0.5 s, for an app that did not answer during its launch
+    /// retries.
+    func askLater() {
+        guard !started else { return }
+        scheduleProbe()
     }
 
     /// Queues frame writes from any thread, in the order of the calls. A Task per batch
@@ -115,8 +169,8 @@ actor AppWorker {
     private func raiseAndActivate(_ id: UInt32, isCurrent: () -> Bool, dropped: () -> Void) {
         guard isCurrent() else { return dropped() }
         if let element = elements[id] {
-            AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-            AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+            _ = ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
+            _ = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
         }
         NSRunningApplication(processIdentifier: pid)?.activate(options: [])
     }
@@ -132,6 +186,7 @@ actor AppWorker {
 
     private func drainWrites() {
         drainScheduled = false
+        guard askingSince == nil else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
@@ -145,6 +200,12 @@ actor AppWorker {
                 set(element, kAXPositionAttribute, frame.origin)
                 set(element, kAXSizeAttribute, frame.size)
             }
+            // A write the app did not answer waits, with the ones after it, for the app to
+            // answer again.
+            if askingSince != nil {
+                queuedWrites[id] = entry
+                continue
+            }
             if let readBack = frame(element) { results.append((id, entry.target, readBack)) }
         }
         if !results.isEmpty { send(.framesApplied(results)) }
@@ -153,23 +214,23 @@ actor AppWorker {
     private func set(_ element: AXUIElement, _ attribute: String, _ point: CGPoint) {
         var point = point
         guard let value = AXValueCreate(.cgPoint, &point) else { return }
-        logFailure(AXUIElementSetAttributeValue(element, attribute as CFString, value), attribute)
+        logFailure(ax { AXUIElementSetAttributeValue(element, attribute as CFString, value) }, attribute)
     }
 
     private func set(_ element: AXUIElement, _ attribute: String, _ size: CGSize) {
         var size = size
         guard let value = AXValueCreate(.cgSize, &size) else { return }
-        logFailure(AXUIElementSetAttributeValue(element, attribute as CFString, value), attribute)
+        logFailure(ax { AXUIElementSetAttributeValue(element, attribute as CFString, value) }, attribute)
     }
 
     private func logFailure(_ error: AXError, _ attribute: String) {
-        // Backing off an app that times out comes with tiling on real apps.
-        if error != .success { log.error("pid \(self.pid) set \(attribute, privacy: .public) failed: \(error.rawValue)") }
+        guard error != .success, askingSince == nil else { return }   // backing off is logged once
+        log.error("pid \(self.pid) set \(attribute, privacy: .public) failed: \(error.rawValue)")
     }
 
     private func frame(_ element: AXUIElement) -> CGRect? {
         var origin = CGPoint.zero, size = CGSize.zero
-        guard let p = copy(element, kAXPositionAttribute), let s = copy(element, kAXSizeAttribute),
+        guard let p = try? copy(element, kAXPositionAttribute), let s = try? copy(element, kAXSizeAttribute),
               AXValueGetValue(p as! AXValue, .cgPoint, &origin), AXValueGetValue(s as! AXValue, .cgSize, &size)
         else { return nil }
         return CGRect(origin: origin, size: size)
@@ -180,7 +241,8 @@ actor AppWorker {
         case kAXWindowCreatedNotification:
             if let id = track(element) { send(.windowCreated(id)) }
         case kAXFocusedWindowChangedNotification:
-            send(.focusedWindowChanged(track(element)))
+            let id = track(element)
+            if askingSince == nil { send(.focusedWindowChanged(id)) }
         case kAXUIElementDestroyedNotification:
             if let id = elements.first(where: { CFEqual($0.value, element) })?.key {
                 elements[id] = nil
@@ -195,29 +257,88 @@ actor AppWorker {
         }
     }
 
-    /// Caches a window element under its WindowServer id and observes it.
+    /// Caches a window element under its WindowServer id and observes it. Before the
+    /// observer exists nothing is cached, so `start` still observes the window.
     @discardableResult
     private func track(_ element: AXUIElement) -> UInt32? {
         guard let id = windowID(element) else { return nil }
-        if elements.updateValue(element, forKey: id) == nil, let observer {
-            AXUIElementSetMessagingTimeout(element, 1.0)
-            let refcon = Unmanaged.passUnretained(self).toOpaque()
-            for name in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
-                         kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
-                AXObserverAddNotification(observer, element, name as CFString, refcon)
+        guard observer != nil else { return id }
+        if elements.updateValue(element, forKey: id) == nil {
+            for notification in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
+                                 kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
+                _ = observe(element, notification)
             }
         }
         return id
     }
 
-    private func windowID(_ element: AXUIElement) -> UInt32? {
-        var id: UInt32 = 0
-        return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+    private func observe(_ element: AXUIElement, _ notification: String) -> AXError {
+        ax { AXObserverAddNotification(observer!, element, notification as CFString, Unmanaged.passUnretained(self).toOpaque()) }
     }
 
-    private func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+    private func windowID(_ element: AXUIElement) -> UInt32? {
+        var id: UInt32 = 0
+        return ax { _AXUIElementGetWindow(element, &id) } == .success && id != 0 ? id : nil
+    }
+
+    private struct NoAnswer: Error {}
+
+    /// An attribute's value, or nil when it has none. Throws when the app did not answer, the
+    /// element is gone, or the app is backed off.
+    private func copy(_ element: AXUIElement, _ attribute: String) throws(NoAnswer) -> CFTypeRef? {
         var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
+        switch ax({ AXUIElementCopyAttributeValue(element, attribute as CFString, &value) }) {
+        case .success: return value
+        case .noValue, .attributeUnsupported: return nil
+        default: throw NoAnswer()
+        }
+    }
+
+    /// Makes one Accessibility call, unless the app is backed off. A call that waited out at
+    /// least half the timeout backs the app off. An app still launching fails in under 9 ms
+    /// (`kosmos-probe ax-timeout`) and is left to the launch retries.
+    private func ax(_ call: () -> AXError) -> AXError {
+        guard askingSince == nil else { return .cannotComplete }
+        let start = ContinuousClock.now
+        let result = call()
+        if result == .cannotComplete, ContinuousClock.now - start > .seconds(Double(Self.timeout) / 2) {
+            askingSince = start
+            log.notice("\(self.name, privacy: .public) did not answer Accessibility in \(Self.timeout, format: .fixed(precision: 1)) s; asking every 0.5 s")
+            scheduleProbe()
+        }
+        return result
+    }
+
+    private func scheduleProbe() {
+        guard probe == nil else { return }
+        let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + 0.5, 0.5, 0, 0) { [weak self] _ in
+            self?.assumeIsolated { $0.askAgain() }
+        }
+        CFRunLoopAddTimer(executor.runLoop, timer, .defaultMode)
+        probe = timer
+    }
+
+    /// One read with a 50 ms timeout. Any answer ends the backoff. A worker that has not
+    /// started starts; one that has tracks the windows created meanwhile, writes the held
+    /// frames and reports `answering`.
+    private func askAgain() {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
+        let since = askingSince
+        askingSince = nil
+        if started {
+            _ = trackWindows()
+            guard askingSince == nil else { return }   // timed out again
+            drainWrites()
+            send(.answering)
+        } else if !start() {
+            return   // asked again at the next tick
+        }
+        if let probe { CFRunLoopTimerInvalidate(probe) }
+        probe = nil
+        if let since {
+            log.notice("\(self.name, privacy: .public) answers Accessibility again after \((ContinuousClock.now - since).formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public)")
+        }
     }
 
     private func send(_ kind: AXReport.Kind) {
