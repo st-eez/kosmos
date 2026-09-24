@@ -208,9 +208,13 @@ public struct Session: Sendable {
         workspaces[name]!.focus(window)
         home[window] = name
         if follow, name != visible {
+            let onScreen = source == visible
             var plan = show(name)
-            plan.hide.removeAll { $0 == window }   // it travels with the switch
-            plan.show.removeAll { $0 == window }
+            if onScreen {
+                // On screen already, it travels with the switch.
+                plan.hide.removeAll { $0 == window }
+                plan.show.removeAll { $0 == window }
+            }
             return plan
         }
         var plan = Plan()

@@ -72,3 +72,30 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(me.start > 1_700_000_000_000_000)
     #expect(ProcessIdentity.windowServer() != nil)
 }
+
+@Test func windowEntriesKeepEveryField() throws {
+    let url = temporaryFile()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let file = try RecordFile(url: url)
+    let written = RecoveryRecord(windowServer: identity, manager: ProcessIdentity(pid: 7, start: 9), spaces: [11, 12],
+                                 windows: [.init(id: 0xA1B2C3D4, owner: ProcessIdentity(pid: 301, start: 5_000_000_001), originalSpace: 77),
+                                           .init(id: 5, owner: ProcessIdentity(pid: 302, start: 6), originalSpace: 0)])
+    file.publish(written)
+    #expect(try RecordFile(url: url).read() == written)
+}
+
+/// The byte layout is what a newer build reads after an older one died. Changing it
+/// needs a new format version, so this test pins it.
+@Test func recordBytesAreStable() {
+    let record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 3, start: 4),
+                                spaces: [5], windows: [.init(id: 6, owner: ProcessIdentity(pid: 7, start: 8), originalSpace: 9)])
+    let expected: [UInt8] = [
+        0x4d, 0x53, 0x4f, 0x4b, 1, 0, 0, 0,           // magic "KOSM", version 1
+        1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,           // WindowServer pid, start
+        3, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,           // manager pid, start
+        1, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0,           // one Space
+        1, 0, 0, 0,                                   // one window:
+        6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0,  // id, owner pid, start, original Space
+    ]
+    #expect(record.encoded() == expected)
+}

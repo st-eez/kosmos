@@ -9,6 +9,9 @@ private let guardianLog = Logger(subsystem: "io.github.st-eez.kosmos", category:
 @MainActor
 final class Guardian {
     private(set) var isReady = false
+    /// Called when the guardian keeps dying and Kosmos stops trying: nothing may stay
+    /// concealed without it.
+    var onUnavailable: (@MainActor () -> Void)?
     private var exitSource: DispatchSourceProcess?
     private var recentExits: [ContinuousClock.Instant] = []
 
@@ -81,7 +84,9 @@ final class Guardian {
         let now = ContinuousClock.now
         recentExits = recentExits.filter { now - $0 < .seconds(10) } + [now]
         guard recentExits.count <= 3 else {
-            return guardianLog.fault("guardian exited 4 times in 10 s; hiding stays off")
+            guardianLog.fault("guardian exited 4 times in 10 s; hiding stays off")
+            onUnavailable?()
+            return
         }
         guardianLog.error("guardian \(pid) exited with status \(status); restarting")
         spawn()

@@ -18,11 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: Controller?
     private var server: IPCServer?
     private var hotkeys: Hotkeys?
+    private var hiding: Hiding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
-            // The lock keeps a second Kosmos out and serializes recovery with the guardian.
-            guard let lock = try FileLock(KosmosFiles.lock) else {
+            // The lock keeps a second Kosmos out and serializes recovery with the guardian,
+            // which holds it for up to about a second after a crash.
+            var acquired = try FileLock(KosmosFiles.lock)
+            for _ in 0..<60 where acquired == nil {
+                usleep(50_000)
+                acquired = try FileLock(KosmosFiles.lock)
+            }
+            guard let lock = acquired else {
                 log.error("another Kosmos is running")
                 exit(1)
             }
@@ -53,7 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         server?.stop()
-        if let record { log.notice("quit recovery: \(String(describing: Recovery.run(file: record)), privacy: .public)") }
+        // Through Hiding when it exists, so batches still queued land first.
+        let outcome = hiding?.recoverNow() ?? record.map { Recovery.run(file: $0) }
+        if let outcome { log.notice("quit recovery: \(String(describing: outcome), privacy: .public)") }
     }
 
     /// The socket starts after the instance lock, which rules out a live server at its path.
@@ -139,8 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let displays = ConfigFile.displays()
         let names = config.map { $0.setup(for: displays).workspaces } ?? (1...9).map(String.init)
         let gaps = config.flatMap { config in displays.first.map { ConfigFile.gaps(config, on: $0) } } ?? Gaps()
-        let controller = Controller(inventory: inventory, hiding: Hiding(record: record, guardian: guardian),
-                                    names: names, gaps: gaps, managing: managing)
+        let hiding = Hiding(record: record, guardian: guardian)
+        self.hiding = hiding
+        let controller = Controller(inventory: inventory, hiding: hiding, names: names, gaps: gaps, managing: managing)
         controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the

@@ -191,3 +191,14 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
     #expect(s.workspace(of: 7) == "3")
 }
+
+@Test func followingAWindowFromAHiddenWorkspaceRevealsIt() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(7, to: "2")
+    let plan = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: true, window: 7))!
+    #expect(s.visible == "3")
+    #expect(plan.show == [7])      // concealed on 2, it must be revealed on 3
+    #expect(plan.hide == [1])
+    #expect(plan.focus == .window(7))
+}

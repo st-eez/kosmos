@@ -14,50 +14,55 @@ public enum Recovery {
         case nothingRecorded
         /// The record belongs to an earlier WindowServer, whose Spaces are gone.
         case staleSession
+        /// The WindowServer could not be identified; the record is kept.
+        case windowServerUnknown
         case restored(windows: Int, spaces: Int)
-        /// Some windows stayed in a recorded Space; the record is kept for another attempt.
+        /// Some windows are still in a recorded Space or on no Space; the record is kept
+        /// for another attempt.
         case incomplete(remaining: Int)
     }
 
     public static func run(file: RecordFile) -> Outcome {
         guard let record = file.read() else { return .nothingRecorded }
-        guard record.windowServer == ProcessIdentity.windowServer() else {
+        guard let windowServer = ProcessIdentity.windowServer() else { return .windowServerUnknown }
+        guard record.windowServer == windowServer else {
             file.clear()
             return .staleSession
         }
 
         // A move Kosmos issued just before it died may still be landing.
-        var members = settledMembers(of: record.spaces)
-        let recorded = Set(record.windows.map(\.id))
-        let stranded = recorded.filter { !SkyLight.rows([$0]).isEmpty && spaces(of: $0).isEmpty }
+        let members = settledMembers(of: record.spaces)
+        let alive = Set(SkyLight.rows(Array(Set(members.values.joined()).union(record.windows.map(\.id)))).map(\.id))
+        let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
+        let stranded = record.windows.map(\.id).filter { alive.contains($0) && spaces(of: $0).isEmpty }
+        let plan = RecoveryPlan.make(members: members.mapValues { $0.filter(alive.contains) }, stranded: stranded,
+                                     hasOrdinarySpace: { !spaces(of: $0).isEmpty },
+                                     destination: { destinationSpace(for: $0, original: original[$0]) })
 
-        for (space, windows) in members where !windows.isEmpty {
+        for (destination, windows) in plan.moves {
+            var ids = windows
+            kosmos_add_windows(destination, &ids, ids.count, true)
+            _ = kosmos_barrier(destination)
+        }
+        for (space, windows) in plan.removals {
             var ids = windows
             kosmos_remove_windows(space, &ids, ids.count)
             _ = kosmos_barrier(space)
         }
 
-        // Windows left with no Space go to the current Space of the display under them.
-        let candidates = Set(members.values.joined()).union(stranded)
-        let homeless = candidates.filter { !SkyLight.rows([$0]).isEmpty && spaces(of: $0).isEmpty }
-        let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
-        for (destination, windows) in Dictionary(grouping: homeless, by: { destinationSpace(for: $0, original: original[$0]) }) {
-            guard destination != 0 else { continue }
-            var ids = Array(windows)
-            kosmos_add_windows(destination, &ids, ids.count, true)
-            _ = kosmos_barrier(destination)
+        let handled = Array(plan.moves.values.joined()) + Array(plan.removals.values.joined())
+        let remaining = currentMembers(of: record.spaces).values.reduce(0) { $0 + $1.count }
+        let withoutSpace = handled.filter { !SkyLight.rows([$0]).isEmpty && spaces(of: $0).isEmpty }.count
+        guard RecoveryPlan.isComplete(remainingMembers: remaining, withoutSpace: withoutSpace) else {
+            recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
+            return .incomplete(remaining: remaining + withoutSpace)
         }
-
-        members = currentMembers(of: record.spaces)
-        let remaining = members.values.reduce(0) { $0 + $1.count }
-        guard remaining == 0 else {
-            recoveryLog.error("\(remaining) windows still in recorded Spaces")
-            return .incomplete(remaining: remaining)
-        }
+        // Destroying an empty Space cannot be confirmed through the bridge. One left behind
+        // is empty and hides nothing.
         for space in record.spaces { kosmos_space_destroy(space) }
         file.clear()
-        recoveryLog.notice("restored \(candidates.count) windows, destroyed \(record.spaces.count) Spaces")
-        return .restored(windows: candidates.count, spaces: record.spaces.count)
+        recoveryLog.notice("restored \(handled.count) windows, destroyed \(record.spaces.count) Spaces")
+        return .restored(windows: handled.count, spaces: record.spaces.count)
     }
 
     /// Members of each Space once two reads 100 ms apart agree, for at most about 1 s.
@@ -81,14 +86,15 @@ public enum Recovery {
     }
 
     /// The current ordinary Space of the display under the window, else the window's
-    /// original Space if it still exists, else the main display's current Space.
-    private static func destinationSpace(for window: UInt32, original: UInt64?) -> UInt64 {
+    /// original Space if it still exists, else the main display's current Space, else any
+    /// ordinary Space; nil only when there is none.
+    private static func destinationSpace(for window: UInt32, original: UInt64?) -> UInt64? {
         let displays = Displays.current()
         if let frame = SkyLight.rows([window]).first?.frame,
            let space = displays.currentSpace(at: CGPoint(x: frame.midX, y: frame.midY)) {
             return space
         }
         if let original, displays.ordinarySpaces.contains(original) { return original }
-        return displays.mainCurrentSpace ?? 0
+        return displays.mainCurrentSpace ?? displays.displays.lazy.flatMap(\.spaces).first
     }
 }

@@ -24,6 +24,9 @@ final class Controller {
     private var recent: [WindowID] = []
     /// The key window macOS last reported.
     private var key: KeyWindow?
+    /// Set after a batch that did not conceal what it should have; the next switch conceals
+    /// every window of every hidden workspace again.
+    private var needsResync = false
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -154,25 +157,40 @@ final class Controller {
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now) {
         guard managing, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
-        if plan.show.isEmpty && plan.hide.isEmpty {
+        var show = plan.show, hide = plan.hide
+        if needsResync && !(show.isEmpty && hide.isEmpty) {
+            show = session.windows(of: session.visible)
+            hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
+            needsResync = false
+        }
+        if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(intent) }
         } else {
             switchGeneration += 1
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
             let submitted = ContinuousClock.now
-            hiding.apply(show: plan.show, hide: concealment(of: plan.hide)) { [weak self] confirmed in
+            hiding.apply(show: show, hide: concealment(of: hide)) { [weak self] outcome in
                 guard let self else { return }
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
-                    switch to \(self.session.visible, privacy: .public): \(plan.show.count) shown, \(plan.hide.count) hidden, \
+                    switch to \(self.session.visible, privacy: .public): \(show.count) shown, \(hide.count) hidden, \
                     before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms, \
-                    total \(Self.ms(total), privacy: .public) ms, confirmed \(confirmed)
+                    total \(Self.ms(total), privacy: .public) ms, \(String(describing: outcome), privacy: .public)
                     """)
-                if !confirmed { controllerLog.error("switch not confirmed; windows restored") }
+                switch outcome {
+                case .confirmed: break
+                case .revealedOnly:
+                    controllerLog.error("guardian not ready: windows were revealed but not concealed")
+                    self.needsResync = true
+                case .failed:
+                    controllerLog.error("switch not confirmed; concealed windows restored")
+                    self.needsResync = true
+                    return
+                }
                 // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
-                guard confirmed, generation == self.switchGeneration else { return }
+                guard generation == self.switchGeneration else { return }
                 self.requestFocus(self.intent)
             }
         }
