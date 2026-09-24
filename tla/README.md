@@ -29,28 +29,42 @@ Java 11 or newer is required.
 | Config | Inputs | Checks | Result | States |
 | --- | --- | --- | --- | --- |
 | `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,550 |
-| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 104,484 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,484 |
-| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 103,938 |
-| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 166,699 |
-| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 166,699 |
+| `user` | commands, clicks, Command-Tab | convergence, last command wins, last activation wins, recovery path | pass | 105,355 |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 105,355 |
+| `no-coalesce` | as `user`, without coalescing | convergence, last command wins, last activation wins | pass | 104,809 |
+| `hover` | commands, clicks, Command-Tab, hover | convergence, last command wins, last activation wins, recovery path | pass | 167,686 |
+| `hover-settles` | commands, clicks, Command-Tab, hover | every disturbance settles (liveness) | pass | 167,686 |
 | `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 374,395 |
-| `split-commands` | commands; focus queue and workers split, app A busy | convergence, last command wins, no blank frame, recovery path | pass | 52,684 |
-| `split-user` | as `user`, split, app A busy, background raises reported | convergence, last command wins, last activation wins, recovery path | pass | 530,263 |
-| `split-user-quiet` | as `split-user`, background raises not reported | as `split-user` | pass | 440,378 |
-| `split-user-busyb` | as `split-user`, app B busy | as `split-user` | pass | 415,258 |
-| `split-hover` | as `hover`, split, app A busy, background raises reported | convergence, last command wins, last activation wins, recovery path | pass | 962,166 |
-| `split-hover-quiet` | as `split-hover`, background raises not reported | as `split-hover` | pass | 812,303 |
-| `split-hover-settles` | as `split-hover` | every disturbance settles (liveness) | pass | 962,166 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 4,114,056 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 63 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 54 |
-| `skip-on-report` | commands; main skips the last reported key window | convergence, last command wins | fails, expected | 5,525 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 4,171,155 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 68 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 50 |
+| `skip-on-report` | commands; main skips the last reported key window | convergence, last command wins | fails, expected | 5,569 |
 
 The `split-` configs run a focus request as the focus queue's and the target app worker's
-separate steps (`SplitQueue`), with the queue's 30 ms wait able to run out for the busy app
-(`BusyApp`), and with a raise in a background app reported as a focus change or not
-(`RaiseReports`).
+separate steps (`SplitQueue`). The queue's 30 ms wait can run out for the busy app
+(`BusyApp`, app A unless named `busyb`). A raise in a background app is reported as a
+focus change, or not in the `quiet` configs (`RaiseReports`). AXRaise alone keys a window
+inside the front app, or needs the key record after it in the `nokey` configs
+(`RaiseKeys`). In the `background` configs background apps also change their own focused
+window (`AllowBackground`). The `user` configs check what `user` checks, the `hover` ones
+what `hover` checks, and `commands` what `commands` checks; `settles` checks liveness.
+
+| Config | Result | States | Config | Result | States |
+| --- | --- | --- | --- | --- | --- |
+| `split-commands` | pass | 52,773 | `split-commands-nokey` | pass | 54,593 |
+| `split-commands-quiet` | pass | 41,463 | `split-commands-nokey-quiet` | pass | 43,212 |
+| `split-user` | pass | 537,127 | `split-user-nokey` | pass | 584,354 |
+| `split-user-quiet` | pass | 469,818 | `split-user-nokey-quiet` | pass | 516,147 |
+| `split-user-busyb` | pass | 415,636 | `split-user-busyb-nokey` | pass | 448,018 |
+| `split-user-busyb-quiet` | pass | 348,703 | `split-user-busyb-nokey-quiet` | pass | 380,796 |
+| `split-user-background` | pass | 577,448 | `split-user-background-nokey` | pass | 625,390 |
+| `split-user-background-quiet` | pass | 505,322 | `split-user-d1be665` | fails, expected | 288,982 |
+| `split-hover` | pass | 969,637 | `split-hover-nokey` | pass | 1,050,988 |
+| `split-hover-quiet` | pass | 859,110 | `split-hover-nokey-quiet` | pass | 938,437 |
+| `split-hover-settles` | pass | 969,637 | `split-hover-nokey-settles` | pass | 1,050,997 |
+
+`split-user-d1be665` runs the rules robust had at d1be665 (`SplitRules`), which change 11
+replaced.
 
 `skip-on-report` records how Kosmos worked before the focus queue checked the key window
 (change 8 below). The other three expected failures record trade-offs:
@@ -130,11 +144,16 @@ change that removed it:
 11. **Recording for the other side.** Records were taken by whichever of the queue and the
     worker decided first, before the other's call. A worker that found the target key
     already dropped the queue's record, and the queue's activation then went unrecorded
-    and was adopted after the user's click. A request that turned stale after its record
-    kept it, and it swallowed the user's own click or Command-Tab to that window. A raise
-    that recorded after the queue's activation changed nothing and left its record
-    behind. Now each side records only just before its own call that changes the key
-    window: the worker before a raise inside the front app, the queue before the key
-    record that activates a background app. The queue posts no key record for a front
-    app, where it changes nothing, and each side skips its call once the other has made
-    one.
+    and was adopted after the user's click; that was still so at d1be665
+    (`split-user-d1be665`). A request that turned stale after its record kept it, and it
+    swallowed the user's own click or Command-Tab to that window. A raise that recorded
+    after the queue's activation changed nothing and left its record behind. Now each
+    side records only just before its own call that changes the key window, and skips its
+    call once the other has made one. The queue posts no key record for a front app,
+    where it changes nothing unless the window is frontmost in its app. There the worker
+    keys: when AXRaise alone keys the window, it records just before the raise; when it
+    does not, it raises, then records and posts the key record while the request is still
+    current. A worker that raised, read, and posted the key record only if the window was
+    not key served both cases but failed: the user's Command-Tab between the raise and the
+    read made the read say not key, and the key record took focus back. Which case holds
+    is for `kosmos-probe keying` to settle.

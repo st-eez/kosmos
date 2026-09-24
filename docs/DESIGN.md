@@ -170,14 +170,20 @@ off the main thread).
   focused window, read on its worker within 30 ms. The echo is recorded just before each
   call that changes the key window, so a skipped request leaves nothing that a later
   click could match ([tla/](../tla/README.md), changes 8 and 9). Inside the front app
-  only AXRaise changes the key window, so the app's worker records just before its
-  raise; for a background app the queue records just before the key record that
-  activates it, and neither side records for the other's call (change 11). When a newer
+  the key record changes nothing unless the window is frontmost in its app, so the app's
+  worker keys: if AXRaise alone keys the window it records just before the raise, and
+  otherwise it raises, then records and posts the key record. For a background app the
+  queue records just before the key record that activates it. Neither side records for
+  the other's call (change 11); `kosmos-probe keying` settles which front app case
+  holds. When a newer
   command for another workspace is already queued, the older one lays out but doesn't
   focus.
 - A report from an app that is not the front process when it arrives consumes an echo it
   matches and is otherwise ignored: raising a window in a background app makes some apps
-  report it, and after a switch that window can be concealed (change 10).
+  report it, after a switch that window can be concealed (change 10), and background
+  apps report windows they open. The check runs in the observer callback, which waits
+  behind a busy worker, so a user's click inside the front app that races Kosmos's
+  activation of another app can be judged against the newer front app and missed.
 - The private path has a kill switch: a crash guard, and repeated wrong-window read-backs
   disable it.
 
