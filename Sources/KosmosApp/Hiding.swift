@@ -13,14 +13,11 @@ private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 @MainActor
 final class Hiding {
     /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,
-    /// preparing and sending its operations, confirming them, the recovery after a batch
-    /// that failed, and the way back to the main actor.
+    /// preparing and sending its operations, the barrier with its read, the recovery after a
+    /// batch that failed, and the way back to the main actor.
     struct Timing: Sendable {
         var queued = Duration.zero, sent = Duration.zero, confirmed = Duration.zero
         var recovered = Duration.zero, returned = Duration.zero
-        /// The confirmation needed the barrier because direct reads did not show the batch
-        /// done in time; nil when the batch read nothing.
-        var barrier: Bool?
     }
 
     enum Outcome: Sendable {
@@ -60,13 +57,13 @@ final class Hiding {
         let submitted = ContinuousClock.now
         bridge.async {
             let started = ContinuousClock.now
-            let (confirmed, sent, barrier) = store.apply(show: show, hide: hide)
+            let (confirmed, sent) = store.apply(show: show, hide: hide)
             let applied = ContinuousClock.now
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
             let finished = ContinuousClock.now
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
-                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier)
+                                confirmed: applied - (sent ?? applied), recovered: finished - applied)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     timing.returned = .now - finished
@@ -161,42 +158,22 @@ private final class HidingStore: @unchecked Sendable {
         return true
     }
 
-    /// Whether the batch was confirmed, when it had sent its operations (nil if it stopped
-    /// before), and whether its confirmation needed the barrier (nil if it read nothing).
-    func apply(show: [UInt32], hide: [UInt32]) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?) {
-        guard let (batch, sent) = send(show: show, hide: hide) else { return (false, nil, nil) }
-        let touched = batch.touched
-        guard let any = touched.first else { return (true, sent, nil) }
-        /// Whether the touched Spaces show the batch done. A failed read leaves its Space out,
-        /// which proves nothing.
-        func done() -> Bool {
-            var members: [UInt64: Set<UInt32>] = [:]
-            for space in touched {
-                if let list = kosmos_space_windows(space) as? [UInt32] { members[space] = Set(list) }
-            }
-            return batch.isDone(members: members)
+    /// Whether the batch was confirmed, and when it had sent its operations (nil if it
+    /// stopped before).
+    func apply(show: [UInt32], hide: [UInt32]) -> (confirmed: Bool, sent: ContinuousClock.Instant?) {
+        guard let (batch, sent) = send(show: show, hide: hide) else { return (false, nil) }
+        // One barrier after every operation of the batch: the bridge runs them in order.
+        guard let any = batch.touched.first else { return (true, sent) }
+        guard kosmos_barrier(any) else { return (false, sent) }
+        // A failed read leaves its Space out, which proves nothing and fails the batch.
+        var members: [UInt64: Set<UInt32>] = [:]
+        for space in batch.touched {
+            if let list = kosmos_space_windows(space) as? [UInt32] { members[space] = Set(list) }
         }
-        // Reads on Kosmos's own connection show the operations once WindowServer applied
-        // them, usually within a millisecond. A bridged read also waits behind
-        // WindowManager.app, which rebuilds its window model when a window joins or leaves
-        // an ordinary Space, as a reveal that adds does. So the batch reads directly
-        // for up to readBound, and only then sends the barrier, after which the bridge has
-        // run every operation and one read decides.
-        let deadline = ContinuousClock.now + Self.readBound
-        var confirmed = done()
-        while !confirmed && ContinuousClock.now < deadline {
-            usleep(100)
-            confirmed = done()
-        }
-        if !confirmed {
-            guard kosmos_barrier(any), done() else { return (false, sent, true) }
-        }
+        guard batch.isDone(members: members) else { return (false, sent) }
         ledger.commit(batch, into: space)
-        return (true, sent, !confirmed)
+        return (true, sent)
     }
-
-    /// How long a batch reads the Spaces directly before it sends the barrier.
-    private static let readBound: Duration = .milliseconds(10)
 
     /// Sends a batch's operations: adds, removals, then conceals. Nil when it stops before,
     /// with the batch and the time it had sent them otherwise.
