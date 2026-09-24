@@ -34,6 +34,8 @@ final class Controller {
     var rules: [WindowRule] = []
     /// Move the pointer into a window that a command focused.
     var mouseFollowsFocus = false
+    /// The active display profile, for the bar.
+    var profile: String?
     var publish: (@MainActor (Data) -> Void)?
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
@@ -59,6 +61,8 @@ final class Controller {
 
     func run(_ arguments: [String], received: ContinuousClock.Instant) -> (code: Int32, text: String) {
         switch arguments {
+        case ["state"]:
+            return (0, String(decoding: stateJSON(), as: UTF8.self))
         case ["list-workspaces"]:
             return (0, session.names.map { $0 == session.visible ? "\($0) *" : $0 }.joined(separator: "\n"))
         case ["list-windows"]:
@@ -273,15 +277,21 @@ final class Controller {
         recent.append(window)
     }
 
-    /// One snapshot for the bar and for `kosmos subscribe`.
+    /// One snapshot for the bar and for `kosmos subscribe` (DESIGN.md, section 5.12).
     private func publishState() {
-        let workspaces = session.names.map { name -> [String: Any] in
-            ["name": name, "windows": session.windows(of: name).count, "visible": name == session.visible]
-        }
-        var state: [String: Any] = ["workspaces": workspaces, "visible": session.visible]
-        if let focused = session.focused { state["focused"] = Int(focused) }
-        guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) else { return }
+        let data = stateJSON()
         bar.publish(data)
         publish?(data)
+    }
+
+    /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.
+    private func stateJSON() -> Data {
+        let snapshot = session.barSnapshot(
+            profile: profile, displayName: NSScreen.main?.localizedName ?? "Display",
+            app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
+            frame: { [inventory] id in inventory.windows[id]?.frame })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(snapshot)) ?? Data("{}".utf8)
     }
 }
