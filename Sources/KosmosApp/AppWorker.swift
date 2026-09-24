@@ -251,9 +251,9 @@ actor AppWorker {
                 send(.windowDestroyed(id))
             }
         case kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification:
-            if let id = windowID(element) { send(.minimized(id, notification == kAXWindowMiniaturizedNotification)) }
+            if let id = id(of: element) { send(.minimized(id, notification == kAXWindowMiniaturizedNotification)) }
         case kAXTitleChangedNotification:
-            if let id = windowID(element) { send(.titleChanged(id)) }
+            if let id = id(of: element) { send(.titleChanged(id)) }
         default:
             break
         }
@@ -278,6 +278,13 @@ actor AppWorker {
         ax { AXObserverAddNotification(observer!, element, notification as CFString, Unmanaged.passUnretained(self).toOpaque()) }
     }
 
+    /// A tracked window's id without a round trip to the app, so a notification that arrives
+    /// while the app is backed off still names its window; otherwise the app's answer.
+    private func id(of element: AXUIElement) -> UInt32? {
+        elements.first { CFEqual($0.value, element) }?.key ?? windowID(element)
+    }
+
+    /// Asks the app, so it waits out the timeout when the app hangs.
     private func windowID(_ element: AXUIElement) -> UInt32? {
         var id: UInt32 = 0
         return ax { _AXUIElementGetWindow(element, &id) } == .success && id != 0 ? id : nil
