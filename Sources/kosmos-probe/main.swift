@@ -16,6 +16,10 @@
 //                                   native fullscreen, and when: SkyLight Space events, and
 //                                   Displays.isFullscreen after each Space membership event,
 //                                   as the inventory checks it. dry never enters.
+//   kosmos-probe departures         When the key window leaves, which does macOS report
+//                                   first: the window leaving (ordered out or destroyed) or
+//                                   the next key window? Minimizes, closes and hides a
+//                                   window of its own accessory app, with one clock.
 //                                   The window belongs to an accessory app, which Kosmos
 //                                   does not manage.
 import AppKit
@@ -35,8 +39,10 @@ case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
 case "fullscreen-window": fullscreenWindow()
 case "fullscreen": fullscreen()
+case "departures-window": departuresWindow()
+case "departures": departures()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures")
     exit(2)
 }
 
@@ -285,6 +291,86 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
     var ids = [probeWindow]
     SLSRequestNotificationsForWindows(SLSMainConnectionID(), &ids, 1)
     DispatchQueue.main.asyncAfter(deadline: .now() + 10) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+/// Milliseconds since boot, the same in every process.
+func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
+
+/// Two windows of an accessory app. The first is minimized and restored, then closed,
+/// then the app hides; each key change is printed with its uptime.
+@MainActor func departuresWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    func window(_ x: CGFloat, _ title: String) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: x, y: 160, width: 320, height: 220),
+                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = title
+        window.isReleasedWhenClosed = false
+        return window
+    }
+    let other = window(140, "kosmos-probe B"), first = window(500, "kosmos-probe A")
+    other.makeKeyAndOrderFront(nil)
+    first.makeKeyAndOrderFront(nil)
+    app.activate()
+    print("\(first.windowNumber) \(other.windowNumber)")
+    let center = NotificationCenter.default
+    center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
+        print(String(format: "%.1f child: key %d", uptime(), (note.object as? NSWindow)?.windowNumber ?? 0))
+    }
+    let say = { (text: String) in print(String(format: "%.1f child: ", uptime()) + text) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("minimize A"); first.miniaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { say("restore A"); first.deminiaturize(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { say("close A"); first.close() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { say("hide app"); app.hide(nil) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+nonisolated(unsafe) var departureWindows: Set<UInt32> = []
+
+@MainActor func departures() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["departures-window"]
+    let pipe = Pipe()
+    child.standardOutput = pipe
+    try! child.run()
+    var line = Data()
+    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
+    let ids = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
+    departureWindows = Set(ids)
+    print("windows A \(ids[0]) B \(ids[1]), pid \(child.processIdentifier)")
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { print(text) }
+    }
+    for id: UInt32 in [804, 806, 807, 808, 815, 816, 1325, 1326] {
+        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+            let window: UInt32 = id >= 1325
+                ? (bytes.count >= 12 ? bytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self) : 0)
+                : (bytes.count >= 4 ? bytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self) : 0)
+            guard departureWindows.contains(window) else { return }
+            print(String(format: "%.1f event %d window %d", uptime(), id, window))
+        }, id, nil)
+    }
+    var watched = ids
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    let center = NSWorkspace.shared.notificationCenter
+    for name in [NSWorkspace.didHideApplicationNotification, NSWorkspace.didActivateApplicationNotification,
+                 NSWorkspace.didDeactivateApplicationNotification] {
+        center.addObserver(forName: name, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let short = name.rawValue.replacingOccurrences(of: "NSWorkspace", with: "").replacingOccurrences(of: "ApplicationNotification", with: "")
+            print(String(format: "%.1f workspace %@ %@", uptime(), short, app?.localizedName ?? "?"))
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 8) { exit(0) }
     app.run()
     exit(0)
 }
