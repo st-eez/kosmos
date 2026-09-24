@@ -1,5 +1,6 @@
 import AppKit
 import KosmosCore
+import KosmosRecovery
 
 /// The config file at ~/.config/kosmos/kosmos.toml and what it resolves to on the connected
 /// displays (DESIGN.md, section 5.8).
@@ -8,14 +9,46 @@ enum ConfigFile {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/kosmos/kosmos.toml")
     }
 
-    /// The config, or nil with the problems to show. A missing file is not an error: Kosmos
-    /// runs with nine workspaces and no bindings.
-    static func load() -> (config: Config?, problems: [String]) {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return (nil, ["no config at \(url.path); using workspaces 1 to 9 and no bindings"])
+    /// The last file that loaded without errors, used when the file is broken at launch.
+    static var lastGood: URL { KosmosFiles.support.appending(path: "last-good.toml") }
+
+    struct Loaded {
+        /// Nil when there is nothing to apply.
+        var config: Config?
+        /// Problems that kept the config from loading.
+        var errors: [String] = []
+        /// Problems in a config that loaded anyway.
+        var warnings: [String] = []
+        /// Where `config` came from, for the log.
+        var source = "the config file"
+    }
+
+    /// Reads and checks the config. At launch a broken file falls back to the last good one.
+    static func load(atLaunch: Bool) -> Loaded {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return Loaded(config: nil, warnings: ["no config at \(url.path); using workspaces 1 to 9 and no bindings"],
+                          source: "the defaults")
         }
-        let (config, diagnostics) = Config.load(text)
-        return (config, diagnostics.map { "\(url.path):\($0)" })
+        var loaded = Loaded()
+        do {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            let (config, diagnostics) = Config.load(text)
+            loaded.errors = diagnostics.filter { $0.severity == .error }.map { "\(url.path):\($0)" }
+            loaded.warnings = diagnostics.filter { $0.severity != .error }.map { "\(url.path):\($0)" }
+            loaded.config = config
+            if config != nil { try? text.write(to: lastGood, atomically: true, encoding: .utf8) }
+        } catch {
+            loaded.errors = ["cannot read \(url.path): \(error.localizedDescription)"]
+        }
+        if loaded.config == nil, atLaunch, let text = try? String(contentsOf: lastGood, encoding: .utf8),
+           let config = Config.load(text).config {
+            loaded.config = config
+            loaded.source = "the last good config"
+        }
+        if let config = loaded.config, config.monitors.values.contains(where: { if case .serial = $0 { true } else { false } }) {
+            loaded.warnings.append("serial matchers do not match yet: displays carry no serial until multi-monitor support")
+        }
+        return loaded
     }
 
     /// The displays as the config's monitor matchers see them. Serial numbers come with

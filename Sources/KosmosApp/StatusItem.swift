@@ -6,13 +6,12 @@ import KosmosIPC
 /// again (DESIGN.md, section 2). The menu is built when it opens.
 @MainActor
 final class StatusItem: NSObject, NSMenuDelegate {
-    enum State { case running, accessibilityMissing, configError }
-
-    var state = State.running {
-        didSet { if state != oldValue { updateImage() } }
-    }
+    var accessibilityMissing = false { didSet { updateImage() } }
+    /// Config errors and hotkeys that could not be registered, shown in the menu.
+    var problems: [String] = [] { didSet { updateImage() } }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private var shownImage = ""
 
     override init() {
         super.init()
@@ -23,12 +22,12 @@ final class StatusItem: NSObject, NSMenuDelegate {
         updateImage()
     }
 
+    /// Waiting for Accessibility outranks problems, which outrank running normally.
     private func updateImage() {
-        let name = switch state {
-        case .running: "square.grid.2x2"
-        case .accessibilityMissing: "exclamationmark.triangle"
-        case .configError: "exclamationmark.octagon"
-        }
+        let name = accessibilityMissing ? "exclamationmark.triangle"
+            : problems.isEmpty ? "square.grid.2x2" : "exclamationmark.octagon"
+        guard name != shownImage else { return }
+        shownImage = name
         let image = NSImage(systemSymbolName: name, accessibilityDescription: "Kosmos")
         image?.isTemplate = true
         item.button?.image = image
@@ -37,12 +36,11 @@ final class StatusItem: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         menu.addItem(withTitle: "Kosmos \(kosmosVersion)", action: nil, keyEquivalent: "")
-        if state == .accessibilityMissing {
+        if accessibilityMissing {
             menu.addItem(withTitle: "Waiting for Accessibility permission", action: nil, keyEquivalent: "")
         }
-        if state == .configError {
-            menu.addItem(withTitle: "Config has errors; the previous config is running", action: nil, keyEquivalent: "")
-        }
+        for problem in problems.prefix(8) { menu.addItem(withTitle: problem, action: nil, keyEquivalent: "") }
+        if problems.count > 8 { menu.addItem(withTitle: "and \(problems.count - 8) more in the log", action: nil, keyEquivalent: "") }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Kosmos", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }

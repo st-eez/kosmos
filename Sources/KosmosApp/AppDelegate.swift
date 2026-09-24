@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: Controller?
     private var server: IPCServer?
     private var hotkeys: Hotkeys?
+    /// False while another tiling window manager runs.
+    private var managing = false
+    private var configProblems: [String] = []
+    private var hotkeyProblems: [String] = []
     private var hiding: Hiding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -53,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AXIsProcessTrusted() {
             start()
         } else {
-            statusItem.state = .accessibilityMissing
+            statusItem.accessibilityMissing = true
             onboarding = Onboarding { [weak self] in self?.accessibilityGranted() }
         }
     }
@@ -84,8 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case ["ping"]: return Response(stdout: "pong")
         case ["version"]: return Response(stdout: kosmosVersion)
         case ["reload-config"]:
-            let problems = reloadConfig()
-            return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.joined(separator: "\n"))
+            guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
+            guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+            let (applied, messages) = reloadConfig(atLaunch: false)
+            return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
         default:
             if case .success(.mode(let name)) = Command.parse(arguments) { return switchMode(to: name) }
             guard let controller else {
@@ -99,35 +105,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func switchMode(to name: String) -> Response {
         guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
         let problems = hotkeys.switchMode(to: name)
-        logHotkeyProblems(problems)
+        showHotkeyProblems(problems)
         return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
     }
 
-    /// Applies the config file, or keeps the running one when it has errors.
-    @discardableResult
-    private func reloadConfig() -> [String] {
-        let (config, problems) = ConfigFile.load()
-        for problem in problems { log.error("config: \(problem, privacy: .public)") }
-        guard let config, let controller else {
-            statusItem?.state = config == nil && !problems.isEmpty && FileManager.default.fileExists(atPath: ConfigFile.url.path)
-                ? .configError : (statusItem?.state ?? .running)
-            return problems
+    /// Applies the config file. With errors the running config stays; at launch there is
+    /// none, so the last good file or the defaults apply. Returns whether the file applied,
+    /// and every problem and warning for the CLI.
+    private func reloadConfig(atLaunch: Bool) -> (applied: Bool, messages: [String]) {
+        let loaded = ConfigFile.load(atLaunch: atLaunch)
+        for error in loaded.errors { log.error("config: \(error, privacy: .public)") }
+        for warning in loaded.warnings { log.notice("config: \(warning, privacy: .public)") }
+        guard let config = loaded.config, let controller else {
+            let running = atLaunch ? "the defaults are running" : "the previous config is still running"
+            configProblems = loaded.errors.isEmpty ? [] : ["Config has errors; \(running)"] + loaded.errors
+            updateProblems()
+            return (loaded.errors.isEmpty, loaded.errors + loaded.warnings)
         }
-        statusItem?.state = .running
+        configProblems = loaded.errors.isEmpty ? [] : ["Config has errors; \(loaded.source) is running"] + loaded.errors
         let displays = ConfigFile.displays()
         let setup = config.setup(for: displays)
         controller.reconfigure(gaps: displays.first.map { ConfigFile.gaps(config, on: $0) } ?? Gaps(), rules: setup.rules)
         controller.mouseFollowsFocus = config.mouseFollowsFocus
+        var messages = loaded.errors + loaded.warnings
         if setup.workspaces != controller.workspaceNames {
-            log.notice("the workspace list changed; it takes effect when Kosmos restarts")
+            messages.append("the workspace list changed; it takes effect when Kosmos restarts")
         }
-        let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: logHotkeyProblems) { [weak self] binding in
+        let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
             _ = self?.respond(to: binding.arguments, received: .now)
         }
         self.hotkeys = hotkeys
-        logHotkeyProblems(hotkeys.load(config.modes))
-        log.notice("config loaded: profile \(setup.profile ?? "base", privacy: .public), \(setup.workspaces.count) workspaces")
-        return problems
+        let problems = hotkeys.load(config.modes)
+        showHotkeyProblems(problems)
+        messages += problems.map(\.description)
+        log.notice("config loaded from \(loaded.source, privacy: .public): profile \(setup.profile ?? "base", privacy: .public)")
+        return (loaded.errors.isEmpty, messages)
+    }
+
+    /// Hotkeys that could not be registered, from a load, a mode switch or a layout change.
+    private func showHotkeyProblems(_ problems: [Hotkeys.Problem]) {
+        for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
+        hotkeyProblems = problems.map { "Hotkey \($0.description)" }
+        updateProblems()
+    }
+
+    private func updateProblems() {
+        statusItem?.problems = configProblems + hotkeyProblems
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
@@ -143,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func accessibilityGranted() {
         onboarding = nil
-        statusItem?.state = .running
+        statusItem?.accessibilityMissing = false
         start()
     }
 
@@ -153,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
         let managing = !otherManager || ProcessInfo.processInfo.environment["KOSMOS_MANAGE"] == "1"
         // The workspace list is read once; the rest of the config applies on every reload.
-        let config = ConfigFile.load().config
+        let config = ConfigFile.load(atLaunch: true).config
         let displays = ConfigFile.displays()
         let names = config.map { $0.setup(for: displays).workspaces } ?? (1...9).map(String.init)
         let gaps = config.flatMap { config in displays.first.map { ConfigFile.gaps(config, on: $0) } } ?? Gaps()
@@ -164,12 +187,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.
-        if managing { reloadConfig() } else { controller.rules = config.map { $0.setup(for: displays).rules } ?? [] }
+        self.managing = managing
+        if managing { _ = reloadConfig(atLaunch: true) }
         inventory.startAccessibility()
         log.notice("started, \(managing ? "managing windows" : "observing only: AeroSpace is running", privacy: .public)")
     }
-}
-
-private func logHotkeyProblems(_ problems: [Hotkeys.Problem]) {
-    for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
 }

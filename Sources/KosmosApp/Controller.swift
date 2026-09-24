@@ -53,6 +53,7 @@ final class Controller {
     func reconfigure(gaps: Gaps, rules: [WindowRule]) {
         self.rules = rules
         session.gaps = gaps
+        guard managing else { return }   // another window manager owns the frames
         writeFrames(session.frames(of: session.visible))
     }
 
