@@ -284,17 +284,21 @@ actor AppWorker {
     }
 
     /// Caches a window element under its WindowServer id and observes it. Before the
-    /// observer exists nothing is cached, so `start` still observes the window.
+    /// observer exists nothing is cached, so `start` still observes the window. Nor is a
+    /// window cached when a registration timed out: the windows tracked again after the app
+    /// answers, in `askAgain`, register it then, so its minimize is not missed for good.
     @discardableResult
     private func track(_ element: AXUIElement) -> UInt32? {
         guard let id = windowID(element) else { return nil }
         guard observer != nil else { return id }
-        if elements.updateValue(element, forKey: id) == nil {
+        if elements[id] == nil {
             for notification in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
                                  kAXWindowDeminiaturizedNotification] {
                 _ = observe(element, notification)
             }
+            guard !backoff.backedOff else { return id }
         }
+        elements[id] = element
         return id
     }
 
