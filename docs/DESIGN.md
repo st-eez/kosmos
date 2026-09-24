@@ -162,7 +162,8 @@ off the main thread).
   app's role with a 50 ms timeout every 0.5 s. When the app answers, the worker tracks the
   windows created meanwhile and writes the held frames. It stops asking and reports that
   the app answers only if none of those calls timed out, and the inventory then reads the
-  facts it could not read before. A launching app fails fast and is
+  facts it could not read before. A focus change during the backoff went unread, so while
+  the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
   left to the launch retries.
 
 ### 5.3 Hiding and recovery

@@ -348,7 +348,9 @@ actor AppWorker {
     /// One read with a 50 ms timeout. Any answer lets calls go again. A worker that has not
     /// started starts; one that has tracks the windows created meanwhile and writes the held
     /// frames. If none of those calls timed out and the worker has started, asking stops and
-    /// the worker reports `answering`, which `start` also does.
+    /// the worker reports `answering`, which `start` also does. Focus changes the worker could
+    /// not read meanwhile, such as a Command-Tab to the app, are lost, so while the app is the
+    /// front process its focused window is reported as a key window report.
     private func askAgain() {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
@@ -364,6 +366,7 @@ actor AppWorker {
         if let probe { CFRunLoopTimerInvalidate(probe) }
         probe = nil
         if wasStarted { send(.answering) }
+        if kosmos_front_pid() == pid, let window = focusedWindow() { send(.focusedWindowChanged(window)) }
         if let since {
             log.notice("\(self.name, privacy: .public) answers Accessibility again after \((ContinuousClock.now - since).formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public)")
         }
