@@ -317,7 +317,8 @@ func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 
     print("\(first.windowNumber) \(other.windowNumber)")
     let center = NotificationCenter.default
     center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
-        print(String(format: "%.1f child: key %d", uptime(), (note.object as? NSWindow)?.windowNumber ?? 0))
+        let window = note.object as? NSWindow
+        MainActor.assumeIsolated { print(String(format: "%.1f child: key %d", uptime(), window?.windowNumber ?? 0)) }
     }
     let say = { (text: String) in print(String(format: "%.1f child: ", uptime()) + text) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { say("minimize A"); first.miniaturize(nil) }
