@@ -153,8 +153,12 @@ off the main thread).
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
   and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
-  read has returned is read again when its app's worker reports it created, or reports
-  that the app answers again.
+  read has returned is read again when its app's worker reports it created, reports that
+  the app answers again, or reports the window focused, when its app unhides, and at each
+  sweep while it is ordered in. A worker asked about a window it does not know reads its
+  app's window list again first. Terminal launched hidden restored a window that no read
+  answered for and no creation report named while it stayed hidden, so before these reads
+  it was never managed (live log, September 24, 2026).
 
 ### 5.2 Geometry
 

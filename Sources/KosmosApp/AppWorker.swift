@@ -122,8 +122,11 @@ actor AppWorker {
     }
 
     /// Nil when the window is unknown to the worker or the app did not answer. The caller
-    /// keeps what it knew: an unanswered read never makes a window unmanaged.
+    /// keeps what it knew: an unanswered read never makes a window unmanaged. A window the
+    /// app did not list when the worker started, nor report created, is looked for in its
+    /// list again, as for an app launched hidden once it unhides.
     func info(_ id: UInt32) -> AXWindowInfo? {
+        if elements[id] == nil { _ = trackWindows() }
         guard let element = elements[id] else { return nil }
         do {
             return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
