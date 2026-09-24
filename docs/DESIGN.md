@@ -213,6 +213,18 @@ off the main thread).
 - Onboarding is an Accessibility window. Launch at login uses `SMAppService` with a
   `KeepAlive` agent, and config errors appear in one AppKit panel.
 
+### 5.10 Distribution
+
+- Kosmos ships the way AeroSpace does: a zip on GitHub releases holding `Kosmos.app` and
+  `bin/kosmos`, installed with a cask from Kosmos's own Homebrew tap. The cask removes the
+  quarantine attribute and links the CLI. There is no App Store build; its sandbox forbids
+  controlling other apps' windows.
+- Builds are signed with one stable certificate, so the designated requirement and the
+  Accessibility grant survive updates. An ad hoc signature changes with every build and
+  makes macOS ask for Accessibility again.
+- Notarization needs a Developer ID certificate. Adding it would remove the need to strip
+  quarantine.
+
 ## 6. Verification
 
 - **TLA+ first.** Before the scheduler exists, specify it:

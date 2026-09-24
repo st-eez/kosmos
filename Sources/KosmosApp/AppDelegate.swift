@@ -1,5 +1,38 @@
 import AppKit
+import os
 
+let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "app")
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {}
+    private var instanceLock: InstanceLock?
+    private var statusItem: StatusItem?
+    private var onboarding: Onboarding?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        do {
+            instanceLock = try InstanceLock(directory: AppPaths.support)
+        } catch {
+            log.error("\(error.localizedDescription, privacy: .public)")
+            exit(1)
+        }
+        let statusItem = StatusItem()
+        self.statusItem = statusItem
+        if AXIsProcessTrusted() {
+            start()
+        } else {
+            statusItem.state = .accessibilityMissing
+            onboarding = Onboarding { [weak self] in self?.accessibilityGranted() }
+        }
+    }
+
+    private func accessibilityGranted() {
+        onboarding = nil
+        statusItem?.state = .running
+        start()
+    }
+
+    private func start() {
+        log.info("started")
+    }
 }
