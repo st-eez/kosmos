@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboarding: Onboarding?
     private let inventory = Inventory()
     private let guardian = Guardian()
+    private let lockWatch = LockWatch()
     private var signalSources: [DispatchSourceSignal] = []
     private var controller: Controller?
     private var server: IPCServer?
@@ -66,6 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
         SkyLight.watchSecureInput { [weak self] in self?.secureInputChanged() }
         secureInputChanged()
+        lockWatch.onChange = { [weak self] locked in self?.lockChanged(locked) }
+        lockWatch.start()
         // WindowServer tracking needs no permission, so it starts before the Accessibility grant.
         inventory.start()
         if AXIsProcessTrusted() {
@@ -201,6 +204,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Locked: windows wait and nothing on screen changes. Unlocked, or awake while unlocked:
+    /// catch up (DESIGN.md, section 5.1).
+    private func lockChanged(_ locked: Bool) {
+        inventory.sessionLocked = locked
+        controller?.sessionLocked = locked
+        if !locked { controller?.resync() }
+    }
+
     private func accessibilityGranted() {
         onboarding = nil
         statusItem?.accessibilityMissing = false
@@ -231,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         focusProblem = controller.focusProblem
         updateProblems()
+        controller.sessionLocked = lockWatch.isLocked
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.

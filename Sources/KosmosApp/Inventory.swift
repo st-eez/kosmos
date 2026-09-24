@@ -22,6 +22,12 @@ final class Inventory {
     var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
+    /// While the session is locked, no window is admitted or removed and no sweep runs; the
+    /// sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to known windows
+    /// still apply.
+    var sessionLocked = false {
+        didSet { if oldValue, !sessionLocked { sweep() } }
+    }
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -154,7 +160,7 @@ final class Inventory {
 
     private func apply(_ row: WindowRow) {
         touchedDuringSweep?.insert(row.id)
-        guard ownedByRegularApp(row) else { return }
+        guard ownedByRegularApp(row), !sessionLocked || windows[row.id] != nil else { return }
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
         if old.map(isCandidate) != isCandidate(row) {
@@ -169,6 +175,7 @@ final class Inventory {
     }
 
     private func remove(_ id: UInt32, reason: StaticString) {
+        guard !sessionLocked else { return }
         touchedDuringSweep?.insert(id)
         let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
@@ -212,7 +219,7 @@ final class Inventory {
     /// windows missing from it are queried directly before they count as gone. The queries
     /// can block during a Space transition, so they run off the main thread.
     private func sweep() {
-        guard touchedDuringSweep == nil else { return }
+        guard !sessionLocked, touchedDuringSweep == nil else { return }
         touchedDuringSweep = []
         let tracked = Array(windows.keys)
         DispatchQueue.global(qos: .utility).async {
@@ -228,6 +235,7 @@ final class Inventory {
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
+        guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
         for row in rows where ownedByRegularApp(row) && windows[row.id] == nil {

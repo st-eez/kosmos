@@ -44,6 +44,10 @@ final class Controller {
     /// Called with a description when the private focus path turns off, and with nil when it
     /// turns back on.
     var onFocusProblem: (@MainActor (String?) -> Void)?
+    /// True while the session is locked or switched out. Kosmos then writes no frames, runs
+    /// no hides, requests no focus and takes no command; `resync` catches up (DESIGN.md,
+    /// section 5.1).
+    var sessionLocked = false
 
     init(inventory: Inventory, hiding: Hiding, names: [String], gaps: Gaps, managing: Bool) {
         self.inventory = inventory
@@ -108,11 +112,33 @@ final class Controller {
         case .success where !managing:
             // Changing the model without moving windows would leave the two apart.
             return (1, "observing only while another window manager runs")
+        case .success where sessionLocked:
+            return (1, "the session is locked")
         case .success(let command):
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) { execute(plan, since: received, fromCommand: true) }
             return (0, "")
         }
+    }
+
+    /// After an unlock, or a wake while unlocked: lays the shown workspace out on the display
+    /// area as it is now, conceals and reveals every window again, requests the focus intent
+    /// and publishes the state. Other workspaces are laid out when they are shown.
+    func resync() {
+        guard managing, !sessionLocked else { return publishState() }
+        let display = Controller.displayRect()
+        if display != .zero, display != session.display {
+            controllerLog.notice("display area is now \(String(describing: display), privacy: .public)")
+            session.display = display
+        }
+        // Reports received before now are older than the focus this asks for again.
+        reports.commandExecuted(receivedAt: .now)
+        var plan = Session.Plan()
+        plan.frames = session.frames(of: session.visible)
+        plan.show = session.windows(of: session.visible)
+        plan.hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
+        plan.focus = intent
+        execute(plan)
     }
 
     /// The main display's visible area in the top left origin coordinates Accessibility uses.
@@ -155,6 +181,7 @@ final class Controller {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             key = reported
+            guard !sessionLocked else { return }   // resync requests the intent again
             // Dialogs and panels are not managed; their focus is theirs.
             if let id, session.workspace(of: id) == nil { return }
             let verdict = reports.classify(reported, receivedAt: report.received,
@@ -215,7 +242,7 @@ final class Controller {
 
     /// `since` is when the command arrived, for the switch timing log.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
-        guard managing, !plan.isEmpty else { return publishState() }
+        guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -263,6 +290,7 @@ final class Controller {
     }
 
     private func writeFrames(_ targets: [WindowID: CGRect]) {
+        guard !sessionLocked else { return }
         let writes = ledger.writes(for: targets)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] ?? 0 }) where pid != 0 {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
@@ -285,6 +313,7 @@ final class Controller {
     }
 
     private func requestFocus(_ target: KeyWindow, movePointer: Bool = false) {
+        guard !sessionLocked else { return }
         if movePointer, case .window(let id) = target { centerPointer(on: id) }
         guard target != key else { return }   // already key: activating again costs the system work
         let pid: pid_t?

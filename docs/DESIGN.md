@@ -117,6 +117,22 @@ off the main thread).
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
+- The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
+  `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
+  switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
+  listen for them. Kosmos asks for immediate delivery, because AppKit holds distributed
+  notifications for an app that is not active. The session dictionary
+  (`CGSessionCopyCurrentDictionary`) gives the state at launch, as alt-tab seeds it, and is
+  read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. loginwindow
+  coming to the front, which AeroSpace and rift also watch, is no lock signal. It also
+  fronts its own dialogs, such as the log out confirmation.
+- While locked, the inventory admits and removes no window and runs no sweep, and Kosmos
+  writes no frames, runs no hides, requests no focus, ignores focus reports and refuses
+  commands. After an unlock, and after a wake while unlocked, the inventory sweeps, and
+  Kosmos lays the shown workspace out on the display area as it is then, conceals and
+  reveals every window again, requests the focus intent and publishes the state. A wake
+  gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
+  locks its screen first.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
   and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
