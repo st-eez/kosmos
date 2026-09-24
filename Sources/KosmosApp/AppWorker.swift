@@ -172,12 +172,16 @@ actor AppWorker {
         executor.perform { self.assumeIsolated { $0.raiseAndActivate(id, isCurrent: isCurrent, dropped: dropped) } }
     }
 
+    /// Each step can wait up to the timeout on a slow app, so each checks that no newer
+    /// focus intent exists first; an older request must not activate over a newer one.
     private func raiseAndActivate(_ id: UInt32, isCurrent: () -> Bool, dropped: () -> Void) {
         guard isCurrent() else { return dropped() }
         if let element = elements[id] {
             _ = ax { AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) }
         }
+        guard isCurrent() else { return dropped() }
         raiseWindow(id)
+        guard isCurrent() else { return dropped() }
         NSRunningApplication(processIdentifier: pid)?.activate(options: [])
     }
 
