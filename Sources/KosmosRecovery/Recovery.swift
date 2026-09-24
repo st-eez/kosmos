@@ -41,6 +41,8 @@ public enum Recovery {
                                      hasOrdinarySpace: { !spaces(of: $0).isEmpty },
                                      destination: { destinationSpace(for: $0, original: original[$0]) })
 
+        // Adds before removals: a window removed from its only Space lands on whichever
+        // Space is active, which can be a native fullscreen one.
         for (destination, windows) in plan.moves {
             var ids = windows
             kosmos_add_windows(destination, &ids, ids.count, true)
@@ -52,7 +54,7 @@ public enum Recovery {
             _ = kosmos_barrier(space)
         }
 
-        let handled = Array(plan.moves.values.joined()) + Array(plan.removals.values.joined())
+        let handled = Set(plan.moves.values.joined()).union(plan.removals.values.joined())
         let after = SpaceMembers.read(liveSpaces)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }

@@ -12,6 +12,11 @@
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
 //                                   itself with SIGKILL. Check afterwards that the panel
 //                                   is back, the Space is gone and the record is clear.
+//   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
+//                                   out of the holding Space, and where does a window
+//                                   removed from its only Space land? Uses a window of its
+//                                   own, invisible and off every display, in an accessory
+//                                   app, which Kosmos does not manage.
 //   kosmos-probe displays           Each display's identity as Kosmos reads it: EDID
 //                                   serial, framebuffer, and the bar number, checked against
 //                                   SketchyBar's own when it runs. Read only. Every
@@ -35,9 +40,11 @@ case "survive-kill": surviveKill()
 case "bar": bar()
 case "destroyed-space": destroyedSpace()
 case "gone-space-recovery": goneSpaceRecovery()
+case "hidden-window": showHiddenWindow()
+case "reveal": reveal()
 case "displays": displays()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | displays")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | reveal | displays")
     exit(2)
 }
 
@@ -56,10 +63,26 @@ default:
     exit(0)
 }
 
-func spawnPanel() -> (Process, UInt32) {
+/// An invisible window off every display, in an accessory app. Prints its window id and
+/// stays until killed.
+@MainActor func showHiddenWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 60, height: 60),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    window.alphaValue = 0
+    window.ignoresMouseEvents = true
+    window.orderFrontRegardless()
+    print(window.windowNumber)
+    app.run()
+    exit(0)
+}
+
+/// Runs `command` (`panel` or `hidden-window`) in a child process and returns its window.
+func spawnPanel(_ command: String = "panel") -> (Process, UInt32) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    process.arguments = ["panel"]
+    process.arguments = [command]
     let pipe = Pipe()
     process.standardOutput = pipe
     try! process.run()
@@ -215,6 +238,49 @@ func bar() {
     let start = ContinuousClock.now
     let outcome = Recovery.run(file: file)
     print("recovery of a record naming destroyed Space \(space): \(outcome) in \(String(format: "%.0f", elapsed(start))) ms; record cleared: \(file.read() == nil)")
+}
+
+@MainActor func reveal() {
+    _ = NSApplication.shared   // bridged operations need an AppKit client
+    let (child, window) = spawnPanel("hidden-window")
+    defer { child.terminate() }
+    guard let desktop = Displays.current().mainCurrentSpace else { print("the main display shows no ordinary Space"); return }
+    let space = kosmos_holding_create()
+    guard space != 0 else { print("holding Space not created"); return }
+    var ids = [window]
+    defer {
+        _ = kosmos_remove_windows(space, &ids, 1)
+        _ = kosmos_space_destroy(space)
+    }
+    print("window \(window), ordinary Space \(desktop), holding Space \(space)")
+    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier.
+    func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
+        _ = kosmos_barrier(space)
+        let ordinary = (kosmos_window_spaces(window) as? [UInt64]) ?? [], held = inSpace(window, space)
+        print("\(step): ordinary Spaces \(ordinary), in holding \(held)")
+        return (ordinary, held)
+    }
+    let cycles = 3
+    var addOnly = 0, addThenRemove = 0
+    for cycle in 1...cycles {
+        kosmos_add_windows(space, &ids, 1, true)
+        _ = state("\(cycle) strip (exclusive add to the holding Space)")
+        kosmos_add_windows(desktop, &ids, 1, true)
+        if state("\(cycle)   exclusive add to \(desktop)").held {
+            Thread.sleep(forTimeInterval: 0.2)
+            if state("\(cycle)   0.2 s later").held { addOnly += 1 }
+        }
+        kosmos_remove_windows(space, &ids, 1)
+        let revealed = state("\(cycle)   then removal from the holding Space")
+        if revealed.ordinary == [desktop] && !revealed.held { addThenRemove += 1 }
+    }
+    kosmos_add_windows(space, &ids, 1, true)
+    _ = state("strip")
+    kosmos_remove_windows(space, &ids, 1)
+    let landed = state("removal alone")
+    print("the exclusive add left the window in the holding Space in \(addOnly) of \(cycles) cycles; "
+          + "the add then the removal revealed it on \(desktop) in \(addThenRemove) of \(cycles); "
+          + "removed from its only Space, it landed on \(landed.ordinary)")
 }
 
 @MainActor func displays() {

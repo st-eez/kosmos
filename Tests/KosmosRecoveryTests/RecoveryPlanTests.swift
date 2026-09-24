@@ -7,11 +7,13 @@ import Testing
     #expect(plan.moves.isEmpty && plan.stuck.isEmpty)
 }
 
-@Test func windowsWithoutOneMoveStraightToTheirDestination() {
-    // A removal first would leave them on no Space; the exclusive add moves them in one step.
+@Test func windowsWithoutOneAreAddedToTheirDestinationAndRemoved() {
+    // The exclusive add strips only managed Spaces, so it leaves them in the recorded
+    // Space; the removal after it takes them out.
     let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
-    #expect(plan.removals == [9: [1]])
+    #expect(plan.removals == [9: [1, 2]])
     #expect(plan.moves == [5: [2]])
+    #expect(plan.windows == [1, 2])
 }
 
 @Test func windowsWithNowhereToGoStayConcealed() {
@@ -23,6 +25,7 @@ import Testing
 @Test func strandedRecordedWindowsAreMovedOnce() {
     let plan = RecoveryPlan.make(members: [9: [2]], stranded: [2, 3], hasOrdinarySpace: { _ in false }, destination: { _ in 5 })
     #expect(plan.moves == [5: [2, 3]])
+    #expect(plan.removals == [9: [2]])   // 3 is in no recorded Space
 }
 
 @Test func recoveryIsCompleteOnlyWhenNothingIsLeftAnywhere() {

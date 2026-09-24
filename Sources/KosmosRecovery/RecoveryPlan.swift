@@ -1,11 +1,12 @@
 /// What recovery does, decided from what WindowServer reports, kept apart from the calls
 /// so its decisions can be tested.
 struct RecoveryPlan: Equatable {
-    /// Windows that keep an ordinary Space: removing them from the recorded Space restores
-    /// them.
+    /// Windows in a recorded Space that have an ordinary Space, or get one from a move:
+    /// removing them from the recorded Space restores them.
     var removals: [UInt64: [UInt32]] = [:]
-    /// Windows with no ordinary Space, by destination. One exclusive add moves each into
-    /// its destination and out of the recorded Space, so no window is ever on no Space.
+    /// Windows with no ordinary Space, by destination. Their add runs before the removals,
+    /// so no window is ever on no Space. The add strips only managed Spaces, so a window in
+    /// a recorded Space is in `removals` too.
     var moves: [UInt64: [UInt32]] = [:]
     /// Windows with nowhere to go. They stay where they are and the record is kept.
     var stuck: [UInt32] = []
@@ -19,21 +20,28 @@ struct RecoveryPlan: Equatable {
     static func make(members: [UInt64: [UInt32]], stranded: [UInt32],
                      hasOrdinarySpace: (UInt32) -> Bool, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
         var plan = RecoveryPlan()
-        func place(_ window: UInt32) {
-            if let space = destination(window) { plan.moves[space, default: []].append(window) } else { plan.stuck.append(window) }
+        /// Moves the window to its destination, or keeps it stuck when it has none. Returns
+        /// whether it moves.
+        func place(_ window: UInt32) -> Bool {
+            guard let space = destination(window) else {
+                plan.stuck.append(window)
+                return false
+            }
+            plan.moves[space, default: []].append(window)
+            return true
         }
         for (space, windows) in members.sorted(by: { $0.key < $1.key }) {
-            for window in windows {
-                if hasOrdinarySpace(window) { plan.removals[space, default: []].append(window) } else { place(window) }
+            for window in windows where hasOrdinarySpace(window) || place(window) {
+                plan.removals[space, default: []].append(window)
             }
         }
         let inMembers = Set(members.values.joined())
-        for window in stranded where !inMembers.contains(window) { place(window) }
+        for window in stranded where !inMembers.contains(window) { _ = place(window) }
         return plan
     }
 
     /// Every window the plan covers, including the ones with nowhere to go.
-    var windows: [UInt32] { Array(removals.values.joined()) + Array(moves.values.joined()) + stuck }
+    var windows: Set<UInt32> { Set(removals.values.joined()).union(moves.values.joined()).union(stuck) }
 
     /// Recovery is complete only when no window is left in a recorded Space and every
     /// window of the plan, including the stuck ones, is on an ordinary Space. Otherwise the

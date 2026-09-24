@@ -140,14 +140,16 @@ private final class HidingStore: @unchecked Sendable {
         let fresh = hide.keys.filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(fresh) { return false }
         let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
-        for (from, windows) in batch.removals {
-            var ids = windows
-            kosmos_remove_windows(from, &ids, ids.count)
-        }
+        // Adds before removals: a window removed from its only Space lands on whichever
+        // Space is active, which can be a native fullscreen one.
         if !batch.moves.isEmpty {
             guard let destination = Displays.current().mainCurrentSpace else { return false }
             var ids = batch.moves
             kosmos_add_windows(destination, &ids, ids.count, true)
+        }
+        for (from, windows) in batch.removals {
+            var ids = windows
+            kosmos_remove_windows(from, &ids, ids.count)
         }
         var ids = batch.keep
         kosmos_add_windows(space, &ids, ids.count, false)
@@ -165,7 +167,8 @@ private final class HidingStore: @unchecked Sendable {
         }
         let hidden = batch.mustBeIn.allSatisfy { members[$0.value]!.contains($0.key) }
         let shown = batch.mustHaveLeft.allSatisfy { !members[$0.value]!.contains($0.key) }
-        guard hidden && shown else { return false }
+        let placed = batch.moves.allSatisfy(Self.hasOrdinarySpace)
+        guard hidden && shown && placed else { return false }
         ledger.commit(batch, into: space)
         return true
     }

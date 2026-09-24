@@ -5,7 +5,8 @@ public struct ConcealLedger: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         /// Also keeps its ordinary Space, so Command-Tab can pick it; revealed by removal.
         case keepOrdinary
-        /// In the concealing Space only; revealed by moving it back to an ordinary Space.
+        /// In the concealing Space only; revealed by an add to an ordinary Space, then a
+        /// removal from the concealing Space.
         case exclusive
     }
 
@@ -21,9 +22,10 @@ public struct ConcealLedger: Equatable, Sendable {
 
     /// The operations for one batch.
     public struct Batch: Equatable, Sendable {
-        /// Windows to remove from the Space that holds them.
+        /// Revealed windows, by the concealing Space to remove them from.
         public var removals: [UInt64: [UInt32]] = [:]
-        /// Windows to move back to an ordinary Space.
+        /// Windows with no ordinary Space, to add to one before their removal. The add
+        /// strips only managed Spaces, so it leaves them in the concealing Space.
         public var moves: [UInt32] = []
         /// Windows to conceal for the first time, by kind.
         public var keep: [UInt32] = []
@@ -58,18 +60,15 @@ public struct ConcealLedger: Equatable, Sendable {
 
     /// The operations that reveal `show` and conceal `hide` in `space`. A window that is
     /// already concealed keeps its kind and its Space, whatever kind `hide` asks for. A
-    /// window revealed by removal must still have an ordinary Space, or removing it would
-    /// leave it on none; one that lost it is moved instead.
+    /// revealed window must still have an ordinary Space, or removing it would leave it on
+    /// none; one that lost it is added to one first.
     public func batch(show: [UInt32], hide: [UInt32: Kind], into space: UInt64,
                       hasOrdinarySpace: (UInt32) -> Bool = { _ in true }) -> Batch {
         var batch = Batch()
         for window in show {
             guard let entry = entries[window] else { continue }
-            if entry.kind == .keepOrdinary, hasOrdinarySpace(window) {
-                batch.removals[entry.space, default: []].append(window)
-            } else {
-                batch.moves.append(window)
-            }
+            if entry.kind == .exclusive || !hasOrdinarySpace(window) { batch.moves.append(window) }
+            batch.removals[entry.space, default: []].append(window)
             batch.mustHaveLeft[window] = entry.space
         }
         for (window, kind) in hide.sorted(by: { $0.key < $1.key }) {
