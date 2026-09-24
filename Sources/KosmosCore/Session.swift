@@ -291,6 +291,19 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// The workspace a command names that the session does not have, as one the active
+    /// profile leaves out, or nil. AeroSpace creates a workspace on demand; Kosmos's list is
+    /// fixed by the profile, whose `merge-workspaces` puts the windows of the others on its
+    /// own, so such a command fails.
+    public func missingWorkspace(in command: Command) -> String? {
+        switch command {
+        case .workspace(.named(let name)), .moveNodeToWorkspace(.named(let name), _, _):
+            workspaces[name] == nil ? name : nil
+        default:
+            nil
+        }
+    }
+
     private func resolve(_ target: Command.Workspace) -> String? {
         switch target {
         case .named(let name):

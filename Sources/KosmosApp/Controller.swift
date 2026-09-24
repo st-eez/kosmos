@@ -149,6 +149,9 @@ final class Controller {
         case .success where sessionLocked:
             return (1, "the session is locked")
         case .success(let command):
+            if let missing = session.missingWorkspace(in: command) {
+                return (1, "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))")
+            }
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) { execute(plan, since: received, fromCommand: true) }
             return (0, "")

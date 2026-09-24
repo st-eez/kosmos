@@ -128,9 +128,19 @@ actor AppWorker {
         executor.stop()
     }
 
-    /// Nil when the window is unknown to the worker or the app did not answer. The caller
-    /// keeps what it knew: an unanswered read never makes a window unmanaged.
-    func info(_ id: UInt32) -> AXWindowInfo? {
+    /// The facts of each window the worker knows. A window missing is unknown to it, or its
+    /// app did not answer; the caller keeps what it knew, since an unanswered read never makes
+    /// a window unmanaged. Windows the app did not list when the worker started, nor report
+    /// created, are looked for in its list again, once for all of them, as for an app
+    /// launched hidden once it unhides.
+    func info(_ ids: [UInt32]) -> [UInt32: AXWindowInfo] {
+        if ids.contains(where: { elements[$0] == nil }) { _ = trackWindows() }
+        var infos: [UInt32: AXWindowInfo] = [:]
+        for id in ids { infos[id] = info(id) }
+        return infos
+    }
+
+    private func info(_ id: UInt32) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
             return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
@@ -357,7 +367,8 @@ actor AppWorker {
     /// answers, in `askAgain`, register it then, so its minimize is not missed for good.
     @discardableResult
     private func track(_ element: AXUIElement) -> UInt32? {
-        guard let id = windowID(element) else { return nil }
+        // A cached element needs no round trip, so listing the windows again costs one call.
+        guard let id = id(of: element) else { return nil }
         guard observer != nil else { return id }
         if elements[id] == nil {
             for notification in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,

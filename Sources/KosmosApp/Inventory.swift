@@ -57,6 +57,8 @@ final class Inventory {
     /// From the unlock until the sweep after it, which admits and removes the windows the
     /// lock held back.
     private var awaitingUnlockSweep = false
+    /// A Space was created or destroyed, or the active Space changed, since the last sweep.
+    private var spacesChanged = false
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
@@ -138,13 +140,15 @@ final class Inventory {
         case .windowCreated(let id):
             refresh(id)
             // WindowServer can report the window before its app's worker knows it.
-            readIfUnknown(id)
+            readIfUnknown([id])
         case .answering:
-            for (id, row) in windows where row.pid == report.pid { readIfUnknown(id) }
+            readIfUnknown(windows.filter { $0.value.pid == report.pid }.keys)
         case .windowDestroyed(let id):
             // AX alone never removes a window; WindowServer decides.
             refresh(id)
         case .focusedWindowChanged(let id):
+            // The worker knows a window its app reports focused.
+            if let id { readIfUnknown([id]) }
             // Repeats still go to the controller, which counts echoes.
             if id != focused {
                 focused = id
@@ -161,28 +165,42 @@ final class Inventory {
             if minimized, windows[id]?.orderedIn == true { departures.left(id, at: .now) } else if !minimized { departures.returned(id) }
             // A minimized window can report another subrole (Activity Monitor says AXDialog),
             // so its role is judged again only once it is back.
-            if !minimized, let row = windows[id] { readAX(id, pid: row.pid) }
-        case .framesApplied, .backgroundFocus:
+            if !minimized, let row = windows[id] { readAX([id], pid: row.pid) }
+        case .backgroundFocus(let id):
+            if let id { readIfUnknown([id]) }
+        case .framesApplied:
             break
         }
         onReport?(report)
     }
 
-    private func readAX(_ id: UInt32, pid: pid_t) {
+    /// Reads windows of one app in one job on its worker, which lists the app's windows
+    /// again at most once for them.
+    private func readAX(_ ids: [UInt32], pid: pid_t) {
         guard let worker = apps.worker(pid) else { return }
         Task {
-            let info = await worker.info(id)
-            // Known before the window is managed, so a window that is already fullscreen
-            // is parked at once and never tiled.
-            setFullscreen(id, await fullscreenState(id))
-            setAX(id, info)
+            let infos = await worker.info(ids)
+            for id in ids {
+                // Known before the window is managed, so a window that is already fullscreen
+                // is parked at once and never tiled.
+                setFullscreen(id, await fullscreenState(id))
+                setAX(id, infos[id])
+            }
         }
     }
 
-    /// A candidate whose facts no read has returned yet.
-    private func readIfUnknown(_ id: UInt32) {
-        guard ax[id] == nil, let row = windows[id], isCandidate(row) else { return }
-        readAX(id, pid: row.pid)
+    /// Candidates whose facts no read has returned yet, one job for each app. Terminal,
+    /// launched hidden, restored a window that no read answered for and no creation report
+    /// named while it stayed hidden (live log, September 24, 2026): its unhide, a focus
+    /// report naming the window, its order-in or Space change, and the sweep after a Space
+    /// change read it again (DESIGN.md, section 5.1).
+    private func readIfUnknown(_ ids: some Sequence<UInt32>) {
+        var unknown: [pid_t: [UInt32]] = [:]
+        for id in ids {
+            guard ax[id] == nil, let row = windows[id], isCandidate(row) else { continue }
+            unknown[row.pid, default: []].append(id)
+        }
+        for (pid, ids) in unknown { readAX(ids, pid: pid) }
     }
 
     /// A native fullscreen window moves to a Space of its own, which SkyLight reports as a
@@ -242,6 +260,7 @@ final class Inventory {
         for (id, row) in windows where row.pid == pid {
             if !hidden { departures.returned(id) } else if row.orderedIn { departures.left(id, at: .now) }
         }
+        if !hidden { readIfUnknown(windows.filter { $0.value.pid == pid }.keys) }
         onAppHidden?(pid, hidden, received)
     }
 
@@ -267,6 +286,8 @@ final class Inventory {
             refresh(id)
         case .spaceMembership(let id):
             refresh(id)
+            // It may join the shown Space, where Accessibility lists it.
+            readIfUnknown([id])
             if let row = windows[id], isCandidate(row) {
                 if spaceChangedAt[id] == nil { spaceChangedAt[id] = .now }
                 Task { setFullscreen(id, await fullscreenState(id)) }
@@ -274,6 +295,7 @@ final class Inventory {
         case .destroyed(let id):
             remove(id, reason: "destroyed")
         case .spacesChanged:
+            spacesChanged = true
             sweep()
         case .frontAppChanged:
             break
@@ -309,8 +331,11 @@ final class Inventory {
             onOrderChange?(row.id, row.pid, row.orderedIn, .now)
         }
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
+        // Shown now, as the second window an app launched hidden restored, with no report of
+        // its own.
+        if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
         if old.map(isCandidate) != isCandidate(row) {
-            if isCandidate(row) { readAX(row.id, pid: row.pid) }
+            if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
                 \(row.id) \(self.isCandidate(row) ? "is" : "is not", privacy: .public) a candidate: pid \(row.pid) \
                 \(self.appName(row.pid), privacy: .public) level \(row.level) parent \(row.parent)
@@ -410,6 +435,13 @@ final class Inventory {
             remove(id, reason: "absent from sweep")
         }
         for row in rows where windows[row.id] != nil { apply(row) }
+        // Accessibility lists no window on a Space that is not shown, such as another
+        // fullscreen Space, so only the sweep after a Space change asks again, and only
+        // for windows ordered in. The others wait for a focus report or their unhide.
+        if spacesChanged {
+            spacesChanged = false
+            readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
+        }
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false

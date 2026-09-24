@@ -153,8 +153,17 @@ off the main thread).
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
   and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
-  read has returned is read again when its app's worker reports it created, or reports
-  that the app answers again.
+  read has returned is read again when its app's worker reports it created, reports that
+  the app answers again, or reports the window focused, when its app unhides, when it is
+  ordered in or changes Space, and at the sweep after a Space change while it is ordered
+  in. Accessibility lists no window on a
+  Space that is not shown, such as another fullscreen Space, so a sweep every 3 s would
+  ask each such app again and again. A worker asked about windows it does not know reads
+  its app's window list again first, once for all of them, and knows the elements it has
+  cached without asking the app, so the list costs one call. Terminal launched hidden
+  restored a window that no read answered for and no creation report named while it
+  stayed hidden, so before these reads it was never managed (live log, September 24,
+  2026).
 
 ### 5.2 Geometry
 
@@ -567,6 +576,10 @@ off the main thread).
   keeps the running config, and a bad file at login falls back to the last good config.
 - Display profiles are built in and matched by monitor name or serial. Runtime toggles are
   commands and never rewrite the file.
+- A command naming a workspace the active profile leaves out fails with a message, as
+  `workspace 6` does on a profile with workspaces 1 to 5. AeroSpace creates a workspace on
+  demand; a profile's list is fixed, and its `merge-workspaces` moves the windows of the
+  workspaces it leaves out onto its own.
 - A serial is the EDID alphanumeric serial number, which the display controller publishes
   on the framebuffer that drives the display. CoreDisplay names each display's framebuffer,
   so identical monitors, whose vendor, model and numeric serial are the same, should get
