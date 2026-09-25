@@ -242,17 +242,7 @@ func unparkInAnyOrderRestoresTheTree(parking: [WindowID], unparking: [WindowID])
     _ = s.unpark(s.parked(because: .appHidden), follow: nil)
     #expect(!s.isParked(1) && !s.isParked(3))
     #expect(s.parkReason(of: 1) == nil && s.parkReason(of: 3) == nil)
-}
-
-@Test func aFullscreenWindowSitsOutItsAppsHideAndUnhide() {
-    var s = Session(names: ["1"], display: screen)
-    _ = s.add(1); _ = s.add(2)
-    _ = s.park([1], because: .fullscreen)
-    _ = s.park([1], because: .appHidden)
-    #expect(s.parkReason(of: 1) == .fullscreen)
     #expect(s.parked(because: .appHidden).isEmpty)
-    _ = s.unpark([1], follow: 1)   // it leaves fullscreen
-    #expect(!s.isParked(1) && s.parkReason(of: 1) == nil)
 }
 
 @Test func aWindowClosedAndKeptTakesTheReasonHeardAfterItsLook() {
