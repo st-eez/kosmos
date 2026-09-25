@@ -427,7 +427,7 @@ final class Controller {
         // its app keyed brings the pointer on any display, as a keyboard focus change does,
         // and so does one its app keys just after (docs/focus-follows-mouse.md).
         let launched = !atLaunch
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched,
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched && !Self.leftButtonDown,
                 floatingCheck: floats, popping: launched ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
@@ -983,7 +983,7 @@ final class Controller {
             // Command-Tab or a Dock click to a window away from the pointer brings the pointer
             // along, as does a new window its app keyed just after its admission; a click on
             // the window leaves it.
-            if mouseFollowsFocus, report.admitted || pickedAwayFromPointer() { centerPointer() }
+            if mouseFollowsFocus, report.admitted ? !Self.leftButtonDown : pickedAwayFromPointer() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)
@@ -993,7 +993,7 @@ final class Controller {
             // as its app can open it seconds after the launcher's hotkey
             // (docs/focus-follows-mouse.md).
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && (report.admitted || pickedAwayFromPointer()))
+            execute(plan, movePointer: mouseFollowsFocus && (report.admitted ? !Self.leftButtonDown : pickedAwayFromPointer()))
         }
     }
 
@@ -1302,6 +1302,11 @@ final class Controller {
         return row.level == CGWindowLevelForKey(.dockWindow)
             && NSRunningApplication(processIdentifier: row.pid)?.bundleIdentifier == "com.apple.dock"
     }
+
+    /// Whether the left mouse button is down, when no admission brings the pointer: a native
+    /// tab dragged out of its group is admitted a pairing window after its order-in, as the
+    /// drag goes on, and Kosmos's own drags cover only its own (centerPointer).
+    private static var leftButtonDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
 
     /// Whether a key or a mouse button went down in the last second.
     private static func userPressedJustBefore() -> Bool {

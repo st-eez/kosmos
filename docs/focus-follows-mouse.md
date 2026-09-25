@@ -137,7 +137,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     opened with `open -g` when its app comes front minutes after, is judged by the
     Command-Tab test.
   - A window that was there when Kosmos launched leaves the pointer where it is, so it
-    stays put at startup. The ceiling: Kosmos does not tell who opened a window, so an
+    stays put at startup. No admission moves the pointer while the left button is down
+    (`NSEvent.pressedMouseButtons`): a native tab dragged out of its group, as Finder's
+    or Ghostty's, is admitted a pairing window after its order-in, with the drag still
+    on. The ceiling: Kosmos does not tell who opened a window, so an
     agent's or a script's new window that its app keys brings the pointer too, as it
     takes the focus or brings the follow. If that pulls the pointer away while Steve
     works, the rule can ask for a key or a click in the seconds before the app launched
