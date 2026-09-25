@@ -80,6 +80,8 @@ extension Controller {
             controllerLog.notice("held focus report \(String(describing: held.key), privacy: .public): dropped, its window left, after \(since(held), format: .fixed(precision: 3)) ms")
         case .heldMovedOn(let held, let key):
             controllerLog.notice("held focus report \(String(describing: held.key), privacy: .public): dropped, \(String(describing: key), privacy: .public) is key now, after \(since(held), format: .fixed(precision: 3)) ms")
+        case .heldWhileLocked(let held):
+            controllerLog.notice("held focus report \(String(describing: held.key), privacy: .public): dropped, the session is locked, after \(since(held), format: .fixed(precision: 3)) ms")
         case .heldDecided(let held, let previous, let left, let at):
             controllerLog.notice("""
                 held focus report \(String(describing: held.key), privacy: .public): \

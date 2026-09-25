@@ -298,6 +298,20 @@ private struct Replay {
     #expect(replay.heard(.window(13), from: ghostty, at: 500) == .adopt(13, bringsPointer: true))
 }
 
+@Test func aHeldReportWhoseGraceEndsWhileLockedDecidesNothing() {
+    // The session locked during the grace; the resync after the unlock requests the intent
+    // again (docs/focus.md).
+    var replay = Replay(windows: [21: ("2", helium), 11: ("1", ghostty)], shown: ["2"], concealed: [11])
+    _ = replay.heard(.window(21), from: helium, at: -100)
+    #expect(replay.heard(.window(11), from: ghostty, at: 10) == .hold(1))
+    replay.locked = true
+    #expect(replay.expire(1) == .none)
+    let held = KeyReportIntake.Report(key: .window(11), received: ms(10), reporter: ghostty, previous: 21,
+                                      concealed: true, miss: .none)
+    #expect(replay.log.notes.last == .heldWhileLocked(held))
+    #expect(replay.log.departureReads == 1)
+}
+
 @Test func aNewWindowOnARulesHiddenWorkspaceIsFollowedWithThePointer() {
     // Live on 2026-09-25: Chrome launched from workspace 8, and a rule put its first window
     // on workspace 4, which no display showed. Its worker reports its key window as it

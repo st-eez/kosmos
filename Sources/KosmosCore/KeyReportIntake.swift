@@ -38,6 +38,8 @@ public struct KeyReportIntake: Sendable {
         case heldWindowLeft(Report)
         /// At the grace's end another window was key.
         case heldMovedOn(Report, key: KeyWindow?)
+        /// At the grace's end the session was locked.
+        case heldWhileLocked(Report)
         /// At the grace's end, whether the key window before the held report left. `at`: the
         /// grace's end, before the read of whether it left.
         case heldDecided(Report, previous: WindowID, left: Bool, at: ContinuousClock.Instant)
@@ -224,6 +226,11 @@ public struct KeyReportIntake: Sendable {
     /// came before the first word of its departure.
     public mutating func expire(_ number: Int, facts: Facts, reports: inout FocusReports) -> Action {
         guard let report = held.expire(number) else { return .none }
+        // The resync after the unlock requests the intent again.
+        if facts.locked {
+            facts.note(.heldWhileLocked(report))
+            return .none
+        }
         if case .window(let id) = report.key, facts.workspace(id) == nil || facts.isParked(id) {
             facts.note(.heldWindowLeft(report))
             return .none
