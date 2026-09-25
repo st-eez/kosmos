@@ -55,8 +55,8 @@ public struct DragGate: Sendable {
     public var modifiers: KeyCombo.Modifiers?
     /// The windows a press may take: the tiled and floating windows of the shown workspaces.
     public var windows: Set<WindowID> = []
-    /// The displays, from the session. A press off every display passes, as the focus
-    /// path's key record is one (Controller.leftMouseDown).
+    /// The displays, from the session. A press off every display passes and changes nothing,
+    /// as the focus path's key record is one (Controller.leftMouseDown).
     public var monitors: [Monitor] = []
     public private(set) var grab: Grab?
     /// Where the pointer last moved during the drag.
@@ -69,6 +69,9 @@ public struct DragGate: Sendable {
     public mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags,
                                  at point: CGPoint) -> Outcome {
         pressWasLast = false
+        // The focus path's key record, a left down off every display with no mouse up, passes
+        // and changes nothing, during a drag too.
+        guard monitors.contains(where: { $0.frame.contains(point) }) else { return Outcome() }
         var outcome = Outcome()
         if let grab {
             guard grab.button == button else { return outcome }
@@ -78,8 +81,7 @@ public struct DragGate: Sendable {
             outcome.ended = End(grab: grab, point: last)
             self.grab = nil
         }
-        guard let modifiers, KeyCombo.Modifiers(flags) == modifiers, monitors.contains(where: { $0.frame.contains(point) })
-        else { return outcome }
+        guard let modifiers, KeyCombo.Modifiers(flags) == modifiers else { return outcome }
         guard windows.contains(window) else {
             outcome.passedOver = window
             return outcome

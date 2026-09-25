@@ -62,6 +62,16 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
         #expect(gate.released(.left, at: point).ended != nil)
     }
 
+    @Test func thePressOfTheFocusPathsKeyRecordLeavesTheDragAlone() {
+        var gate = gate()
+        let grab = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
+        // The drag focuses a window of an app in the background, and the key record comes as
+        // a left down off every display.
+        #expect(gate.pressed(.left, over: 10, flags: .maskAlternate, at: CGPoint(x: 300_000, y: 300_000)) == DragGate.Outcome())
+        #expect(gate.grab == grab)
+        #expect(gate.dragged(to: .zero).take && gate.released(.left, at: .zero).ended?.grab == grab)
+    }
+
     @Test func aPressWithNoMouseUpHeardEndsTheDragWhereThePointerLastMoved() {
         var gate = gate()
         let right = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!

@@ -1420,9 +1420,10 @@ pointer gets none of the drag's events.
   shown workspace (`DragGate.windows`, renewed with each published state). Every other
   press passes untouched: on the Dock, where Option and the right button give Force Quit,
   the menu bar, SketchyBar, the desktop, a dialog or panel, a native fullscreen window or
-  a window of Kosmos's own, and the focus path's key record, a left down far off every
-  display with no mouse up (section 3). The log names each modifier press passed on for
-  its window.
+  a window of Kosmos's own. The log names each modifier press passed on for its window.
+  The focus path's key record, a left down far off every display with no mouse up
+  (section 3), passes and changes nothing, during a drag too: a drag that focuses a window
+  of an app in the background posts one, as does a focus hotkey during a drag.
 - Kosmos takes the press, every movement until that button's mouse up, whichever button
   macOS names with both down, and the mouse up, whatever the modifiers are by then. A
   press of the other button during the drag passes to the app with its mouse up.
