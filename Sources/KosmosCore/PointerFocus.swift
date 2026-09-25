@@ -1,15 +1,10 @@
 import CoreGraphics
 
-/// Filters pointer movements for focus follows mouse on the event tap's thread
-/// (docs/focus-follows-mouse.md), so it only compares numbers. A movement goes on to the main actor
-/// when it enters another window or another display than the last movement that went on, with
-/// Control up.
+/// Runs on the event tap's thread, so it only compares numbers (docs/focus-follows-mouse.md).
 public struct PointerGate: Sendable {
-    /// What a movement that goes on entered.
     public struct Entered: Equatable, Sendable {
-        /// The window under the pointer, as WindowServer found it.
         public let window: WindowID
-        /// The display under the pointer, when the movement entered another display.
+        /// Nil unless the movement entered another display.
         public let display: DisplayID?
 
         public init(window: WindowID, display: DisplayID? = nil) {
@@ -18,20 +13,16 @@ public struct PointerGate: Sendable {
         }
     }
 
-    /// The displays, from the session, to tell which one the pointer is on.
     public var monitors: [Monitor] = []
-    /// The window the pointer was in at the last movement that counted, or nil when the next
-    /// movement counts wherever it is.
+    /// Nil when the next movement counts wherever it is.
     public private(set) var window: WindowID?
     private var display: DisplayID?
-    /// Kosmos moved the pointer since the last movement.
     private var warpPending = false
 
     public init() {}
 
-    /// What a movement to `location`, with `window` under the pointer, entered, or nil when
-    /// it goes no further. A movement with Control held changes nothing, so after Control is
-    /// released the next movement enters the window and the display under the pointer.
+    /// A movement with Control held changes nothing, so the first one after Control comes up
+    /// enters the window and display under the pointer.
     public mutating func admit(_ window: WindowID, at location: CGPoint, control: Bool) -> Entered? {
         let display = monitors.first { $0.frame.contains(location) }?.id
         if warpPending {
@@ -45,14 +36,12 @@ public struct PointerGate: Sendable {
         return Entered(window: window, display: crossed ? display : nil)
     }
 
-    /// The next movement counts wherever it is, as when focus follows mouse turns on.
     public mutating func reset() {
         (window, display, warpPending) = (nil, nil, false)
     }
 
-    /// Kosmos moved the pointer into a window it focused. The next movement starts where
-    /// Kosmos put the pointer, so it enters nothing: whether or not the move posts an event
-    /// of its own, focus follows mouse leaves Kosmos's focus alone.
+    /// Kosmos moved the pointer. The next movement enters nothing, whether or not the warp
+    /// posted an event of its own.
     public mutating func warped() {
         warpPending = true
     }
@@ -60,13 +49,12 @@ public struct PointerGate: Sendable {
 
 /// Why the window the pointer entered does not take focus.
 public enum PointerSkip: Equatable, Sendable {
-    /// Focus follows mouse was turned off after the movement.
+    /// Turned off after the movement.
     case off
     /// A command, or a focus follows mouse focus, came after the movement.
     case stale
-    /// Neither a tiled or floating window of a workspace a display shows nor a native
-    /// fullscreen window: a menu, the bar, a panel, the Dock, Mission Control, a minimized or
-    /// hidden window, a window of Kosmos's own or of a workspace a switch is hiding.
+    /// Neither a visible tiled or floating window nor a native fullscreen one, as a menu, the
+    /// Dock or a window a switch is hiding.
     case notTiled
     case ignoredApp
     /// The window is the focus intent and key already.
@@ -74,14 +62,10 @@ public enum PointerSkip: Equatable, Sendable {
 }
 
 extension FocusFollowsMouse {
-    /// Why the pointer entering `window` leaves focus alone, or nil when the window takes
-    /// focus. A native fullscreen window takes it, and nothing behind one can
-    /// (docs/focus-follows-mouse.md).
+    /// Nil when the window takes focus (docs/focus-follows-mouse.md).
     /// - Parameters:
     ///   - fullscreen: the window is parked in native fullscreen.
-    ///   - key: the key window macOS last reported.
-    ///   - app: the window's app, for a window the session has.
-    ///   - stale: a command, or a focus follows mouse focus, was received after the movement
+    ///   - stale: a command, or a focus follows mouse focus, came after the movement
     ///     (`FocusReports.isStale`).
     public func skip(_ window: WindowID, in session: Session, fullscreen: Bool, key: KeyWindow?,
                      app: (bundleID: String?, name: String?)?, stale: Bool) -> PointerSkip? {
@@ -94,13 +78,8 @@ extension FocusFollowsMouse {
         return nil
     }
 
-    /// The workspace to focus when the pointer entered `display` over the desktop: the one
-    /// it shows, when that has no windows and is not focused already, as Hyprland's
-    /// `follow_mouse` moves the monitor focus. Over the desktop or a gap of a display whose
-    /// workspace has windows, focus stays where it is, as in Hyprland. So does a window
-    /// Kosmos does not manage covering the display, as a slideshow, a game, the menu bar or
-    /// a panel over a native fullscreen window.
-    /// - Parameter overDesktop: the pointer is over the desktop or no window, read last.
+    /// The empty workspace to focus when the pointer entered `display` over the desktop, as
+    /// Hyprland's `follow_mouse` moves the monitor focus (docs/focus-follows-mouse.md).
     public func emptyWorkspace(entered display: DisplayID, overDesktop: @autoclosure () -> Bool,
                                in session: Session) -> String? {
         guard enabled, let name = session.workspace(shownOn: display), name != session.focusedWorkspace,
@@ -108,15 +87,15 @@ extension FocusFollowsMouse {
         return name
     }
 
-    /// Whether a window at `level` is the desktop: Finder's desktop window at the desktop
-    /// icon level, or the wallpaper and backstop windows below it.
+    /// Finder's desktop window is at the desktop icon level, and the wallpaper and backstop
+    /// windows are below it.
     public static func isDesktop(level: Int32) -> Bool {
         level <= CGWindowLevelForKey(.desktopIconWindow)
     }
 }
 
-/// How long before an app activation Kosmos adopts or follows the user's last input came, in
-/// seconds, as the session's event state gives it (`CGEventSource.secondsSinceLastEventType`).
+/// Seconds from the user's last input of each kind to an app activation, as
+/// `CGEventSource.secondsSinceLastEventType` gives them.
 public struct ActivationInput: Equatable, Sendable {
     public var key: Double
     public var leftClick: Double
@@ -130,21 +109,16 @@ public struct ActivationInput: Equatable, Sendable {
         self.moved = moved
     }
 
-    /// Whether mouse-follows-focus brings the pointer to the activated window: the user
-    /// picked an app away from the pointer (docs/focus-follows-mouse.md). Either a key went down
-    /// in the last second, after the last click and the last pointer movement, as with
-    /// Command-Tab or a launcher's hotkey, or the last left mouse down, in the last second
-    /// and after the last key and right mouse down, landed on the Dock. The pointer may have
-    /// moved since the Dock click, on its way to the app. A click anywhere else, in the
-    /// window, on the bar or on a link that opens another app, leaves the pointer where it
-    /// is. A Command-Tab switcher held open for over a second reads as a click.
+    /// The user picked an app away from the pointer, with a key such as Command-Tab or with a
+    /// Dock click, within the last second (docs/focus-follows-mouse.md). A Command-Tab
+    /// switcher held open for over a second reads as a click.
     public func bringsPointer(onDock: Bool) -> Bool {
         if key < 1, key < leftClick, key < rightClick, key < moved { return true }
         return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
     }
 }
 
-/// Where a command came from. Bar clicks, scripts and launchers send theirs through the CLI.
+/// Bar clicks, scripts and launchers send their commands through the CLI.
 public enum CommandSource: Sendable {
     case hotkey
     case cli

@@ -9,7 +9,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 }
 
 @Test func aCommandNamingAWorkspaceTheProfileLeavesOutFails() {
-    // The laptop profile lists 1 to 5; `workspace 6` exited 0 and did nothing.
     let s = session(["1", "2", "3", "4", "5"])
     #expect(s.missingWorkspace(in: .workspace(.named("6"))) == "6")
     #expect(s.missingWorkspace(in: .moveNodeToWorkspace(.named("0"), focusFollowsWindow: true)) == "0")
@@ -41,7 +40,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2)
     s.adopt(2)
     let tiles = s.frames(of: "1")
-    // As a new Finder window beside two tiles: no frame for it, and the tiles stay.
     let plan = s.add(3, floating: true)
     #expect(plan.frames == tiles)
     #expect(s.workspaces["1"]!.tree == "h[1 2]" && s.workspaces["1"]!.floating == [3])
@@ -56,7 +54,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(Set(plan.hide) == [1, 2])
     #expect(plan.show == [3])
     #expect(plan.focus == .window(3))
-    // Back again: the old workspace remembers its focus.
     let back = s.perform(.workspaceBackAndForth)!
     #expect(back.show.count == 2)
     #expect(back.focus == .window(2))
@@ -142,7 +139,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     // With one display, wrapping comes back to it, and the window stays.
     #expect(s.perform(.move(.up, boundaries: .allMonitorsWrapping)) == nil)
     #expect(s.workspaces["1"]!.tree == "h[1 2]")
-    // Within the workspace, the root goes into a new root along the direction.
     #expect(s.perform(.move(.up)) != nil)
     #expect(s.workspaces["1"]!.tree == "v[2 1]")
 }
@@ -230,7 +226,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.setMinimum(2, CGSize(width: 900, height: 700))
     #expect(s.sizeObserved(2, CGSize(width: 899, height: 700)).isEmpty)   // within the slack
     #expect(s.sizeObserved(1, CGSize(width: 10, height: 10)).isEmpty)     // no minimum
-    // The user or the app sized it narrower: the width it kept was no limit of the app's.
     let plan = s.sizeObserved(2, CGSize(width: 495, height: 800))
     #expect(plan.frames[1] == CGRect(x: 0, y: 0, width: 500, height: 800))
     #expect(plan.frames[2] == CGRect(x: 500, y: 0, width: 500, height: 800))
@@ -271,7 +266,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aReturningWindowTakesKosmosToItsWorkspace() {
     var s = session()
     _ = s.add(1)
-    _ = s.park([1])   // minimized on workspace 1
+    _ = s.park([1])
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1], follow: 1)
@@ -330,12 +325,12 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aReturnAfterACommandLeavesKosmosWhereTheCommandTookIt() {
     var s = session()
     _ = s.add(1)
-    _ = s.park([1])   // minimized on workspace 1
+    _ = s.park([1])
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1], follow: nil)
     #expect(s.focusedWorkspace == "2")
-    #expect(plan.hide == [1])   // back on workspace 1, which is hidden
+    #expect(plan.hide == [1])
     #expect(plan.show.isEmpty && plan.focus == nil)
     #expect(s.focused == 2)
 }
@@ -344,7 +339,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1); _ = s.add(2)
     s.adopt(2)
-    _ = s.park([2])   // Kosmos focused 1 again without a report
+    _ = s.park([2])
     let plan = s.unpark([2], follow: nil)
     #expect(s.focused == 1)   // though 2 was focused more recently
     #expect(plan.focus == nil)
@@ -392,18 +387,14 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(ParkReason.atAdmission(fullscreen: false, minimized: false, appHidden: false) == nil)
     #expect(ParkReason.atAdmission(fullscreen: false, minimized: true, appHidden: false) == .minimized)
     #expect(ParkReason.atAdmission(fullscreen: false, minimized: false, appHidden: true) == .appHidden)
-    // A minimized window of a hidden app stays minimized when the app unhides, and a
-    // fullscreen one returns when it leaves fullscreen.
     #expect(ParkReason.atAdmission(fullscreen: false, minimized: true, appHidden: true) == .minimized)
     #expect(ParkReason.atAdmission(fullscreen: true, minimized: false, appHidden: true) == .fullscreen)
 }
 
 @Test func aWindowConcealedWhenItParkedIsRevealedOnTheShownWorkspace() {
-    // An app with a window on each workspace hides, Kosmos shows the hidden workspace, and
-    // the app comes back keyed on the window there.
     var s = session()
     _ = s.add(1)
-    _ = s.add(2, to: "2")   // concealed
+    _ = s.add(2, to: "2")
     _ = s.park([1, 2])
     _ = s.perform(.workspace(.named("2")))
     let plan = s.unpark([1, 2], follow: 2)
@@ -412,7 +403,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.hide == [1])
 }
 
-/// A window closed and kept opens again where a new window would (docs/tree.md).
 @Test func aReopenedWindowOpensOnTheFocusedWorkspace() {
     var s = session()
     _ = s.perform(.workspace(.named("3")))
@@ -425,7 +415,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan?.frames == [3: display] && plan?.show == [] && plan?.hide == [])
     #expect(s.focused == 3 && s.focusedWorkspace == "2")
     #expect(s.minimums[3] == CGSize(width: 600, height: 400))
-    // A window with a place of its own has nothing to reopen.
     #expect(s.reopen(3, to: nil, floating: false) == nil)
 }
 
@@ -434,11 +423,9 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(2, to: "2")   // concealed, then closed and kept
     _ = s.park([2])
-    // Its rule names hidden workspace 3 and floats it: it floats there, concealed.
     var plan = s.reopen(2, to: "3", floating: true)
     #expect(s.workspace(of: 2) == "3" && s.workspaces["3"]!.floating == [2] && s.windows(of: "2").isEmpty)
     #expect(plan?.hide == [2] && plan?.show == [])
-    // Concealed when it parked, it is revealed on the shown workspace it opens on.
     _ = s.park([2])
     plan = s.reopen(2, to: nil, floating: false)
     #expect(s.workspace(of: 2) == "1" && plan?.show == [2] && plan?.hide == [])
@@ -458,7 +445,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.focused == 7)
     #expect(plan.frames[7] == before[2] && plan.frames[1] == before[1] && plan.frames[3] == before[3])
     #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
-    // Back to the first tab: the same place again.
     _ = s.replace(7, with: 2)
     #expect(s.frames(of: "1") == before)
 }
@@ -478,7 +464,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(2, to: "2")
     #expect(s.replace(2, with: 8)?.hide == [8])
-    // A tab that holds no place changes nothing.
     #expect(s.replace(42, with: 5) == nil)
     #expect(s.replace(8, with: 8) == nil)
 }
@@ -487,16 +472,15 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
     let before = s.frames(of: "1"), order = s.windows(of: "1")
-    _ = s.park([3])           // minimized, remembering the windows it stood among
-    _ = s.replace(2, with: 7)  // 2's tab group switched tabs
+    _ = s.park([3])
+    _ = s.replace(2, with: 7)   // 2's tab group switched tabs
     _ = s.unpark([3], follow: nil)
     #expect(s.windows(of: "1") == order.map { $0 == 2 ? 7 : $0 })
     #expect(s.frames(of: "1")[3] == before[3])
 }
 
 @Test func aWindowParkedWhenItBecameATabJoinsItsGroupsPlace() {
-    // Merge All Windows orders 2 out with no tab coming in, and Kosmos parks it as closed
-    // by its app. Selecting its tab later brings it to the group's place.
+    // Merge All Windows orders 2 out with no tab coming in, so it parks as closed and kept.
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
     _ = s.park([2])
@@ -508,8 +492,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 }
 
 @Test func aTabParkedAsClosedBeforeItsSwitchTookEffectGivesTheNewTabItsPlace() {
-    // Tab 2 was parked as closed by its app a second after it was deselected, before tab 7's
-    // admission let the switch take effect. Its place returns for tab 7, which is on screen
+    // Tab 2 parked as closed and kept before tab 7's admission let the switch take effect
     // (Controller.tabSwitched).
     var s = session()
     _ = s.add(1, to: "2"); _ = s.add(2, to: "2")
@@ -531,17 +514,14 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.perform(.workspace(.named("2")))
     let plan = s.replace(2, with: 7)!
     #expect(s.isParked(7) && s.workspace(of: 2) == nil)
-    #expect(plan.hide.isEmpty && plan.frames[7] == nil)   // parked: no conceal, no frame
-    #expect(s.minimums[7] == nil)                           // no display-sized minimum
-    // Leaving fullscreen, tab 7 returns where tab 2 stood.
+    #expect(plan.hide.isEmpty && plan.frames[7] == nil)
+    #expect(s.minimums[7] == nil)
     _ = s.perform(.workspace(.named("1")))
     _ = s.unpark([7], follow: 7)
     #expect(s.frames(of: "1")[7] == before[2])
 }
 
 @Test func aTabInheritsTheMinimumOfTheTabItReplaces() {
-    // Tabs share a size: without it, every switch in a tight layout would reflow twice, as
-    // the new tab refuses its share and Kosmos learns the minimum again.
     var s = session()
     _ = s.add(1); _ = s.add(2)
     _ = s.setMinimum(2, CGSize(width: 700, height: 0))

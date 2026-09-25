@@ -2,14 +2,12 @@ import CoreGraphics
 
 /// A tiled window the user drags by its title bar (docs/displays.md).
 public enum TitleBarDrag {
-    /// How far, in points, a drag goes before it lifts a tiled window, and before a
-    /// modifier drag moves or resizes anything, so a click that jitters changes nothing
-    /// (docs/displays.md and docs/modifier-drags.md).
+    /// A drag goes this far before it lifts a tile, and a modifier drag before it changes
+    /// anything, so a click that jitters changes nothing (docs/displays.md).
     public static let liftDistance: CGFloat = 10
 
-    /// Whether the pointer is where macOS resizes a window at `frame`: within 6 pt of its
-    /// left, right or bottom edge, or just above its top edge, outside the title bar. A
-    /// drag by the title bar keeps the pointer inside the frame, away from the side edges.
+    /// Where macOS resizes a window at `frame`. A title-bar drag keeps the pointer inside the
+    /// frame, away from the side edges.
     public static func onResizeBorder(_ pointer: CGPoint, of frame: CGRect) -> Bool {
         let reach: CGFloat = 6
         guard frame.insetBy(dx: -reach, dy: -reach).contains(pointer) else { return false }
@@ -19,11 +17,9 @@ public enum TitleBarDrag {
 }
 
 extension Session {
-    /// The user dragged a floating window of a shown workspace to `frame`. With its center on
-    /// a display showing another workspace, it joins that workspace, and the focus goes with
-    /// it if it had it, as AeroSpace's moveWithMouse binds it. The plan asks for no focus:
-    /// the window is key. Nil when it stays, its center on its own workspace's display or on
-    /// none (docs/displays.md).
+    /// A floating window whose center lands on a display showing another workspace joins it,
+    /// as AeroSpace's moveWithMouse binds it (docs/displays.md). The plan asks for no focus:
+    /// the window is key.
     public mutating func dragged(_ window: WindowID, to frame: CGRect) -> Plan? {
         defer { check() }
         guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window),
@@ -33,9 +29,8 @@ extension Session {
         return plan
     }
 
-    /// The user started to drag a tiled window of a shown workspace by its title bar: it
-    /// parks where it stood until `drop`. The plan has no frame for it. Nil when the window
-    /// is not tiled on a shown workspace (docs/displays.md).
+    /// The window parks where it stood until `drop`, so the plan has no frame for it
+    /// (docs/displays.md).
     public mutating func lift(_ window: WindowID) -> Plan? {
         defer { check() }
         guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { return nil }
@@ -44,10 +39,7 @@ extension Session {
         return Plan(frames: frames(of: name))
     }
 
-    /// The left button came up at `point` with windows lifted. Each tiles on the workspace
-    /// shown on the display under the pointer, beside the tile under it or the closest one,
-    /// and takes the focus; off every display, or over one showing no workspace, it goes
-    /// back to where it stood (docs/displays.md).
+    /// The drop follows Hyprland's dwindle layout (docs/displays.md).
     public mutating func drop(at point: CGPoint) -> Plan {
         defer { check() }
         var plan = Plan()
@@ -84,16 +76,13 @@ extension Session {
         return plan
     }
 
-    /// A lifted window returns to where it stood, ending its drag.
     mutating func putBack(_ window: WindowID) {
         let name = home[window]!, monitor = monitor(of: name)
         workspaces[name]!.unpark([window], in: monitor.area, gaps: monitor.gaps)
     }
 
-    /// The user let go of the left button after moving or resizing tiled windows of shown
-    /// workspaces without lifting them, as by their edges. Each goes back to its tile, as
-    /// Omarchy leaves Hyprland's `resize_on_border` off so a tile's edge resizes nothing. The
-    /// plan has their workspaces' frames (docs/geometry.md).
+    /// Tiles the user moved or resized without a lift go back, as Omarchy leaves Hyprland's
+    /// `resize_on_border` off (docs/geometry.md).
     public func released(_ windows: Set<WindowID>) -> Plan {
         var changed: Set<String> = []
         for window in windows {
@@ -103,13 +92,9 @@ extension Session {
         return Plan(frames: frames(of: changed))
     }
 
-    /// A modifier drag of `grab.window`, a tiled or floating window of a shown workspace
-    /// that WindowServer has at `frame`, or nil for any other window (docs/modifier-drags.md).
-    /// A resize moves the edges on the sides of the window's center the press was on,
-    /// left or right and top or bottom, as Hyprland's DragController picks the corner. A tile
-    /// with no neighbour on that side moves its edge on the other side, as Hyprland's dwindle
-    /// layout does for a window at the display's edge, and one with neighbours on neither
-    /// side moves no edge on that axis.
+    /// A resize moves the edges on the press's side of the center, as Hyprland's DragController
+    /// picks the corner, and a tile with no neighbour there moves the other edge, as its dwindle
+    /// layout does (docs/modifier-drags.md).
     public func beginDrag(_ grab: DragGate.Grab, frame: CGRect) -> ModifierDrag? {
         guard isVisible(grab.window), let name = home[grab.window] else { return nil }
         let workspace = workspaces[name]!
@@ -121,11 +106,8 @@ extension Session {
         return ModifierDrag(grab: grab, frame: frame, edges: edges, tile: frames(of: name)[grab.window])
     }
 
-    /// Moves the edges of a modifier drag's tiled window where the pointer takes them,
-    /// `delta` from where the button went down, as far as `Workspace.moveEdge` can: each
-    /// goes from the tile's edge then to that edge carried by `delta`, so one stopped at a
-    /// limit follows the pointer again as it comes back. The plan has the workspace's frames.
-    /// Nil when nothing changed, and while the window's workspace is hidden or in fullscreen.
+    /// Each edge goes to the tile's edge at the press carried by `delta`, so one stopped at a
+    /// limit follows the pointer again as it comes back.
     public mutating func dragEdges(_ drag: ModifierDrag, by delta: CGSize) -> Plan? {
         defer { check() }
         let window = drag.grab.window
@@ -150,10 +132,8 @@ extension Session {
         return Plan(frames: frames(of: name))
     }
 
-    /// The frame of a modifier drag's floating window resized `delta` from where the button
-    /// went down: the drag's edges follow the pointer and the others stay, as Hyprland's
-    /// DragController resizes a floating window. Neither side goes below the window's
-    /// recorded minimum, nor below 20 pt, Hyprland's MIN_WINDOW_SIZE.
+    /// As Hyprland's DragController resizes a floating window, down to the recorded minimum or
+    /// 20 pt, its MIN_WINDOW_SIZE.
     public func resized(_ drag: ModifierDrag, by delta: CGSize) -> CGRect {
         let start = drag.frame, least = minimums[drag.grab.window] ?? .zero
         let (width, height) = (max(least.width, 20), max(least.height, 20))

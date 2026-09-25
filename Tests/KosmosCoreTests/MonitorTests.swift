@@ -3,7 +3,7 @@ import Testing
 @testable import KosmosCore
 
 // Steve's desk (docs/displays.md): the left panel, the main panel at the origin, and
-// the built-in display below, with 10 point outer gaps.
+// the built-in display below.
 private let gaps = Gaps(outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
 private let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), gaps: gaps)
 private let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
@@ -70,7 +70,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.frames.isEmpty)
         #expect(plan.focus == .window(50))
         #expect(s.focusedWorkspace == "5" && s.focusedDisplay == 1)
-        // Back and forth returns to the main panel the same way.
         #expect(s.perform(.workspaceBackAndForth)?.focus == .window(10))
         #expect(s.focusedDisplay == 2)
     }
@@ -168,7 +167,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         let plan = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: true, wrapAround: false))!
         #expect(plan.focus == .window(10))
         #expect(s.focusedWorkspace == "5")
-        // Entering from the right into a horizontal root by moving right lands first.
+        // Entering the main panel by its left edge, it lands first.
         _ = s.perform(.moveNodeToMonitor(.direction(.right), focusFollowsWindow: true, wrapAround: false))
         #expect(s.workspaces["1"]!.tree == "h[10 11]")
     }
@@ -196,10 +195,9 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.add(60, to: "6", floating: true)
         #expect(s.shownFloatingWindows.sorted() == [10, 50])
         let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
-        // 10 on the main panel is home; 50 there too, and it goes to the left panel at the
-        // same place; 60's workspace is hidden, so it is left alone.
+        // 10 is home on the main panel, 50 goes to the left panel at the same place, and 60's
+        // workspace is hidden.
         #expect(s.floatingFrames(at: [10: onMain, 50: onMain, 60: onMain]) == [50: CGRect(x: -1820, y: 100, width: 400, height: 300)])
-        // As after move-node-to-monitor: 10 now belongs on the left panel.
         _ = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: false, wrapAround: false, window: 10))
         #expect(s.floatingFrames(at: [10: onMain]) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
         // Onto a smaller display it keeps its relative place and stays inside, measured from
@@ -232,19 +230,16 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(plan != nil && plan?.show == [] && plan?.hide == [] && plan?.focus == nil)
         #expect(s.workspace(of: 10) == "5" && s.workspaces["5"]!.floating == [10])
         #expect(s.focusedWorkspace == "5" && s.focused == 10)
-        // The floating check leaves it there.
         #expect(s.floatingFrames(at: [10: onLeft]).isEmpty)
     }
 
     @Test func aTiledWindowResizedByItsEdgesGoesBackToItsTile() {
         var s = desk()
         _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5"); _ = s.add(20, to: "2")
-        // Resized on the main panel and the left one: both workspaces are laid out as they
-        // were. 20's workspace is hidden, as after a switch during the resize.
+        // 20's workspace is hidden, as after a switch during the resize.
         var tiles = s.frames(of: "1")
         tiles.merge(s.frames(of: "5")) { current, _ in current }
         #expect(s.released([10, 50, 20]).frames == tiles)
-        // A floating window keeps the size the user gave it.
         s.adopt(11)
         _ = s.perform(.layout(.toggleFloating))
         #expect(s.released([11]).frames.isEmpty)
@@ -298,15 +293,12 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
         #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping)) != nil)
         #expect(s.workspace(of: 10) == "1")
-        // A floating window stays.
         _ = s.perform(.layout(.toggleFloating))
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
     }
 
     @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {
-        // Steve's alt-shift-up with windows side by side on the main panel: no display is
-        // above it, so the window wraps to the built-in display below, and the workspace
-        // keeps its layout.
+        // No display is above the main panel, so the window wraps to the built-in display below.
         var s = desk()
         _ = s.add(10); _ = s.add(13); _ = s.add(12); _ = s.add(11)
         #expect(s.workspaces["1"]!.tree == "h[10 11 12 13]")
@@ -314,7 +306,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.perform(.move(.up, boundaries: .allMonitorsWrapping)) != nil)
         #expect(s.workspace(of: 11) == "8" && s.focusedWorkspace == "8")
         #expect(s.workspaces["1"]!.tree == "h[10 12 13]")
-        // Past the last display without wrapping, the window stays.
         s.adopt(13)
         #expect(s.perform(.move(.up, boundaries: .allMonitors)) == nil)
         #expect(s.workspaces["1"]!.tree == "h[10 12 13]")
@@ -330,7 +321,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         s.adopt(11)
         _ = s.add(12)
         #expect(s.workspaces["1"]!.tree == "h[10 11 12]")
-        // Lifted, 10 leaves the tree and the others fill the display at once.
         let lift = s.lift(10)!
         #expect(s.workspaces["1"]!.tree == "h[11 12]" && lift.frames[10] == nil && lift.frames[11]!.minX == main.area.minX + 10)
         #expect(s.lifted == [10] && s.isParked(10))
@@ -398,7 +388,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.workspace(of: 11) == "5" && s.workspaces["5"]!.tree == "h[50 11]")
         #expect(s.focusedWorkspace == "5" && s.focused == 11)
         #expect(plan.frames[10] != nil && plan.frames[11] != nil && plan.hide.isEmpty)
-        // An empty workspace takes it whole.
         _ = s.lift(11)
         _ = s.drop(at: CGPoint(x: 900, y: 1500))
         #expect(s.workspace(of: 11) == "8" && s.frames(of: "8")[11] == builtIn.area.insetBy(dx: 10, dy: 10))
@@ -431,14 +420,13 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         var s = desk()
         _ = s.add(10); _ = s.add(11)
         _ = s.lift(11)
-        // alt-2 with the pointer in the right half of 10, which fills the display: the
-        // controller drops 11 there first, and the switch then conceals it with 10.
+        // The controller drops 11 before the hotkey's switch runs, and the switch conceals it
+        // with 10.
         let tile = s.frames(of: "1")[10]!
         #expect(s.drop(at: CGPoint(x: tile.maxX - 100, y: tile.midY)).focus == .window(11))
         #expect(s.lifted.isEmpty && s.workspaces["1"]!.tree == "h[10 11]")
         let plan = s.perform(.workspace(.named("2")))!
         #expect(Set(plan.hide) == [10, 11] && s.focusedWorkspace == "2" && s.focused == nil)
-        // Back on 1, the dropped window has the focus.
         #expect(s.perform(.workspace(.named("1")))!.focus == .window(11))
     }
 
@@ -473,7 +461,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         // Once 10 is minimized, nothing of the app shows, and nothing is stripped.
         _ = s.park([10])
         #expect(s.stripped([20, 60], latest: latest).isEmpty)
-        // On one display nothing is stripped.
         let one = Session(names: ["1", "2"], display: main.frame)
         #expect(one.stripped([1, 2], latest: { _ in 1 }).isEmpty)
     }
@@ -527,11 +514,9 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         var assigned = home
         for name in ["8", "9", "0"] { assigned[name] = 2 }
         s.reconfigure(names: names, monitors: [left, main], assigned: assigned, merge: [:])
-        // The focused workspace keeps the focus, on its new display.
         #expect(s.focusedWorkspace == "8" && s.focused == 80)
         #expect(s.shownWorkspaces == ["5", "8"])
         #expect(within(s.frames(of: "8"), main))
-        // Opening it again: 8 goes back, and the main panel shows its first workspace.
         s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
         #expect(s.shownWorkspaces == ["5", "1", "8"])
         #expect(s.focusedWorkspace == "8" && s.focusedDisplay == 3)
@@ -579,11 +564,9 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.workspaces["1"]!.tree == "h[10 60 61]")
         #expect(s.workspace(of: 70) == "2" && s.workspaces["2"]!.floating == [70])
         #expect(s.workspace(of: 71) == "2" && s.isParked(71))
-        // The focused workspace merged into 2, which keeps the focus on the built-in display.
         #expect(s.focusedWorkspace == "2" && s.shownWorkspaces == ["2"])
         #expect(within(s.frames(of: "1"), builtIn))
-        // Back at the desk, the merged windows return to their workspaces as they were,
-        // floating or parked, except one the user moved meanwhile.
+        // Back at the desk, 61, which the user moved meanwhile, stays where it went.
         _ = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 61))
         s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
         #expect(s.workspaces["6"]!.tree == "h[60]" && s.workspace(of: 61) == "3")
@@ -618,8 +601,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.remove(61)
         _ = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 63))
         s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
-        // 6 is back on the left panel with its tree, shares and focus, less the window that
-        // closed and the one that moved, and 60 still parked where it stood.
         #expect(s.shownWorkspaces == ["6", "1", "8"])
         #expect(s.workspaces["6"]!.tree == "h[62]" && s.isParked(60) && s.workspace(of: 63) == "3")
         #expect(s.workspaces["6"]!.focusedWindow == 62)

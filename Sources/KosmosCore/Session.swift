@@ -1,14 +1,13 @@
 import CoreGraphics
 
-/// Why a window waits parked when Kosmos admits it, as at launch (docs/tree.md).
+/// Why a window Kosmos admits waits parked (docs/tree.md).
 public enum ParkReason: Equatable, Sendable {
     case fullscreen
     case minimized
     case appHidden
 
     /// Fullscreen comes first: a fullscreen window of a hidden app returns when it leaves
-    /// fullscreen. A minimized window stays minimized when its app unhides, so it is not
-    /// hidden with the app.
+    /// fullscreen, and a minimized window stays minimized when its app unhides.
     public static func atAdmission(fullscreen: Bool, minimized: Bool, appHidden: Bool) -> ParkReason? {
         if fullscreen { return .fullscreen }
         if minimized { return .minimized }
@@ -16,19 +15,15 @@ public enum ParkReason: Equatable, Sendable {
     }
 }
 
-/// Every workspace, the displays that show them, and the one with the focus
-/// (docs/overview.md, section 4.3, and docs/displays.md). A change returns a Plan that the app
-/// carries out; the Session never talks to macOS.
+/// A change returns a Plan for the app to carry out, and Session never calls macOS
+/// (docs/overview.md, section 4.3, and docs/displays.md).
 public struct Session: Sendable {
-    /// What the app does after a change.
     public struct Plan: Equatable, Sendable {
-        /// Windows to reveal and to conceal.
         public var show: [WindowID] = []
         public var hide: [WindowID] = []
-        /// Targets for the shown workspace, and for a hidden one laid out while hidden.
-        /// The frame ledger drops the ones already in place.
+        /// The frame ledger drops the targets already in place.
         public var frames: [WindowID: CGRect] = [:]
-        /// The window to make key, or nil to leave focus alone.
+        /// Nil leaves focus alone.
         public var focus: KeyWindow?
 
         public init() {}
@@ -45,36 +40,30 @@ public struct Session: Sendable {
     var workspaces: [String: Workspace]
     /// Connected displays, left to right, then top to bottom. Never empty.
     public internal(set) var monitors: [Monitor]
-    /// The workspace each display shows. A display that no workspace can go to shows none.
+    /// A display no workspace can go to has no entry.
     var shown: [DisplayID: String] = [:]
-    /// The display the profile assigns each workspace to, among the connected ones. A
-    /// workspace left out is free.
+    /// Among the connected displays. A workspace left out is free.
     var assigned: [String: DisplayID] = [:]
-    /// The workspace of the focused display, which holds the focus. A display always shows
-    /// it.
+    /// A display always shows it.
     public internal(set) var focusedWorkspace: String
     var previous: String?
     var home: [WindowID: String] = [:]
-    /// Parked windows whose workspace was hidden when they parked, so Kosmos had concealed
-    /// them. Switches skip parked windows, so they stay concealed until they return.
+    /// Parked windows Kosmos concealed, their workspace hidden when they parked. Switches skip
+    /// parked windows, so these stay concealed until they return.
     var parkedConcealed: Set<WindowID> = []
-    /// The smallest size each window accepted, as frames read back after writes show, until
-    /// the window is seen smaller.
+    /// The smallest size each window took, as read backs show, until it is seen smaller.
     var minimums: [WindowID: CGSize] = [:]
-    /// Workspaces a profile left out, as they were: their trees, shares and focus order. A
-    /// profile that lists one again gets it back with its windows still merged.
+    /// Workspaces a profile left out, as they were, for a later profile that lists them.
     var mergedAway: [String: Workspace] = [:]
-    /// Windows a profile moved out of a workspace it left out, by that workspace. A window
-    /// the user moves or closes leaves it, and its workspace comes back without it.
+    /// The workspace a profile merged each window out of. A window the user moves or closes
+    /// leaves it.
     var merged: [WindowID: String] = [:]
     /// The workspace a display showed before it left, or before a profile left that
-    /// workspace out, for when it shows one again.
+    /// workspace out.
     var shownBefore: [DisplayID: String] = [:]
-    /// Tiled windows the user is dragging by the title bar, parked where they stood until
-    /// the left button comes up (docs/displays.md).
+    /// Tiled windows dragged by the title bar, parked where they stood (docs/displays.md).
     public internal(set) var lifted: Set<WindowID> = []
 
-    /// `assigned` maps workspaces to the ids of `monitors`. The first workspace has the focus.
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
         precondition(!names.isEmpty, "a session needs a workspace")
         precondition(!monitors.isEmpty, "a session needs a display")
@@ -87,29 +76,25 @@ public struct Session: Sendable {
         check()
     }
 
-    /// One display, whose whole rectangle tiles.
     public init(names: [String], display: CGRect, gaps: Gaps = Gaps()) {
         self.init(names: names, monitors: [Monitor(id: 1, frame: display, gaps: gaps)])
     }
 
     public func workspace(of window: WindowID) -> String? { home[window] }
 
-    /// The focused window of the focused workspace.
     public var focused: WindowID? { workspaces[focusedWorkspace]!.focusedWindow }
 
     // MARK: Displays
 
-    /// Whether a display shows the workspace.
     public func isShown(_ name: String) -> Bool { shown.values.contains(name) }
 
-    /// The workspaces the displays show, in display order.
+    /// In display order.
     public var shownWorkspaces: [String] { monitors.compactMap { shown[$0.id] } }
 
     /// Nil for a display that no workspace can go to.
     public func workspace(shownOn display: DisplayID) -> String? { shown[display] }
 
-    /// The display that shows the workspace, else the one it is assigned to, else the
-    /// focused display: where it is laid out, and where `workspace` shows it.
+    /// Where the workspace is laid out, and where the `workspace` command shows it.
     public func monitor(of name: String) -> Monitor {
         let id = displayShowing(name) ?? assigned[name] ?? focusedDisplay
         return monitors.first { $0.id == id }!
@@ -119,13 +104,11 @@ public struct Session: Sendable {
 
     func displayShowing(_ name: String) -> DisplayID? { shown.first { $0.value == name }?.key }
 
-    /// The workspace shown on the display under `point`.
     func workspace(at point: CGPoint) -> String? {
         monitors.first { $0.frame.contains(point) }.flatMap { shown[$0.id] }
     }
 
-    /// The broken invariants of the session's state, empty when it is sound. Every public
-    /// mutation checks it in debug builds.
+    /// The broken invariants of the per-window state, empty when the session is sound.
     func validate() -> [String] {
         var problems: [String] = []
         if Set(names) != Set(workspaces.keys) { problems.append("names \(names) are not the workspaces \(workspaces.keys.sorted())") }
@@ -152,7 +135,7 @@ public struct Session: Sendable {
         assert(validate().isEmpty, "\(validate())")
     }
 
-    /// Tiled and floating windows; parked windows are left to macOS.
+    /// Tiled and floating. Parked windows are left to macOS.
     public func windows(of name: String) -> [WindowID] {
         guard let workspace = workspaces[name] else { return [] }
         return workspace.root.windows + workspace.floating
@@ -164,13 +147,10 @@ public struct Session: Sendable {
         return workspace.root.windows + workspace.floating + workspace.parked.map(\.window)
     }
 
-    /// Whether the window is tiled or floating on a workspace a display shows. A parked
-    /// window is left to macOS.
     public func isVisible(_ window: WindowID) -> Bool {
         home[window].map(isShown) == true && !isParked(window)
     }
 
-    /// Whether the focused workspace is on another display than the one under `point`.
     public func focusIsOnAnotherDisplay(than point: CGPoint) -> Bool {
         !monitor(of: focusedWorkspace).frame.contains(point)
     }
@@ -186,8 +166,6 @@ public struct Session: Sendable {
         names.reduce(into: [:]) { frames, name in frames.merge(self.frames(of: name)) { current, _ in current } }
     }
 
-    /// Lays out the shown workspaces, and the hidden ones too when `layingOutHidden`, reveals
-    /// the shown workspaces' windows and conceals the hidden ones'. It asks for no focus.
     public func resyncPlan(layingOutHidden: Bool) -> Plan {
         var plan = Plan(frames: frames(of: names.filter { layingOutHidden || isShown($0) }))
         plan.show = shownWorkspaces.flatMap(windows(of:))
@@ -197,17 +175,14 @@ public struct Session: Sendable {
 
     // MARK: Windows arriving and leaving
 
-    /// A managed window joins a workspace: the one a rule names, else the one shown on the
-    /// display under `point`, the window's center, else the focused one (docs/displays.md).
-    /// A window a rule floats joins the floating windows and never the tree, so it
-    /// keeps the frame its app gave it, and the plan moves no tile.
+    /// `point` is the window's center (docs/displays.md).
     public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil,
                              floating: Bool = false) -> Plan {
         defer { check() }
         guard home[window] == nil else { return Plan() }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
-        // A workspace with windows always has a focused one, as in i3; reports refine it.
+        // As in i3, a workspace with windows always has a focused one.
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan(frames: frames(of: target))
@@ -229,15 +204,9 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// Native tabs share one place. `new`, the tab just selected, takes the place of `old`,
-    /// the tab it replaces, with its share, focus and workspace, and `old` leaves the
-    /// session (docs/tree.md). A tab Kosmos already placed as a window of its
-    /// own, tiled or parked, as after Merge All Windows, leaves that place. A parked `old`,
-    /// as the tab in native fullscreen, leaves `new` parked in its stead. `new` inherits the
-    /// minimum of a tiled `old`, as tabs share a size, so a switch does not reflow to learn
-    /// it again; a fullscreen tab's would fill the display. The plan has the frames, and
-    /// conceals a tiled `new` when its place is on a hidden workspace. Nil, and nothing
-    /// changes, when `old` holds no place.
+    /// Native tabs share one place, and `new`, the tab just selected, takes `old`'s
+    /// (docs/tree.md). It inherits a tiled `old`'s minimum, as tabs share a size; a fullscreen
+    /// tab's would fill the display. Nil when `old` holds no place.
     public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
@@ -255,7 +224,6 @@ public struct Session: Sendable {
         home[new] = name
         if let minimum = minimums.removeValue(forKey: old), !parked { minimums[new] = minimum }
         merged[new] = merged.removeValue(forKey: old)
-        // Selected while its workspace is merged away, the tab returns in the place of `old`.
         if let origin = merged[new] {
             mergedAway[origin]?.remove(new)
             mergedAway[origin]?.replace(old, with: new)
@@ -266,12 +234,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// Minimized, hidden with their app, or in native fullscreen: out of the layout until
-    /// they return to their places. Parked windows take no part in switches, so Kosmos
-    /// neither conceals nor reveals them, and they get no frames. Focus is left to macOS,
-    /// which keys another window itself; asking for one here would pull the screen out of
-    /// a native fullscreen Space. A lifted window is parked already, where it stood, and
-    /// stays parked when the drag ends.
+    /// The plan asks for no focus: macOS keys another window itself, and a request would pull
+    /// the screen out of a native fullscreen Space (docs/tree.md).
     public mutating func park(_ windows: [WindowID]) -> Plan {
         defer { check() }
         var changed: Set<String> = []
@@ -283,12 +247,7 @@ public struct Session: Sendable {
         return Plan(frames: frames(of: changed))
     }
 
-    /// Parked windows return to their own workspaces at their saved positions, and Kosmos
-    /// follows `follow` there when its workspace is not the focused one, as it does for
-    /// Command-Tab (docs/tree.md). Following nothing, the focused workspace keeps
-    /// its focus, and an empty one focuses a window returning to it. The other returning
-    /// windows of hidden workspaces are concealed again, and those Kosmos concealed that
-    /// return to a shown workspace are revealed.
+    /// Kosmos follows `follow` to its workspace, as it follows a Command-Tab (docs/tree.md).
     public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
         defer { check() }
         let returning = windows.filter { isParked($0) && !lifted.contains($0) }
@@ -317,9 +276,7 @@ public struct Session: Sendable {
     }
 
     /// A parked window its app closed and kept, then ordered in again, opens as a new window
-    /// does (docs/tree.md): it leaves its parked place and joins the workspace `name` names,
-    /// else the focused one, as `add` places it. It keeps its minimum size. The plan reveals it when Kosmos had
-    /// concealed it and its new workspace is shown. Nil for a window that is not parked.
+    /// does and keeps its minimum (docs/tree.md). Nil for a window that is not parked.
     public mutating func reopen(_ window: WindowID, to name: String?, floating: Bool) -> Plan? {
         defer { check() }
         guard isParked(window) else { return nil }
@@ -331,11 +288,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The window Kosmos follows when an app unhides: the window the app keys, if it hid with
-    /// the app, else the one focused most recently (`fallback`). A managed keyed window that
-    /// did not hide with the app is not followed from the unhide: a minimized one whose Dock
-    /// thumbnail unhid the app follows by its own return, and a fullscreen one keeps macOS
-    /// on its Space (docs/tree.md).
+    /// Nil for a managed `keyed` window that did not hide with the app: a minimized one follows
+    /// by its own return, and a fullscreen one keeps macOS on its Space (docs/tree.md).
     public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?) -> WindowID? {
         guard let keyed, home[keyed] != nil else { return fallback }
         return windows.contains(keyed) ? keyed : nil
@@ -346,10 +300,6 @@ public struct Session: Sendable {
         return workspaces[name]!.parked.contains { $0.window == window }
     }
 
-    /// Records a size the window would not go below, from a frame read back after a
-    /// write. The layout keeps the window at least that large, on each axis the largest
-    /// size recorded. Returns the frames of the window's workspace when the minimum grew,
-    /// else an empty plan.
     public mutating func setMinimum(_ window: WindowID, _ size: CGSize) -> Plan {
         defer { check() }
         guard let name = home[window] else { return Plan() }
@@ -360,10 +310,8 @@ public struct Session: Sendable {
         return Plan(frames: frames(of: name))
     }
 
-    /// The window was seen at `size` with no write of Kosmos's, as the user or its app
-    /// resized it. Smaller than its minimum on an axis, past the slack, it has none on that
-    /// axis: the refusals that recorded it were not the app's limit. Returns the frames of
-    /// the window's workspace when a minimum went, else an empty plan.
+    /// `size` came with no write of Kosmos's. Smaller than the minimum on an axis, past the
+    /// slack, it shows the refusals that recorded it were no limit of the app's (docs/geometry.md).
     public mutating func sizeObserved(_ window: WindowID, _ size: CGSize) -> Plan {
         defer { check() }
         guard let name = home[window], let old = minimums[window] else { return Plan() }
@@ -376,8 +324,6 @@ public struct Session: Sendable {
 
     // MARK: Focus reports
 
-    /// The user focused a window a display shows: that display becomes the focused one
-    /// (docs/displays.md).
     public mutating func adopt(_ window: WindowID) {
         defer { check() }
         guard let name = home[window] else { return }
@@ -385,7 +331,6 @@ public struct Session: Sendable {
         if isShown(name) { focusShown(name) }
     }
 
-    /// The user reached a hidden window with Command-Tab: show its workspace.
     public mutating func follow(_ window: WindowID) -> Plan {
         defer { check() }
         guard let name = home[window] else { return Plan() }
@@ -482,10 +427,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The workspace a command names that the session does not have, as one the active
-    /// profile leaves out, or nil. AeroSpace creates a workspace on demand; Kosmos's list is
-    /// fixed by the profile, whose `merge-workspaces` puts the windows of the others on its
-    /// own, so such a command fails.
+    /// AeroSpace creates a workspace on demand. Kosmos's are the profile's, so a command that
+    /// names another fails (docs/config.md).
     public func missingWorkspace(in command: Command) -> String? {
         switch command {
         case .workspace(.named(let name)), .moveNodeToWorkspace(.named(let name), _, _):
@@ -508,13 +451,10 @@ public struct Session: Sendable {
         }
     }
 
-    /// Focuses a workspace: where a display shows it, with nothing concealed or revealed,
-    /// else on its display.
     mutating func reach(_ name: String) -> Plan {
         isShown(name) ? focusShown(name) : show(name)
     }
 
-    /// Moves the focus to a workspace a display shows.
     @discardableResult
     mutating func focusShown(_ name: String) -> Plan {
         if name != focusedWorkspace { previous = focusedWorkspace }
@@ -525,7 +465,6 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// Shows a hidden workspace on its display, concealing the one there, and focuses it.
     private mutating func show(_ name: String) -> Plan {
         let display = monitor(of: name).id
         var plan = Plan()
@@ -534,17 +473,16 @@ public struct Session: Sendable {
         shown[display] = name
         previous = focusedWorkspace
         focusedWorkspace = name
-        // A workspace whose windows were never focused still gets one focused.
         if focused == nil, let first = plan.show.first { workspaces[name]!.focus(first) }
         plan.frames = frames(of: name)
         plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
         return plan
     }
 
-    /// `entering`: the window crosses to another display in this direction, and tiles at
-    /// the edge it enters by.
+    /// `entering`: the window crosses to another display in this direction, and tiles at the
+    /// edge it enters by.
     mutating func move(_ window: WindowID, from source: String, to name: String, follow: Bool,
-                               entering: Direction? = nil) -> Plan {
+                       entering: Direction? = nil) -> Plan {
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
         let floating = workspaces[source]!.floating.contains(window)
@@ -556,13 +494,12 @@ public struct Session: Sendable {
         } else {
             workspaces[name]!.insert(window)
         }
-        if floating { _ = workspaces[name]!.float(window) }   // it floats there too
+        if floating { _ = workspaces[name]!.float(window) }
         workspaces[name]!.focus(window)
         home[window] = name
         let following = follow && name != focusedWorkspace
         var plan = following ? reach(name) : Plan()
-        // The window is revealed or concealed as its new workspace is shown or not. On
-        // screen already, it travels with a switch.
+        // Its own reveal or conceal replaces the switch's.
         plan.hide.removeAll { $0 == window }
         plan.show.removeAll { $0 == window }
         if onScreen, !isShown(name) { plan.hide.append(window) }
@@ -574,11 +511,9 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The windows of `hide` that lose their ordinary Space as they are concealed: with
-    /// several displays, those whose app's most recently used window, as `latest` gives it,
-    /// is on a shown workspace of another display. macOS would key such a window on the
-    /// current display over that one, the AeroSpace fork's np3 failure. Every other window
-    /// keeps its ordinary Space, as on one display (docs/hiding.md and docs/displays.md).
+    /// The windows of `hide` that lose their ordinary Space as they are concealed. macOS would
+    /// key one on the current display over its app's latest window, shown on another display
+    /// (docs/hiding.md and docs/displays.md).
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
         guard monitors.count > 1 else { return [] }
         return Set(hide.filter { window in
@@ -588,15 +523,11 @@ public struct Session: Sendable {
         })
     }
 
-    /// The floating windows of the shown workspaces, which `floatingFrames` checks.
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
-    /// Where the floating windows of shown workspaces go that sit on a display showing
-    /// another workspace: onto their workspace's display, at the same place relative to the
-    /// display areas, as AeroSpace's layoutFloatingWindow moves them. Any change can leave a
-    /// floating window there: a move to another display, a rule, a display change. A window
-    /// whose center is on no display, as a concealed one, is left where it is (docs/displays.md).
-    /// - Parameter frames: where the windows are now.
+    /// Targets for the floating windows of shown workspaces that sit on a display showing
+    /// another workspace, as AeroSpace's layoutFloatingWindow moves them (docs/displays.md). A
+    /// concealed window's center is on no display, so it stays.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {
@@ -610,11 +541,8 @@ public struct Session: Sendable {
         }
         return targets
     }
-
 }
 
-/// Where a floating window at `frame` in the area `from` goes in `area`: at the same place
-/// relative to the areas, scaled with them, and kept inside `area`.
 private func floatingFrame(_ frame: CGRect, from: CGRect, movingTo area: CGRect) -> CGRect {
     guard from.width > 0, from.height > 0 else { return frame }
     let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))

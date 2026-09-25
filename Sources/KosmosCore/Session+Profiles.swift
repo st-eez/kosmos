@@ -1,14 +1,7 @@
 import CoreGraphics
 
 extension Session {
-    /// Takes the displays and the profile's workspaces after a display or profile change
-    /// (docs/displays.md). The windows of a workspace that `names` leaves out move to
-    /// the end of the workspace `merge` names for it, else of the first, and come back when a
-    /// later profile lists their workspace, unless they moved since. The focused workspace
-    /// keeps the focus, on its display, and every other display keeps its workspace if it may
-    /// still show it. A drag that the change, a lock or a wake cut short ends with the
-    /// lifted windows back where they stood. It plans nothing: the app resyncs every window
-    /// after it.
+    /// It plans nothing: the app resyncs every window after it (docs/displays.md).
     public mutating func reconfigure(names newNames: [String], monitors newMonitors: [Monitor],
                                      assigned newAssigned: [String: DisplayID], merge: [String: String]) {
         defer { check() }
@@ -38,11 +31,9 @@ extension Session {
         arrange(focusing: focusedWorkspace, near: focusedBefore)
     }
 
-    /// A workspace a profile left out, `saved` as it was, back with the windows still merged
-    /// out of it. Each takes the state it has now: parked or not, tiled or floating. The
-    /// others, which the user moved or closed meanwhile, leave it. `monitor` is where it is
-    /// laid out, for windows returning to a tree that changed. The windows return in the
-    /// saved order: a return to a changed tree depends on the ones before it.
+    /// Each returning window keeps the state it has now, parked or not, tiled or floating. They
+    /// return in the saved order, since a return to a changed tree depends on the ones before
+    /// it (docs/tree.md).
     private mutating func restored(_ saved: Workspace, as name: String, on monitor: Monitor) -> Workspace {
         var workspace = saved
         let windows = saved.root.windows + saved.floating + saved.parked.map(\.window)
@@ -66,7 +57,6 @@ extension Session {
         return workspace
     }
 
-    /// Moves a window to the end of another workspace, tiled, floating or parked as it was.
     private mutating func carry(_ window: WindowID, to name: String) {
         let source = home[window]!
         let floating = workspaces[source]!.floating.contains(window)
@@ -81,11 +71,8 @@ extension Session {
         home[window] = name
     }
 
-    /// Shows `focus` on its display and focuses it. Every other display keeps its workspace
-    /// where that may stay, and a display left with none shows the workspace it showed
-    /// before, if that may show there, else the first workspace assigned to it, else the
-    /// first free hidden one. A free `focus` that no display shows goes to `near`, else to
-    /// the main display.
+    /// Gives every display a workspace by the rules of docs/displays.md, `focus` shown and
+    /// focused.
     mutating func arrange(focusing focus: String, near: DisplayID?) {
         let ids = Set(monitors.map(\.id))
         for (id, name) in shown where !ids.contains(id) || workspaces[name] == nil { shownBefore[id] = name }
@@ -96,7 +83,6 @@ extension Session {
         shown[display] = focus
         for monitor in monitors where shown[monitor.id] == nil {
             let hidden = names.filter { !isShown($0) }
-            // What it showed before, once that may show here again.
             let before = shownBefore[monitor.id].flatMap { name in
                 hidden.contains(name) && (assigned[name] ?? monitor.id) == monitor.id ? name : nil
             }
