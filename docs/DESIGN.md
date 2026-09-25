@@ -269,9 +269,8 @@ off the main thread).
   lists its ids), and the inventory reads the window's frame again. A frame it reads for
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
   replaces the confirmed one, and a size other than the one the window kept at a refusal
-  ends that refusal, so the next layout writes the target again, and only a second
-  refusal of it records a minimum again. A concealed window's
-  frame reads as off every display and is left out.
+  ends that refusal, so the next layout writes the target again, as a first attempt. A
+  concealed window's frame reads as off every display and is left out.
 - A tiled window the user resizes by its edges, as a change event reports it while the
   left button is down, goes back to its tile when the button comes up, which an `NSEvent`
   global monitor hears, as AeroSpace's GlobalObserver does. Omarchy leaves Hyprland's
@@ -293,11 +292,11 @@ off the main thread).
   has ended by the time the change applies goes back to its tile, as the mouse up would
   have sent it. Only the last press that ended is kept, so a change from the press before
   it reads as one with the button up. Judged as it applied, the late echo of a hotkey's
-  write to the window the user holds the button in would lift it. A change that came before a write was sent counts as the write's too. The
-  write's change still records its row when it differs from the frame confirmed: the row
-  applies after the confirm and can hold the app's next step, as of a live resize, whose
-  own event then finds no difference. The pointer for the resize border check is read as
-  the change applies.
+  write to the window the user holds the button in would lift it. A change that came
+  before a write was sent counts as the write's too. The write's change still records its
+  row when it differs from the frame confirmed: the row applies after the confirm and can
+  hold the app's next step, as of a live resize, whose own event then finds no
+  difference. The pointer for the resize border check is read as the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
