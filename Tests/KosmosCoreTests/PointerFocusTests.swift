@@ -38,9 +38,9 @@ private func into(_ window: UInt32, display: DisplayID? = nil) -> PointerGate.En
     }
 
     @Test func aMovementOntoAnotherDisplayGoesOnOverTheSameWindow() {
-        // The desktop, window 5, under the pointer on both panels.
-        #expect(entered([(7, 100, false), (5, -100, false), (5, -200, false), (5, 100, false)])
-            == [into(7, display: 2), into(5, display: 1), nil, into(5, display: 2)])
+        let desktop: WindowID = 5
+        #expect(entered([(7, 100, false), (desktop, -100, false), (desktop, -200, false), (desktop, 100, false)])
+            == [into(7, display: 2), into(desktop, display: 1), nil, into(desktop, display: 2)])
     }
 
     @Test func controlPausesUntilTheNextMovementWithoutIt() {

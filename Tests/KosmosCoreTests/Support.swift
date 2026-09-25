@@ -123,6 +123,25 @@ let t0 = ContinuousClock.now
 /// Steve's gaps. On `screen`, `h[1 2]` has tile 1 at x 10 to 495 and tile 2 at x 505 to 990.
 let deskGaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
 
+/// Steve's desk (docs/displays.md): the left panel, the main panel at the origin, and the
+/// built-in display below, with the home profile's workspaces.
+enum Desk {
+    static let gaps = Gaps(outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
+    static let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), gaps: gaps)
+    static let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
+    static let builtIn = Monitor(id: 3, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982), gaps: gaps)
+    static let names = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    static let home: [String: DisplayID] = ["1": 2, "2": 2, "3": 2, "4": 2, "5": 1, "6": 1, "7": 1, "8": 3, "9": 3, "0": 3]
+}
+
+func desk(_ assigned: [String: DisplayID] = Desk.home, names: [String] = Desk.names) -> Session {
+    Session(names: names, monitors: [Desk.builtIn, Desk.main, Desk.left], assigned: assigned)
+}
+
+func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
+    !frames.isEmpty && frames.values.allSatisfy { monitor.area.insetBy(dx: 9, dy: 9).contains($0) }
+}
+
 /// Deterministic, so a failing sequence can be replayed.
 struct SplitMix64: RandomNumberGenerator {
     var state: UInt64

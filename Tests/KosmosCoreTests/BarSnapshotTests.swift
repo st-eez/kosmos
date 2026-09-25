@@ -72,3 +72,20 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
     #expect(snapshot.displays == [main])
     #expect(snapshot.workspaces.map(\.display) == [2, 2])
 }
+
+@Suite struct DisplayBarTests {
+    @Test func everyDisplayAndEveryWorkspaceWithItsDisplay() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(50, to: "5")
+        s.adopt(50)
+        let bar: [DisplayID: BarSnapshot.Display] = [1: .init(id: 2, name: "VG279QE5A (2)"), 2: .init(id: 1, name: "VG279QE5A (1)"),
+                                                     3: .init(id: 3, name: "Built-in")]
+        let snapshot = s.barSnapshot(profile: "home", displays: bar, app: { _ in "App" }, frame: { _ in nil })
+        #expect(snapshot.displays.map(\.name) == ["VG279QE5A (2)", "VG279QE5A (1)", "Built-in"])
+        #expect(snapshot.workspaces.map(\.display) == [1, 1, 1, 1, 2, 2, 2, 3, 3, 3])
+        #expect(snapshot.workspaces.filter(\.shown).map(\.name) == ["1", "5", "8"])
+        #expect(snapshot.workspaces.filter(\.focused).map(\.name) == ["5"])
+        #expect(snapshot.focused?.workspace == "5")
+        #expect(snapshot.workspaces[4].windows.first?.x == -1910)
+    }
+}
