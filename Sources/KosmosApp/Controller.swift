@@ -371,7 +371,9 @@ final class Controller {
         } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
             // Perhaps the selected tab closed before the next tab came in, in native
             // fullscreen too: its place waits for that tab for the pairing window.
-            after(TabSwitches.window) { $0.forget(id, pid: pid) }
+            after(TabSwitches.window) { controller in
+                if !controller.inventory.isManaged(id) { controller.forget(id, pid: pid) }
+            }
         } else {
             forget(id, pid: pid)
         }
