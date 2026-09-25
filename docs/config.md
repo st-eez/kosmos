@@ -24,3 +24,6 @@
   Kosmos looks a display up by UUID: its bar number and its current Space.
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
   rule shadows a later one.
+- `animations` is on by default, as in Omarchy: windows slide to the frames a relayout
+  gives them and new windows pop in ([geometry.md](geometry.md)). `animations = false`
+  turns both off, and a reload that turns them off ends every slide at once.

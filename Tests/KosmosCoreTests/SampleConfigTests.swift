@@ -29,6 +29,7 @@ import Testing
         #expect(config.rules.count == 18)
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "office-va24e", "laptop"])
         #expect(config.gaps.inner == 10)
+        #expect(config.animations)
     }
 
     @Test func home() throws {
