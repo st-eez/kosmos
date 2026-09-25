@@ -287,7 +287,7 @@ final class Controller {
         case ["list-windows"]:
             let lines = session.names.flatMap { name in
                 session.windows(of: name).map { id in
-                    let app = owner[id].flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName } ?? "?"
+                    let app = owner[id].flatMap { inventory.appIdentity($0).name } ?? "?"
                     return "\(id) \(name) \(app)\(id == session.focused ? " *" : "")"
                 }
             }
