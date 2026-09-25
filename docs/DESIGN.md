@@ -460,27 +460,18 @@ off the main thread).
   the front app that raced Kosmos's activation of another app was dropped (tla/README.md,
   change 19, `split-user-latenote`). The callback still runs some time after the change,
   and Kosmos can key or hide windows in between (change 20). An activation read is checked
-  against the front process when the app answers. Hotkeys and socket commands are stamped
-  on receipt. tla/README.md, change 16 onward, gives the rules below; its first line says
-  which of them the code implements.
+  against the front process on the main actor, once the worker's read returns. Hotkeys and
+  socket commands are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
     app alone would take a Command-Tab to another window of that app for an echo. Records
-    requested before the matched one go with it, so a record whose echo never comes
-    swallows no later report. Apps key another window themselves right after activating:
-    Preview re-keyed its main window within about 40 ms of a hover keying its second window
-    (live, 2026-09-24 at 23:56). One that does so before reporting the requested window
-    leaves that window's record with no echo. The ceiling:
-    each app reports on its own threads, so on a fast sweep of the pointer across apps an
-    earlier request's echo can come after the echo of a later request, find its record
-    gone, and read as the user's choice (tla/README.md, change 19; Deferred, below).
+    requested before the matched one go with it, so a record whose echo never comes goes
+    once a later request's echo comes.
   - A report from an app that is not the front process, at the notification's callback or
-    when the app answers the activation read, consumes an echo it matches and is otherwise
+    once the activation read returns, consumes an echo it matches and is otherwise
     ignored: background apps report windows they open, and a raise in a background app
     reports a focus change. Such a report is never the key window Kosmos last heard of
-    (change 17). The ceiling: when an older request of Kosmos's
-    fronts another app before an activation read runs, the user's activation of the read's
-    app, as a Command-Tab, is lost (`split-user-actcheck`; Deferred, below).
+    (change 17).
   - A click or Command-Tab received before the latest command is stale. The command wins,
     and its focus is requested again.
   - A window on a workspace that a display shows becomes the focus intent, and its
@@ -516,7 +507,9 @@ off the main thread).
     hover keying its second window (live, 2026-09-24 at 23:56). The missed request never
     comes back, so it leaves the expected echoes. Kosmos requests the focus again, once
     for each requested window; if that misses too, it leaves the key window where macOS
-    put it. A report that repeats the held window leaves the hold standing.
+    put it. A report that echoes a request is no miss: an app can report the window again
+    after the raise that follows its key record (below). A report that repeats the held
+    window leaves the hold standing.
   - A visible window of a workspace that no display shows is key only during a switch:
     macOS re-keyed after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,
@@ -566,9 +559,7 @@ off the main thread).
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
   WorkerRaise, FocusDecide, WorkerPost). Each side records the echo, through the main
   queue, right before its own call that changes the key window, never at the request and
-  never for the other side's call (tla/README.md, changes 16 and 18). The key record's
-  echo is an activation's (`act` in the spec), and a raise's a change inside the front app
-  (`note`); Kosmos keeps no kind with the record, since only the deferred rules read it.
+  never for the other side's call (tla/README.md, changes 16 and 18).
   The queue checks the generation, reads whether the target's app is front, hands the app's
   worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so
