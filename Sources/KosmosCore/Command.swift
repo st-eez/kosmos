@@ -143,9 +143,12 @@ public enum Command: Equatable, Sendable {
             default: nil
             }
             guard let dimension else { return fail("resize: unknown dimension \(rest[0])") }
+            // Double also reads "+inf", "+nan" and "+1e20". No display comes near 100000 points,
+            // and the bound keeps the layout's arithmetic and the amount's description finite.
             let amount = rest[1]
-            guard amount.first == "+" || amount.first == "-", let value = Double(amount), value != 0 else {
-                return fail("resize: amount must be +N or -N points, got \(amount)")
+            guard amount.first == "+" || amount.first == "-", let value = Double(amount), value != 0,
+                  value.isFinite, abs(value) <= 100_000 else {
+                return fail("resize: amount must be +N or -N points, up to 100000, got \(amount)")
             }
             return .success(.resize(dimension, by: CGFloat(value)))
         case "balance-sizes": return rest.isEmpty ? .success(.balanceSizes) : usage

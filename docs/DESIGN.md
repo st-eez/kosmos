@@ -766,8 +766,22 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   displays change give way to Kosmos's profiles: Kosmos matches displays by serial,
   switches profile when displays change, and puts the profile name in the bar event
   (section 5.13). A binding runs `profile <name>` where one ran `set-profile.sh`.
-- **Launchers and cheat sheets.** `kosmos list-bindings` prints the loaded bindings as JSON,
-  so a launcher's keybinding list reads them instead of keeping its own copy.
+- **Launchers and cheat sheets.** `kosmos list-bindings` asks the running Kosmos for the
+  bindings it has loaded, so a launcher's keybinding list reads them instead of keeping its
+  own copy, as the Raycast keybinds extension in Steve's dotfiles does. It prints one JSON
+  array of objects with four strings: `mode`; `key`, as the config writes it, such as
+  `alt-shift-left`; `description`; and `category`. Mode main comes first, then the other
+  modes by name, each in file order.
+  - KosmosCore writes the description and the category from the parsed command
+    (`Command.summary` and `Command.category`), so the config holds no descriptions:
+    `focus --boundaries all-monitors-outer-frame left` is "Focus left, across monitors" in
+    Focus.
+  - The categories are Focus, Move, Workspace, Monitor, Layout, Resize, Profile and Other.
+    Moving a window to a workspace or a monitor goes with the workspace or monitor commands.
+  - Profiles carry no bindings, so the list is the same under every profile.
+  - With Kosmos not running, the CLI exits 1 and says so, as for every command. Before a
+    config has loaded, as while Accessibility is missing, Kosmos answers that no hotkeys are
+    registered.
 - **Switching from another window manager.** Install Kosmos.app to /Applications and the CLI
   on the PATH; grant Accessibility to Kosmos itself; launch it at login; turn off the other
   window manager's login item and the helpers Kosmos has replaced by then (profile
