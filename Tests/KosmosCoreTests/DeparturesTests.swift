@@ -122,10 +122,15 @@ private func afterClose(_ remaining: [DepartureFocus.OtherWindow], focusLeft: Bo
     var tabs = TabSwitches()
     // Measured order: the incoming tab joins the Space before the outgoing leaves it.
     #expect(tabs.ordered(2, in: true, frame: tile, app: 100, at: t0) == nil)
-    #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: t0 + .milliseconds(3)).map { [$0.old, $0.new] } == [1, 2])
+    let first = tabs.ordered(1, in: false, frame: tile, app: 100, at: t0 + .milliseconds(3))
+    #expect(first.map { [$0.old, $0.new] } == [1, 2])
+    // The log gives how far apart the halves were applied, and which came first.
+    #expect(first?.gap == .milliseconds(3) && first?.newFirst == true)
     // The other order, as when the selected tab closes first.
     #expect(tabs.ordered(2, in: false, frame: tile, app: 100, at: t0 + .seconds(1)) == nil)
-    #expect(tabs.ordered(3, in: true, frame: tile, app: 100, at: t0 + .seconds(1) + .milliseconds(40)).map { [$0.old, $0.new] } == [2, 3])
+    let second = tabs.ordered(3, in: true, frame: tile, app: 100, at: t0 + .seconds(1) + .milliseconds(40))
+    #expect(second.map { [$0.old, $0.new] } == [2, 3])
+    #expect(second?.gap == .milliseconds(40) && second?.newFirst == false)
 }
 
 @Test func windowsThatComeAndGoApartAreNotATabSwitch() {

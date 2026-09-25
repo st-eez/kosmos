@@ -71,6 +71,11 @@
     halves. A half that reached Kosmos only after the other's read was applied would come
     after the look, and the deselected tab would park as closed and kept, then give its
     place to the new tab when the switch pairs, after one reflow and focus change too many.
+  - So the log measures it at info level. Each pairing's line gives how far apart Kosmos
+    applied the two halves and which came first; each look says whether a tab half had
+    come and how long after the order-out the look was; and a switch that pairs after its
+    deselected tab parked says so. A day of Ghostty and Finder tabs sets the pairing
+    window and whether the look needs a wait; until then the pairing window stays 250 ms.
   - A minimize and a hide have reports of their own, taken to come before the order-out:
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize
