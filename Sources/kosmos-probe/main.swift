@@ -119,8 +119,10 @@
 //   kosmos-probe float-layer [key]  Can a Space shown above the desktop Space keep another
 //                                   app's floating window above its tiled ones, however the
 //                                   tiles are ordered (FloatLayer.swift)? key takes focus.
-//   kosmos-probe space-anim         Can a window alone in a shown Space be animated by setting
-//                                   the Space's transform (SpaceAnim.swift)?
+//   kosmos-probe space-anim [rounds|look]  Can a window alone in a shown Space be animated
+//                                   by setting the Space's transform, and at what cost
+//                                   (SpaceAnim.swift)? rounds repeats the timed runs; look
+//                                   holds each state for a second, for a run at the desk.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -159,7 +161,7 @@ case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
 case "float-stub": floatStub(Array(arguments.dropFirst()))
 case "float-layer": floatLayer(key: arguments.dropFirst().first == "key")
-case "space-anim": spaceAnim()
+case "space-anim": spaceAnim(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 1, look: arguments.contains("look"))
 default:
     print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | float-layer [key]")
     exit(2)
@@ -235,7 +237,9 @@ func elapsed(_ start: ContinuousClock.Instant) -> Double {
     return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
 }
 
+/// NaN for no values.
 func percentile(_ values: [Double], _ p: Double) -> Double {
+    guard !values.isEmpty else { return .nan }
     let sorted = values.sorted()
     return sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * p))]
 }

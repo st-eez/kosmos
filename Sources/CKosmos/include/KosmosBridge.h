@@ -16,8 +16,12 @@ uint64_t kosmos_holding_create(void);
 // opaque (alpha 1), then shown: the float Space of `kosmos-probe float-layer`. Returns 0
 // on failure, with any partial Space destroyed.
 uint64_t kosmos_float_space_create(int32_t level);
-// Sets a Space's transform (`kosmos-probe space-anim` measures its convention). Returns once
-// the operation is sent.
+// Sets a Space's transform. WindowServer applies it to each window the Space shows in that
+// window's own coordinates, origin at its top left and y down, mapping where a point shows to
+// the window's point: a translation of 300 in x shows the window 300 points left, and a scale
+// of 2 shows it at half size, its top left corner in place. The hit test and the window list's
+// bounds follow; SkyLight's bounds and the Accessibility frame do not (kosmos-probe
+// space-anim). Returns once the operation is sent.
 bool kosmos_space_set_transform(uint64_t space, CGAffineTransform transform);
 // Reads a Space's transform, a synchronous bridged read. Returns false if the read fails.
 bool kosmos_space_get_transform(uint64_t space, CGAffineTransform *transform);
