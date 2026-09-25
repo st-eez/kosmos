@@ -171,6 +171,9 @@
     landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
     in at its target, and the reads follow it until it lands. A window its app opens on its
     own tile pops in too.
+  - A window its app closed and kept, then orders in again at its old place, vanishes from
+    there and pops in as a new window does. It shows there only while its reopen waits the
+    pairing window, the ceiling [tree.md](tree.md) names.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while Kosmos can conceal, with the guardian ready and every

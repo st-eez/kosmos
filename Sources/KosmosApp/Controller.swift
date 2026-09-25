@@ -399,8 +399,10 @@ final class Controller {
     }
 
     /// A window ordered in as another of its app with its frame leaves is a native tab
-    /// switch. A hidden tab, or a window closed and kept, ordered in with no tab leaving is
-    /// back a pairing window later (docs/tree.md).
+    /// switch. A hidden tab ordered in with no tab leaving is back a pairing window later. So
+    /// is a window closed and kept while another window of its app is ordered in at its frame,
+    /// as only that window's order-out can still pair, and otherwise it reopens now
+    /// (docs/tree.md).
     private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
         // Measures the tab pairing window; remove once a day of Ghostty and Finder tabs sets it (docs/tree.md).
         controllerLog.info("\(id) ordered \(orderedIn ? "in" : "out", privacy: .public), app \(self.inventory.appIdentity(pid).name ?? String(pid), privacy: .public)")
@@ -409,18 +411,28 @@ final class Controller {
             return
         }
         guard orderedIn, tabs.hidden.contains(id) || closedByApp.contains(id) else { return }
+        // Ceiling: a window that waits and is no tab switch shows at its old place for the
+        // wait; a pool Space could hold it transparent (docs/tree.md).
+        if closedByApp.contains(id), !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
+            return reopen(id, pid: pid)
+        }
         after(TabSwitches.window) { controller in
             guard controller.inventory.windows[id]?.orderedIn == true else { return }
-            if controller.closedByApp.remove(id) != nil {
-                // An ordered out window leaves every Space, the holding Space too, so a conceal
-                // from before it closed would fail the next batch's confirmation.
-                controller.ledger.forget(id)
-                controller.hiding.forgetClosed(id)
-                controller.place(id, pid: pid, ruleWorkspace: true, reopened: true)
+            if controller.closedByApp.contains(id) {
+                controller.reopen(id, pid: pid)
             } else if controller.tabs.detached(id), let pid = controller.owner[id] {
                 controller.place(id, pid: pid, ruleWorkspace: false, reopened: false)
             }
         }
+    }
+
+    /// An ordered out window leaves every Space, the holding Space too, so a conceal from
+    /// before it closed would fail the next batch's confirmation.
+    private func reopen(_ id: WindowID, pid: pid_t) {
+        closedByApp.remove(id)
+        ledger.forget(id)
+        hiding.forgetClosed(id)
+        place(id, pid: pid, ruleWorkspace: true, reopened: true)
     }
 
     /// `new` takes the deselected tab's place with no reflow and no follow, once admitted
