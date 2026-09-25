@@ -75,8 +75,10 @@ final class Inventory {
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window moved or resized, with its frame now.
-    var onFrameChange: (@MainActor (UInt32, CGRect) -> Void)?
+    /// A managed window moved or resized, with its frame now, and whether a WindowServer
+    /// change event (806 to 808, 815, 816) reported it. A Space change, as a reveal makes, a
+    /// creation or a sweep can read a new frame too.
+    var onFrameChange: (@MainActor (UInt32, CGRect, Bool) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -301,8 +303,10 @@ final class Inventory {
             }
         }
         switch event {
-        case .created(let id), .changed(let id):
+        case .created(let id):
             refresh(id)
+        case .changed(let id):
+            refresh(id, changed: true)
         case .spaceMembership(let id):
             refresh(id)
             // It may join the shown Space, where Accessibility lists it.
@@ -321,16 +325,17 @@ final class Inventory {
         }
     }
 
-    /// Reads one window's row (about 0.01 ms) and admits, updates or drops it.
-    private func refresh(_ id: UInt32) {
+    /// Reads one window's row (about 0.01 ms) and admits, updates or drops it. `changed`: a
+    /// WindowServer change event asked for it.
+    private func refresh(_ id: UInt32, changed: Bool = false) {
         guard let row = SkyLight.rows([id]).first else {
             remove(id, reason: "gone")
             return
         }
-        apply(row)
+        apply(row, changed: changed)
     }
 
-    private func apply(_ row: WindowRow) {
+    private func apply(_ row: WindowRow, changed: Bool = false) {
         touchedDuringSweep?.insert(row.id)
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
@@ -355,7 +360,7 @@ final class Inventory {
         // Shown now, as the second window an app launched hidden restored, with no report of
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
-        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, row.frame) }
+        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, row.frame, changed) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""

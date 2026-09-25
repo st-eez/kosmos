@@ -88,7 +88,7 @@ final class Controller {
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, frame in self?.frameChanged(id, to: frame) }
+        inventory.onFrameChange = { [weak self] id, frame, changed in self?.frameChanged(id, to: frame, changed: changed) }
     }
 
     /// Applies a config reload, an unlock, a wake or a display change: the profile's
@@ -412,13 +412,14 @@ final class Controller {
     /// where it is, since the floating check compares its targets with it. Dragged onto a
     /// display showing another workspace, the window joins that workspace, so the check
     /// leaves it there (Session.dragged). A change while a write of Kosmos's is in flight is
-    /// that write's. A drag needs the left button down on the key window, as AeroSpace's
-    /// isManipulatedWithMouse checks, so macOS moving the windows of a display that leaves
-    /// is none (DESIGN.md, section 5.13).
-    private func frameChanged(_ id: WindowID, to frame: CGRect) {
+    /// that write's. A drag needs a WindowServer change event, `changed`, and the left
+    /// button down on the key window, as AeroSpace's isManipulatedWithMouse checks, so macOS
+    /// moving the windows of a display that leaves is none, and neither is a reveal's Space
+    /// change (DESIGN.md, section 5.13).
+    private func frameChanged(_ id: WindowID, to frame: CGRect, changed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), session.shownFloatingWindows.contains(id) else { return }
         ledger.observe(id, frame: frame)
-        guard key == .window(id), NSEvent.pressedMouseButtons == 1, let plan = session.dragged(id, to: frame) else { return }
+        guard changed, key == .window(id), NSEvent.pressedMouseButtons == 1, let plan = session.dragged(id, to: frame) else { return }
         controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
         execute(plan)
     }
