@@ -40,12 +40,18 @@ final class Controller {
     /// one: at its admission, as an app keys a window before Kosmos admits it, or at a tab
     /// switch, as macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
+    /// The new windows (Inventory.isNew) admitted on a shown workspace since the last key
+    /// window report, which their apps had not keyed. The next report takes them: one of
+    /// these windows is its app keying the window it opened, which brings the pointer as a
+    /// key before the admission does.
+    private var admittedUnkeyed: Set<WindowID> = []
     /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until the
     /// batch that conceals them completes, their workspace is shown, or another tab replaces
     /// them. macOS keyed such a window by the user's or the app's choice, so its report
     /// counts as one of a concealed window whose key window before it stayed: an app keys a
     /// window it opens, and the window key before a tab is the tab deselected. It is
-    /// followed at once, and the follow of an admitted window brings the pointer (decide).
+    /// followed at once, and the follow of a new window admitted there brings the pointer
+    /// (decide).
     private var placedHidden: [WindowID: Placed] = [:]
     private enum Placed { case admitted, tab }
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
@@ -377,7 +383,7 @@ final class Controller {
     /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
     /// own, not when the app unhides. A window its app keyed first becomes the focus, and
     /// Kosmos follows it to a hidden workspace (AdmissionFocus). The pointer comes along to
-    /// a new window there, or on another display than the pointer's.
+    /// a new window its app keyed, before its admission or just after (admittedUnkeyed).
     private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
@@ -401,25 +407,26 @@ final class Controller {
         // report, which waited for the place, is decided now.
         let report = unplacedKey.flatMap { $0.key == .window(id) ? $0 : nil }
         if report != nil { unplacedKey = nil }
-        let focus = AdmissionFocus.decide(keyed: key == .window(id), shown: session.workspace(of: id).map(session.isShown) == true,
-                                          parked: session.isParked(id), atLaunch: inventory.wasThereAtLaunch(id),
-                                          locked: sessionLocked)
+        let keyed = key == .window(id), shown = session.workspace(of: id).map(session.isShown) == true
+        let focus = AdmissionFocus.decide(keyed: keyed, shown: shown, parked: session.isParked(id),
+                                          atLaunch: inventory.wasThereAtLaunch(id), locked: sessionLocked)
         switch focus {
         case .adopt: session.adopt(id)
         case .placedHidden: placedHidden[id] = .admitted
         case .none: break
         }
-        // A window opened after launch onto a shown workspace pops in (Slides). One its app
-        // keyed on another display than the pointer brings the pointer, as a keyboard focus
-        // change there does (docs/focus-follows-mouse.md).
-        let launched = !inventory.wasThereAtLaunch(id)
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched && focusAwayFromPointer,
+        // A window opened after launch onto a shown workspace pops in (Slides). A new window
+        // its app keyed brings the pointer on any display, as a keyboard focus change does,
+        // and so does one its app keys next (docs/focus-follows-mouse.md).
+        let launched = !inventory.wasThereAtLaunch(id), new = inventory.isNew(id)
+        if new, shown, !keyed, !sessionLocked, !session.isParked(id) { admittedUnkeyed.insert(id) }
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new,
                 floatingCheck: floats, popping: launched ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden[id] = nil
             report.concealed = true
-            report.admitted = true
+            report.admitted = new
             decidePlaced(report, keyLeft: .stayed)
         }
     }
@@ -803,6 +810,8 @@ final class Controller {
             let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
+            let keyedAfterAdmission = id.map(admittedUnkeyed.contains) == true
+            admittedUnkeyed = []
             // macOS's report of the next key window, which a departure waited for. Kosmos's
             // own echo is not it: a window keyed during a minimize's animation leaves macOS
             // nothing to key when it ends, so the wait runs to its bound and focuses.
@@ -840,9 +849,10 @@ final class Controller {
             // read: only its notification reports a window opened inside the front app
             // (tla/README.md, change 22).
             let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
+            let admitted = keyedAfterAdmission || placed == .admitted && id.map(inventory.isNew) == true
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
                                    concealed: placed != nil || id.map { hiding.wasConcealed($0, at: report.received) } ?? false,
-                                   miss: miss, admitted: placed == .admitted),
+                                   miss: miss, admitted: admitted),
                          keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
             // Parked as closed and kept already if its order-out was looked at before this
@@ -892,8 +902,10 @@ final class Controller {
         var concealed: Bool
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss
-        /// The reported window is one Kosmos admitted to its rule's hidden workspace
-        /// (AdmissionFocus.placedHidden), and following it brings the pointer.
+        /// The reported window is a new one (Inventory.isNew) its app keys as Kosmos admits
+        /// it: to its rule's hidden workspace (AdmissionFocus.placedHidden), or on a shown
+        /// workspace just before this report (admittedUnkeyed). Following or adopting it
+        /// brings the pointer.
         var admitted = false
     }
 
@@ -960,8 +972,9 @@ final class Controller {
             // nothing (tla/Kosmos.tla, Adopt).
             requestFocus(.window(window))
             // Command-Tab or a Dock click to a window away from the pointer brings the pointer
-            // along; a click on the window leaves it.
-            if mouseFollowsFocus, pickedAwayFromPointer() { centerPointer() }
+            // along, as does a new window its app keyed just after its admission; a click on
+            // the window leaves it.
+            if mouseFollowsFocus, report.admitted || pickedAwayFromPointer() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)

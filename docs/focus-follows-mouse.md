@@ -120,17 +120,23 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     gives the times. A Command-Tab switcher held open for over a second reads as a click.
   - A new window its app keyed brings the pointer whatever input came before, as a
     keyboard focus change does, when Kosmos follows it to its rule's hidden workspace
-    ([displays.md](displays.md)) or it becomes the focus on a shown workspace of another
-    display than the pointer. An app can open its first window seconds after the
-    launcher's hotkey, past the second the Command-Tab test allows. Live on 2026-09-25,
-    Chrome launched from Raycast on workspace 8 on the built-in display keyed its window
-    5.2 s after the hotkey, Kosmos followed it to workspace 4 on the main panel, and the
-    pointer stayed on the built-in display, before this. On the pointer's display the
-    pointer stays, as it does for a new window with no rule. A window that was there when
-    Kosmos launched leaves it too, so the pointer stays where it is at startup. A window
-    its app keys only after Kosmos admitted it on a shown workspace is judged as a
-    Command-Tab. A launch by an agent or a script that brings the app front brings the
-    pointer too, as it brings the follow.
+    ([displays.md](displays.md)) or it becomes the focus on a shown workspace, on any
+    display. An app can open its first window seconds after the launcher's hotkey, past
+    the second the Command-Tab test allows. Live on 2026-09-25, Chrome launched from
+    Raycast on workspace 8 on the built-in display keyed its window 5.2 s after the
+    hotkey, Kosmos followed it to workspace 4 on the main panel, and the pointer stayed on
+    the built-in display, before this. The same day Cmd-N in Ghostty on workspace 1 keyed
+    the new window before Kosmos admitted it, the window took the focus and the border,
+    and the pointer stayed over the old window, whose next bump would take the focus back,
+    before this. A window its app keys just after Kosmos admitted it on a shown workspace
+    brings the pointer too, when no other key window report came between
+    (`Controller.admittedUnkeyed`). A window that was there when Kosmos launched, or that
+    Kosmos first saw while the session was locked, leaves the pointer where it is, at
+    startup and at the unlock. The ceiling: Kosmos does not tell who opened a window, so
+    an agent's or a script's new window that its app keys brings the pointer too, as it
+    takes the focus or brings the follow. If that pulls the pointer away while Steve
+    works, the rule can ask for a key or a click in the seconds before the app launched
+    or opened the window.
   - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
     window it activates the same way. Left on the Dock, the pointer would focus every
     window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and

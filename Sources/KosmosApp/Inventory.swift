@@ -59,6 +59,8 @@ final class Inventory {
     /// Known windows destroyed while locked, or whose app exited then. The unlock sweep
     /// removes them, and no event was missed.
     private var removedWhileLocked: Set<UInt32> = []
+    /// The windows first seen while locked, once the unlock sweep has admitted them.
+    private var firstSeenLocked: Set<UInt32> = []
     /// From the unlock until the sweep after it, which admits and removes the windows the
     /// lock held back.
     private var awaitingUnlockSweep = false
@@ -201,6 +203,10 @@ final class Inventory {
 
     /// Whether the first sweep found the window: it was there before Kosmos launched.
     func wasThereAtLaunch(_ id: UInt32) -> Bool { atLaunch.contains(id) }
+
+    /// Whether the window opened while Kosmos watched: after its launch, and not while the
+    /// session was locked.
+    func isNew(_ id: UInt32) -> Bool { !atLaunch.contains(id) && !firstSeenLocked.contains(id) }
 
     /// Whether the window is minimized, as Accessibility read it with the window's other
     /// facts and as each minimize report since says.
@@ -524,6 +530,7 @@ final class Inventory {
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
         fullscreen.remove(id)
+        firstSeenLocked.remove(id)
         spaceChangedAt[id] = nil
         if row.orderedIn { departures.left(id, at: .now) }
         // Before the removal, so a tab that replaces this one takes its place.
@@ -676,6 +683,7 @@ final class Inventory {
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false
+            firstSeenLocked.formUnion(arrivedWhileLocked.keys)
             arrivedWhileLocked = [:]
             removedWhileLocked = []
             heldOrder.swept()
