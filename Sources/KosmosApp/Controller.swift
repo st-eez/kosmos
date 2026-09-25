@@ -127,7 +127,9 @@ final class Controller {
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let point = event.cgEvent?.location else { return }
-            MainActor.assumeIsolated { self?.leftMouseDown(at: point) }
+            // A global event has no window, so its location is on the screen.
+            let location = event.locationInWindow
+            MainActor.assumeIsolated { self?.leftMouseDown(at: point, location: location) }
         }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
@@ -549,20 +551,20 @@ final class Controller {
         leftMouseUp(at: nil)
     }
 
-    /// The left button went down at `point`. kosmos_make_key posts a synthesized mouse down
-    /// far past every display with no mouse up, so a press off every display is left out.
+    /// The left button went down at `point`, which is `location` in AppKit's screen
+    /// coordinates. kosmos_make_key posts a synthesized mouse down far past every display with
+    /// no mouse up, so a press off every display is left out, and it names no window clicked.
     /// With mouse-follows-focus, the window the press landed on is found as it lands: the
     /// Dock, when autohide is on, starts to hide once the pointer leaves it, which can be
     /// before the app it activates reports its window key (pickedAwayFromPointer).
-    private func leftMouseDown(at point: CGPoint) {
+    private func leftMouseDown(at point: CGPoint, location: NSPoint) {
         var display: CGDirectDisplayID = 0, count: UInt32 = 0
         let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
         controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
+        clickedWindow = 0
         guard onDisplay else { return }
         leftButton.pressed(at: .now)
-        // WindowServer's hit test, in AppKit's coordinates, from the bottom of the main display.
-        let height = CGDisplayBounds(CGMainDisplayID()).height
-        clickedWindow = mouseFollowsFocus ? NSWindow.windowNumber(at: NSPoint(x: point.x, y: height - point.y), belowWindowWithWindowNumber: 0) : 0
+        if mouseFollowsFocus { clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0) }
     }
 
     /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
