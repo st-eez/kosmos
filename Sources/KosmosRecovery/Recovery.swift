@@ -76,8 +76,7 @@ public enum Recovery {
         let after = SpaceMembers.read(liveSpaces, of: record)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))
-        // A window whose Spaces do not read counts as on none, which keeps the record.
-        let onNoSpace = { (window: UInt32) in alive.contains(window) && SkyLight.spaces(of: window)?.isEmpty != false }
+        let onNoSpace = { (window: UInt32) in alive.contains(window) && (SkyLight.spaces(of: window) ?? []).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
             let withoutSpace = plan.windows.filter(onNoSpace).count
             recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
