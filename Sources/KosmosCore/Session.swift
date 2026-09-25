@@ -163,8 +163,7 @@ public struct Session: Sendable {
         return workspace.frames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
-    /// A window has one workspace, so the workspaces' frames never share a key.
-    public func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
+    func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
         names.reduce(into: [:]) { frames, name in frames.merge(self.frames(of: name)) { current, _ in current } }
     }
 
@@ -268,7 +267,7 @@ public struct Session: Sendable {
             workspaces[focusedWorkspace]!.focus(window)
             plan.focus = .window(window)
         }
-        plan.frames.merge(frames(of: changed)) { current, _ in current }
+        plan.frames = frames(of: changed)
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
@@ -502,7 +501,7 @@ public struct Session: Sendable {
         if !following, wasFocused || name == focusedWorkspace {
             plan.focus = intent
         }
-        plan.frames.merge(frames(of: [source, name])) { current, _ in current }
+        plan.frames = frames(of: [source, name])
         return plan
     }
 
