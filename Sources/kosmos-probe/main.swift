@@ -88,6 +88,11 @@
 //                                   default. Every window is watched on the probe's own
 //                                   connection. Passive: it opens no window and takes no
 //                                   focus, so it runs beside Kosmos while switches are timed.
+//   kosmos-probe mission-control [none|on-enter|always] [seconds]
+//                                   Can concealed windows be kept out of Mission Control by
+//                                   stripping their ordinary Space only while it is open?
+//                                   Prints the Dock's Exposé notifications and when each
+//                                   strip and restore landed (MissionControl.swift).
 import AppKit
 import CKosmos
 import KosmosCore
@@ -121,8 +126,9 @@ case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dro
 case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
 case "level": levels()
 case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
+case "mission-control": missionControl(Array(arguments.dropFirst()))
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] | level [onscreen|opaque] | events [seconds]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] | level [onscreen|opaque] | events [seconds] | mission-control [none|on-enter|always] [seconds]")
     exit(2)
 }
 
@@ -848,8 +854,10 @@ func axTimeout() {
 /// visible area and prints the window ids. Each "key" line on its standard input prints the
 /// window the app holds key, or 0. Each "activate" line activates the app from this
 /// background thread, as Kosmos's focus queue activates Kosmos, and prints what `activate`
-/// returned. It exits when its standard input closes.
+/// returned. It exits when its standard input closes, and ignores Ctrl-C, so a parent that
+/// handles Ctrl-C can still act on its windows before it quits.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
+    signal(SIGINT, SIG_IGN)
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
