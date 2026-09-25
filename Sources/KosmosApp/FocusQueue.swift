@@ -40,13 +40,16 @@ final class FocusQueue: Sendable {
     /// can be older than a request still in flight. Otherwise it raises, which keys the
     /// window there. `FocusDecide`: after the job, or 30 ms, the queue keys only a
     /// background app, whose job did nothing but order the key record after the app's queued
-    /// activation reads.
+    /// activation reads. `WorkerPost`: then the app's worker raises the window.
     ///
     /// Each side records the echo right before its own call that changes the key window, and
     /// never for the other's: `performing` runs on the main actor with a stamp and the path,
-    /// before any report of the change, which reaches main only after the change starts.
-    /// `dropped` gets that stamp when the call fails. Recording when the request is made failed
-    /// TLC: a request still queued took a click on its window for its echo.
+    /// before any report of the change, which reaches main only after the change starts. The
+    /// key record's echo is an activation's (`act` in tla/Kosmos.tla) and a raise's a change
+    /// inside the front app (`note`). `dropped` gets that stamp when the call fails, and when
+    /// the raise after a key record is done, which forgets its record unless a report used it.
+    /// Recording when the request is made failed TLC: a request still queued took a click on
+    /// its window for its echo.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
                  generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
@@ -77,8 +80,14 @@ final class FocusQueue: Sendable {
                     case .none: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
-                if performed { return }
-                Self.onMain { dropped(stamp) }
+                guard performed else { return Self.onMain { dropped(stamp) } }
+                // `WorkerPost`: the key record left the window where it sits in its app's
+                // stacking order, and the app's worker raises it next.
+                if case .window(let id) = key {
+                    worker?.raiseAfterKeyRecord(id, performing: { stamp in Self.onMain { performing(stamp, .raise) } },
+                                                raised: { stamp in Self.onMain { dropped(stamp) } })
+                }
+                return
             }
             switch key {
             case .window(let id):

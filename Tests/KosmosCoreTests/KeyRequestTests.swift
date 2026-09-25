@@ -54,3 +54,14 @@ import Testing
     // Command-Tab back to the window (kosmos-hover's TLC run).
     #expect(!KeyRequest(appWasFront: true).workerRead(isCurrent: true, focused: nil, target: 1))
 }
+
+@Test func afterTheKeyRecordTheWorkerRaisesOnlyTheFrontAppsFocusedTarget() {
+    // split-user-nopostraise: without the raise the key record's window stayed behind its
+    // app's other windows.
+    #expect(KeyRequest.workerPostRaises(appIsFront: true, focused: .some(1), target: 1))
+    // The user keyed another window of the app, or another app, since the key record.
+    #expect(!KeyRequest.workerPostRaises(appIsFront: true, focused: .some(2), target: 1))
+    #expect(!KeyRequest.workerPostRaises(appIsFront: false, focused: .some(1), target: 1))
+    // The app did not answer the read.
+    #expect(!KeyRequest.workerPostRaises(appIsFront: true, focused: nil, target: 1))
+}

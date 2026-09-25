@@ -206,6 +206,32 @@ actor AppWorker {
         }
     }
 
+    /// The raise after the queue's key record for this background app (`WorkerPost`, KosmosCore's
+    /// KeyRequest), which brings the keyed window to the top of its app. The key record then
+    /// AXRaise put it on top 10 times in 10, the key record alone 0 times (`kosmos-probe
+    /// keying`). The echo is recorded through `performing` just before the raise, as the raise
+    /// keys the window again if the user keyed another window of the app first. Once the raise
+    /// has returned and the worker has read the app's focused window, by when the app's
+    /// callbacks for the raise have run, as they have before its activation read, `raised`
+    /// tells the main actor to forget the record if no report used it: the raise changed
+    /// nothing (tla/README.md, change 23).
+    nonisolated func raiseAfterKeyRecord(_ id: UInt32, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                         raised: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
+        executor.perform {
+            self.assumeIsolated { worker in
+                let focused = worker.focusedWindow()
+                guard worker.elements[id] != nil,
+                      KeyRequest.workerPostRaises(appIsFront: kosmos_front_pid() == worker.pid, focused: focused, target: id)
+                else { return }
+                let stamp = ContinuousClock.now
+                performing(stamp)
+                worker.raiseWindow(id)
+                _ = worker.focusedWindow()
+                raised(stamp)
+            }
+        }
+    }
+
     /// Reads the app's focused window for the focus queue, which waits for it at most 30 ms.
     /// `done` gets nil when the app did not answer.
     nonisolated func readFocusedWindow(_ done: @escaping @Sendable (UInt32??) -> Void) {
