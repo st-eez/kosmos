@@ -75,11 +75,8 @@ public enum PointerSkip: Equatable, Sendable {
 
 extension FocusFollowsMouse {
     /// Why the pointer entering `window` leaves focus alone, or nil when the window takes
-    /// focus (DESIGN.md, section 5.11). WindowServer found `window` under the pointer, so it
-    /// is on screen: on a display that shows a native fullscreen Space, the only windows
-    /// there are the fullscreen window, which takes focus as Omarchy's does, and its app's
-    /// panels, which the session does not tile. So nothing behind a fullscreen window takes
-    /// focus, and a fullscreen Space on another display leaves this one free.
+    /// focus. A native fullscreen window takes it, and nothing behind one can (DESIGN.md,
+    /// section 5.11).
     /// - Parameters:
     ///   - fullscreen: the window is parked in native fullscreen.
     ///   - key: the key window macOS last reported.
@@ -96,6 +93,7 @@ extension FocusFollowsMouse {
         if key == .window(window), fullscreen || session.focused == window { return .focused }
         return nil
     }
+
     /// The workspace to focus when the pointer entered `display`: the one it shows, when
     /// that has no windows and is not focused already, as Hyprland's `follow_mouse` moves
     /// the monitor focus. Over the desktop or a gap of a display whose workspace has
