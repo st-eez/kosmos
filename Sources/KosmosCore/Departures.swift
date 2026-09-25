@@ -124,3 +124,38 @@ public enum DepartureFocus: Equatable, Sendable {
         return .afterKeyReport
     }
 }
+
+/// When a managed window its app ordered out counts as closed and kept, as a closed
+/// NSWindowController window does (DESIGN.md, section 5.5): still ordered out after a wait,
+/// for none of the reasons with reports of their own.
+public enum ClosedAndKept {
+    /// The wait while a native fullscreen transition may be under way. A transition orders
+    /// its window out for about 0.53 s: entering, from 84 ms after toggleFullScreen to 612 ms,
+    /// and leaving, from 225 ms to 751 ms (kosmos-probe fullscreen, September 23, 2026).
+    public static let longWait: Duration = .seconds(1)
+
+    /// How long after its order-out at `orderedOut` the window is judged. A native tab switch
+    /// pairs within the tab pairing window, so a deselected tab has left the session by then.
+    /// A native fullscreen transition created Spaces 37 to 46 ms before its order-out on the
+    /// way in and 193 ms before on the way out, and a window leaving still counts as in
+    /// fullscreen at its order-out, until it joins the desktop Space 318 ms later. So a
+    /// window in fullscreen, or ordered out within `longWait` of the last Space event at
+    /// `spacesChanged`, waits `longWait`. A close posts
+    /// no Space event: a probe panel's close posted its order-out, then its leaving its Space,
+    /// in one millisecond (Kosmos's debug log, September 23, 2026).
+    public static func wait(orderedOut: ContinuousClock.Instant, fullscreen: Bool,
+                            spacesChanged: ContinuousClock.Instant?) -> Duration {
+        let transition = fullscreen || spacesChanged.map { orderedOut - $0 < longWait } == true
+        return transition ? longWait : TabSwitches.window
+    }
+
+    /// How much longer a window judged at `now` waits, or nil to park it now. A new tab
+    /// Kosmos has not admitted yet claims its place and takes it once admitted
+    /// (TabGroups.switched), and parking the window first would reflow twice. A claimed
+    /// window waits for the admission until `longWait` after its order-out, then parks.
+    public static func claimWait(orderedOut: ContinuousClock.Instant, claimed: Bool,
+                                 at now: ContinuousClock.Instant) -> Duration? {
+        guard claimed, now - orderedOut < longWait else { return nil }
+        return orderedOut + longWait - now
+    }
+}

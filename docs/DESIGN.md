@@ -855,14 +855,28 @@ off the main thread).
     as at launch, is parked at once on the workspace it joins.
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
     as a minimized one does, and returns when the app orders it in again. Kosmos takes a
-    window still ordered out a second later for none of the other reasons as one. A
-    conceal leaves a window ordered in (`kosmos-probe reveal`), and the second outlasts a
-    fullscreen transition. A deselected tab is not one: it has left the session. While
-    the session is locked, and until the sweep after the unlock, no window counts as one,
-    as none is removed then: whether the lock screen orders windows out is unmeasured.
-    That sweep checks every managed window still ordered out again. A tab parked this way
-    before its switch took effect, as when the new tab's admission outlasts the second,
-    gives its place back to the new tab.
+    window still ordered out after the pairing window, 250 ms, for none of the other
+    reasons as one, so the others reflow about 0.25 s after a Command-W. Until September
+    25, 2026 it waited a second, and Helium stayed at half width for that second after
+    Activity Monitor's window closed beside it (live log). A conceal leaves a window
+    ordered in (`kosmos-probe reveal`). A deselected tab is not one: its switch paired
+    within the pairing window, and it left the session. A tab whose place a new tab claims
+    before Kosmos admits it waits for that admission until a second after its order-out,
+    then parks, and gives its place back if the new tab takes it later.
+  - A native fullscreen transition orders its window out for about 0.53 s: entering, from
+    84 ms after toggleFullScreen to 612 ms, and leaving, from 225 ms to 751 ms
+    (`kosmos-probe fullscreen`, September 23, 2026). Entering, the window counts as in
+    fullscreen only once it joins its fullscreen Space at 574 ms, after the order-out.
+    Leaving, it still counts as in fullscreen at the order-out, until it joins the desktop
+    Space at 543 ms. Both ways the transition creates Spaces first, 37 to 46 ms before
+    the order-out entering and 193 ms before it leaving. A close posts no Space event: a
+    probe panel's close posted its order-out, then its leaving its Space, in one
+    millisecond (Kosmos's debug log, September 23). So a window in fullscreen, or ordered
+    out within a second of a Space event, is judged after a second, which outlasts the
+    transition. A Command-W within a second of a Space switch waits the second too.
+  - While the session is locked, and until the sweep after the unlock, no window counts
+    as closed and kept, as none is removed then: whether the lock screen orders windows
+    out is unmeasured. That sweep checks every managed window still ordered out again.
   - A return received before the latest command is stale, as a Command-Tab is (5.4). The
     window goes back, Kosmos stays where the command took it, and it requests the
     command's focus again. A return from fullscreen is stamped at the window's first

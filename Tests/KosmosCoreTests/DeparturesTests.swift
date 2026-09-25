@@ -263,3 +263,55 @@ private func placed(_ window: WindowID) -> Bool { places.contains(window) }
     tabs.forget(7)
     #expect(tabs.hidden.isEmpty)
 }
+
+// A window its app closed and kept is judged a tab pairing window after its order-out, or a
+// second after while a native fullscreen transition may be under way. Activity Monitor's
+// Command-W waited a second before its neighbor reflowed (live log, September 25, 2026).
+
+@Test func aWindowClosedAndKeptIsJudgedAfterThePairingWindow() {
+    #expect(ClosedAndKept.wait(orderedOut: t0, fullscreen: false, spacesChanged: nil) == .milliseconds(250))
+    // A Space event more than a second before is no transition of this window's.
+    #expect(ClosedAndKept.wait(orderedOut: t0, fullscreen: false, spacesChanged: t0 - .seconds(2)) == .milliseconds(250))
+}
+
+@Test func aDeselectedTabIsJudgedAsThePairingWindowEnds() {
+    var tabs = TabSwitches()
+    let judged = t0 + ClosedAndKept.wait(orderedOut: t0, fullscreen: false, spacesChanged: nil)
+    #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: t0) == nil)
+    // The last incoming tab that pairs comes by the judgement, and none after it pairs.
+    var late = tabs
+    #expect(tabs.ordered(2, in: true, frame: tile, app: 100, at: judged).map { [$0.old, $0.new] } == [1, 2])
+    #expect(late.ordered(2, in: true, frame: tile, app: 100, at: judged + .milliseconds(1)) == nil)
+}
+
+// kosmos-probe fullscreen, September 23, 2026, from the child's toggleFullScreen. Entering:
+// Spaces created at 38 to 47 ms, ordered out at 84 ms, in the fullscreen Space at 574 ms,
+// ordered in at 612 ms. Leaving: Spaces created at 25 and 32 ms, ordered out at 225 ms, on
+// the desktop Space at 543 ms, where it stops counting as in fullscreen, ordered in at 751 ms.
+
+@Test func aNativeFullscreenTransitionIsBackBeforeItIsJudged() {
+    // Entering, only the Spaces it created tell.
+    let enter = t0, out = enter + .milliseconds(84.2), back = enter + .milliseconds(612.4)
+    #expect(out + ClosedAndKept.wait(orderedOut: out, fullscreen: false, spacesChanged: enter + .milliseconds(47.1)) > back)
+    // Leaving, the Spaces it created and its fullscreen state each tell.
+    let leave = t0 + .seconds(4), outAgain = leave + .milliseconds(224.8), backAgain = leave + .milliseconds(750.8)
+    let signs: [(fullscreen: Bool, spacesChanged: ContinuousClock.Instant?)] = [(true, nil), (false, leave + .milliseconds(31.6))]
+    for sign in signs {
+        #expect(outAgain + ClosedAndKept.wait(orderedOut: outAgain, fullscreen: sign.fullscreen, spacesChanged: sign.spacesChanged) > backAgain)
+    }
+}
+
+@Test func aTabANewTabClaimsWaitsForThatTabsAdmission() {
+    // Command-T in an app slow to answer Accessibility: tab 2 is judged at the pairing
+    // window, while the new tab 7, selected, is not admitted yet.
+    var tabs = TabGroups()
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed, sharesFrame: { _ in true }) == .pending)
+    #expect(tabs.isClaimed(2) && !tabs.isClaimed(7))
+    let judged = t0 + TabSwitches.window
+    #expect(ClosedAndKept.claimWait(orderedOut: t0, claimed: tabs.isClaimed(2), at: judged) == .milliseconds(750))
+    // Admitted, 7 takes the place, and nothing claims 2.
+    #expect(tabs.admitting(7) == .takes(2))
+    #expect(ClosedAndKept.claimWait(orderedOut: t0, claimed: tabs.isClaimed(2), at: judged) == nil)
+    // Never admitted, a claimed tab parks a second after its order-out.
+    #expect(ClosedAndKept.claimWait(orderedOut: t0, claimed: true, at: t0 + .seconds(1)) == nil)
+}

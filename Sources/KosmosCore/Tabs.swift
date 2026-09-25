@@ -176,6 +176,11 @@ public struct TabGroups: Sendable {
         hidden.insert(old)
     }
 
+    /// Whether a tab selected before its admission claims `window`'s place.
+    public func isClaimed(_ window: WindowID) -> Bool {
+        pending.values.contains(window)
+    }
+
     public mutating func admitting(_ window: WindowID) -> Admission {
         if hidden.contains(window) { return .hidden }
         if let old = pending.removeValue(forKey: window) { return .takes(old) }

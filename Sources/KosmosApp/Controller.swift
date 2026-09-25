@@ -125,7 +125,7 @@ final class Controller {
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
-        inventory.onKeptOrderedOut = { [weak self] id in self?.keptOrderedOut(id) }
+        inventory.onKeptOrderedOut = { [weak self] id, orderedOut in self?.keptOrderedOut(id, orderedOut: orderedOut) }
         inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
@@ -438,8 +438,9 @@ final class Controller {
         case .replace(let holder): old = holder
         }
         // Parked as closed by its app before the switch took effect, as when the new tab's
-        // admission outlasts the kept rule's second: the place returns for the new tab, which
-        // is on screen. The replace's plan lays the place out, so the unpark's is dropped.
+        // admission outlasts the second a claimed tab waits for it: the place returns for the
+        // new tab, which is on screen. The replace's plan lays the place out, so the unpark's
+        // is dropped.
         if closedByApp.remove(old) != nil { _ = session.unpark([old], follow: nil) }
         guard let plan = session.replace(old, with: new) else { return false }
         placedHidden.remove(old)
@@ -474,11 +475,19 @@ final class Controller {
     /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
     /// parks as a minimized window does, and returns when the app orders it in again
     /// (orderChanged). Removing it would lose its place, and the inventory would not admit
-    /// it again, since it stays managed. A deselected tab has left the session already. A
-    /// window closed while the user drags it parks too, where it stood.
-    private func keptOrderedOut(_ id: WindowID) {
+    /// it again, since it stays managed. A deselected tab has left the session already, and
+    /// one a new tab claims waits for that tab's admission (ClosedAndKept.claimWait). A
+    /// window closed while the user drags it parks too, where it stood. `orderedOut`: when
+    /// the inventory saw it ordered out.
+    private func keptOrderedOut(_ id: WindowID, orderedOut: ContinuousClock.Instant) {
         guard session.workspace(of: id) != nil, !session.isParked(id) || session.lifted.contains(id) else { return }
-        controllerLog.info("\(id) closed and kept by its app: parked")
+        if let wait = ClosedAndKept.claimWait(orderedOut: orderedOut, claimed: tabs.isClaimed(id), at: .now) {
+            after(wait) { controller in
+                if controller.inventory.isKeptOrderedOut(id) { controller.keptOrderedOut(id, orderedOut: orderedOut) }
+            }
+            return
+        }
+        controllerLog.info("\(id) closed and kept by its app: parked \(Self.ms(ContinuousClock.now - orderedOut), privacy: .public) ms after it was seen ordered out")
         closedByApp.insert(id)
         depart([id])
     }
