@@ -191,9 +191,9 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 
     @Test func aFloatingWindowOnADisplayShowingAnotherWorkspaceGoesToItsOwn() {
         var s = desk()
-        _ = s.add(10); _ = s.float(10)
-        _ = s.add(50, to: "5"); _ = s.float(50)
-        _ = s.add(60, to: "6"); _ = s.float(60)
+        _ = s.add(10, floating: true)
+        _ = s.add(50, to: "5", floating: true)
+        _ = s.add(60, to: "6", floating: true)
         #expect(s.shownFloatingWindows.sorted() == [10, 50])
         let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
         // 10 on the main panel is home; 50 there too, and it goes to the left panel at the
@@ -216,9 +216,9 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 
     @Test func aFloatingWindowDraggedOntoAnotherDisplayJoinsItsWorkspace() {
         var s = desk()
-        _ = s.add(10); _ = s.float(10)
+        _ = s.add(10, floating: true)
         _ = s.add(11)
-        _ = s.add(60, to: "6"); _ = s.float(60)
+        _ = s.add(60, to: "6", floating: true)
         s.adopt(10)
         let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
         let onLeft = CGRect(x: -1000, y: 100, width: 400, height: 300)
@@ -245,7 +245,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         tiles.merge(s.frames(of: "5")) { current, _ in current }
         #expect(s.released([10, 50, 20]).frames == tiles)
         // A floating window keeps the size the user gave it.
-        _ = s.float(11)
+        s.adopt(11)
+        _ = s.perform(.layout(.toggleFloating))
         #expect(s.released([11]).frames.isEmpty)
     }
 
@@ -550,7 +551,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     @Test func theLaptopProfileMergesTheWorkspacesItLeavesOut() {
         var s = desk()
         _ = s.add(10); _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
-        _ = s.add(70, to: "7"); _ = s.float(70)
+        _ = s.add(70, to: "7", floating: true)
         _ = s.add(71, to: "7"); _ = s.park([71])
         _ = s.perform(.workspace(.named("7")))
         let laptop = ["1", "2", "3", "4", "5"]
@@ -735,8 +736,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 /// screen, and checks after each step what DESIGN.md section 5.13 promises: every display
 /// shows at most one workspace, one it may show; the focused workspace is shown; every
 /// window is in the workspace it belongs to; a window is concealed exactly when its
-/// workspace is hidden, unless it is parked; and every tiled window of a shown workspace
-/// lies on that workspace's display.
+/// workspace is hidden, unless it is parked; every tiled window of a shown workspace lies
+/// on that workspace's display; and no plan has a frame for a floating window.
 @Test(arguments: 1...12 as ClosedRange<UInt64>)
 func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -757,6 +758,8 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     func carryOut(_ plan: Session.Plan?) {
         guard let plan else { return }
         #expect(Set(plan.show).isDisjoint(with: plan.hide), "seed \(seed)")
+        let floating = Set(s.names.flatMap { s.workspaces[$0]!.floating })
+        #expect(floating.isDisjoint(with: plan.frames.keys), "seed \(seed): a frame for a floating window")
         concealed.subtract(plan.show)
         concealed.formUnion(plan.hide)
         written.merge(plan.frames) { _, new in new }
@@ -774,9 +777,8 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         case 0..<4:
             guard windows.count < 30 else { break }
             let point = CGPoint(x: CGFloat.random(in: -2000...2000, using: &random), y: CGFloat.random(in: 0...2100, using: &random))
-            let plan = s.add(nextWindow, to: Bool.random(using: &random) ? name : nil, at: point)
-            if Int.random(in: 0..<4, using: &random) == 0 { carryOut(s.float(nextWindow)) }
-            carryOut(plan)
+            carryOut(s.add(nextWindow, to: Bool.random(using: &random) ? name : nil, at: point,
+                           floating: Int.random(in: 0..<4, using: &random) == 0))
             nextWindow += 1
         case 4: if let window { carryOut(s.remove(window)); concealed.remove(window); written[window] = nil }
         case 5: if let window { carryOut(s.park([window])) }

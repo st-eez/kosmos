@@ -257,25 +257,19 @@ public struct Session: Sendable {
 
     /// A managed window joins a workspace: the one a rule names, else the one shown on the
     /// display under `point`, the window's center, else the focused one (DESIGN.md, section
-    /// 5.13).
-    public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil) -> Plan {
+    /// 5.13). A window a rule floats joins the floating windows and never the tree, so it
+    /// keeps the frame its app gave it, and the plan moves no tile.
+    public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil,
+                             floating: Bool = false) -> Plan {
         guard home[window] == nil else { return Plan() }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
-        workspaces[target]!.insert(window)
+        if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
         // A workspace with windows always has a focused one, as in i3; reports refine it.
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan()
         plan.frames = frames(of: target)
         if !isShown(target) { plan.hide = [window] }
-        return plan
-    }
-
-    /// Takes a window out of the tiling, as a window rule asks.
-    public mutating func float(_ window: WindowID) -> Plan {
-        guard let name = home[window], workspaces[name]!.float(window) else { return Plan() }
-        var plan = Plan()
-        plan.frames = frames(of: name)
         return plan
     }
 

@@ -94,8 +94,7 @@ private func into(_ window: UInt32, display: DisplayID? = nil) -> PointerGate.En
 private func session() -> Session {
     var s = Session(names: ["1", "2"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1)
-    _ = s.add(2)
-    _ = s.float(2)
+    _ = s.add(2, floating: true)
     _ = s.add(3)
     _ = s.park([3])
     _ = s.add(4, to: "2")
