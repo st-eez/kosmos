@@ -43,6 +43,7 @@ private struct Replay {
     var left: Set<WindowID> = []
     var intent: KeyWindow = .noWindow
     var locked = false
+    var mouseFollowsFocus = true
     var leftButtonDown = false
     /// Command-Tab or a Dock click picked the window.
     var pickedAway = false
@@ -59,7 +60,7 @@ private struct Replay {
             closedByApp: { closedByApp.contains($0) },
             wasConcealed: { conceals.wasConcealed($0, at: $1, now: concealed.contains($0)) },
             leftScreen: { log.departureReads += 1; return left.contains($0) }, app: { windows[$0]?.app },
-            intent: intent, locked: locked, recovered: false, mouseFollowsFocus: true,
+            intent: intent, locked: locked, recovered: false, mouseFollowsFocus: mouseFollowsFocus,
             leftButtonDown: { leftButtonDown }, pickedAwayFromPointer: { pickedAway },
             userPressedJustBefore: { pressedJustBefore }, launchedSinceEmptyWorkspaceKeyed: { launched.contains($0) },
             note: { log.notes.append($0) })
@@ -90,10 +91,12 @@ private struct Replay {
     }
 
     /// As the focus queue records a request just before its call. A key record also goes to
-    /// the kill switch's count.
-    mutating func requested(_ key: KeyWindow, app: Int32, at milliseconds: Int, keyRecord: Bool = false) {
+    /// the kill switch's count, and `retry` follows a miss.
+    mutating func requested(_ key: KeyWindow, app: Int32, at milliseconds: Int, keyRecord: Bool = false, retry: Bool = false) {
         reports.focusRequested(key, app: app, at: ms(milliseconds))
-        if keyRecord, case .window(let window) = key { _ = misses.willRequest(window, pid: app, at: ms(milliseconds)) }
+        if keyRecord, case .window(let window) = key {
+            _ = misses.willRequest(window, pid: app, at: ms(milliseconds), retry: retry)
+        }
     }
 
     /// A hotkey, a socket command or a hover focus.
@@ -342,6 +345,19 @@ private struct Replay {
     #expect(replay.heard(.window(21), from: ghostty, at: 20) == .follow(21, bringsPointer: false))
 }
 
+@Test func withMouseFollowsFocusOffNoReportBringsThePointer() {
+    var replay = Replay(windows: [11: ("1", ghostty), 12: ("1", ghostty), 13: ("1", ghostty), 15: ("5", ghostty)],
+                        concealed: [15])
+    replay.mouseFollowsFocus = false
+    replay.pickedAway = true
+    _ = replay.heard(.window(11), from: ghostty, at: -100)
+    #expect(replay.heard(.window(12), from: ghostty, at: 10) == .adopt(12, bringsPointer: false))
+    #expect(replay.heard(.window(15), from: ghostty, at: 20) == .hold(1))
+    #expect(replay.expire(1) == .follow(15, bringsPointer: false))
+    #expect(replay.admit(13, at: 30).focus == .awaitKey)
+    #expect(replay.heard(.window(13), from: ghostty, at: 40) == .adopt(13, bringsPointer: false))
+}
+
 @Test func anAppFrontedWithNoKeyWindowOnAnEmptyWorkspaceIsKeyedAwayUnlessTheUserChoseIt() {
     // Live on 2026-09-24: a click on the desktop of the left panel, which showed an empty
     // workspace, fronted Finder, and Cmd-Q quit it (docs/focus.md).
@@ -387,6 +403,20 @@ private struct Replay {
     _ = replay.heard(.window(11), from: ghostty, at: -100)
     #expect(replay.heard(.window(31), from: preview, at: 10) == .requestFocus(retry: false))
     #expect(replay.heard(.window(31), from: preview, at: 12) == .requestFocus(retry: false))
+}
+
+@Test func aMissIsRequestedAgainOnceThenTheKeyWindowStays() {   // change 12
+    // Live: Kosmos fronted Ghostty for a window of workspace 1, and Ghostty reported the
+    // window a switch had just concealed on workspace 3 again.
+    var replay = Replay(windows: [11: ("1", ghostty), 13: ("3", ghostty)], concealed: [13])
+    replay.conceals.changed([13], concealed: true, at: ms(2))
+    _ = replay.heard(.window(13), from: ghostty, at: -100)
+    replay.command(at: 0)
+    replay.requested(.window(11), app: ghostty, at: 5, keyRecord: true)
+    #expect(replay.heard(.window(13), from: ghostty, at: 10) == .requestFocus(retry: true))
+    replay.requested(.window(11), app: ghostty, at: 12, keyRecord: true, retry: true)
+    #expect(replay.heard(.window(13), from: ghostty, at: 15) == .none)
+    #expect(replay.log.missed == [.window(13), .window(13)])
 }
 
 @Test func aBackgroundReportLeavesTheKeyWindowSoACommandTabIsFollowed() {   // change 17
