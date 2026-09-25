@@ -179,3 +179,16 @@ private func move() -> SlidingWindow {
     took = window.wrote(left, sliding: false, at: 0.3)
     #expect(!took)
 }
+
+/// WindowServer taking the newest write's target, or the frame read back after it, is the
+/// write landing, which can come after the read back while the user drags another window.
+/// Any other frame is the user's.
+@Test func onlyTheNewestWritesFramesAreTheWrite() {
+    var window = move()
+    #expect(window.isWrite(right) && !window.isWrite(left))
+    let rounded = CGRect(x: 965, y: 35, width: 944, height: 1035)
+    window.confirmed(target: right, readBack: rounded, at: 0.003)
+    #expect(window.isWrite(rounded) && window.isWrite(right) && !window.isWrite(opened))
+    _ = window.wrote(narrow, sliding: true, at: 0.1)
+    #expect(window.isWrite(narrow) && !window.isWrite(rounded) && !window.isWrite(right))
+}

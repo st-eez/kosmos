@@ -77,16 +77,28 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 
 | Context | Owns | Never does |
 | --- | --- | --- |
-| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
+| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot, the display links that step slides and the bridged sends of a slide (below), the border windows | AX calls, any other bridged Space operation, waiting on another process, file syncs, process launches |
 | One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, the raise that keys a window of the front app, and the raise after a key record. Its observer runs on a second thread, which stamps each focus notification and checks the front process in its callback | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
-| Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
+| Bridge queue, serial | The bridged Space operations of hiding and recovery, the reads that confirm them, the barrier read, and creating the Spaces windows slide in | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
 | Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
+| Slide queue (`kosmos.slide`), serial | The reads of sliding windows' rows until their writes land, and the Space transform sent for each new frame they find | Change the model |
+| Pool check queue (`kosmos.slide.pool`), serial | The barrier and the read that show a slide's window out of its Space before the Space goes back to the pool | Change the pool, which the main actor holds |
+| Border queue (`kosmos.borders`), serial | The reads of a border's Spaces and its window's, and the move of the border to its window's Space on Kosmos's own connection ([borders.md](borders.md)) | Set a border's frame or order, which the main actor does |
 
 The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
 on its own and never delays another app.
+
+Bridged Space operations do not run on the bridge queue alone. The main actor sends a
+slide's: it adds the window to a Space of the pool, sets the Space's transform and alpha at
+each display frame and takes the window out at the end. The slide queue sets the transform
+for each new frame its reads find ([geometry.md](geometry.md)). The limit: each goes to
+WindowManager.app as the bridge queue's do, and whether a send waits on WindowManager.app
+while it is busy is unmeasured. The `slide frames` log line gives the time the main actor
+spends in each display's frames, the sends included. The sends go out while the bridge
+queue sends its batches, to other Spaces.
 
 ### 4.3 A workspace switch
 

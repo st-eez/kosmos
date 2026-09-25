@@ -109,9 +109,10 @@
   center and alpha 0 over 0.41 s. Switches and closes do not animate. The windows that
   slide are a plan's writes to windows on screen on a shown workspace, other than one the
   user holds or presses on, of an app whose worker is not backed off, on a display that
-  holds no native fullscreen window. A reveal, a hidden workspace, a drag's own writes,
-  the 100 ms retry and floating windows brought home jump, and so does a backed off app's
-  window, whose write waits for the app while its transform would hold it where it showed.
+  holds no native fullscreen window or holds the key window on its desktop Space. A
+  reveal, a hidden workspace, a drag's own writes, the 100 ms retry and floating windows
+  brought home jump, and so does a backed off app's window, whose write waits for the app
+  while its transform would hold it where it showed.
   - The window joins a Space of a pool, shown in place at level 1, one above the desktop
     Space's, and keeps its ordinary Space. Its frame goes through the ledger and its worker
     once, as any write. The Space's transform shows it where it showed, then eases to its
@@ -136,12 +137,16 @@
   - A new relayout mid-slide continues from where the window shows, at the alpha it has.
     A write that does not slide ends the slide at once when it is to another frame, and is
     followed as the slide's own when it is to the same one, as the 100 ms retry after a
-    refused size. A change of the window's frame during a press, a modifier drag taking
+    refused size. A change of the window's frame during a press to a frame other than its
+    newest write's target and read back, as when the user moves it, a modifier drag taking
     it, and a window concealed, parked, closed, on a workspace no longer shown or on a
     display that gains a native fullscreen window end the slide at once, before a batch
     conceals the window. So does a reload, a display change, a wake or an unlock, which
     also stops every display link: a link stops firing when its display goes, and the next
-    slide starts one on a display that has a screen.
+    slide starts one on a display that has a screen. A change to the write's own frame
+    leaves the slide: the worker reads the frame back about 3 ms after the write and
+    WindowServer takes it about 9 ms later, so the other tiles' reflow at a title bar drag's
+    lift lands with the button down.
   - A new window's Space turns transparent before the window joins it, so the window
     vanishes from where its app opened it until its write lands, then pops in where it
     landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
@@ -154,11 +159,27 @@
     animations first turn on, and a window that finds none free jumps and is logged.
     Turning animations off ends every slide and keeps the Spaces. Quit ends every slide,
     then recovery destroys the Spaces.
+  - A slide's Space goes back to the pool once a barrier and a read of its windows, off
+    the main thread, show its window out of it. A Space that still lists the window, as
+    after a removal that did not land, or whose read fails, leaves the pool and is logged,
+    since its next slide would move the window too. The ceiling: the window stays in the
+    Space, above the desktop Space's windows, until the quit, the guardian's or the next
+    start's recovery takes it out; if the log shows such a Space, the upgrade is to send
+    the removal again and read once more. Another window the Space lists is logged and
+    left, so a JankyBorders border window yet to follow its window out, as border windows
+    follow the windows they border in and out of the holding Space
+    ([hiding.md](hiding.md)), takes no Space from the pool.
   - A Space of the pool shows over whatever Space its display shows, so a slide on a
-    display showing a native fullscreen Space would draw over the fullscreen app. The
-    ceiling: a display that holds a native fullscreen window, as the inventory last read
-    its frame, slides nothing, also while it shows its desktop Space. Reading each
-    display's current Space would tell the two apart.
+    display showing a native fullscreen Space would draw over the fullscreen app. So a
+    display that holds a native fullscreen window, as the inventory last read its frame,
+    slides nothing, unless it holds the key window while no fullscreen Space shows, as
+    the focus gate judges it from the key window ([focus.md](focus.md)): the user works on
+    its desktop Space. The ceiling: another display that holds one slides nothing while it
+    shows its desktop Space too. A slide under way when the user swipes its display to the
+    fullscreen Space draws over the fullscreen app until the slide ends, 0.38 s after it
+    began, or later while its write has not landed, and so does a relayout there before
+    the report that the fullscreen window is key. Reading each display's current Space
+    would tell them apart.
   - Limits, unmeasured: a resize scales the window's old content, so it stretches until
     the slide ends; a sliding window draws above every window of the desktop Space,
     floating windows included, and two sliding windows, whose Spaces share one level,
@@ -172,5 +193,6 @@
     guardian's recovery should show the window at its own frame and alpha 1, out of the
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next
     slide should run; a relayout on a display showing a native fullscreen Space, which
-    should jump; and whether a write that lands during the 1 ms reads shows its window
-    displaced for a display frame.
+    should jump, and one on its desktop Space with the key window, which should slide; and
+    whether a write that lands during the 1 ms reads shows its window displaced for a
+    display frame.

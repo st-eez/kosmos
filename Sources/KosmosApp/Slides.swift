@@ -37,6 +37,8 @@ final class Slides {
     private let onscreen = Onscreen()
     /// Spaces of the pool that hold no window.
     private var free: [UInt64] = []
+    /// Reads the Space of each slide that ended before it goes back to the pool (release).
+    private let checks = DispatchQueue(label: "kosmos.slide.pool", qos: .utility)
     private var links: [DisplayID: Link] = [:]
 
     /// A display's link, with its callbacks since it started and their time, for the log.
@@ -115,6 +117,16 @@ final class Slides {
         onscreen.state.withLock { state in state.windows[id].map { ($0.shown, $0.alpha) } }
     }
 
+    /// The window changed to `frame` during a press: the user moved or resized it, and its
+    /// slide's transform would hold it where the slide shows it, so the slide ends at once.
+    /// A change to where its newest write puts it leaves the slide, since WindowServer can take
+    /// the write's frame after the worker read it back, while the user holds the button on
+    /// another window (SlidingWindow.isWrite).
+    func changedInPress(_ id: WindowID, to frame: CGRect) {
+        guard onscreen.state.withLock({ $0.windows[id].map { !$0.isWrite(frame) } }) == true else { return }
+        end(id, "as the user moved it")
+    }
+
     /// Ends the window's slide at once, and it shows at its own frame. `why` goes to the log.
     func end(_ id: WindowID, _ why: String) {
         guard let window = onscreen.state.withLock({ Onscreen.remove(id, from: &$0) }) else { return }
@@ -160,7 +172,7 @@ final class Slides {
     /// Frees the Space of a window whose slide ended, and logs the slide. `why` says why it
     /// ended before it was done.
     private func finished(_ id: WindowID, _ window: SlidingWindow, _ why: String? = nil) {
-        free.append(window.space)
+        release(window.space, of: id)
         onChange?()
         // script/bench-relayout.sh counts these lines.
         let landed = window.landed.map { String(format: "landed %.1f ms after its write", ($0 - window.sent) * 1000) } ?? "did not land"
@@ -168,6 +180,28 @@ final class Slides {
             slideLog.info("\(id) slide ended \(why, privacy: .public) after \(window.frames) frames, \(landed, privacy: .public)")
         } else {
             slideLog.info("\(id) \(window.pop ? "popped" : "slid", privacy: .public) in \(window.frames) frames, \(landed, privacy: .public)")
+        }
+    }
+
+    /// Puts the Space of a slide that ended back in the pool once a barrier and a read of its
+    /// windows, off the main thread, show the window out of it. A Space that still lists the
+    /// window, as after a removal that did not land, or that does not read, would carry the
+    /// window into its next slide, so it leaves the pool, logged, and the quit, the guardian's
+    /// or the next start's recovery takes the window out. Another window the Space lists, as
+    /// a JankyBorders border window yet to follow its window out, is only logged.
+    private func release(_ space: UInt64, of id: WindowID) {
+        checks.async {
+            _ = kosmos_barrier(space)
+            let members = kosmos_space_windows(space) as? [UInt32]
+            guard let members, !members.contains(id) else {
+                let why = members == nil ? "its windows did not read" : "\(id) is still in it"
+                slideLog.error("animation Space \(space) leaves the pool until recovery: \(why, privacy: .public)")
+                return
+            }
+            if !members.isEmpty {
+                slideLog.notice("animation Space \(space) back in the pool with \(members.map(String.init).joined(separator: " "), privacy: .public) in it")
+            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.free.append(space) } }
         }
     }
 

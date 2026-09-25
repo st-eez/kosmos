@@ -646,9 +646,9 @@ final class Controller {
             return
         }
         let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
-        // The user moves or resizes it: its slide's transform would hold it where the slide
-        // shows it. The write's own change, which can come after its read back, leaves it.
-        if button != .up { slides?.end(id, "as the user moved it") }
+        // The user moves or resizes it, unless the change is its own write landing after the
+        // read back, as the other tiles' reflow at a lift lands while the user drags.
+        if button != .up { slides?.changedInPress(id, to: frame) }
         ledger.observe(id, frame: frame)
         // Seen smaller than its minimum, the window loses it. During a press, the mouse up
         // lays its workspace out.
@@ -1127,7 +1127,7 @@ final class Controller {
 
     /// How each write of `plan` slides: a window on screen on a shown workspace, other than
     /// one the user holds or presses on, of an app that answers Accessibility, on a display
-    /// with no native fullscreen window. A window being revealed, and one concealed or on a hidden
+    /// fullscreenDisplays leaves out. A window being revealed, and one concealed or on a hidden
     /// workspace, jump to their frames. So do a drag's own writes, at each movement and for
     /// the edges a right drag moves, the 100 ms retry and floating windows brought home, which
     /// do not come through here. The relayout at a lift, a drop and tiles sent back after an
@@ -1149,17 +1149,23 @@ final class Controller {
         return motions
     }
 
-    /// The displays that hold a native fullscreen window, by the frame the inventory last read
-    /// for it. A Space of the pool shows whatever Space its display shows, so a slide there
-    /// would draw over the fullscreen app. The ceiling: such a display slides nothing while it
-    /// shows its desktop Space too; reading each display's current Space would tell the two
-    /// apart.
+    /// The displays that hold a native fullscreen window, by the frames the inventory last
+    /// read, except the key window's display while no fullscreen Space shows
+    /// (inFullscreenSpace): the user works on its desktop Space. A Space of the pool shows
+    /// whatever Space its display shows, so a slide there would draw over the fullscreen app.
+    /// The ceiling: another such display slides nothing while it shows its desktop Space too,
+    /// and a swipe to the fullscreen Space mid-slide shows the slide over the fullscreen app
+    /// (docs/geometry.md); reading each display's current Space would tell them apart.
     private var fullscreenDisplays: Set<DisplayID> {
-        Set(fullscreenParked.compactMap { id in
+        func display(of id: WindowID) -> DisplayID? {
             inventory.windows[id].flatMap { row in
                 session.monitors.first { $0.frame.contains(CGPoint(x: row.frame.midX, y: row.frame.midY)) }?.id
             }
-        })
+        }
+        let displays = Set(fullscreenParked.compactMap(display))
+        guard !displays.isEmpty, case .window(let id)? = key, !inFullscreenSpace, let desktop = display(of: id)
+        else { return displays }
+        return displays.subtracting([desktop])
     }
 
     /// Ends every slide, for quit (Slides.endAll).
