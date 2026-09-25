@@ -65,17 +65,23 @@
     session. A switch's two halves came 0.2 ms apart (`kosmos-probe tabs`), and a read took
     about 1.4 ms at the desk ([inventory.md](inventory.md)), so when the halves fall in two
     reads, the second is asked for before the first is applied, and the look waits for
-    it. A half that reached Kosmos only after the other's read was applied would come
-    after the look, and the deselected tab would park as closed and kept, then give its
-    place to the new tab when the switch pairs, after one reflow and focus change too many.
+    it. Each WindowServer event reaches the inventory through the main queue, though, and
+    a half queued there only after the other half's read came back is neither under way
+    nor waiting at the look. The deselected tab would then park as closed and kept, and
+    give its place to the new tab when the switch pairs, after one reflow and focus change
+    too many. So while the window's app has another window ordered out, which a switch
+    could order in, the look waits until a pairing window after the order-out, as a
+    destroyed tab's place does. Closing the selected Ghostty or Finder tab is the likely
+    case. Activity Monitor's window has no such sibling and parks at once.
   - Open: how far apart Kosmos applies a switch's two halves, which sets the pairing
-    window and whether the look needs a wait. Kosmos logged order changes at debug level,
-    and the live logs of September 23 to 25 kept info level, so their five pairings, four
-    Terminal tab switches and a Terminal window leaving fullscreen that paired with
-    another's toolbar windows, have no times for their halves. Kosmos now logs each
-    candidate window's order change at info level, and says when a switch pairs after its
-    deselected tab parked as closed and kept. A day of Ghostty and Finder tabs settles it,
-    and the log goes then; until then the pairing window stays 250 ms.
+    window and whether a window with no sibling ordered out needs the wait too, as the tab
+    that a window's first Command-T deselects might. Kosmos logged order changes at debug
+    level, and the live logs of September 23 to 25 kept info level, so their five
+    pairings, four Terminal tab switches and a Terminal window leaving fullscreen that
+    paired with another's toolbar windows, have no times for their halves. Kosmos now logs
+    each candidate window's order change at info level, and says when a switch pairs after
+    its deselected tab parked as closed and kept. A day of Ghostty and Finder tabs settles
+    it, and the log goes then; until then the pairing window stays 250 ms.
   - A minimize and a hide have reports of their own, taken to come before the order-out:
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize

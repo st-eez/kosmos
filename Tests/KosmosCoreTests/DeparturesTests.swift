@@ -296,19 +296,15 @@ private func placed(_ window: WindowID) -> Bool { places.contains(window) }
 }
 
 // A window its app closed and kept is looked at as the read that saw its order-out is
-// applied, and parks then unless a native fullscreen transition may be under way or a new
-// tab claims its place. Activity Monitor's Command-W waited a second before its neighbor
-// reflowed, and then 257 and 267 ms at a 250 ms pairing window (live log, September 25,
-// 2026).
+// applied, and parks then unless a native fullscreen transition may be under way, a new
+// tab claims its place or its app has another window ordered out. Activity Monitor's
+// Command-W waited a second before its neighbor reflowed, and then 257 and 267 ms at a
+// 250 ms pairing window (live log, September 25, 2026).
 
-/// When a window seen ordered out at `out`, in a read with no other under way, parks.
-private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false,
+/// When a window seen ordered out at `out`, and looked at then, parks.
+private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false, sibling: Bool = false,
                     spacesChanged: ContinuousClock.Instant? = nil) -> ContinuousClock.Instant {
-    var looks = ClosedAndKept.Looks()
-    looks.readAsked()
-    looks.orderedOut(2, at: out)
-    #expect(looks.readApplied(eventsWaiting: false).map(\.window) == [2])
-    return out + (ClosedAndKept.hold(orderedOut: out, claimed: claimed, spacesChanged: spacesChanged, at: out) ?? .zero)
+    out + (ClosedAndKept.hold(orderedOut: out, claimed: claimed, sibling: sibling, spacesChanged: spacesChanged, at: out) ?? .zero)
 }
 
 @Test func aWindowClosedAndKeptParksAtItsOrderOut() {
@@ -317,16 +313,25 @@ private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false,
     #expect(judged(t0, spacesChanged: t0 - .seconds(2)) == t0)
 }
 
+@Test func aWindowWhoseAppHasAnotherWindowOrderedOutWaitsForATabSwitch() {
+    // Activity Monitor's only window, closed, has none and parks at once. Closing the
+    // selected Ghostty tab orders it out while the next tab is still ordered out, and that
+    // tab's order-in may still be on its way to the main actor, so the look waits the
+    // pairing window.
+    #expect(judged(t0) == t0)
+    #expect(judged(t0, sibling: true) == t0 + TabSwitches.window)
+    // A native fullscreen transition waits longer.
+    #expect(judged(t0, sibling: true, spacesChanged: t0 - .milliseconds(40)) == t0 + .seconds(1))
+}
+
 @Test func aTabSwitchWhoseHalvesCameInTwoReadsPairsBeforeTheLook() {
     // The outgoing tab's order-out and the incoming tab's order-in, 0.2 ms apart at
     // WindowServer, fall in two reads, the second asked for before the first is applied.
-    var looks = ClosedAndKept.Looks(), tabs = TabSwitches()
+    var looks = ClosedAndKept.Looks()
     looks.readAsked()
     looks.readAsked()
-    #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: t0) == nil)
     looks.orderedOut(1, at: t0)
     #expect(looks.readApplied(eventsWaiting: false).isEmpty)
-    #expect(tabs.ordered(2, in: true, frame: tile, app: 100, at: t0 + .milliseconds(1.4)).map { [$0.old, $0.new] } == [1, 2])
     #expect(looks.readApplied(eventsWaiting: false).map(\.window) == [1])
     // An event that waits for its read holds the look for that read too.
     looks.readAsked()
@@ -346,6 +351,8 @@ private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false,
     #expect(judged(out, spacesChanged: enter + .milliseconds(47.1)) > back)
     let leave = t0 + .seconds(4), outAgain = leave + .milliseconds(224.8)
     #expect(judged(outAgain, spacesChanged: leave + .milliseconds(31.6)) > leave + .milliseconds(750.8))
+    // A Space event that comes only after the order-out, before the look, holds it too.
+    #expect(judged(out, spacesChanged: out + .milliseconds(100)) > back)
 }
 
 @Test func aTabANewTabClaimsWaitsForThatTabsAdmission() {
