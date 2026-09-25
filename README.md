@@ -51,6 +51,7 @@ swift test                  # unit tests
 
 `script/bundle.sh` signs with your first Apple Development certificate, or the identity in
 `KOSMOS_SIGN_IDENTITY`. Keep using the same one: macOS ties the Accessibility grant to it.
+It also draws the app icon from `script/icon.swift`, so the icon needs no separate build step.
 [docs/INSTALL.md](docs/INSTALL.md) covers installing, launch at login, switching from
 AeroSpace and rolling back.
 

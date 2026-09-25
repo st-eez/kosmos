@@ -836,6 +836,12 @@ off the main thread).
   makes macOS ask for Accessibility again.
 - Notarization needs a Developer ID certificate. Adding it would remove the need to strip
   quarantine.
+- The app icon is a plain `.icns`, drawn by `script/icon.swift` when `script/bundle.sh`
+  runs, at every size from vectors. macOS 27 shows an `.icns` at full size when its artwork
+  fills the system icon mask (824 of 1024 px, superellipse corners 34% across, exponent
+  2.78, measured from Terminal's icon), and shrinks one that does not onto a grey rounded
+  square. An Icon Composer `.icon` compiled by `actool` into `Assets.car` renders the same
+  artwork at the same size, so the extra format buys nothing while Kosmos has one appearance.
 
 ### 5.11 Focus follows mouse
 
