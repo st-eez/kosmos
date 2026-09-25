@@ -1497,12 +1497,15 @@ final class Controller {
     private func updateBorders() {
         guard !sessionLocked else { return }
         guard managing, let borders else { return borderWindows.show([:]) }
+        // One read of each slide, so a border's frame and alpha come from the same display frame.
+        var sliding: [WindowID: (frame: CGRect, alpha: Double)] = [:]
         let shown = session.borders(borders, accent: borderWindows.accent) { id in
             guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
-            return (slides?.shown(id)?.frame ?? row.frame, row.cornerRadius)
+            sliding[id] = slides?.shown(id)
+            return (sliding[id]?.frame ?? row.frame, row.cornerRadius)
         }
         borderWindows.show(shown.reduce(into: [:]) { result, entry in
-            let slide = slides?.shown(entry.key)
+            let slide = sliding[entry.key]
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
         })
