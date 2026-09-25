@@ -136,10 +136,9 @@ final class Inventory {
         case destroyed(UInt32)
         case appExited(pid_t)
     }
-    /// Window events waiting for the next read. A read waited on WindowServer during a
-    /// switch's Space transaction, about 1.4 ms each with three displays (2026-09-24), so the
-    /// reads run on `reads`, one query for all the windows a main run loop turn's events
-    /// name, and sweeps read there too: every result reaches the main actor in read order.
+    /// Window events waiting for the next read, in the order they came. Sweeps read on
+    /// `reads` too, so every result reaches the main actor in read order (DESIGN.md, section
+    /// 5.1).
     private var pending: [PendingEvent] = []
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
 
@@ -383,8 +382,8 @@ final class Inventory {
         pending.append(event)
     }
 
-    /// Reads the rows of every window the waiting events name in one query off the main
-    /// thread, then applies the events in the order they came.
+    /// Reads the rows of every window the waiting events name in one query on `reads`, then
+    /// applies the events in the order they came.
     private func flushReads() {
         guard !pending.isEmpty else { return }
         let events = pending

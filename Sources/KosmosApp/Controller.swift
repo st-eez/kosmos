@@ -473,9 +473,9 @@ final class Controller {
         let press = mouseMoved[id]
         let before = press?.before ?? old
         // WindowServer can apply a resize by the left or top edge as a move before the
-        // resize, so the pointer on a resize border at the first event marks one too. The
-        // pointer is read as the event applies, a read's time after it came: reading it as
-        // each event comes would read it at every change event a switch posts.
+        // resize, so the pointer on a resize border at the first event marks one too. It is
+        // read as the event applies, since reading it as each event came would read it at
+        // every change event a switch posts.
         let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
         let resized = press?.resized == true || onBorder || frame.size != before.size
         if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > 10,

@@ -163,11 +163,11 @@ off the main thread).
   on the laptop alone, and the reads blocked the main actor for about 13 ms a switch (525
   main thread samples in 40 switches). So the events of one main run loop turn wait
   together: one query on a serial queue off the main thread reads every window they name,
-  and the main actor applies the events in the order they came when the rows return
-  (PendingReads). A destroyed window and an app's exit wait in the same order, a sweep
-  reads on the same queue after the events already waiting, and the lock rules are checked
-  as each event applies. A window an event names, and each known window of an app that
-  exits, counts as changed during a running sweep from the moment the event arrives.
+  and the main actor applies the events in the order they came when the rows return. A
+  destroyed window and an app's exit wait in the same order, a sweep reads on the same
+  queue after the events already waiting, and the lock rules are checked as each event
+  applies. A window an event names, and each known window of an app that exits, counts as
+  changed during a running sweep from the moment the event arrives.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
@@ -329,11 +329,11 @@ off the main thread).
   changes (367cd28), 3.75 and 10.25 ms, and 3 such waits, so the switch time is the same
   within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
   but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
-  10 ms stalls until 248f668 removed it. Half of the about 66 left were the 815 reads in
-  section 5.1, which at Steve's desk blocked the main actor for about 13 ms a switch (4.66
-  ms from keypress to the end at the median and 17 ms at p90, timed under the sampler);
-  they now run off the main thread. On a quiet machine, 53dc6af took 1.81 ms at the
-  median, 2.21 ms at p90 and 2.50 ms at most, and the completion waited at most 0.39 ms.
+  10 ms stalls until 248f668 removed it. Half of the about 66 left were the 815 reads,
+  which now run off the main thread (section 5.1). Before that, switches at Steve's desk
+  took 4.66 ms from keypress to the end at the median and 17 ms at p90, timed under the
+  sampler. On a quiet machine, 53dc6af took 1.81 ms at the median, 2.21 ms at p90 and
+  2.50 ms at most, and the completion waited at most 0.39 ms.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
   else to that display's first ordinary Space. A display missing from WindowServer's Space
