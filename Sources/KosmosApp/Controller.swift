@@ -44,9 +44,10 @@ final class Controller {
     /// tab by the user's or the app's choice, so its report counts as one of a concealed
     /// window, and the tab deselected before it did not depart: it is followed at once.
     private var placedHidden: Set<WindowID> = []
-    /// The key window macOS last reported. Too old to skip a focus request against, which the
-    /// focus queue decides when the request runs.
-    private var key: KeyWindow?
+    /// The key window macOS last reported, and the one before it. Too old to skip a focus
+    /// request against, which the focus queue decides when the request runs.
+    private var keys = KeyHistory()
+    private var key: KeyWindow? { keys.key }
     /// When Kosmos's empty workspace window last became key, on the clock app launch dates use.
     private var emptyWorkspaceKeyed = Date.distantPast
     /// A report whose verdict waits for the departure of the window key before it
@@ -425,7 +426,7 @@ final class Controller {
         // plan conceals it afresh when its place is on a hidden workspace.
         hiding.forget([old, new])
         ledger.forget(new)
-        if key == .window(old) { key = .window(new) }
+        if key == .window(old) { keys.key = .window(new) }
         execute(plan)
         // macOS reported the new tab key before it had a place. It is the user's or the
         // app's choice, followed if the place is on a hidden workspace; the window key
@@ -656,8 +657,7 @@ final class Controller {
             _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
-            let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
-            key = reported
+            let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
             // macOS's report of the next key window, which a departure waited for. Kosmos's
@@ -682,7 +682,8 @@ final class Controller {
             }
             unplacedKey = nil
             // The window key before this report left the screen just now: macOS keyed this
-            // window after that one closed, minimized or hid (DESIGN.md, section 5.4).
+            // window after that one closed, minimized or hid (DESIGN.md, section 5.4). For a
+            // report that repeats the key window, that is the window before (KeyHistory).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
             // it left too. classify reads it only when the verdict depends on it. After a
             // switch the read waited on WindowServer's Space transaction.
