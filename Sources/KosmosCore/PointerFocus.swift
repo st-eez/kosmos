@@ -38,33 +38,32 @@ public enum PointerSkip: Equatable, Sendable {
     case off
     /// A command, or a focus follows mouse focus, came after the movement.
     case stale
-    /// Not a tiled or floating window of the shown workspace: a menu, the bar, a panel, the
-    /// Dock, Mission Control, a native fullscreen window, a window of Kosmos's own or of a
-    /// workspace a switch is hiding.
+    /// Not a tiled or floating window of a workspace a display shows: a menu, the bar, a
+    /// panel, the Dock, Mission Control, a native fullscreen window, a window of Kosmos's
+    /// own or of a workspace a switch is hiding.
     case notTiled
     case ignoredApp
-    /// macOS shows a native fullscreen window's Space (`showsFullscreenSpace`).
-    case fullscreen
     /// The window is the focus intent and key already.
     case focused
 }
 
 extension FocusFollowsMouse {
     /// Why the pointer entering `window` leaves focus alone, or nil when the window takes
-    /// focus (DESIGN.md, section 5.11).
+    /// focus (DESIGN.md, section 5.11). WindowServer found `window` under the pointer, so it
+    /// is on screen: on a display that shows a native fullscreen Space, the only windows
+    /// there are the fullscreen window, which is parked, and its app's panels, which the
+    /// session does not tile. A fullscreen Space on another display leaves this one free.
     /// - Parameters:
     ///   - key: the key window macOS last reported.
     ///   - app: the window's app, for a window the session has.
     ///   - stale: a command, or a focus follows mouse focus, was received after the movement
     ///     (`FocusReports.isStale`).
-    ///   - fullscreenShown: macOS shows a native fullscreen window's Space.
     public func skip(_ window: WindowID, in session: Session, key: KeyWindow?,
-                     app: (bundleID: String?, name: String?)?, stale: Bool, fullscreenShown: Bool) -> PointerSkip? {
+                     app: (bundleID: String?, name: String?)?, stale: Bool) -> PointerSkip? {
         guard enabled else { return .off }
         if stale { return .stale }
         guard session.isVisible(window) else { return .notTiled }
         if let app, ignores(appID: app.bundleID, appName: app.name) { return .ignoredApp }
-        if fullscreenShown { return .fullscreen }
         if session.focused == window, key == .window(window) { return .focused }
         return nil
     }

@@ -835,7 +835,7 @@ final class Controller {
 
     private func focusUnderPointer(_ window: WindowID, at stamp: ContinuousClock.Instant) {
         if let skip = focusFollowsMouse.skip(window, in: session, key: key, app: owner[window].map(inventory.appIdentity),
-                                             stale: reports.isStale(stamp), fullscreenShown: inFullscreenSpace) {
+                                             stale: reports.isStale(stamp)) {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
             return
         }
@@ -845,7 +845,10 @@ final class Controller {
         // consumed like any other. It never moves the pointer.
         reports.commandExecuted(receivedAt: stamp)
         session.adopt(window)
-        requestFocus(.window(window))
+        // The window is on screen under the pointer, so keying it takes no display out of a
+        // native fullscreen Space: it passes the gate as a command does, and a fullscreen
+        // window key on another display leaves this one free.
+        requestFocus(.window(window), fromCommand: true)
         publishState()
     }
 
