@@ -606,6 +606,36 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// The user let go of the left button after moving or resizing tiled windows of shown
+    /// workspaces with it, each from `before` to `after`. An edge that moved more than 5 pt
+    /// while the opposite edge stayed moves the tile's edge as far, as AeroSpace's
+    /// resizeWithMouse turns it into weights (Workspace.moveEdge). A window moved whole, or
+    /// with its center off its workspace's display, as when macOS shrank it to fit another
+    /// display on the way, goes back to its tile, and so does one of a workspace in
+    /// Kosmos's fullscreen. The plan has their workspaces' frames (DESIGN.md, section 5.2).
+    public mutating func released(_ windows: [WindowID: (before: CGRect, after: CGRect)]) -> Plan {
+        var changed: Set<String> = []
+        for (window, move) in windows {
+            guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { continue }
+            changed.insert(name)
+            let monitor = monitor(of: name)
+            let (before, after) = move
+            guard workspaces[name]!.fullscreenWindow == nil, monitor.frame.contains(CGPoint(x: after.midX, y: after.midY)) else { continue }
+            let axes: [[(Direction, CGFloat)]] = [
+                [(.left, before.minX - after.minX), (.right, after.maxX - before.maxX)],
+                [(.up, before.minY - after.minY), (.down, after.maxY - before.maxY)],
+            ]
+            for edges in axes {
+                let moved = edges.filter { abs($0.1) > 5 }
+                guard moved.count == 1 else { continue }
+                workspaces[name]!.moveEdge(window, moved[0].0, by: moved[0].1, in: monitor.area, gaps: monitor.gaps, minimums: minimums)
+            }
+        }
+        var plan = Plan()
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        return plan
+    }
+
     /// The floating windows of the shown workspaces, which `floatingFrames` checks.
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 

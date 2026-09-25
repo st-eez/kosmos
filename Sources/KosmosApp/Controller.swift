@@ -54,9 +54,9 @@ final class Controller {
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
-    /// Tiled windows the user moved or resized with the left button, put back in their tiles
-    /// when it comes up.
-    private var mouseMoved: Set<WindowID> = []
+    /// Tiled windows the user moved or resized with the left button, with their frames before,
+    /// for when it comes up.
+    private var mouseMoved: [WindowID: CGRect] = [:]
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -91,7 +91,9 @@ final class Controller {
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, frame, changed in self?.frameChanged(id, to: frame, changed: changed) }
+        inventory.onFrameChange = { [weak self] id, old, frame, changed in
+            self?.frameChanged(id, from: old, to: frame, changed: changed)
+        }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
             Task { @MainActor in self?.leftMouseUp() }
         }
@@ -419,34 +421,36 @@ final class Controller {
     /// again. A change while a write of Kosmos's is in flight is that write's, and a
     /// concealed window's frame, which reads as off every display, is not where it returns.
     /// A change that a WindowServer change event, `changed`, reports with the left button
-    /// down is the user's: a tiled window goes back to its tile when the button comes up
-    /// (leftMouseUp), and a floating key window dragged onto a display showing another
+    /// down is the user's: a tiled window keeps a resize by its edges or goes back to its
+    /// tile when the button comes up (leftMouseUp), and a floating key window dragged onto a display showing another
     /// workspace joins that workspace, as AeroSpace's isManipulatedWithMouse and
     /// moveWithMouse have it. macOS moving the windows of a display that leaves, and a
     /// reveal's Space change, are no drag (DESIGN.md, sections 5.2 and 5.13).
-    private func frameChanged(_ id: WindowID, to frame: CGRect, changed: Bool) {
+    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
         guard changed, NSEvent.pressedMouseButtons == 1 else { return }
         if !session.shownFloatingWindows.contains(id) {
-            mouseMoved.insert(id)
+            if mouseMoved[id] == nil { mouseMoved[id] = old }
         } else if key == .window(id), let plan = session.dragged(id, to: frame) {
             controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
             execute(plan)
         }
     }
 
-    /// The left button came up. The workspaces of tiled windows the user moved or resized
-    /// with it are laid out again, which puts those windows back in their tiles, as AeroSpace
+    /// The left button came up. Tiled windows the user resized with it by their edges keep
+    /// that size, and those moved go back to their tiles (Session.released), as AeroSpace
     /// lays out at a left mouse up (GlobalObserver.swift).
     private func leftMouseUp() {
         guard managing, !sessionLocked, !mouseMoved.isEmpty else { return }
-        let names = Set(mouseMoved.compactMap { session.workspace(of: $0) }.filter { session.isShown($0) })
-        controllerLog.info("left mouse up: \(self.mouseMoved.count) tiled windows moved with the mouse, workspaces \(names.sorted().joined(separator: " "), privacy: .public) laid out again")
-        mouseMoved = []
-        var plan = Session.Plan()
-        for name in names { plan.frames.merge(session.frames(of: name)) { current, _ in current } }
+        let moved = mouseMoved
+        mouseMoved = [:]
+        let now = Dictionary(SkyLight.rows(Array(moved.keys)).map { ($0.id, $0.frame) }) { first, _ in first }
+        let plan = session.released(Dictionary(uniqueKeysWithValues: moved.compactMap { id, before in
+            now[id].map { (id, (before: before, after: $0)) }
+        }))
+        controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the mouse")
         execute(plan)
     }
 

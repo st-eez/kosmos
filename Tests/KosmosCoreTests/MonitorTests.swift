@@ -236,6 +236,31 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.floatingFrames(at: [10: onLeft]).isEmpty)
     }
 
+    @Test func aTiledWindowResizedByAnEdgeKeepsItsSizeAndOneMovedGoesBack() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11)
+        let tiles = s.frames(of: "1")
+        let (a, b) = (tiles[10]!, tiles[11]!)
+        // Moved whole, and moved onto the built-in display, which shrank it: back to the tiles.
+        var plan = s.released([10: (before: a, after: a.offsetBy(dx: 300, dy: 40)),
+                               11: (before: b, after: CGRect(x: 400, y: 1200, width: 700, height: 500))])
+        #expect(plan.frames == tiles)
+        // Its outer edge, or an edge moved 5 pt, changes nothing either.
+        plan = s.released([10: (before: a, after: CGRect(x: a.minX - 8, y: a.minY, width: a.width + 8, height: a.height)),
+                           11: (before: b, after: CGRect(x: b.minX + 5, y: b.minY, width: b.width - 5, height: b.height))])
+        #expect(plan.frames == tiles)
+        // Its right edge dragged 200 pt right and its bottom edge up: 10 keeps the width it
+        // was dragged to, and 11 gives it up; nothing is below 10.
+        var wider = a
+        wider.size.width += 200
+        plan = s.released([10: (before: a, after: CGRect(origin: wider.origin, size: CGSize(width: wider.width, height: a.height - 100)))])
+        #expect(plan.frames[10] == wider)
+        #expect(plan.frames[11]!.minX == b.minX + 200 && plan.frames[11]!.maxX == b.maxX)
+        // A floating window is not the release's to change.
+        _ = s.float(11)
+        #expect(s.released([11: (before: b, after: b.offsetBy(dx: 50, dy: 0))]).frames.isEmpty)
+    }
+
     @Test func focusAcrossMonitorsCrossesAtTheEdgeOnly() {
         var s = desk()
         _ = s.add(10); _ = s.add(11)

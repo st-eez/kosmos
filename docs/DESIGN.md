@@ -213,12 +213,16 @@ off the main thread).
   writes the target again. A concealed window's frame reads as off every display and is
   left out.
 - A tiled window the user moves or resizes with the left button down, as such a change
-  event reports it, goes back to its tile when the button comes up: its workspace is laid
-  out again, as AeroSpace lays out at a left mouse up. Both hear the release from an
-  `NSEvent` global monitor (AeroSpace's GlobalObserver.swift). Before, the ledger kept
+  event reports it, is settled when the button comes up, which an `NSEvent` global
+  monitor hears, as AeroSpace's GlobalObserver does. Each edge that moved more than 5 pt
+  while the opposite edge stayed moves the tile's edge as far: the nearest container
+  along it with windows beyond takes the space from them in proportion to their shares,
+  and each container in between keeps its other windows' lengths, as AeroSpace's
+  `resizeWithMouse` turns edges into weights. The resize command's limits hold. A window
+  moved whole, or with its center off its workspace's display, as when macOS shrank it to
+  fit another display on the way, goes back to its tile. Before, the ledger kept
   Kosmos's last write as the window's frame, so a tiled window macOS shrank to fit the
-  built-in display as Steve dragged it there and back kept that size. Rearranging tiles
-  with the mouse stays left out (section 8).
+  built-in display as Steve dragged it there and back kept that size.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -923,6 +927,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 
 ## 8. Left out of the first version
 
-Scrolling and BSP layouts, tabbed and stacked title bars, mouse drag and resize, an
+Scrolling and BSP layouts, tabbed and stacked title bars, swapping or moving tiles by
+dragging them with the mouse (resizing a tile by its edges is in, section 5.2), an
 embedded scripting language, window title matchers, marks, persistence across restarts,
 and one macOS Space per workspace.

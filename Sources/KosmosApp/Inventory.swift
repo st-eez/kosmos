@@ -75,10 +75,10 @@ final class Inventory {
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window moved or resized, with its frame now, and whether a WindowServer
-    /// change event (806 to 808, 815, 816) reported it. A Space change, as a reveal makes, a
-    /// creation or a sweep can read a new frame too.
-    var onFrameChange: (@MainActor (UInt32, CGRect, Bool) -> Void)?
+    /// A managed window moved or resized, with its frame before and now, and whether a
+    /// WindowServer change event (806 to 808, 815, 816) reported it. A Space change, as a
+    /// reveal makes, a creation or a sweep can read a new frame too.
+    var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, Bool) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -360,7 +360,7 @@ final class Inventory {
         // Shown now, as the second window an app launched hidden restored, with no report of
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
-        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, row.frame, changed) }
+        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, old.frame, row.frame, changed) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
