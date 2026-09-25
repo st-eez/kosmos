@@ -40,11 +40,12 @@ final class Controller {
     /// one: at its admission, as an app keys a window before Kosmos admits it, or at a tab
     /// switch, as macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
-    /// The windows admitted since launch on a shown workspace since the last key
-    /// window report, which their apps had not keyed. The next report takes them: one of
-    /// these windows is its app keying the window it opened, which brings the pointer as a
-    /// key before the admission does.
-    private var admittedUnkeyed: Set<WindowID> = []
+    /// Windows admitted on a shown workspace before their apps keyed them
+    /// (AdmissionFocus.awaitKey), with when each was admitted. A key window report of one
+    /// within `keyAfterAdmission` brings the pointer as a key before the admission does.
+    private var admittedUnkeyed: [WindowID: ContinuousClock.Instant] = [:]
+    /// The second ActivationInput allows a key before an activation.
+    private static let keyAfterAdmission: Duration = .seconds(1)
     /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until the
     /// batch that conceals them completes, their workspace is shown, or another tab replaces
     /// them. macOS keyed such a window by the user's or the app's choice, so its report
@@ -418,14 +419,14 @@ final class Controller {
                                           atLaunch: atLaunch, locked: sessionLocked)
         switch focus {
         case .adopt: session.adopt(id)
+        case .awaitKey: admittedUnkeyed[id] = .now
         case .placedHidden: placedHidden[id] = .admitted
         case .none: break
         }
         // A window opened after launch onto a shown workspace pops in (Slides). A new window
         // its app keyed brings the pointer on any display, as a keyboard focus change does,
-        // and so does one its app keys next (docs/focus-follows-mouse.md).
+        // and so does one its app keys just after (docs/focus-follows-mouse.md).
         let launched = !atLaunch
-        if launched, shown, !keyed, !sessionLocked, !session.isParked(id) { admittedUnkeyed.insert(id) }
         execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched,
                 floatingCheck: floats, popping: launched ? id : nil)
         // The follow's switch reveals the window the plan conceals.
@@ -817,8 +818,9 @@ final class Controller {
             let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
-            let keyedAfterAdmission = id.map(admittedUnkeyed.contains) == true
-            admittedUnkeyed = []
+            // Its app keyed a window Kosmos admitted within the last second.
+            admittedUnkeyed = admittedUnkeyed.filter { report.received - $0.value < Self.keyAfterAdmission }
+            let keyedAfterAdmission = id.flatMap { admittedUnkeyed.removeValue(forKey: $0) } != nil
             // macOS's report of the next key window, which a departure waited for. Kosmos's
             // own echo is not it: a window keyed during a minimize's animation leaves macOS
             // nothing to key when it ends, so the wait runs to its bound and focuses.
@@ -910,8 +912,8 @@ final class Controller {
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss
         /// The reported window is one its app keys as Kosmos admits it after launch: to its
-        /// rule's hidden workspace (AdmissionFocus.placedHidden), or on a shown
-        /// workspace just before this report (admittedUnkeyed). Following or adopting it
+        /// rule's hidden workspace (AdmissionFocus.placedHidden), or on a shown workspace
+        /// within a second before this report (admittedUnkeyed). Following or adopting it
         /// brings the pointer.
         var admitted = false
     }

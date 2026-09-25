@@ -125,15 +125,20 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     the second the Command-Tab test allows. Live on 2026-09-25, Chrome launched from
     Raycast on workspace 8 on the built-in display keyed its window 5.2 s after the
     hotkey, Kosmos followed it to workspace 4 on the main panel, and the pointer stayed on
-    the built-in display, before this. The same day Cmd-N in Ghostty on workspace 1 keyed
-    the new window before Kosmos admitted it, the window took the focus and the border,
-    and the pointer stayed over the old window, whose next bump would take the focus back,
-    before this. A window its app keys just after Kosmos admitted it on a shown workspace
-    brings the pointer too, when no other key window report came between
-    (`Controller.admittedUnkeyed`). A window that was there when Kosmos launched leaves
-    the pointer where it is, so it stays put at startup. The ceiling: Kosmos does not tell
-    who opened a window, so
-    an agent's or a script's new window that its app keys brings the pointer too, as it
+    the built-in display, before this. Before this change, on the same day, Cmd-N in
+    Ghostty on workspace 1 keyed the new window before Kosmos admitted it on the pointer's
+    display, the window took the focus and the border, and the pointer stayed over the
+    old window, whose next bump would take the focus back.
+  - A new window its app keys within a second after Kosmos admitted it on a shown
+    workspace brings the pointer too (`AdmissionFocus.awaitKey`), as when a launch keys
+    its first window more than a second after the launcher's key and Kosmos admitted the
+    window first. Cmd-N keyed after the admission passes the Command-Tab test already, its
+    key down within the second. A window its app keys later, as a meeting app's or one
+    opened with `open -g` when its app comes front minutes after, is judged by the
+    Command-Tab test.
+  - A window that was there when Kosmos launched leaves the pointer where it is, so it
+    stays put at startup. The ceiling: Kosmos does not tell who opened a window, so an
+    agent's or a script's new window that its app keys brings the pointer too, as it
     takes the focus or brings the follow. If that pulls the pointer away while Steve
     works, the rule can ask for a key or a click in the seconds before the app launched
     or opened the window.
