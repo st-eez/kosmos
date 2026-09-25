@@ -555,6 +555,22 @@ off the main thread).
   follows the private call with that public activation. An empty workspace would still
   leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
   fullscreen Space, which takes over the screen.
+- Open item, for the report rules of the `focus` work: echoes out of order. Each app's
+  observer thread sends its own reports, so on a fast sweep of the pointer across apps an
+  earlier request's echo can reach the main actor after a later one's. Consuming an echo
+  drops every expectation before it, so the late echo reads as the user's choice and
+  focus goes back to the window the pointer left. The hover branch's merged spec removes
+  only the matched record, together with rules that keep an expectation from lingering:
+  records have a kind, an activation record from the key record or Kosmos's own window
+  and an in-app record from the worker's raise; an activation read matches the oldest
+  activation record of its app, whatever window it reads; a notification consumes an
+  in-app record of its window and only joins an activation record; and after an echo
+  whose window is not the intent, the intent is requested again. Removing only the
+  matched record without them leaves an expectation whose echo was lost, as when
+  Apps.activated reports nothing or a background key record's only report is the
+  activation read, to swallow a later report of its window as its echo: a Command-Tab to
+  a concealed window is then not followed. tla/Kosmos.tla here still drops the earlier
+  records, so the code does too until those rules land with the spec.
 
 ### 5.5 Tree
 
@@ -799,20 +815,20 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - It is not the focus intent and key already. When a panel or dialog took key from the
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
-  - The front process, and the process that holds the key window, are Kosmos or have a
-    worker (`Controller.unmanagedKeyHolder`). A launcher's panel, as Raycast's,
-    Spotlight's or Alfred's, or a password prompt belongs to a process with none, as Apps
-    keeps workers for regular apps only, and focusing a window would take the key window
-    from it, which closes a launcher. AutoRaise left the front apps its
-    `stayFocusedBundleIds` listed alone. Kosmos reads the front process from
-    LaunchServices, which costs WindowServer nothing. A non-activating panel, as
-    Spotlight's, holds the key window while another app stays front, and only WindowServer
-    knows that (`SLPSGetKeyFocusProcess`): 30 us back to back, and 111 us at the median
-    and 4.8 ms at most read every 50 ms. So that read comes last, only when the window or
-    an empty workspace would take focus. Which read names each of those processes is for
-    the live test, with `kosmos-probe key-holder`. A window the pointer entered while such
-    a process held the key window takes focus only when the pointer enters it again, so
-    what a launcher opened keeps the focus.
+  - No process other than the front one and Kosmos holds the key window
+    (`Controller.keyHolderApartFromFront`). With Raycast, Spotlight (whose process is
+    "Siri", an accessory app), Notification Center or Control Center open, the front
+    process stayed Ghostty and only the process holding the key window changed
+    (`kosmos-probe key-holder`, 90 s at the desk on 2026-09-24). Focusing a window would
+    take the key window from such a panel and close it. AutoRaise left the front apps its
+    `stayFocusedBundleIds` listed alone. An app that is front with its own window keeps
+    hover focus on, even an accessory app's, as Raycast's settings, a menu bar app's
+    settings or Hammerspoon's. The front process comes from LaunchServices, 54 us
+    at the median, and the key focus process from WindowServer (`SLPSGetKeyFocusProcess`),
+    120 us at the median and 42 ms at most, so both are read last, only when the window or
+    an empty workspace would take focus. A window the pointer entered while a panel held
+    the key window takes focus only when the pointer enters it again, so what a launcher
+    opened keeps the focus.
 - The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
   does, and never focuses anything over one, display by display. On a display that shows
   a fullscreen Space, the windows under the pointer are the fullscreen window and its
@@ -825,14 +841,20 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   out of a fullscreen Space, and a hover focus passes the fullscreen gate of section 5.4
   as a command does. Live on 2026-09-24, the pointer entering Moonlight in native
   fullscreen on the built-in display skipped it as untiled, which this replaced.
-- When the pointer enters a display whose shown workspace has no windows, that workspace
-  takes the focus as `workspace` gives it: Kosmos keys its empty workspace window on that
-  display, with no switch and no pointer move, as Hyprland's `follow_mouse` moves the
-  monitor focus (`FocusFollowsMouse.emptyWorkspace`). Over a gap or the desktop of a
-  display whose workspace has windows, focus stays where it is, as in Hyprland. The hit
-  test names no managed window there, which is why the gate passes on a movement onto
-  another display. Live on 2026-09-24, moving from workspace 1 on the main panel onto the
-  left panel, which showed empty workspace 7, did nothing before this.
+- When the pointer enters the desktop of a display whose shown workspace has no windows,
+  that workspace takes the focus as `workspace` gives it: Kosmos keys its empty workspace
+  window on that display, with no switch and no pointer move, as Hyprland's
+  `follow_mouse` moves the monitor focus (`FocusFollowsMouse.emptyWorkspace`). Over a gap
+  or the desktop of a display whose workspace has windows, focus stays where it is, as in
+  Hyprland. The hit test names no managed window there, which is why the gate passes on a
+  movement onto another display. The desktop is no window, or one at the desktop icon
+  level or below: Finder's desktop window, the wallpaper and the display's backstop
+  (`FocusFollowsMouse.isDesktop`), whose level is read from WindowServer only on this
+  path. A window Kosmos does not manage over that display keeps the key window: a
+  slideshow, a game, the menu bar, or a panel over a native fullscreen window, where the
+  empty workspace's focus would also pass the fullscreen gate as a command. Live on
+  2026-09-24, moving from workspace 1 on the main panel onto the left panel, which showed
+  empty workspace 7, did nothing before this.
 - A hover focus counts as a command stamped when the monitor saw the movement: reports of
   the user's activations before it are stale, and its request's echo is consumed like any
   other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`
@@ -926,10 +948,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - A pause key other than Control, and a delay setting, until a user needs one.
   - Open menus. Moving the pointer off an open menu onto a window focuses that window and
     closes the menu, and with no delay a short overshoot does it. The front app's own menus
-    belong to a process with a worker, so the key holder check leaves them to this; whether
-    a menu extra's menu moves the key focus is for `kosmos-probe key-holder`. If the live
-    test shows it, one SkyLight window list read per window entered, for a window at the
-    pop-up menu level on screen, would keep the menu open.
+    leave the key window with the front process, so the key holder check leaves them to
+    this. If the live test shows it, one SkyLight window list read per window entered, for
+    a window at the pop-up menu level on screen, would keep the menu open.
   - A raise of a background app's window. The key record keys it and leaves the stacking
     order alone (section 5.4), until the worker's raise after the key record lands. The
     window under the pointer is on top at the pointer already, so only the parts of a
