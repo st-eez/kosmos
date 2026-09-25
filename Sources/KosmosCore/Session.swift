@@ -245,10 +245,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// A parked window keeps its reason, except one closed and kept: a minimize or native
-    /// fullscreen heard after the look explains its order-out (docs/tree.md). The plan asks for
-    /// no focus: macOS keys another window itself, and a request would pull the screen out of
-    /// a native fullscreen Space.
+    /// A parked window keeps its reason unless a minimize or native fullscreen replaces closed
+    /// and kept, and the plan asks for no focus (docs/tree.md).
     public mutating func park(_ windows: [WindowID], because reason: ParkReason) -> Plan {
         defer { check() }
         var changed: Set<String> = []
