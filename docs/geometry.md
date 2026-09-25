@@ -97,4 +97,8 @@
   before it starts, and the inventory admits a window only once it has them, so the report
   comes before the admission of the window it names. Read before the start, between two
   launch retries, the facts let Kosmos admit a launching app's window and conceal it on a
-  rule's hidden workspace before the report said the app had keyed it.
+  rule's hidden workspace before the report said the app had keyed it. The ceiling: an app
+  that answers reads but refuses the observer's registration, or whose window list read
+  fails, has none of its windows managed, where before it was managed without
+  notifications. None has been seen; the log after the launch retries names the failing
+  step.

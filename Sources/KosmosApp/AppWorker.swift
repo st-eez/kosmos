@@ -66,6 +66,8 @@ actor AppWorker {
     private let app: AXUIElement
     private var observer: AXObserver?
     private var started = false
+    /// Why the last start failed, for the log after the launch retries.
+    private(set) var startFailure = "no answer"
     private var elements: [UInt32: AXUIElement] = [:]
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
@@ -98,16 +100,22 @@ actor AppWorker {
             guard AXObserverCreate(pid, { _, element, notification, refcon in
                 guard let refcon else { return }
                 Unmanaged<AppWorker>.fromOpaque(refcon).takeUnretainedValue().observed(notification as String, element)
-            }, &created) == .success, let created else { return false }
+            }, &created) == .success, let created else { startFailure = "observer not created"; return false }
             observer = created
             CFRunLoopAddSource(observerLoop.runLoop, AXObserverGetRunLoopSource(created), .defaultMode)
         }
         for notification in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
             let result = observe(app, notification)
-            if result != .success, result != .notificationAlreadyRegistered { return false }
+            if result != .success, result != .notificationAlreadyRegistered {
+                startFailure = "\(notification) not registered, AXError \(result.rawValue)"
+                return false
+            }
         }
         // A call that timed out above leaves the worker to the probe.
-        guard trackWindows(), !backoff.backedOff else { return false }
+        guard trackWindows(), !backoff.backedOff else {
+            startFailure = backoff.backedOff ? "timed out" : "window list not read"
+            return false
+        }
         started = true
         reportAnswering()
         return true
