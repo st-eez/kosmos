@@ -352,14 +352,14 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     @Test func thePointerOnAResizeBorderMarksAResize() {
         let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
         // The side and bottom edges, from either side, and above the top edge.
-        #expect(Session.onResizeBorder(CGPoint(x: 97, y: 400), of: frame))
-        #expect(Session.onResizeBorder(CGPoint(x: 904, y: 400), of: frame))
-        #expect(Session.onResizeBorder(CGPoint(x: 500, y: 698), of: frame))
-        #expect(Session.onResizeBorder(CGPoint(x: 500, y: 97), of: frame))
+        #expect(TitleBarDrag.onResizeBorder(CGPoint(x: 97, y: 400), of: frame))
+        #expect(TitleBarDrag.onResizeBorder(CGPoint(x: 904, y: 400), of: frame))
+        #expect(TitleBarDrag.onResizeBorder(CGPoint(x: 500, y: 698), of: frame))
+        #expect(TitleBarDrag.onResizeBorder(CGPoint(x: 500, y: 97), of: frame))
         // The title bar, the inside and past the reach.
-        #expect(!Session.onResizeBorder(CGPoint(x: 500, y: 110), of: frame))
-        #expect(!Session.onResizeBorder(CGPoint(x: 500, y: 400), of: frame))
-        #expect(!Session.onResizeBorder(CGPoint(x: 90, y: 400), of: frame))
+        #expect(!TitleBarDrag.onResizeBorder(CGPoint(x: 500, y: 110), of: frame))
+        #expect(!TitleBarDrag.onResizeBorder(CGPoint(x: 500, y: 400), of: frame))
+        #expect(!TitleBarDrag.onResizeBorder(CGPoint(x: 90, y: 400), of: frame))
     }
 
     @Test func aWindowDroppedOverItsOwnPlaceGoesBackBesideItsNeighbour() {

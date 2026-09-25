@@ -693,9 +693,9 @@ final class Controller {
         // resize, so the pointer on a resize border at the first event marks one too. It is
         // read as the event applies, since reading it as each event came would read it at
         // every change event a switch posts.
-        let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
+        let onBorder = press == nil && CGEvent(source: nil).map { TitleBarDrag.onResizeBorder($0.location, of: frame) } == true
         let resized = press?.resized == true || onBorder || frame.size != before.size
-        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > Session.liftDistance,
+        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > TitleBarDrag.liftDistance,
            let plan = session.lift(id) {
             mouseMoved[id] = nil
             controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")

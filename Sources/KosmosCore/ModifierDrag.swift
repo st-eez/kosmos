@@ -190,12 +190,12 @@ public struct ModifierDrag: Equatable, Sendable {
     }
 
     /// How far the pointer at `point` is from where the button went down, in whole points,
-    /// once it has gone more than `Session.liftDistance` away, and nil until then. A click
+    /// once it has gone more than `TitleBarDrag.liftDistance` away, and nil until then. A click
     /// that jitters changes nothing, and past the distance the window catches up with the
     /// pointer.
     public mutating func delta(to point: CGPoint) -> CGSize? {
         let delta = CGSize(width: (point.x - grab.start.x).rounded(), height: (point.y - grab.start.y).rounded())
-        guard started || hypot(delta.width, delta.height) > Session.liftDistance else { return nil }
+        guard started || hypot(delta.width, delta.height) > TitleBarDrag.liftDistance else { return nil }
         started = true
         return delta
     }

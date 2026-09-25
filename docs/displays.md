@@ -138,7 +138,7 @@
     leaves the tree, parked where it stood, and the other windows fill its space at once.
     A click that jitters the title bar moves it less. A window whose size changed during
     the press, or with the pointer on a resize border at its first change event
-    (`Session.onResizeBorder`), is being resized and never lifts, since WindowServer can
+    (`TitleBarDrag.onResizeBorder`), is being resized and never lifts, since WindowServer can
     apply a resize by the left or top edge as a move first. Kosmos writes the lifted
     window no frame while macOS moves it, and a switch the CLI asks for meanwhile leaves
     it in the user's hand.

@@ -53,8 +53,8 @@ prefix.
   `KosmosCore/BarSnapshot.swift`, `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
   workspaces a profile leaves out, and window rules.
-  Code: `KosmosCore/Config/`, `KosmosApp/ConfigFile.swift`,
-  `KosmosSkyLight/DisplayIdentity.swift`.
+  Code: `KosmosCore/Config/`, `KosmosCore/Session+Profiles.swift`,
+  `KosmosApp/ConfigFile.swift`, `KosmosSkyLight/DisplayIdentity.swift`.
 - [onboarding.md](onboarding.md): the status item, the setup window that asks for
   permissions, and launch at login.
   Code: `KosmosApp/StatusItem.swift`, `KosmosApp/Onboarding.swift`,
@@ -74,14 +74,16 @@ prefix.
 - [displays.md](displays.md): the display orders, workspaces assigned to displays, the
   monitor commands, display changes, floating windows across displays, and dragging a
   tiled window by its title bar.
-  Code: `KosmosCore/Session.swift`, `KosmosCore/Monitor.swift`,
+  Code: `KosmosCore/Session.swift`, `KosmosCore/Session+Profiles.swift`,
+  `KosmosCore/Session+Drags.swift`, `KosmosCore/Monitor.swift`,
   `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
   `KosmosSkyLight/Displays.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,
-  `KosmosCore/Session.swift`, `KosmosCore/Commands.swift`, `KosmosApp/Controller.swift`.
+  `KosmosCore/Session+Drags.swift`, `KosmosCore/Commands.swift`,
+  `KosmosApp/Controller.swift`.
 - [borders.md](borders.md): borders around windows in windows of Kosmos's own, which
   windows get one, their shape, stacking and Spaces, how they follow frames, focus and
   slides, and what they cost against JankyBorders.
