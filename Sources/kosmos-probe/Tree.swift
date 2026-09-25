@@ -16,7 +16,7 @@ import CKosmos
 import KosmosSkyLight
 
 /// Prints its window id.
-@MainActor func fullscreenWindow() -> Never {
+@MainActor func fullscreenWindow(dry: Bool) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let window = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 420, height: 300),
@@ -26,7 +26,6 @@ import KosmosSkyLight
     window.makeKeyAndOrderFront(nil)
     app.activate()
     print(window.windowNumber)
-    let dry = CommandLine.arguments.contains("dry")
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { print("enter"); if !dry { window.toggleFullScreen(nil) } }
     DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { print("leave"); if !dry { window.toggleFullScreen(nil) } }
     DispatchQueue.main.asyncAfter(deadline: .now() + 9) { exit(0) }
@@ -34,11 +33,11 @@ import KosmosSkyLight
     exit(0)
 }
 
-@MainActor func fullscreen() -> Never {
+@MainActor func fullscreen(dry: Bool) -> Never {
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let child = Child(["fullscreen-window"] + (CommandLine.arguments.contains("dry") ? ["dry"] : []))
+    let child = Child(["fullscreen-window"] + (dry ? ["dry"] : []))
     let window = child.readWindows()[0]
     let start = ContinuousClock.now
     print("window \(window), pid \(child.pid)")

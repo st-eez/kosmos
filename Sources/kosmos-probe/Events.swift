@@ -18,13 +18,13 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
 
 /// Like `hidden-window`, onscreen and opaque on request. Prints its id, then the uptime and
 /// level of each change.
-@MainActor func levelWindow() -> Never {
+@MainActor func levelWindow(onscreen: Bool, opaque: Bool) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let origin = CommandLine.arguments.contains("onscreen") ? NSScreen.main?.visibleFrame.origin ?? .zero : NSPoint(x: -4000, y: -4000)
+    let origin = onscreen ? NSScreen.main?.visibleFrame.origin ?? .zero : NSPoint(x: -4000, y: -4000)
     let window = NSWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 60, height: 60)),
                           styleMask: [.borderless], backing: .buffered, defer: false)
-    window.alphaValue = CommandLine.arguments.contains("opaque") ? 1 : 0
+    window.alphaValue = opaque ? 1 : 0
     window.ignoresMouseEvents = true
     window.orderFrontRegardless()
     print(window.windowNumber)
@@ -40,7 +40,7 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
     exit(0)
 }
 
-@MainActor func levels() -> Never {
+@MainActor func levels(_ arguments: [String]) -> Never {
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
@@ -57,7 +57,7 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
         }, id, nil)
         if result == .success { registered += 1 }
     }
-    let child = Child(["level-window"] + CommandLine.arguments.dropFirst(2))
+    let child = Child(["level-window"] + arguments)
     let window = child.readWindows()[0]
     SkyLight.watch([window])
     print("window \(window), pid \(child.pid); \(registered) of \(ids.count) notifications registered")
