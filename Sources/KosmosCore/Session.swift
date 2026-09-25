@@ -69,6 +69,12 @@ public struct Session: Sendable {
         return workspace.root.windows + workspace.floating
     }
 
+    /// Whether the window is tiled or floating on the shown workspace. A parked window is
+    /// left to macOS.
+    public func isVisible(_ window: WindowID) -> Bool {
+        home[window] == visible && !isParked(window)
+    }
+
     public func frames(of name: String) -> [WindowID: CGRect] {
         workspaces[name]?.frames(in: display, gaps: gaps, minimums: minimums) ?? [:]
     }
@@ -247,8 +253,8 @@ public struct Session: Sendable {
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
-        case .reloadConfig, .mode:
-            return nil   // the app reloads the config or switches hotkeys
+        case .reloadConfig, .mode, .focusFollowsMouse:
+            return nil   // the app reloads the config, switches hotkeys or sets focus follows mouse
         default:
             return performOnFocused(command)
         }
@@ -283,7 +289,7 @@ public struct Session: Sendable {
             workspace.balanceSizes()
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
-        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode:
+        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusFollowsMouse:
             return nil
         }
         workspaces[visible] = workspace

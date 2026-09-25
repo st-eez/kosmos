@@ -60,8 +60,21 @@ final class Controller {
     let managing: Bool
     /// Window rules, first match wins.
     var rules: [WindowRule] = []
-    /// Move the pointer into a window that a command focused.
+    /// Move the pointer into a window that a command or Command-Tab focused.
     var mouseFollowsFocus = false
+    /// The config's settings; the `focus-follows-mouse` command changes `enabled` until the
+    /// next load.
+    var focusFollowsMouse = FocusFollowsMouse() {
+        didSet {
+            // Creating the tap may ask for Input Monitoring, so it waits until focus follows
+            // mouse is first turned on.
+            if focusFollowsMouse.enabled, managing, pointer == nil {
+                pointer = PointerTap { [weak self] window, stamp in self?.pointerEntered(window, at: stamp) }
+            }
+            pointer?.setEnabled(focusFollowsMouse.enabled)
+        }
+    }
+    private var pointer: PointerTap?
     /// The active display profile, for the bar.
     var profile: String?
     /// The display the session tiles, as the bar numbers it. Read at launch and at each
@@ -150,12 +163,21 @@ final class Controller {
             return (1, "observing only while another window manager runs")
         case .success where sessionLocked:
             return (1, "the session is locked")
+        case .success(.focusFollowsMouse(let change)):
+            focusFollowsMouse.enabled = switch change {
+            case .on: true
+            case .off: false
+            case .toggle: !focusFollowsMouse.enabled
+            }
+            return (0, "")
         case .success(let command):
             if let missing = session.missingWorkspace(in: command) {
                 return (1, "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))")
             }
             reports.commandExecuted(receivedAt: received)
-            if let plan = session.perform(command) { execute(plan, since: received, fromCommand: true) }
+            if let plan = session.perform(command) {
+                execute(plan, since: received, fromCommand: true, movePointer: mouseFollowsFocus)
+            }
             return (0, "")
         }
     }
@@ -555,12 +577,13 @@ final class Controller {
             touch(window)
             // A new generation, so a request of Kosmos's still queued cannot key its window
             // after the user's choice; the worker finds this one key already and records
-            // nothing (tla/Kosmos.tla, Adopt).
-            requestFocus(.window(window))
+            // nothing (tla/Kosmos.tla, Adopt). Command-Tab to a window away from the pointer
+            // brings the pointer along; a click happens over the window, which leaves it.
+            requestFocus(.window(window), movePointer: mouseFollowsFocus)
             publishState()
         case .follow(let window):
             touch(window)
-            execute(session.follow(window))
+            execute(session.follow(window), movePointer: mouseFollowsFocus)
         }
     }
 
@@ -604,8 +627,10 @@ final class Controller {
                                     fullscreen: Dictionary(uniqueKeysWithValues: fullscreenParked.compactMap { id in owner[id].map { (id, $0) } }))
     }
 
-    /// `since` is when the command arrived, for the switch timing log.
-    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false) {
+    /// `since` is when the command arrived, for the switch timing log. `movePointer` moves the
+    /// pointer into the window the plan focuses.
+    private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
+                         movePointer: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
         var show = plan.show, hide = plan.hide
@@ -614,7 +639,6 @@ final class Controller {
             hide = session.names.filter { $0 != session.visible }.flatMap { session.windows(of: $0) }
             needsResync = false
         }
-        let movePointer = fromCommand && mouseFollowsFocus
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(intent, movePointer: movePointer, fromCommand: fromCommand) }
         } else {
@@ -724,12 +748,50 @@ final class Controller {
         onFocusProblem?(focusProblem)
     }
 
-    /// Moves the pointer to the window's center unless it is already inside the window,
-    /// as AeroSpace's `move-mouse window-lazy-center` does.
+    /// Moves the pointer to the window's center unless it is already over the window, as
+    /// AeroSpace's `move-mouse window-lazy-center` does. A window's resize region reaches a
+    /// few points past its frame, and a click there activates the window too, so it counts as
+    /// over it.
     private func centerPointer(on window: WindowID) {
         guard let frame = SkyLight.rows([window]).first?.frame, !frame.isEmpty,
-              let pointer = CGEvent(source: nil)?.location, !frame.contains(pointer) else { return }
+              let location = CGEvent(source: nil)?.location,
+              !frame.insetBy(dx: -8, dy: -8).contains(location) else { return }
         CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
+        pointer?.warped()
+    }
+
+    // MARK: Focus follows mouse
+
+    /// How long the pointer rests in a window before the window takes focus. Zero focuses it
+    /// as the pointer enters, as Hyprland's `follow_mouse = 1` does, although each focus of
+    /// another app's window costs macOS about 94 ms of CPU (DESIGN.md, sections 2 and 5.11).
+    private static let dwell: Duration = .zero
+
+    /// The pointer moved into `window`, the window WindowServer found under it, at `stamp`
+    /// (DESIGN.md, section 5.11). The window takes focus through the same path as a focus
+    /// command when FocusFollowsMouse.skip allows it.
+    private func pointerEntered(_ window: WindowID, at stamp: ContinuousClock.Instant) {
+        after(Self.dwell) { controller in
+            // The pointer left the window during the dwell, or moved on before this ran.
+            guard controller.managing, !controller.sessionLocked, controller.pointer?.window == window else { return }
+            controller.focusUnderPointer(window, at: stamp)
+        }
+    }
+
+    private func focusUnderPointer(_ window: WindowID, at stamp: ContinuousClock.Instant) {
+        if let skip = focusFollowsMouse.skip(window, in: session, key: key, app: owner[window].map(inventory.appIdentity),
+                                             stale: reports.isStale(stamp), fullscreenShown: inFullscreenSpace) {
+            pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
+            return
+        }
+        pointerLog.info("pointer focuses \(window)")
+        // A focus follows mouse focus is a command for the window, stamped when the pointer
+        // entered it: reports of the user's activations before it are stale, and its echo is
+        // consumed like any other. It never moves the pointer.
+        reports.commandExecuted(receivedAt: stamp)
+        session.adopt(window)
+        requestFocus(.window(window))
+        publishState()
     }
 
     private func touch(_ window: WindowID) {

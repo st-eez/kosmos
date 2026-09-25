@@ -38,6 +38,32 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(result.diagnostics == ["4:9: error: gaps.inner: the string is not closed on this line"])
     }
 
+    @Test func focusFollowsMouse() throws {
+        let config = try #require(load("""
+            focus-follows-mouse = true
+            focus-follows-mouse-ignore-apps = ['Google Chrome for Testing', 'com.apple.Notes']
+            """).config)
+        var expected = FocusFollowsMouse()
+        expected.enabled = true
+        expected.ignoreApps = ["Google Chrome for Testing", "com.apple.Notes"]
+        #expect(config.focusFollowsMouse == expected)
+        // Off by default.
+        #expect(try #require(load("").config).focusFollowsMouse == FocusFollowsMouse())
+    }
+
+    @Test func focusFollowsMouseMistakes() {
+        #expect(load("""
+            focus-follows-mouse = 'on'
+            focus-follows-mouse-ignore-apps = ['Numi', '', 3]
+            focus-follow-mouse = true
+            """).diagnostics == [
+            "3:23: error: focus-follows-mouse: expected true or false, found a string",
+            "4:44: error: focus-follows-mouse-ignore-apps[1]: the string is empty",
+            "4:48: error: focus-follows-mouse-ignore-apps[2]: expected a string, found an integer",
+            "5:1: error: focus-follow-mouse: unknown key; did you mean 'focus-follows-mouse'?",
+        ])
+    }
+
     @Test func unknownKeysSuggestTheNearestKey() {
         #expect(load("mouse-follow-focus = true\n[gaps]\ninnr = 1\n[[rules]]").diagnostics == [
             "3:1: error: mouse-follow-focus: unknown key; did you mean 'mouse-follows-focus'?",

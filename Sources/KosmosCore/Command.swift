@@ -15,6 +15,12 @@ public enum Command: Equatable, Sendable {
         case toggleFloating
     }
 
+    public enum Toggle: Equatable, Sendable {
+        case on
+        case off
+        case toggle
+    }
+
     case workspace(Workspace)
     case workspaceBackAndForth
     case focus(Direction)
@@ -31,6 +37,8 @@ public enum Command: Equatable, Sendable {
     case reloadConfig
     /// Switches the hotkeys to another binding mode from the config.
     case mode(String)
+    /// Turns focus follows mouse on or off until the next config load.
+    case focusFollowsMouse(Toggle)
 
     public struct ParseError: Error, Equatable, Sendable {
         public let message: String
@@ -99,6 +107,13 @@ public enum Command: Equatable, Sendable {
         case "flatten-workspace-tree": return rest.isEmpty ? .success(.flattenWorkspaceTree) : usage
         case "reload-config": return rest.isEmpty ? .success(.reloadConfig) : usage
         case "mode": return rest.count == 1 ? .success(.mode(rest[0])) : usage
+        case "focus-follows-mouse":
+            switch rest {
+            case ["on"]: return .success(.focusFollowsMouse(.on))
+            case ["off"]: return .success(.focusFollowsMouse(.off))
+            case ["toggle"]: return .success(.focusFollowsMouse(.toggle))
+            default: return fail("usage: focus-follows-mouse on|off|toggle")
+            }
         default: return usage
         }
     }
