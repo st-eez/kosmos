@@ -823,12 +823,18 @@ off the main thread).
     are meant to.
   - Kosmos keeps running when the user removes the item.
 - Onboarding is a setup window listing each permission Kosmos waits for, with a checkmark
-  once granted or a button to its pane in System Settings. It lists Accessibility, opening
-  at a launch without it, and Input Monitoring, opening whenever focus follows mouse is on
-  and macOS refuses the pointer tap (section 5.11).
+  once granted or a button to its pane in System Settings: Accessibility, at a launch
+  without it, and Input Monitoring when section 5.11 calls for it.
   - macOS sends no notification for either grant, so the window checks twice a second,
-    and after the user closes it too, so Kosmos still starts on its own. Once everything
-    it lists is granted, it says Kosmos is running and closes 1.5 s later.
+    and after the user closes it too, so Kosmos still starts on its own. A revoked grant
+    shows as missing again, and a row leaves the list once nothing needs it. When
+    everything listed is granted, the window says Kosmos is running and closes 1.5 s
+    later; when the last missing row leaves without a grant, it closes at once.
+  - At launch the window takes the key. Later it only comes to the front, since a
+    background accessory app does not become the front app (section 5.4). When it closes
+    with the key, the key goes to the window the model has focused, to the empty
+    workspace's window if Kosmos had the key before, and otherwise back to the app macOS
+    activates next.
   - `Kosmos onboarding-snapshot <directory>` draws each state in light and dark mode into
     PNG files without showing a window.
 - Launch at login uses `SMAppService` with a `KeepAlive` agent, and config errors appear
@@ -997,10 +1003,16 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   Kosmos's grant is enough is open until a live test settles it. The tap is created only
   when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
   granted when it creates the tap, whether the tap is enabled when it turns on, and when
-  the first event arrives. When macOS refuses the tap, Kosmos logs an error,
-  `focus-follows-mouse on` exits 1 and says to allow Input Monitoring, and the setup window
-  asks for Input Monitoring (section 5.9). Kosmos creates the tap again once the window
-  sees Input Monitoring granted, and at the next turn on or config load.
+  the first event arrives. When macOS refuses the tap, Kosmos logs an error, and
+  `focus-follows-mouse on` exits 1 and says to allow Input Monitoring.
+- Whenever focus follows mouse turns on without Input Monitoring
+  (`CGPreflightListenEventAccess`), at a config load or a command, the setup window lists
+  Input Monitoring (section 5.9), whether the tap was created or not: a created tap may
+  hear nothing, as above. Once it is granted, Kosmos makes the tap again if the last one
+  predates the grant, at the window's next check or the next turn on or config load. If
+  macOS offers to quit and reopen Kosmos after the grant, the quit reaches NSApplication's
+  terminate as Quit Kosmos does, by Apple event or SIGTERM, so hidden windows come back in
+  process; the guardian covers a kill.
 - Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
   `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead, and only PointerTap's
   event source changes; the gate and everything after it stay. AeroSpace's and Amethyst's
@@ -1338,6 +1350,5 @@ Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles with th
 (section 5.2), an embedded scripting language, window title matchers, marks, persistence
 across restarts, and one macOS Space per workspace.
 
-The app icon is still to be designed. Kosmos ships without one, and the setup window's
-header draws a placeholder mark of three tiles (section 5.9). Three rounds of icons drawn
-in code were rejected; the next round starts from references from Steve or a designer.
+The app icon is still to be designed. Until then the setup window draws a placeholder
+mark (section 5.9).

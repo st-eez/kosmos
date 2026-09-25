@@ -44,7 +44,7 @@ never the terminal's. On the first launch without a grant, Kosmos opens its setu
 whose Open Settings button adds Kosmos to System Settings > Privacy & Security >
 Accessibility. Turn the switch on and Kosmos starts managing windows within half a second;
 it needs no restart. With focus follows mouse on, the window also asks for Input
-Monitoring when macOS refuses Kosmos's pointer tap without it.
+Monitoring while Kosmos does not have it.
 
 macOS keeps the grant for the app's designated requirement, which names the bundle
 identifier and the signing certificate:

@@ -83,11 +83,14 @@ final class Controller {
         didSet { updatePointerTap() }
     }
     private var pointer: PointerTap?
-    /// Focus follows mouse is on and WindowServer refused the pointer tap, which Input
-    /// Monitoring allows (DESIGN.md, section 5.11).
-    var pointerRefused: Bool { focusFollowsMouse.enabled && managing && pointer == nil }
-    /// Called when WindowServer refuses the pointer tap.
-    var onPointerRefused: (@MainActor () -> Void)?
+    /// Whether Input Monitoring was granted when the pointer tap was last made: a tap made
+    /// without it may hear nothing (DESIGN.md, section 5.11).
+    private var pointerListens = false
+    /// Focus follows mouse is on while Kosmos manages windows, so it wants the pointer tap.
+    var wantsPointer: Bool { focusFollowsMouse.enabled && managing }
+    /// Called when focus follows mouse turns on without Input Monitoring (DESIGN.md, section
+    /// 5.11).
+    var onInputMonitoringMissing: (@MainActor () -> Void)?
     /// The user is dragging a tiled window, lifted out of the layout.
     private var dragging: Bool { !session.lifted.isEmpty }
     /// The active display profile, for the bar.
@@ -162,17 +165,38 @@ final class Controller {
         resync(displaysChanged: session.monitors != displaysBefore)
     }
 
-    /// Turns the pointer tap on or off with focus follows mouse. Creating the tap may ask for
-    /// Input Monitoring, so it waits until focus follows mouse is first turned on. A tap
-    /// WindowServer refused is tried again at the next turn on or config load, and when the
-    /// setup window sees Input Monitoring granted.
-    func updatePointerTap() {
-        if focusFollowsMouse.enabled, managing, pointer == nil {
-            pointer = PointerTap { [weak self] entered, stamp in self?.pointerEntered(entered, at: stamp) }
-            pointer?.setMonitors(session.monitors)
-            if pointer == nil { onPointerRefused?() }
-        }
+    /// Turns the pointer tap on or off with focus follows mouse. The tap is made at the first
+    /// turn on, and again at a turn on or config load after a refusal or after an Input
+    /// Monitoring grant it predates (DESIGN.md, section 5.11).
+    private func updatePointerTap() {
+        let listening = CGPreflightListenEventAccess()
+        if wantsPointer, pointer == nil || (listening && !pointerListens) { makePointerTap(listening: listening) }
         pointer?.setEnabled(focusFollowsMouse.enabled)
+        if wantsPointer, !listening { onInputMonitoringMissing?() }
+    }
+
+    /// Makes the pointer tap again once Input Monitoring is granted, when the last one was
+    /// made without it. The setup window calls this at each check.
+    func renewPointerTapAfterGrant() {
+        guard wantsPointer, !pointerListens, CGPreflightListenEventAccess() else { return }
+        makePointerTap(listening: true)
+        pointer?.setEnabled(true)
+    }
+
+    private func makePointerTap(listening: Bool) {
+        pointer?.stop()
+        pointer = PointerTap { [weak self] entered, stamp in self?.pointerEntered(entered, at: stamp) }
+        pointer?.setMonitors(session.monitors)
+        pointerListens = listening
+    }
+
+    /// Whether the model has a window focused, and not an empty workspace.
+    var hasFocusedWindow: Bool { session.focused != nil }
+
+    /// Keys the window the model has focused, or the empty workspace's window, as after
+    /// Kosmos's setup window held the key.
+    func refocus() {
+        requestFocus(intent)
     }
 
     /// Why the private focus path is off, for the status item, or nil while it is on.
@@ -225,7 +249,7 @@ final class Controller {
             case .off: false
             case .toggle: !focusFollowsMouse.enabled
             }
-            if pointerRefused {
+            if focusFollowsMouse.enabled, pointer == nil {
                 return (1, """
                     focus follows mouse gets no pointer movement: macOS refused Kosmos's event tap. \
                     Allow Kosmos in System Settings, Privacy & Security, Input Monitoring, then run \

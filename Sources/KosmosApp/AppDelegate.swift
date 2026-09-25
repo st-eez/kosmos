@@ -13,9 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var record: RecordFile?
     private var statusItem: StatusItem?
     private var onboarding: Onboarding?
-    /// Whether Input Monitoring was granted when last read, at a refused pointer tap or a
-    /// check, so a grant tries the tap once: a refused tap logs an error.
-    private var listenEventAccess = false
     private let inventory = Inventory()
     private let guardian = Guardian()
     private let lockWatch = LockWatch()
@@ -88,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             start()
         } else {
             statusItem.accessibilityMissing = true
-            showSetup(Onboarding.State(accessibility: false))
+            showSetup(Onboarding.State(accessibility: false), takingKey: true)
         }
     }
 
@@ -307,27 +304,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the setup window at `state`, or brings it forward at its own.
-    private func showSetup(_ state: Onboarding.State) {
+    private func showSetup(_ state: Onboarding.State, takingKey: Bool) {
         if onboarding == nil {
             onboarding = Onboarding(state, check: { [weak self] in self?.checkPermissions() ?? state },
+                                    closedWithKey: { [weak self] in self?.setupClosed(fromAnotherApp: $0) },
                                     finished: { [weak self] in self?.onboarding = nil })
         }
-        onboarding?.show()
+        onboarding?.show(takingKey: takingKey)
     }
 
     /// Reads the permissions for the setup window and acts on a grant: Kosmos starts once it
-    /// has Accessibility, and the pointer tap is created once Input Monitoring is granted.
+    /// has Accessibility, and the pointer tap is made again once Input Monitoring is granted.
     private func checkPermissions() -> Onboarding.State {
-        guard AXIsProcessTrusted() else { return Onboarding.State(accessibility: false) }
-        if controller == nil {
+        let trusted = AXIsProcessTrusted()
+        if trusted, controller == nil {
             statusItem?.accessibilityMissing = false
             start()
         }
-        guard let controller, controller.pointerRefused else { return Onboarding.State(accessibility: true) }
-        let granted = CGPreflightListenEventAccess()
-        if granted, !listenEventAccess { controller.updatePointerTap() }
-        listenEventAccess = granted
-        return Onboarding.State(accessibility: true, inputMonitoring: controller.pointerRefused ? false : nil)
+        guard let controller, controller.wantsPointer else { return Onboarding.State(accessibility: trusted) }
+        controller.renewPointerTapAfterGrant()
+        return Onboarding.State(accessibility: trusted, inputMonitoring: CGPreflightListenEventAccess())
+    }
+
+    /// The setup window closed with the key, which goes back to the window the model has
+    /// focused, or to the empty workspace's window when Kosmos had the key before. Otherwise
+    /// Kosmos steps back and macOS activates the app that had it, so no key goes to a window
+    /// of Kosmos's (DESIGN.md, section 5.4).
+    private func setupClosed(fromAnotherApp: Bool) {
+        if let controller, controller.managing, controller.hasFocusedWindow || !fromAnotherApp {
+            controller.refocus()
+        } else {
+            NSApp.deactivate()
+        }
     }
 
     private func start() {
@@ -355,9 +363,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.focusProblem = problem
             self?.updateProblems()
         }
-        controller.onPointerRefused = { [weak self] in
-            self?.listenEventAccess = CGPreflightListenEventAccess()
-            self?.showSetup(Onboarding.State(accessibility: true, inputMonitoring: false))
+        controller.onInputMonitoringMissing = { [weak self] in
+            self?.showSetup(Onboarding.State(accessibility: true, inputMonitoring: false), takingKey: false)
         }
         focusProblem = controller.focusProblem
         updateProblems()

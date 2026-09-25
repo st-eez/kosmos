@@ -1,13 +1,7 @@
 import AppKit
 
-/// The setup window: each permission Kosmos waits for, with a checkmark once granted or a
-/// button to its pane in System Settings. Accessibility is always listed. Input Monitoring
-/// is listed once focus follows mouse is on and macOS refused the pointer tap (DESIGN.md,
-/// section 5.11).
-///
-/// macOS has no notification for either grant, so the window checks twice a second until
-/// everything it lists is granted, and keeps checking after the user closes it, so Kosmos
-/// still starts on its own. It then says Kosmos is running and closes 1.5 s later.
+/// The setup window: each permission Kosmos waits for, with a checkmark or a button to its
+/// pane in System Settings, checked twice a second (DESIGN.md, section 5.9).
 @MainActor
 final class Onboarding {
     /// What the window shows.
@@ -21,44 +15,78 @@ final class Onboarding {
 
     private let window = SetupWindow()
     private var state: State
+    /// Input Monitoring stays listed from the check that finds it missing until focus
+    /// follows mouse turns off, so its grant shows as a checkmark.
+    private var listsInputMonitoring: Bool
     private var timer: Timer?
-    /// Reads the permissions and acts on a grant. Input Monitoring is nil while nothing
-    /// needs it.
+    /// The close after the success state, until it runs.
+    private var closing: DispatchWorkItem?
+    /// Reads the permissions and acts on a grant. Input Monitoring is nil while focus follows
+    /// mouse is off.
     private let check: @MainActor () -> State
     private let finished: @MainActor () -> Void
 
-    init(_ state: State, check: @escaping @MainActor () -> State, finished: @escaping @MainActor () -> Void) {
+    /// `closedWithKey` runs as the window closes while it has the key, with whether that key
+    /// came from another app.
+    init(_ state: State, check: @escaping @MainActor () -> State,
+         closedWithKey: @escaping @MainActor (_ fromAnotherApp: Bool) -> Void, finished: @escaping @MainActor () -> Void) {
         self.state = state
+        listsInputMonitoring = state.inputMonitoring != nil
         self.check = check
         self.finished = finished
+        window.closedWithKey = closedWithKey
         window.setContent(Self.content(for: state))
         window.center()
+        startChecking()
+    }
+
+    /// Brings the window to the front of the normal level, and keeps it open if it was about
+    /// to close. Only a launch lets Kosmos take the key: mid-session, a background accessory
+    /// app does not become the front app (DESIGN.md, section 5.4).
+    func show(takingKey: Bool) {
+        if let closing {
+            closing.cancel()
+            self.closing = nil
+            startChecking()
+        }
+        window.orderFrontRegardless()
+        if takingKey { window.takeKey() }
+    }
+
+    private func startChecking() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
     }
 
-    func show() {
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-    }
-
     private func tick() {
         var next = check()
-        // A row stays once listed, so a grant shows as a checkmark.
-        if next.inputMonitoring == nil, state.inputMonitoring != nil { next.inputMonitoring = true }
-        guard next != state else { return }
-        state = next
-        window.setContent(Self.content(for: state))
+        listsInputMonitoring = next.inputMonitoring != nil && (listsInputMonitoring || next.inputMonitoring == false)
+        if !listsInputMonitoring { next.inputMonitoring = nil }
+        let granting = next.accessibility && !state.accessibility || next.inputMonitoring == true && state.inputMonitoring == false
+        if next != state, next.granted, !granting {
+            // The missing row left the list, as when focus follows mouse turns off: nothing was
+            // granted, so the window closes without saying Kosmos is running.
+            timer?.invalidate()
+            window.close()
+            return finished()
+        }
+        if next != state {
+            state = next
+            window.setContent(Self.content(for: state))
+        }
         guard state.granted else { return }
+        // Everything listed is granted: the window says Kosmos is running and closes 1.5 s later.
         timer?.invalidate()
         guard window.isVisible else { return finished() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        let close = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 self?.window.close()
                 self?.finished()
             }
         }
+        closing = close
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: close)
     }
 }
 
@@ -72,19 +100,19 @@ extension Onboarding {
     fileprivate enum Permission {
         case accessibility, inputMonitoring
 
+        var name: String { self == .accessibility ? "Accessibility" : "Input Monitoring" }
+        var reason: String { self == .accessibility ? "Required to move and resize your windows" : "Needed for focus follows mouse" }
+        var symbol: String { self == .accessibility ? "accessibility" : "keyboard" }
+        var color: NSColor { self == .accessibility ? .systemBlue : .systemGray }
+
         /// Opens its pane in System Settings, Privacy & Security.
         func openSettings() {
-            let pane: String
-            switch self {
-            case .accessibility:
+            if self == .accessibility {
                 // Adds Kosmos to the Accessibility list so the user only has to switch it on.
                 // The value of kAXTrustedCheckOptionPrompt, a global var that Swift 6 rejects.
                 _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": false] as CFDictionary)
-                pane = "Privacy_Accessibility"
-            case .inputMonitoring:
-                // Creating the pointer tap already added Kosmos to the Input Monitoring list.
-                pane = "Privacy_ListenEvent"
             }
+            let pane = self == .accessibility ? "Privacy_Accessibility" : "Privacy_ListenEvent"
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
         }
     }
@@ -177,23 +205,19 @@ extension Onboarding {
     }
 
     private static func row(_ permission: Permission, granted: Bool, takesReturn: Bool) -> NSView {
-        let (name, reason, symbol, color): (String, String, String, NSColor) = switch permission {
-        case .accessibility: ("Accessibility", "Required to move and resize your windows", "accessibility", .systemBlue)
-        case .inputMonitoring: ("Input Monitoring", "Needed for focus follows mouse", "keyboard", .systemGray)
-        }
         let icon = Drawing(size: NSSize(width: 28, height: 28)) { bounds in
-            color.setFill()
+            permission.color.setFill()
             NSBezierPath(roundedRect: bounds, xRadius: 6.5, yRadius: 6.5).fill()
             let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
-            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            guard let image = NSImage(systemSymbolName: permission.symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(configuration) else { return }
             image.draw(in: NSRect(x: bounds.midX - image.size.width / 2, y: bounds.midY - image.size.height / 2,
                                   width: image.size.width, height: image.size.height))
         }
-        let nameField = NSTextField(labelWithString: name)
+        let nameField = NSTextField(labelWithString: permission.name)
         nameField.font = .systemFont(ofSize: 13, weight: .medium)
-        let reasonField = NSTextField(labelWithString: reason)
+        let reasonField = NSTextField(labelWithString: permission.reason)
         reasonField.font = .systemFont(ofSize: 11)
         reasonField.textColor = .secondaryLabelColor
         let text = NSStackView(views: [nameField, reasonField])
@@ -204,13 +228,10 @@ extension Onboarding {
 
         let status: NSView
         if granted {
-            let check = NSImageView(image: NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "\(name) allowed")!)
-            check.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-            check.contentTintColor = .systemGreen
-            status = check
+            status = checkmark(pointSize: 18, description: "\(permission.name) allowed")
         } else {
             let button = SettingsButton(permission)
-            button.setAccessibilityLabel("Open \(name) Settings")
+            button.setAccessibilityLabel("Open \(permission.name) Settings")
             if takesReturn { button.keyEquivalent = "\r" }
             status = button
         }
@@ -223,6 +244,13 @@ extension Onboarding {
         row.spacing = 10
         row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
         return row
+    }
+
+    private static func checkmark(pointSize: CGFloat, description: String?) -> NSImageView {
+        let check = NSImageView(image: NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: description)!)
+        check.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        check.contentTintColor = .systemGreen
+        return check
     }
 
     /// A line between rows, from the text's edge, as System Settings draws its lists.
@@ -238,10 +266,7 @@ extension Onboarding {
         let symbol: NSView
         let text: NSTextField
         if state.granted {
-            let check = NSImageView(image: NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)!)
-            check.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-            check.contentTintColor = .systemGreen
-            symbol = check
+            symbol = checkmark(pointSize: 14, description: nil)
             text = NSTextField(labelWithString: "Kosmos is running")
             text.font = .systemFont(ofSize: 13, weight: .medium)
         } else {
@@ -335,12 +360,23 @@ private final class SettingsButton: NSButton {
         action = #selector(open)
     }
 
+    /// While Kosmos is in the background, as it is mid-session, a click on the button presses
+    /// it and does not only bring the window forward.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     @objc private func open() { permission.openSettings() }
 }
 
 /// A window at the normal level whose title bar shows only the close button. Escape and
 /// Command-W close it, since Kosmos has no main menu to carry Close.
 private final class SetupWindow: NSWindow {
+    /// Runs as the window closes while it has the key, with whether that key came from
+    /// another app: Kosmos was not active before the window took it.
+    var closedWithKey: (@MainActor (_ fromAnotherApp: Bool) -> Void)?
+    private var tookKeyFromAnotherApp = false
+    /// Kosmos is becoming active, until one of its windows takes the key.
+    private var activating = false
+
     init() {
         super.init(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView],
                    backing: .buffered, defer: true)
@@ -351,6 +387,30 @@ private final class SetupWindow: NSWindow {
         isReleasedWhenClosed = false
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(appWillBecomeActive), name: NSApplication.willBecomeActiveNotification,
+                           object: nil)
+        center.addObserver(self, selector: #selector(windowBecameKey), name: NSWindow.didBecomeKeyNotification, object: nil)
+    }
+
+    /// Activates Kosmos and takes the key, which only a launch can do, from the app that was
+    /// active before.
+    func takeKey() {
+        activating = true
+        NSApp.activate()
+        makeKey()
+    }
+
+    @objc private func appWillBecomeActive() { activating = true }
+
+    @objc private func windowBecameKey(_ notification: Notification) {
+        if notification.object as? NSWindow === self { tookKeyFromAnotherApp = activating }
+        activating = false
+    }
+
+    override func close() {
+        if isKeyWindow { closedWithKey?(tookKeyFromAnotherApp) }
+        super.close()
     }
 
     /// Replaces the content and fits the window to it, keeping its top edge.
