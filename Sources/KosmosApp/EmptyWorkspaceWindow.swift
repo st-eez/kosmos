@@ -50,8 +50,8 @@ final class EmptyWorkspaceWindow: NSWindow {
     /// window makes its display the active one, which takes the menu bar and the next new
     /// window, so it sits on the display the empty workspace is on.
     func place(on display: CGRect) {
-        guard let primary = NSScreen.screens.first else { return }
-        let origin = NSPoint(x: display.minX, y: primary.frame.height - display.maxY)
+        guard !NSScreen.screens.isEmpty else { return }
+        let origin = NSScreen.flipped(display).origin
         if frame.origin != origin { setFrameOrigin(origin) }
     }
 

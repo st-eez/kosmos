@@ -58,15 +58,10 @@ enum ConfigFile {
     /// The connected displays, as the config's monitor matchers and the session see them.
     /// Empty while NSScreen lists none, as it can in the middle of a change.
     static func displays() -> [Display] {
-        guard let primary = NSScreen.screens.first else { return [] }
-        // AppKit's origin is the primary display's bottom left; Accessibility's is its top left.
-        func flipped(_ rect: NSRect) -> CGRect {
-            CGRect(x: rect.minX, y: primary.frame.height - rect.maxY, width: rect.width, height: rect.height)
-        }
-        return NSScreen.screens.map { screen in
+        NSScreen.screens.map { screen in
             Display(id: screen.displayID, name: screen.localizedName, serial: DisplayIdentity.serial(of: screen.displayID),
-                    isBuiltIn: CGDisplayIsBuiltin(screen.displayID) != 0, frame: flipped(screen.frame),
-                    area: flipped(screen.visibleFrame))
+                    isBuiltIn: CGDisplayIsBuiltin(screen.displayID) != 0, frame: NSScreen.flipped(screen.frame),
+                    area: NSScreen.flipped(screen.visibleFrame))
         }
     }
 
@@ -83,5 +78,12 @@ enum ConfigFile {
 extension NSScreen {
     var displayID: CGDirectDisplayID {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    }
+
+    /// `rect` flipped between AppKit's screen coordinates, whose origin is the primary
+    /// display's bottom left, and Accessibility's, whose origin is its top left.
+    static func flipped(_ rect: CGRect) -> CGRect {
+        let height = screens.first?.frame.height ?? 0
+        return CGRect(x: rect.minX, y: height - rect.maxY, width: rect.width, height: rect.height)
     }
 }

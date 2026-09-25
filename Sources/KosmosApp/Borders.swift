@@ -148,9 +148,7 @@ private final class BorderWindow: NSWindow {
         shown = next
         let border = next.border
         let frame = next.sliding ? border.displayFrame : border.frame
-        // AppKit's screen coordinates start at the bottom left of the main display.
-        let height = NSScreen.screens.first?.frame.height ?? 0
-        let appKitFrame = NSRect(x: frame.minX, y: height - frame.maxY, width: frame.width, height: frame.height)
+        let appKitFrame = NSScreen.flipped(frame)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if self.frame.size != appKitFrame.size {
