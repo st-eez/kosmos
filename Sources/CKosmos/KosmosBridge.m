@@ -76,7 +76,9 @@ static id readAlpha(uint64_t space) {
     return perform([[cls alloc] initWithSpaceID:space]);
 }
 
-uint64_t kosmos_holding_create(void) {
+// Creates an auxiliary Space at the absolute level, with the transform and alpha read back,
+// then shows it. Returns 0 on failure, with any partial Space destroyed.
+static uint64_t createSpace(int32_t absoluteLevel, CGAffineTransform wanted, float wantedAlpha) {
     uint64_t space = 0;
     @try {
         Class create = operationClass(@"SLSBridgedSpaceCreateOperation", @selector(initWithOptions:values:));
@@ -84,23 +86,18 @@ uint64_t kosmos_holding_create(void) {
         if (![result respondsToSelector:@selector(spaceID)] || !(space = [result spaceID])) return 0;
 
         Class level = operationClass(@"SLSBridgedSpaceSetAbsoluteLevelOperation", @selector(initWithSpaceID:level:));
-        if (!perform([[level alloc] initWithSpaceID:space level:400])) goto fail;
+        if (!perform([[level alloc] initWithSpaceID:space level:absoluteLevel])) goto fail;
 
-        // Alpha alone leaves transparent windows in pointer hit testing. Moving the Space
-        // far off every display removes their presentation and hit regions without
-        // changing their Accessibility geometry. Displays fit within 100,000 points of the
-        // origin; larger arrangements would need an offset derived from display bounds.
-        CGAffineTransform offscreen = CGAffineTransformMakeTranslation(100000, 100000);
         Class transform = operationClass(@"SLSBridgedSpaceSetTransformOperation", @selector(initWithSpaceID:transform:options:));
-        if (!perform([[transform alloc] initWithSpaceID:space transform:offscreen options:0])) goto fail;
+        if (!perform([[transform alloc] initWithSpaceID:space transform:wanted options:0])) goto fail;
         Class getTransform = operationClass(@"SLSBridgedSpaceGetTransformOperation", @selector(initWithSpaceID:));
         id actual = perform([[getTransform alloc] initWithSpaceID:space]);
         if (![actual respondsToSelector:@selector(affineTransform)]
-            || !CGAffineTransformEqualToTransform([actual affineTransform], offscreen)) goto fail;
+            || !CGAffineTransformEqualToTransform([actual affineTransform], wanted)) goto fail;
 
-        if (!setAlpha(space, 0)) goto fail;
+        if (!setAlpha(space, wantedAlpha)) goto fail;
         id alpha = readAlpha(space);
-        if (![alpha respondsToSelector:@selector(floatValue)] || [alpha floatValue] != 0) goto fail;
+        if (![alpha respondsToSelector:@selector(floatValue)] || [alpha floatValue] != wantedAlpha) goto fail;
 
         Class show = operationClass(@"SLSBridgedShowSpacesOperation", @selector(initWithSpaces:));
         if (!perform([[show alloc] initWithSpaces:@[@(space)]])) goto fail;
@@ -109,6 +106,18 @@ uint64_t kosmos_holding_create(void) {
 fail:
     if (space) kosmos_space_destroy(space);
     return 0;
+}
+
+uint64_t kosmos_holding_create(void) {
+    // Alpha alone leaves transparent windows in pointer hit testing. Moving the Space
+    // far off every display removes their presentation and hit regions without
+    // changing their Accessibility geometry. Displays fit within 100,000 points of the
+    // origin; larger arrangements would need an offset derived from display bounds.
+    return createSpace(400, CGAffineTransformMakeTranslation(100000, 100000), 0);
+}
+
+uint64_t kosmos_float_space_create(int32_t level) {
+    return createSpace(level, CGAffineTransformIdentity, 1);
 }
 
 bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive) {

@@ -26,6 +26,9 @@ extern CFArrayRef SLSCopyManagedDisplays(SLSConnectionID cid);
 // IODisplayLocation is the IORegistry path of the framebuffer that drives the display.
 extern CFDictionaryRef CoreDisplay_DisplayCreateInfoDictionary(CGDirectDisplayID display);
 
+// A Space's absolute level: 0 for ordinary Spaces, 400 for the holding Space.
+extern int32_t SLSSpaceGetAbsoluteLevel(SLSConnectionID cid, uint64_t space);
+
 // Window queries.
 extern CFArrayRef SLSCopyManagedDisplaySpaces(SLSConnectionID cid);
 extern CFArrayRef SLSCopyWindowsWithOptionsAndTags(SLSConnectionID cid, uint32_t owner, CFArrayRef spaces,

@@ -11,6 +11,10 @@
 // every display and fully transparent, then shown. Returns 0 on failure, with any
 // partial Space destroyed.
 uint64_t kosmos_holding_create(void);
+// Creates an auxiliary Space at the absolute level, in place (identity transform) and
+// opaque (alpha 1), then shown: the float Space of `kosmos-probe float-layer`. Returns 0
+// on failure, with any partial Space destroyed.
+uint64_t kosmos_float_space_create(int32_t level);
 bool kosmos_space_destroy(uint64_t space);
 // Adds windows to a Space. With exclusive false they keep their other Space memberships,
 // as every window Kosmos conceals does, so Command-Tab still picks it. Exclusive true
