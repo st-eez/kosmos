@@ -72,7 +72,8 @@ prefix.
 - [focus-follows-mouse.md](focus-follows-mouse.md): hover focus from a pointer event tap,
   the pointer following keyboard focus, and whether the tap needs Input Monitoring.
   Code: `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
-  `KosmosApp/Controller+Pointer.swift`, `KosmosApp/UserInput.swift`,
+  `KosmosApp/Controller+Pointer.swift`, `KosmosApp/Controller+KeyReports.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/UserInput.swift`,
   `KosmosCore/Config/Config.swift`.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
@@ -85,7 +86,8 @@ prefix.
   `KosmosCore/Session+Drags.swift`, `KosmosCore/Monitor.swift`,
   `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
-  `KosmosApp/Controller+Mouse.swift`, `KosmosSkyLight/Displays.swift`.
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
+  `KosmosSkyLight/Displays.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,
@@ -95,7 +97,8 @@ prefix.
   windows get one, their shape, stacking and Spaces, how they follow frames, focus and
   slides, and what they cost against JankyBorders.
   Code: `KosmosCore/Borders.swift`, `KosmosApp/Borders.swift`, `KosmosApp/Controller.swift`,
-  `KosmosApp/Slides.swift`, `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/Slides.swift`,
+  `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`,
   `kosmos-probe/BorderHop.swift`.
 
 Other docs:

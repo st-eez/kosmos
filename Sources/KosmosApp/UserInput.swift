@@ -2,6 +2,7 @@ import AppKit
 import CKosmos
 import KosmosSkyLight
 
+/// Reads of the user's input and the key window's holder (docs/focus-follows-mouse.md).
 @MainActor
 enum UserInput {
     /// At the Dock's level, where its icons are, and not its menus, Mission Control or

@@ -38,7 +38,6 @@ final class Controller {
     /// Admitted on a shown workspace before their apps keyed them (AdmissionFocus.awaitKey).
     /// A report within `keyAfterAdmission` brings the pointer (docs/focus-follows-mouse.md).
     var admittedUnkeyed: [WindowID: ContinuousClock.Instant] = [:]
-    static let keyAfterAdmission: Duration = .seconds(ActivationInput.maxAge)
     /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until their
     /// conceal lands. macOS keyed such a window by the user's or the app's choice, so its
     /// report is followed (docs/focus.md).

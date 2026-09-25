@@ -67,6 +67,8 @@ extension Controller {
         var admitted = false
     }
 
+    private static let keyAfterAdmission: Duration = .seconds(ActivationInput.maxAge)
+
     /// How long a report waits to learn whether the key window before it left: WindowServer
     /// ordered a hidden app's window out 17 ms after the hide (docs/tree.md). Every follow
     /// of a Command-Tab waits this long.
