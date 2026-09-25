@@ -332,6 +332,12 @@ final class Inventory {
         windows.values.contains { $0.pid == pid && $0.id != window && !$0.orderedIn && isCandidate($0) }
     }
 
+    /// The app's candidate windows besides `window`, for the departure of its key window.
+    func otherWindows(of pid: pid_t, besides window: UInt32) -> [DepartureFocus.OtherWindow] {
+        windows.values.filter { $0.pid == pid && $0.id != window && isCandidate($0) }
+            .map { DepartureFocus.OtherWindow(orderedIn: $0.orderedIn, minimized: isMinimized($0.id)) }
+    }
+
     /// An app hid or came back. Its windows leave or return with it, and the controller hears
     /// of it after the record changed.
     private func appHidden(_ pid: pid_t, _ hidden: Bool, at received: ContinuousClock.Instant) {

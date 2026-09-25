@@ -113,18 +113,34 @@ public enum DepartureFocus: Equatable, Sendable {
     /// report. A report that never comes is bounded by the departure bound.
     case afterKeyReport
 
+    /// Another candidate window of the app whose key window closed, as the inventory has it.
+    public struct OtherWindow: Equatable, Sendable {
+        public let orderedIn: Bool
+        public let minimized: Bool
+
+        public init(orderedIn: Bool, minimized: Bool) {
+            self.orderedIn = orderedIn
+            self.minimized = minimized
+        }
+
+        /// macOS can key it: ordered in and not minimized. A concealed window stays ordered
+        /// in (kosmos-probe reveal), and macOS keys concealed windows (docs/focus.md).
+        var keyable: Bool { orderedIn && !minimized }
+    }
+
     /// - Parameters:
-    ///   - closed: its app closed the window and kept it. A close keys the app's next window
-    ///     as it happens, and the window counts as closed a pairing window later
-    ///     (ClosedAndKept), so any report of that key change has come: the focus is replaced
-    ///     at once, as a closed window's is.
     ///   - key: the key window macOS last reported.
     ///   - departing: the windows that left together.
     ///   - left: whether a window left the screen just now.
-    public static func decide(focusLeft: Bool, closed: Bool = false, key: KeyWindow?, departing: [WindowID],
-                              left: (WindowID) -> Bool) -> DepartureFocus {
+    ///   - remaining: for a window its app closed and kept, the app's other candidate
+    ///     windows; nil for a minimize or a hide. With none macOS can key, the app stays
+    ///     front with no window and no report comes, so the departure focuses now. With
+    ///     one, macOS keys it as the window closes, and the departure waits for that report.
+    public static func decide(focusLeft: Bool, key: KeyWindow?, departing: [WindowID],
+                              left: (WindowID) -> Bool, remaining: [OtherWindow]? = nil) -> DepartureFocus {
         guard focusLeft else { return .none }
-        guard !closed, case .window(let id)? = key, departing.contains(id) || left(id) else { return .now }
+        guard case .window(let id)? = key, departing.contains(id) || left(id) else { return .now }
+        if let remaining, !remaining.contains(where: \.keyable) { return .now }
         return .afterKeyReport
     }
 }

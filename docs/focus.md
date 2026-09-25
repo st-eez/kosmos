@@ -181,12 +181,7 @@
   user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
-  next window, or Kosmos's empty workspace window. A closed focus is replaced at once, one
-  its app closed and kept too, once Kosmos counts it closed a pairing window after its
-  order-out ([tree.md](tree.md)). A close keys the app's next window as it happens, so any
-  report of that key change has come by then. Activity Monitor's only window, closed while
-  key, got no report, and Helium became key 1.1 s after the window parked, when the
-  second below ran out (live log, September 25, 2026). A minimized or hidden one is
+  next window, or Kosmos's empty workspace window. A closed focus is replaced at once. A minimized or hidden one is
   replaced at once too, unless the key window macOS last reported left with it: then
   macOS's report of the next key window is still on its way and focuses. Focusing earlier
   could put Kosmos's echo between the departure and that report. When macOS keys no
@@ -197,6 +192,24 @@
   macOS nothing to key when it ends (not measured; the departures probe asks). A click
   or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
   its workspace.
+  - A window its app closed and kept departs when Kosmos counts it closed, a pairing
+    window after its order-out ([tree.md](tree.md)). When its app has no other candidate
+    window macOS could key, one ordered in and not minimized, the app stays front with no
+    window and no report comes, so the departure focuses at once. Activity Monitor's only
+    window, closed while key, got no report, and Helium became key 1.1 s after the window
+    parked, when the second ran out (live log, September 25, 2026). A concealed window
+    counts as one macOS could key: it stays ordered in, and macOS keyed concealed windows
+    (below). With such a window macOS keys it as the window closes, and the departure
+    waits for that report as a minimize's does, up to the second. A window that closes
+    and is destroyed has no such wait: its removal requests the next focus at once.
+  - macOS fronted no other app when an app's last window closed. In the live logs of
+    September 24 and 25, seven closes of an app's only managed window while it was key,
+    three of Activity Monitor's, one of Spotify's and three of Microsoft Teams', were
+    followed by no report from any app for 1.2 to 2.1 s, until Kosmos's own request or
+    the user's next command. The app stays front with no key window (tla/README.md, change
+    24). One close is unexplained: 0.68 s after Claude's window closed on September 24 at
+    about 10:57:31.7, Finder came front with no key window, as a click on the desktop also
+    makes it, and no debug log was kept.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
   - A crash guard. A byte in a file mapped shared is set during each private call and

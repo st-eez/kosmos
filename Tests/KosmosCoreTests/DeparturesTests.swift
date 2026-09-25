@@ -85,14 +85,35 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
 
-@Test func aDepartureOfTheFocusClosedAndKeptFocusesAtOnce() {
-    // Activity Monitor's only window closed while key: macOS keyed nothing and reported
-    // nothing, and Helium became key only when the departure bound ended (live log,
-    // September 25, 2026). The close is judged a pairing window after its order-out, when
-    // any key change of the close has been reported.
-    let left: (WindowID) -> Bool = { $0 == 1 }
-    #expect(DepartureFocus.decide(focusLeft: true, closed: true, key: .window(1), departing: [1], left: left) == .now)
-    #expect(DepartureFocus.decide(focusLeft: false, closed: true, key: .window(1), departing: [1], left: left) == .none)
+// The key window 1 closed and its app kept it. Whether the departure waits for macOS's
+// report of the next key window depends on whether its app has another window to key.
+
+private func afterClose(_ remaining: [DepartureFocus.OtherWindow], focusLeft: Bool = true) -> DepartureFocus {
+    DepartureFocus.decide(focusLeft: focusLeft, key: .window(1), departing: [1], left: { $0 == 1 }, remaining: remaining)
+}
+
+@Test func aClosedKeyWindowWithNoOtherWindowOfItsAppFocusesAtOnce() {
+    // Activity Monitor's only window closed while key: the app stayed front with no window,
+    // no report came, and Helium became key only when the departure bound ended (live log,
+    // September 25, 2026).
+    #expect(afterClose([]) == .now)
+    // A window ordered out, as one closed and kept before or a deselected tab, and one
+    // minimizing are none macOS keys.
+    #expect(afterClose([.init(orderedIn: false, minimized: false), .init(orderedIn: true, minimized: true)]) == .now)
+    #expect(afterClose([], focusLeft: false) == .none)
+}
+
+@Test func aClosedKeyWindowWithAnotherWindowOfItsAppWaitsForTheKeyReport() {
+    // macOS keys the app's other window as the window closes, and that report focuses.
+    #expect(afterClose([.init(orderedIn: true, minimized: false)]) == .afterKeyReport)
+}
+
+@Test func aClosedKeyWindowWithAnotherWindowConcealedWaitsForTheKeyReport() {
+    // The app's other window is concealed on a hidden workspace. A conceal leaves it
+    // ordered in (kosmos-probe reveal), and macOS keyed concealed windows in 10 of 10
+    // trials (docs/focus.md), so macOS may key it, and its report decides.
+    let concealed = DepartureFocus.OtherWindow(orderedIn: true, minimized: false)
+    #expect(afterClose([concealed]) == .afterKeyReport)
 }
 
 // Native tabs: a switch orders one window of the app in and another out, in either order.

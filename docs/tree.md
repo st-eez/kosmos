@@ -53,8 +53,8 @@
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
-    as a minimized one does, its focus is replaced at once as a closed window's is
-    ([focus.md](focus.md)), and it returns when the app orders it in again. Kosmos takes
+    as a minimized one does, its focus moves on as [focus.md](focus.md) says for a window
+    closed and kept, and it returns when the app orders it in again. Kosmos takes
     a window still ordered out after the pairing window, 250 ms, for none of the other
     reasons as one, so the others reflow about 0.25 s after a Command-W. Until September
     25, 2026 it waited a second, and Helium stayed at half width for that second after
