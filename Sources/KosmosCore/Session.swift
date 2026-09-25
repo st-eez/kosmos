@@ -454,7 +454,7 @@ public struct Session: Sendable {
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
-        case .focus(let direction, let boundaries) where boundaries != .workspace:
+        case .focus(let direction, let boundaries, _) where boundaries != .workspace:
             return performOnFocused(command, floating: floatingFrames)
                 ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
         case .move(let direction, let boundaries) where boundaries != .workspace:
@@ -490,9 +490,9 @@ public struct Session: Sendable {
         let (display, gaps) = (monitor.area, monitor.gaps)
         var plan = Plan()
         switch command {
-        case .focus(let direction, _):
-            guard let target = workspace.focus(direction, from: window, floating: floatingFrames, in: display, gaps: gaps,
-                                               minimums: minimums) else { return nil }
+        case .focus(let direction, _, let ignoreFloating):
+            guard let target = workspace.focus(direction, from: window, floating: ignoreFloating ? [:] : floatingFrames,
+                                               in: display, gaps: gaps, minimums: minimums) else { return nil }
             plan.focus = .window(target)
         case .move(let direction, let boundaries):
             guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }

@@ -188,6 +188,18 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.perform(.fullscreen)?.frames.values.contains(display) == true)
 }
 
+@Test func focusIgnoringFloatingWindowsWalksTheTilesAlone() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(9, floating: true)
+    s.adopt(1)
+    // Centered between the tiles.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 300, y: 100, width: 400, height: 400)]
+    #expect(s.perform(.focus(.right, ignoreFloating: true), floating: frames)?.focus == .window(2))
+    #expect(s.perform(.focus(.left), floating: frames)?.focus == .window(9))
+    // From a floating window, the tiles alone have no window in any direction.
+    #expect(s.perform(.focus(.right, ignoreFloating: true), floating: frames) == nil)
+}
+
 @Test func moveAtTheEdgeOfTheWorkspaceWrapsTheRootOnlyWithinIt() {
     var s = session()
     _ = s.add(1); _ = s.add(2)

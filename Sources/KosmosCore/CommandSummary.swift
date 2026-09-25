@@ -28,8 +28,8 @@ extension Command {
             "Switch to \(Self.name(target))"
         case .workspaceBackAndForth:
             "Switch back and forth between the last two workspaces"
-        case .focus(let direction, let boundaries):
-            "Focus \(direction)\(Self.across(boundaries))"
+        case .focus(let direction, let boundaries, let ignoreFloating):
+            "Focus \(direction)\(ignoreFloating ? " among tiled windows" : "")\(Self.across(boundaries))"
         case .move(let direction, let boundaries):
             "Move window \(direction)\(Self.across(boundaries))"
         case .swap(let direction):
