@@ -776,7 +776,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     knows that (`SLPSGetKeyFocusProcess`): 30 us back to back, and 111 us at the median
     and 4.8 ms at most read every 50 ms. So that read comes last, only when the window or
     an empty workspace would take focus. Which read names each of those processes is for
-    the live test, with `kosmos-probe key-holder`.
+    the live test, with `kosmos-probe key-holder`. A window the pointer entered while such
+    a process held the key window takes focus only when the pointer enters it again, so
+    what a launcher opened keeps the focus.
 - The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
   does, and never focuses anything over one, display by display. On a display that shows
   a fullscreen Space, the windows under the pointer are the fullscreen window and its
