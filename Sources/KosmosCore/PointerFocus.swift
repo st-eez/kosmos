@@ -138,12 +138,7 @@ public struct ActivationInput: Equatable, Sendable {
     /// moved since the Dock click, on its way to the app. A click anywhere else, in the
     /// window, on the bar or on a link that opens another app, leaves the pointer where it
     /// is. A Command-Tab switcher held open for over a second reads as a click.
-    /// - Parameter admitted: its app keyed the window as Kosmos admitted it to its rule's
-    ///   hidden workspace, where Kosmos follows it. That brings the pointer whatever the
-    ///   input, as a keyboard focus change does, since an app can open its first window
-    ///   seconds after the launcher's hotkey.
-    public func bringsPointer(onDock: Bool, admitted: Bool = false) -> Bool {
-        if admitted { return true }
+    public func bringsPointer(onDock: Bool) -> Bool {
         if key < 1, key < leftClick, key < rightClick, key < moved { return true }
         return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
     }

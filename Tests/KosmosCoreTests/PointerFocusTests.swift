@@ -358,31 +358,4 @@ private func desk() -> Session {
             #expect(!input.bringsPointer(onDock: true))
         }
     }
-
-    @Test func aWindowFollowedToItsRulesWorkspaceAtAdmissionBringsThePointer() {
-        // Chrome launched from Raycast keyed its window 5.2 s after the hotkey, and its rule
-        // sent the window to hidden workspace 4 (live log, September 25, 2026).
-        let launch = ActivationInput(key: 5.242, leftClick: 26.741, rightClick: 3263.641, moved: 16.143)
-        #expect(!launch.bringsPointer(onDock: false))
-        #expect(launch.bringsPointer(onDock: false, admitted: true))
-    }
-
-    @Test func aWindowKeyedAtAdmissionOnAnotherDisplayBringsThePointerThere() {
-        // Chrome launched with the pointer on the main panel, its rule's workspace 5 shown on
-        // the left panel: its window becomes the focus there.
-        var s = desk()
-        _ = s.add(51, to: "5", floating: true)
-        let focus = AdmissionFocus.decide(keyed: true, shown: s.isShown("5"), parked: false, atLaunch: false, locked: false)
-        #expect(focus == .adopt)
-        s.adopt(51)
-        #expect(s.focused == 51 && s.focusIsOnAnotherDisplay(than: pointerOnMainPanel))
-        #expect(focus.bringsPointer(toAnotherDisplay: s.focusIsOnAnotherDisplay(than: pointerOnMainPanel)))
-        // On the pointer's display the pointer stays, and a window placed hidden brings it
-        // only when Kosmos follows it.
-        _ = s.add(12, to: "1")
-        s.adopt(12)
-        #expect(!focus.bringsPointer(toAnotherDisplay: s.focusIsOnAnotherDisplay(than: pointerOnMainPanel)))
-        #expect(!AdmissionFocus.placedHidden.bringsPointer(toAnotherDisplay: true))
-        #expect(!AdmissionFocus.none.bringsPointer(toAnotherDisplay: true))
-    }
 }

@@ -45,8 +45,7 @@ final class Controller {
     /// them. macOS keyed such a window by the user's or the app's choice, so its report
     /// counts as one of a concealed window whose key window before it stayed: an app keys a
     /// window it opens, and the window key before a tab is the tab deselected. It is
-    /// followed at once, and the follow of an admitted window brings the pointer
-    /// (ActivationInput.bringsPointer).
+    /// followed at once, and the follow of an admitted window brings the pointer (decide).
     private var placedHidden: [WindowID: Placed] = [:]
     private enum Placed { case admitted, tab }
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
@@ -353,7 +352,7 @@ final class Controller {
     /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
     /// own, not when the app unhides. A window its app keyed first becomes the focus, and
     /// Kosmos follows it to a hidden workspace (AdmissionFocus). The pointer comes along to
-    /// it there, or on another display than the pointer's.
+    /// a new window there, or on another display than the pointer's.
     private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
@@ -385,11 +384,10 @@ final class Controller {
         case .placedHidden: placedHidden[id] = .admitted
         case .none: break
         }
-        execute(plan, floatingCheck: floats)
-        if mouseFollowsFocus, focus.bringsPointer(toAnotherDisplay: focusAwayFromPointer) {
-            pointerLog.debug("\(id) keyed at admission on another display than the pointer")
-            centerPointer()
-        }
+        // A new window its app keyed on another display than the pointer brings the pointer,
+        // as a keyboard focus change there does (docs/focus-follows-mouse.md).
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && !inventory.wasThereAtLaunch(id) && focusAwayFromPointer,
+                floatingCheck: floats)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden[id] = nil
@@ -938,9 +936,11 @@ final class Controller {
             touch(window)
             // Command-Tab, a launcher's hotkey or a Dock click names a window, and the pointer
             // goes to it, on the pointer's own display too, unlike a workspace switch command.
-            // So does a window admitted to its rule's hidden workspace, whatever the input.
+            // So does a new window admitted to its rule's hidden workspace, whatever the input,
+            // as its app can open it seconds after the launcher's hotkey
+            // (docs/focus-follows-mouse.md).
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && pickedAwayFromPointer(admitted: report.admitted))
+            execute(plan, movePointer: mouseFollowsFocus && (report.admitted || pickedAwayFromPointer()))
         }
     }
 
@@ -1174,17 +1174,16 @@ final class Controller {
     }
 
     /// Whether the activation being handled brings the pointer (ActivationInput.bringsPointer).
-    private func pickedAwayFromPointer(admitted: Bool = false) -> Bool {
+    private func pickedAwayFromPointer() -> Bool {
         let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
                                     rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
         let dock = Self.isDock(clickedWindow)
         pointerLog.debug("""
-            activation\(admitted ? " at admission" : "", privacy: .public): key \(input.key, format: .fixed(precision: 3)) s ago, \
-            left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
+            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
             \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
             pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return input.bringsPointer(onDock: dock, admitted: admitted)
+        return input.bringsPointer(onDock: dock)
     }
 
     /// Whether the window is the Dock's own at the Dock's level, where its icons are, and not

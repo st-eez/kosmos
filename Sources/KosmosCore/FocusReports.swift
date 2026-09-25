@@ -57,8 +57,7 @@ public enum AdmissionFocus: Equatable, Sendable {
     /// The window's place is on a hidden workspace. Its key window report, one that waited
     /// for the place or one that comes before its conceal completes, is decided as one of a
     /// concealed window whose key window before it stayed, which Kosmos follows as it
-    /// follows a Command-Tab. The follow brings the pointer whatever the input
-    /// (ActivationInput.bringsPointer).
+    /// follows a Command-Tab.
     case placedHidden
 
     /// - Parameters:
@@ -73,15 +72,6 @@ public enum AdmissionFocus: Equatable, Sendable {
         guard !locked, !parked else { return .none }
         if shown { return keyed ? .adopt : .none }
         return atLaunch ? .none : .placedHidden
-    }
-
-    /// Whether mouse-follows-focus brings the pointer to the window as Kosmos admits it,
-    /// whatever input came before, as a keyboard focus change does: its app keyed it, and it
-    /// becomes the focus on another display than the pointer (`toAnotherDisplay`). On the
-    /// pointer's display the pointer stays. A window placed hidden brings the pointer when
-    /// Kosmos follows it (ActivationInput.bringsPointer, `admitted`).
-    public func bringsPointer(toAnotherDisplay: Bool) -> Bool {
-        self == .adopt && toAnotherDisplay
     }
 }
 
