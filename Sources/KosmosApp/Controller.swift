@@ -274,11 +274,12 @@ final class Controller {
     }
 
     /// A window in native fullscreen is on a Space of its own: parked, Kosmos neither
-    /// conceals it nor writes its frame. When it leaves, it returns to its workspace.
-    /// `since` is when it started to leave its Space.
+    /// conceals it nor writes its frame. When it leaves, it returns to its workspace, and a
+    /// window that entered while the user dragged it returns to where it stood. `since` is
+    /// when it started to leave its Space.
     private func fullscreenChanged(_ id: WindowID, _ entered: Bool, since: ContinuousClock.Instant) {
         if entered {
-            guard !session.isParked(id) else { return }
+            guard !session.isParked(id) || session.lifted.contains(id) else { return }
             fullscreenParked.insert(id)
             execute(session.park([id]))
         } else if fullscreenParked.remove(id) != nil {
@@ -408,9 +409,12 @@ final class Controller {
         }
     }
 
-    /// An app hid its windows: they leave the layout, and switches leave them alone.
+    /// An app hid its windows: they leave the layout, and switches leave them alone. A
+    /// window the user drags parks too, where it stood.
     private func appHidden(_ pid: pid_t) {
-        let windows = owner.filter { $0.value == pid && session.workspace(of: $0.key) != nil && !session.isParked($0.key) }.map(\.key)
+        let windows = owner.filter { id, app in
+            app == pid && session.workspace(of: id) != nil && (!session.isParked(id) || session.lifted.contains(id))
+        }.map(\.key)
         guard !windows.isEmpty else { return }
         hiddenApps[pid, default: []] += windows
         depart(windows)
