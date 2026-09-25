@@ -626,9 +626,11 @@ final class Controller {
     /// Dock, when autohide is on, starts to hide once the pointer leaves it, which can be
     /// before the app it activates reports its window key (pickedAwayFromPointer).
     private func leftMouseDown(at point: CGPoint, location: NSPoint) {
-        // Whether the monitor hears a press the drag tap took is for the live test.
-        guard modifierDrag == nil else {
-            controllerLog.info("left mouse down heard during a modifier drag: left out")
+        // Whether the monitor hears a press the drag tap took is for the live test. During a
+        // right drag the tap passes the left button's press and mouse up to the app, and
+        // they count here too.
+        guard modifierDrag?.grab.button != .left else {
+            controllerLog.info("left mouse down heard during a left modifier drag: left out")
             return
         }
         var display: CGDirectDisplayID = 0, count: UInt32 = 0
@@ -650,13 +652,13 @@ final class Controller {
         dragTap?.endIfReleased()
     }
 
-    /// The left button came up, as the global monitor heard it. During a modifier drag the
-    /// drag's own end drops its window (finishDrag), so a mouse up the tap took, if the
+    /// The left button came up, as the global monitor heard it. During a left modifier drag
+    /// the drag's own end drops its window (finishDrag), so a mouse up the tap took, if the
     /// monitor hears one, drops nothing twice.
     private func leftMouseUpHeard(at point: CGPoint?) {
         leftButton.released(at: .now)
-        guard modifierDrag == nil else {
-            controllerLog.info("left mouse up heard during a modifier drag: left out")
+        guard modifierDrag?.grab.button != .left else {
+            controllerLog.info("left mouse up heard during a left modifier drag: left out")
             return
         }
         leftMouseUp(at: point)

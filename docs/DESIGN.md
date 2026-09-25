@@ -1496,8 +1496,9 @@ pointer gets none of the drag's events.
   both grants as it does. A refused tap is logged, and modifier drags stay off until the
   next config load makes it again.
 - The `NSEvent` global monitors of the left button (section 5.2) leave out a press and a
-  mouse up they hear during a modifier drag, whose own end drops its window, and the log
-  says when they hear one.
+  mouse up they hear during a left modifier drag, whose own end drops its window, and the
+  log says when they hear one. During a right drag the left button's press and mouse up
+  pass to the app, and the monitors handle them as at any other time.
 - Open until the live test:
   - whether macOS asks for Input Monitoring. It gates listen-only taps (section 5.11), so
     Kosmos does not expect it here, but macOS 27 asked a process with neither grant for
