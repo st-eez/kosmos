@@ -57,7 +57,8 @@ frame the slide shows the window at.
 - Each border is a window of Kosmos's own (`KosmosApp/Borders.swift`): borderless, clear,
   without a shadow, ignoring the mouse, never key or main, hidden in Mission Control and
   out of the window cycle (`.transient` and `.ignoresCycle`, as the empty workspace's
-  window). The ring is its layer's border, which Core Animation draws with no backing
+  window), and kept on screen when Hide Others in another app hides Kosmos
+  (`canHide = false`). The ring is its layer's border, which Core Animation draws with no backing
   store: a border around 1200 by 800 points added nothing to the probe's memory
   footprint. A border hidden is ordered out and goes to a pool, and the next window
   bordered reuses it, so Steve's one border window moves from window to window with the
@@ -143,6 +144,7 @@ frame the slide shows the window at.
     lands in the fullscreen Space before Kosmos moves it, and for how long;
   - whether keying the empty workspace's window, which fronts Kosmos, raises its border
     windows over other apps' windows;
+  - whether Hide Others in another app leaves the borders on screen;
   - how far the border lags a window dragged by its title bar, whose moves WindowServer
     may not report while the button is down ([displays.md](displays.md));
   - whether a border steps in time with its sliding window, and the CPU of a relayout of

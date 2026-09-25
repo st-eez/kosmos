@@ -113,7 +113,8 @@ final class Borders {
 
 /// One border window: borderless, clear, ignoring the mouse so clicks reach the window under
 /// it, never key, out of the window cycle and hidden in Mission Control, as the empty
-/// workspace's window is. The ring is a layer's border, drawn by Core Animation.
+/// workspace's window is, and kept on screen when another app's Hide Others hides Kosmos.
+/// The ring is a layer's border, drawn by Core Animation.
 private final class BorderWindow: NSWindow {
     private let ring = CALayer()
     private var shown: Borders.Shown?
@@ -127,6 +128,7 @@ private final class BorderWindow: NSWindow {
         ignoresMouseEvents = true
         animationBehavior = .none
         isReleasedWhenClosed = false
+        canHide = false
         collectionBehavior = [.transient, .ignoresCycle]
         let view = NSView()
         view.wantsLayer = true
