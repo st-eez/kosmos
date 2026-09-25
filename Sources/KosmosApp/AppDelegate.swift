@@ -91,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         server?.stop()
+        // Slides end first, so recovery finds the slide trial's Spaces empty.
+        controller?.endSlides()
         // Through Hiding when it exists, so batches still queued land first.
         let outcome = hiding?.recoverNow() ?? record.map { Recovery.run(file: $0) }
         if let outcome { log.notice("quit recovery: \(String(describing: outcome), privacy: .public)") }

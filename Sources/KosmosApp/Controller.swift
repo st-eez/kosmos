@@ -112,11 +112,14 @@ final class Controller {
     /// While the session is locked or switched out, Kosmos writes no frames, runs no hides,
     /// requests no focus and takes no command; `resync` catches up (docs/inventory.md).
     private var sessionLocked: Bool { inventory.sessionLocked }
+    /// The slide trial, with `KOSMOS_ANIMATE=slide` while Kosmos manages windows.
+    private let slides: Slides?
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
+        slides = Slides.enabled && managing ? Slides(hiding: hiding) : nil
         let emptyWorkspace = EmptyWorkspaceWindow()
         emptyWorkspace.onKey = { [weak inventory] stamp in inventory?.ownWindowKeyed(at: stamp) }
         self.emptyWorkspace = emptyWorkspace
@@ -382,7 +385,9 @@ final class Controller {
         case .placedHidden: placedHidden.insert(id)
         case .none: break
         }
-        execute(plan, floatingCheck: floats)
+        // A window opened after launch onto a shown workspace pops in (Slides).
+        let pops = !inventory.wasThereAtLaunch(id) && !session.isParked(id) && session.workspace(of: id).map(session.isShown) == true
+        execute(plan, floatingCheck: floats, popping: pops ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden.remove(id)
@@ -607,12 +612,15 @@ final class Controller {
             ledger.observeAfterConfirm(id, frame: frame)
             return
         }
+        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
+        // The user moves or resizes it: its slide's transform would hold it where the slide
+        // shows it. The write's own change, which can come after its read back, leaves it.
+        if button != .up { slides?.end(id, "as the user moved it") }
         ledger.observe(id, frame: frame)
         // Seen smaller than its minimum, the window loses it. During a press, the mouse up
         // lays its workspace out.
         let smaller = session.sizeObserved(id, frame.size)
         if !smaller.isEmpty { controllerLog.notice("\(id) seen at \(Int(frame.width))x\(Int(frame.height)), below its minimum") }
-        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
         guard button != .up else {
             if !smaller.isEmpty { execute(smaller) }
             return
@@ -971,13 +979,17 @@ final class Controller {
     /// `since` is when the command arrived, for the switch timing log. `movePointer` centers
     /// the pointer on the focus. `floatingCheck` runs the floating check for an empty plan
     /// too, as a floating window admitted to a workspace with no tiles plans nothing.
+    /// `popping`: a window just admitted, which pops in with the slide trial.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
-                         movePointer: Bool = false, floatingCheck: Bool = false) {
+                         movePointer: Bool = false, floatingCheck: Bool = false, popping: WindowID? = nil) {
+        // A window concealed, parked, closed or on a workspace no longer shown ends its slide
+        // at once, before a batch conceals it.
+        slides?.keep { session.workspace(of: $0).map(session.isShown) == true && !session.isParked($0) }
         guard managing, !sessionLocked, !plan.isEmpty || floatingCheck else { return publishState() }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames)
+        writeFrames(plan.frames, sliding: animated(plan), popping: popping)
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -1058,13 +1070,42 @@ final class Controller {
         writeFrames(targets)
     }
 
-    private func writeFrames(_ targets: [WindowID: CGRect]) {
+    /// `sliding`: the windows whose writes slide, `popping` one of them just admitted.
+    private func writeFrames(_ targets: [WindowID: CGRect], sliding: Set<WindowID> = [], popping: WindowID? = nil) {
         guard !sessionLocked else { return }
+        // Where WindowServer has each window to slide, read before the ledger takes the writes
+        // as sent. One that a write of Kosmos's still moves is somewhere unknown, and jumps.
+        let from = Dictionary(uniqueKeysWithValues: sliding.compactMap { id in
+            ledger.isWriting(id) ? nil : inventory.windows[id].map { (id, $0.frame) }
+        })
         let writes = ledger.writes(for: targets)
+        slides?.writing(Dictionary(uniqueKeysWithValues: writes.keys.map { ($0, targets[$0]!) }), sliding: sliding, from: from,
+                        popping: popping)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] ?? 0 }) where pid != 0 {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
             inventory.worker(pid)?.enqueueFrames(batch)
         }
+    }
+
+    /// The windows whose writes in `plan` slide: ones already on screen, on a shown workspace,
+    /// other than one the user holds or presses on. A window being revealed, and one
+    /// concealed or on a hidden workspace, jump to their frames. So do a drag's own writes, at
+    /// each movement and for the edges a right drag moves, the 100 ms retry and floating
+    /// windows brought home, which do not come through here. The relayout at a lift, a drop
+    /// and tiles sent back after an edge resize come through here and slide.
+    private func animated(_ plan: Session.Plan) -> Set<WindowID> {
+        guard slides != nil else { return [] }
+        let show = Set(plan.show)
+        let held = modifierDrag?.grab.window
+        return Set(plan.frames.keys.filter { id in
+            !show.contains(id) && !hiding.isConcealed(id) && id != held && !session.lifted.contains(id) && mouseMoved[id] == nil
+                && session.workspace(of: id).map { session.isShown($0) } == true
+        })
+    }
+
+    /// Ends every slide, for quit (Slides.endAll).
+    func endSlides() {
+        slides?.endAll()
     }
 
     /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
@@ -1211,6 +1252,7 @@ final class Controller {
             return
         }
         modifierDrag = drag
+        slides?.end(grab.window, "as a modifier drag took it")
         // A Dock click before this press no longer brings the pointer (pickedAwayFromPointer).
         clickedWindow = 0
         dragLog.info("""

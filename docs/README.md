@@ -17,10 +17,11 @@ prefix.
   `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
   `KosmosCore/LockState.swift`, `KosmosSkyLight/SkyLight.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
-  user's resizes and moves of tiled windows, and Accessibility timeouts and backoff.
+  user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and the
+  slide trial.
   Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
-  `KosmosCore/LeftButton.swift`, `KosmosApp/AppWorker.swift`,
-  `KosmosApp/Controller.swift`.
+  `KosmosCore/LeftButton.swift`, `KosmosCore/Slide.swift`, `KosmosApp/AppWorker.swift`,
+  `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`, `script/bench-relayout.sh`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
   Control.
