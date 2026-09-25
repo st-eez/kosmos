@@ -93,4 +93,8 @@
   launching app's first window, whose activation read got no answer while the app
   launched (focus.md). The app can leave the front while the worker reads, so the report
   is a key window report only when the app is front after the read, and a background one
-  otherwise, as for an activation read.
+  otherwise, as for an activation read. A worker answers no read of a window's facts
+  before it starts, and the inventory admits a window only once it has them, so the report
+  comes before the admission of the window it names. Read before the start, between two
+  launch retries, the facts let Kosmos admit a launching app's window and conceal it on a
+  rule's hidden workspace before the report said the app had keyed it.

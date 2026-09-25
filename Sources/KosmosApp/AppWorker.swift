@@ -142,8 +142,10 @@ actor AppWorker {
     /// app did not answer; the caller keeps what it knew, since an unanswered read never makes
     /// a window unmanaged. Windows the app did not list when the worker started, nor report
     /// created, are looked for in its list again, once for all of them, as for an app
-    /// launched hidden once it unhides.
+    /// launched hidden once it unhides. Before the worker starts it knows no window, so a
+    /// window is admitted only after its app's focused window is reported (docs/geometry.md).
     func info(_ ids: [UInt32]) -> [UInt32: AXWindowInfo] {
+        guard started else { return [:] }
         if ids.contains(where: { elements[$0] == nil }) { _ = trackWindows() }
         var infos: [UInt32: AXWindowInfo] = [:]
         for id in ids { infos[id] = info(id) }
