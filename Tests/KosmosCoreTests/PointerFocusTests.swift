@@ -223,7 +223,7 @@ private func movesPointer(_ binding: String, from source: CommandSource = .hotke
     try command(binding).movesPointer(from: source, toAnotherDisplay: toAnotherDisplay)
 }
 
-/// Over workspace 1 of `desk()`.
+/// Over workspace 1 of the `desk()` below.
 private let pointerOnMainPanel = CGPoint(x: 100, y: 500)
 
 /// Workspace 1 has the focus and windows 10 and 11. The left panel shows workspace 5, with

@@ -6,7 +6,7 @@ import Testing
     private let mainCenter = CGPoint(x: 960, y: 540)
 
     @Test func aWindowDraggedInItsWorkspaceTilesBesideTheWindowUnderThePointer() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         s.adopt(11)
         _ = s.add(12)
@@ -43,7 +43,7 @@ import Testing
     }
 
     @Test func aWindowDroppedOverItsOwnPlaceGoesBackBesideItsNeighbour() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         let before = s.frames(of: "1")
         _ = s.lift(11)
@@ -70,7 +70,7 @@ import Testing
     }
 
     @Test func aWindowDroppedOnAnotherDisplayJoinsItsWorkspace() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5")
         _ = s.lift(11)
         let plan = s.drop(at: CGPoint(x: -500, y: 540))
@@ -84,7 +84,7 @@ import Testing
     }
 
     @Test func aDragThatEndsOffEveryDisplayPutsTheWindowBack() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         let before = s.frames(of: "1")
         _ = s.lift(10)
@@ -93,7 +93,7 @@ import Testing
     }
 
     @Test func aSwitchDuringTheDragLeavesTheWindowInTheUsersHand() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         _ = s.lift(11)
         #expect(s.perform(.workspace(.named("2")))!.hide == [10])
@@ -107,7 +107,7 @@ import Testing
     }
 
     @Test func aHotkeyDuringTheDragDropsTheWindowBeforeItsCommandRuns() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         _ = s.lift(11)
         // The controller drops 11 before the hotkey's switch runs, and the switch conceals it
@@ -121,7 +121,7 @@ import Testing
     }
 
     @Test func aWindowThatLeavesOrParksDuringTheDragIsNotDropped() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(12)
         _ = s.lift(11)
         _ = s.remove(11)

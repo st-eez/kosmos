@@ -67,8 +67,8 @@ extension Workspace {
         return true
     }
 
-    /// One step (docs/tree.md). At the workspace's edge `implicitContainer` wraps the root along
-    /// the direction, and without it the move returns false (docs/displays.md).
+    /// One step (docs/tree.md). False at the end of a root along the direction, and at any other
+    /// edge without `implicitContainer`, which wraps the root there (docs/displays.md).
     @discardableResult
     mutating func move(_ window: WindowID, _ direction: Direction, implicitContainer: Bool = true) -> Bool {
         // Wrapping a lone window's root would only flip its orientation.

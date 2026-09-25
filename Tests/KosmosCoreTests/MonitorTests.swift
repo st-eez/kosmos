@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct ArrangementTests {
     @Test func eachDisplayShowsItsFirstWorkspaceAndTheFirstHasTheFocus() {
-        let s = desk()
+        let s = Desk.session()
         #expect(s.monitors.map(\.id) == [1, 2, 3])   // left to right
         #expect(s.shownWorkspaces == ["5", "1", "8"])
         #expect(s.focusedWorkspace == "1")
@@ -12,20 +12,20 @@ import Testing
     }
 
     @Test func freeWorkspacesFillDisplaysWithNoneAssigned() {
-        let s = desk(["1": 2])
+        let s = Desk.session(["1": 2])
         #expect(s.shownWorkspaces == ["2", "1", "3"])
         // A free hidden workspace is laid out on the focused display.
         #expect(s.monitor(of: "4").id == 2)
     }
 
     @Test func aDisplayNoWorkspaceCanGoToShowsNone() {
-        let s = desk(["1": 2, "2": 2], names: ["1", "2"])
+        let s = Desk.session(["1": 2, "2": 2], names: ["1", "2"])
         #expect(s.shownWorkspaces == ["1"])
         #expect(s.isShown("1") && !s.isShown("2"))
     }
 
     @Test func hiddenWorkspacesAreLaidOutOnTheirDisplay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10, to: "6"); _ = s.add(11, to: "6")
         _ = s.add(20, to: "9")
         #expect(within(s.frames(of: "6"), Desk.left))
@@ -33,7 +33,7 @@ import Testing
     }
 
     @Test func aNewWindowJoinsTheWorkspaceOfTheDisplayUnderIt() {
-        var s = desk()
+        var s = Desk.session()
         #expect(s.add(10, at: CGPoint(x: -500, y: 500)).hide.isEmpty)
         #expect(s.workspace(of: 10) == "5")
         _ = s.add(11, at: CGPoint(x: 900, y: 1500))
@@ -47,7 +47,7 @@ import Testing
 
 @Suite struct DisplayCommandTests {
     @Test func aWorkspaceAnotherDisplayShowsOnlyTakesTheFocus() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5")
         let plan = s.perform(.workspace(.named("5")))!
         #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.frames.isEmpty)
@@ -58,7 +58,7 @@ import Testing
     }
 
     @Test func aHiddenWorkspaceShowsOnItsOwnDisplay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(60, to: "6")
         let plan = s.perform(.workspace(.named("6")))!
         #expect(plan.hide == [50] && plan.show == [60])
@@ -68,14 +68,14 @@ import Testing
     }
 
     @Test func anEmptyWorkspaceOnAnotherDisplayFocusesNoWindow() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10)
         #expect(s.perform(.workspace(.named("8")))?.focus == .noWindow)
         #expect(s.focused == nil)
     }
 
     @Test func nextAndPreviousWalkTheFocusedDisplay() {
-        var s = desk()
+        var s = Desk.session()
         var walked: [String] = []
         for _ in 0..<4 {
             _ = s.perform(.workspace(.next))
@@ -88,7 +88,7 @@ import Testing
     }
 
     @Test func aFreeWorkspaceShowsOnTheFocusedDisplay() {
-        var s = desk(Desk.home.filter { $0.key != "4" })
+        var s = Desk.session(Desk.home.filter { $0.key != "4" })
         _ = s.perform(.workspace(.named("5")))
         let plan = s.perform(.workspace(.named("4")))!
         #expect(s.shownWorkspaces == ["4", "1", "8"])
@@ -99,7 +99,7 @@ import Testing
     }
 
     @Test func focusMonitorFindsDisplaysByDirectionOrderNumberAndName() {
-        var s = desk()
+        var s = Desk.session()
         func focusing(_ target: Command.MonitorTarget, wrap: Bool = false) -> String? {
             var copy = s
             return copy.perform(.focusMonitor(target, wrapAround: wrap)).map { _ in copy.focusedWorkspace }
@@ -127,7 +127,7 @@ import Testing
     }
 
     @Test func moveNodeToMonitorMovesTheWindowToTheShownWorkspaceThere() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
         s.adopt(11)
@@ -143,7 +143,7 @@ import Testing
     }
 
     @Test func moveNodeToMonitorFollowsTheWindowOnRequest() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         _ = s.add(50, to: "5")
         s.adopt(10)
@@ -156,7 +156,7 @@ import Testing
     }
 
     @Test func aHiddenWindowMovedToAnotherDisplaysShownWorkspaceIsRevealed() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(60, to: "6")
         let plan = s.perform(.moveNodeToWorkspace(.named("5"), focusFollowsWindow: true, window: 60))!
         #expect(plan.show == [60] && plan.hide.isEmpty)
@@ -164,7 +164,7 @@ import Testing
     }
 
     @Test func moveNodeToMonitorByNumberReachesAnyDisplay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10)
         _ = s.perform(.moveNodeToMonitor(.number(3), focusFollowsWindow: false, wrapAround: false))
         #expect(s.workspace(of: 10) == "8")
@@ -172,7 +172,7 @@ import Testing
     }
 
     @Test func aFloatingWindowOnADisplayShowingAnotherWorkspaceGoesToItsOwn() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10, floating: true)
         _ = s.add(50, to: "5", floating: true)
         _ = s.add(60, to: "6", floating: true)
@@ -196,7 +196,7 @@ import Testing
     }
 
     @Test func aFloatingWindowDraggedOntoAnotherDisplayJoinsItsWorkspace() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10, floating: true)
         _ = s.add(11)
         _ = s.add(60, to: "6", floating: true)
@@ -217,7 +217,7 @@ import Testing
     }
 
     @Test func aTiledWindowResizedByItsEdgesGoesBackToItsTile() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5"); _ = s.add(20, to: "2")
         // 20's workspace is hidden, as after a switch during the resize.
         var tiles = s.frames(of: "1")
@@ -229,7 +229,7 @@ import Testing
     }
 
     @Test func focusAcrossMonitorsCrossesAtTheEdgeOnly() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
         _ = s.add(50, to: "5")
         s.adopt(11)
@@ -244,7 +244,7 @@ import Testing
     }
 
     @Test func focusAcrossMonitorsCrossesOnlyPastTheFloatingWindows() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(12, floating: true); _ = s.add(13, floating: true)
         _ = s.add(50, to: "5"); _ = s.add(51, to: "5", floating: true)
         _ = s.park([13])
@@ -262,7 +262,7 @@ import Testing
     }
 
     @Test func moveAcrossMonitorsTakesTheWindowOverTheEdgeAndFollowsIt() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(11); _ = s.add(10)
         s.adopt(10)
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) != nil)
@@ -282,7 +282,7 @@ import Testing
 
     @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {
         // No display is above the main panel, so the window wraps to the built-in display below.
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(13); _ = s.add(12); _ = s.add(11)
         #expect(s.workspaces["1"]!.tree == "h[10 11 12 13]")
         s.adopt(11)
@@ -297,7 +297,7 @@ import Testing
 
 @Suite struct StrippingTests {
     @Test func aConcealedWindowIsStrippedWhenItsAppsLatestWindowIsOnAnotherDisplay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(60, to: "6"); _ = s.add(20, to: "2")
         // One app owns 10, 20 and 60, and 10 is its window focused last.
         let latest: (WindowID) -> WindowID? = { [10, 20, 60].contains($0) ? 10 : nil }
@@ -314,7 +314,7 @@ import Testing
 
 @Suite struct DisplayFocusTests {
     @Test func adoptingAWindowOnAnotherDisplayFocusesThatDisplay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(60, to: "6")
         s.adopt(50)
         #expect(s.focusedWorkspace == "5" && s.focused == 50)
@@ -325,7 +325,7 @@ import Testing
     }
 
     @Test func followingAWindowOnAnotherDisplaysShownWorkspaceConcealsNothing() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(60, to: "6")
         let plan = s.follow(50)
         #expect(plan.show.isEmpty && plan.hide.isEmpty)
@@ -335,7 +335,7 @@ import Testing
     }
 
     @Test func aWindowReturningToAnotherDisplayIsFollowedThere() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
         _ = s.park([50])
         let plan = s.unpark([50], follow: 50)
@@ -345,7 +345,7 @@ import Testing
     }
 
     @Test func removingTheFocusOfAnUnfocusedDisplayRequestsNothing() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
         #expect(s.remove(50).focus == nil)
         #expect(s.remove(10).focus == .noWindow)
@@ -363,7 +363,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         (["1", "2", "3", "4", "5"], ["1": 3, "2": 3, "3": 3, "4": 3, "5": 3], ["6": "1", "7": "2", "8": "3", "9": "4", "0": "5"]),
         (Desk.names, ["1": 2, "2": 2, "5": 1], [:]),   // the rest free
     ]
-    var s = desk()
+    var s = Desk.session()
     var assigned = Desk.home
     var concealed: Set<WindowID> = []
     var nextWindow: WindowID = 1

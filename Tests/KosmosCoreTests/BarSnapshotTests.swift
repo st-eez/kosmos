@@ -75,7 +75,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
 
 @Suite struct DisplayBarTests {
     @Test func everyDisplayAndEveryWorkspaceWithItsDisplay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5")
         s.adopt(50)
         let bar: [DisplayID: BarSnapshot.Display] = [1: .init(id: 2, name: "VG279QE5A (2)"), 2: .init(id: 1, name: "VG279QE5A (1)"),

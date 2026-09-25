@@ -86,11 +86,11 @@
     reporting the requested one. Preview re-keyed its main window within about 40 ms of a
     hover keying its second window (live, 2026-09-24 at 23:56). The missed request, the
     oldest to the app as the focus queue runs requests in order, never comes back, so it
-    leaves the expected echoes. Kosmos requests the focus again, once
-    for each requested window; if that misses too, it leaves the key window where macOS
-    put it. A report that echoes a request is no miss: an app can report the window again
-    after the raise that follows its key record (below). A report that repeats the held
-    window leaves the hold standing.
+    leaves the expected echoes. Kosmos requests the focus again, once for each requested
+    window; if that misses too, it leaves the key window where macOS put it. A report that
+    echoes a request is no miss: an app can report the window again after the raise that
+    follows its key record (below). A report that repeats the held window leaves the hold
+    standing.
   - A visible window of a workspace that no display shows is key only during a switch:
     macOS re-keyed after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,
@@ -139,9 +139,9 @@
   window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
-  WorkerRaise, FocusDecide as `queueKeys`, WorkerPost). Each side records the echo, through the main
-  queue, right before its own call that changes the key window, never at the request and
-  never for the other side's call (tla/README.md, changes 16 and 18).
+  WorkerRaise, FocusDecide as `queueKeys`, WorkerPost). Each side records the echo,
+  through the main queue, right before its own call that changes the key window, never at
+  the request and never for the other side's call (tla/README.md, changes 16 and 18).
   The queue checks the generation, reads whether the target's app is front, hands the app's
   worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so

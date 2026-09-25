@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct ReconfigureTests {
     @Test func closingTheLidMovesTheBuiltInWorkspacesToTheMainPanel() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(80, to: "8")
         _ = s.perform(.workspace(.named("8")))
         var assigned = Desk.home
@@ -19,7 +19,7 @@ import Testing
     }
 
     @Test func eachDisplayKeepsItsWorkspaceWhereItMayStay() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.perform(.workspace(.named("7")))
         _ = s.perform(.workspace(.named("3")))
         s.reconfigure(names: Desk.names, monitors: [Desk.left, Desk.main, Desk.builtIn], assigned: Desk.home, merge: [:])
@@ -48,7 +48,7 @@ import Testing
     }
 
     @Test func theLaptopProfileMergesTheWorkspacesItLeavesOut() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(10); _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
         _ = s.add(70, to: "7", floating: true)
         _ = s.add(71, to: "7"); _ = s.park([71])
@@ -75,7 +75,7 @@ import Testing
     }
 
     @Test func aMergedWorkspaceComesBackAsItWas() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.perform(.workspace(.named("6")))
         _ = s.add(60); _ = s.add(61)
         s.adopt(61)
@@ -154,7 +154,7 @@ import Testing
     }
 
     @Test func aTabSelectedWhileItsWorkspaceIsMergedReturnsInItsPlace() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(60, to: "6"); _ = s.add(62, to: "6")
         s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [Desk.builtIn], assigned: [:], merge: ["6": "1"])
         _ = s.replace(60, with: 61)
@@ -164,7 +164,7 @@ import Testing
     }
 
     @Test func aMergedWindowThatBecomesTheSelectedTabLeavesItsOwnPlace() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
         s.adopt(61)
         _ = s.add(62, to: "6")
@@ -177,7 +177,7 @@ import Testing
     }
 
     @Test func aFlapMovesTheMergedWindowsBackAtOnce() {
-        var s = desk()
+        var s = Desk.session()
         _ = s.add(60, to: "6")
         s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [Desk.builtIn], assigned: [:], merge: ["6": "1"])
         #expect(s.workspace(of: 60) == "1")
@@ -187,7 +187,7 @@ import Testing
     }
 
     @Test func aCommandForAWorkspaceTheProfileLeftOutFailsUntilItReturns() {
-        var s = desk()
+        var s = Desk.session()
         s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [Desk.builtIn], assigned: [:], merge: [:])
         #expect(s.missingWorkspace(in: .workspace(.named("6"))) == "6")
         #expect(s.missingWorkspace(in: .moveNodeToWorkspace(.named("0"), focusFollowsWindow: false)) == "0")

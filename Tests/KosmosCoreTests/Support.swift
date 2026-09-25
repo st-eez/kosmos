@@ -132,10 +132,10 @@ enum Desk {
     static let builtIn = Monitor(id: 3, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982), gaps: gaps)
     static let names = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
     static let home: [String: DisplayID] = ["1": 2, "2": 2, "3": 2, "4": 2, "5": 1, "6": 1, "7": 1, "8": 3, "9": 3, "0": 3]
-}
 
-func desk(_ assigned: [String: DisplayID] = Desk.home, names: [String] = Desk.names) -> Session {
-    Session(names: names, monitors: [Desk.builtIn, Desk.main, Desk.left], assigned: assigned)
+    static func session(_ assigned: [String: DisplayID] = Self.home, names: [String] = Self.names) -> Session {
+        Session(names: names, monitors: [builtIn, main, left], assigned: assigned)
+    }
 }
 
 func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {

@@ -139,12 +139,12 @@
   - A change event that finds the key tiled window of a shown workspace moved whole more
     than 10 pt (`TitleBarDrag.dragThreshold`) from where it stood when the left button went
     down lifts the window: it leaves the tree, parked where it stood, and the other windows
-    fill its space at once. A click that jitters the title bar moves it less. A window whose size changed during
-    the press, or with the pointer on a resize border at its first change event
-    (`TitleBarDrag.onResizeBorder`), is being resized and never lifts, since WindowServer can
-    apply a resize by the left or top edge as a move first. Kosmos writes the lifted
-    window no frame while macOS moves it, and a switch the CLI asks for meanwhile leaves
-    it in the user's hand.
+    fill its space at once. A click that jitters the title bar moves it less. A window
+    whose size changed during the press, or with the pointer on a resize border at its
+    first change event (`TitleBarDrag.onResizeBorder`), is being resized and never lifts,
+    since WindowServer can apply a resize by the left or top edge as a move first. Kosmos
+    writes the lifted window no frame while macOS moves it, and a switch the CLI asks for
+    meanwhile leaves it in the user's hand.
   - A hotkey pressed during the drag first drops the window where the pointer is, as the
     button coming up would, and its command then runs, as Hyprland 0.56.2's
     `KeybindManager.cpp` ends a drag in `ensureMouseBindState()` before a bind fires. So
