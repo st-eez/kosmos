@@ -824,14 +824,20 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   out of a fullscreen Space, and a hover focus passes the fullscreen gate of section 5.4
   as a command does. Live on 2026-09-24, the pointer entering Moonlight in native
   fullscreen on the built-in display skipped it as untiled, which this replaced.
-- When the pointer enters a display whose shown workspace has no windows, that workspace
-  takes the focus as `workspace` gives it: Kosmos keys its empty workspace window on that
-  display, with no switch and no pointer move, as Hyprland's `follow_mouse` moves the
-  monitor focus (`FocusFollowsMouse.emptyWorkspace`). Over a gap or the desktop of a
-  display whose workspace has windows, focus stays where it is, as in Hyprland. The hit
-  test names no managed window there, which is why the gate passes on a movement onto
-  another display. Live on 2026-09-24, moving from workspace 1 on the main panel onto the
-  left panel, which showed empty workspace 7, did nothing before this.
+- When the pointer enters the desktop of a display whose shown workspace has no windows,
+  that workspace takes the focus as `workspace` gives it: Kosmos keys its empty workspace
+  window on that display, with no switch and no pointer move, as Hyprland's
+  `follow_mouse` moves the monitor focus (`FocusFollowsMouse.emptyWorkspace`). Over a gap
+  or the desktop of a display whose workspace has windows, focus stays where it is, as in
+  Hyprland. The hit test names no managed window there, which is why the gate passes on a
+  movement onto another display. The desktop is no window, or one at the desktop icon
+  level or below: Finder's desktop window, the wallpaper and the display's backstop
+  (`FocusFollowsMouse.isDesktop`), whose level is read from WindowServer only on this
+  path. A window Kosmos does not manage over that display keeps the key window: a
+  slideshow, a game, the menu bar, or a panel over a native fullscreen window, where the
+  empty workspace's focus would also pass the fullscreen gate as a command. Live on
+  2026-09-24, moving from workspace 1 on the main panel onto the left panel, which showed
+  empty workspace 7, did nothing before this.
 - A hover focus counts as a command stamped when the tap saw the movement: reports of the
   user's activations before it are stale, and its request's echo is consumed like any
   other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`

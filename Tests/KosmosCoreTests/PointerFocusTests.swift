@@ -163,7 +163,7 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(!s.isVisible(99))   // unknown
     }
 
-    @Test func onToADisplayShowingAnEmptyWorkspaceThatWorkspaceTakesFocus() {
+    @Test func onToTheDesktopOfADisplayShowingAnEmptyWorkspaceThatWorkspaceTakesFocus() {
         // Workspace 1 on the main panel has the focus and a window; the left panel shows
         // empty workspace 7.
         var s = Session(names: ["1", "6", "7"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "6": 1, "7": 1])
@@ -173,18 +173,34 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         _ = s.perform(.workspace(.named("1")))
         let settings = settings()
         #expect(s.workspace(shownOn: 1) == "7")
-        #expect(settings.emptyWorkspace(entered: 1, in: s) == "7")
+        #expect(settings.emptyWorkspace(entered: 1, overDesktop: true, in: s) == "7")
+        // A window Kosmos does not manage covers the left panel: a slideshow, a game, the
+        // menu bar or a panel over a native fullscreen window.
+        #expect(settings.emptyWorkspace(entered: 1, overDesktop: false, in: s) == nil)
         // Back on the main panel, over a gap or the desktop: its workspace has a window.
-        #expect(settings.emptyWorkspace(entered: 2, in: s) == nil)
+        #expect(settings.emptyWorkspace(entered: 2, overDesktop: true, in: s) == nil)
         // Workspace 7 focused already, or focus follows mouse off.
         var focused = s
         _ = focused.perform(.workspace(.named("7")))
-        #expect(settings.emptyWorkspace(entered: 1, in: focused) == nil)
-        #expect(FocusFollowsMouse().emptyWorkspace(entered: 1, in: s) == nil)
+        #expect(settings.emptyWorkspace(entered: 1, overDesktop: true, in: focused) == nil)
+        #expect(FocusFollowsMouse().emptyWorkspace(entered: 1, overDesktop: true, in: s) == nil)
         // The left panel showing workspace 6, which has a window, keeps focus where it is.
         _ = s.perform(.workspace(.named("6")))
         _ = s.perform(.workspace(.named("1")))
-        #expect(settings.emptyWorkspace(entered: 1, in: s) == nil)
+        #expect(settings.emptyWorkspace(entered: 1, overDesktop: true, in: s) == nil)
+    }
+
+    @Test func theDesktopIsFindersDesktopWindowOrTheWallpaperBelowIt() {
+        // Levels WindowServer listed on macOS 27: Finder's desktop windows, the wallpaper,
+        // the display backstop, SketchyBar, and a panel, a menu and a slideshow above them.
+        #expect(FocusFollowsMouse.isDesktop(level: -2147483603))
+        #expect(FocusFollowsMouse.isDesktop(level: -2147483624))
+        #expect(FocusFollowsMouse.isDesktop(level: -2147483626))
+        #expect(!FocusFollowsMouse.isDesktop(level: -20))
+        for level in [CGWindowLevelForKey(.normalWindow), CGWindowLevelForKey(.popUpMenuWindow),
+                      CGWindowLevelForKey(.mainMenuWindow), CGWindowLevelForKey(.screenSaverWindow)] {
+            #expect(!FocusFollowsMouse.isDesktop(level: level))
+        }
     }
 
     @Test func ignoresAppsByBundleIdentifierOrName() {

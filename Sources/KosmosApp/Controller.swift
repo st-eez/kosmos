@@ -980,11 +980,13 @@ final class Controller {
         let fullscreen = fullscreenParked.contains(window)
         let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
                                           app: owner[window].map(inventory.appIdentity), stale: reports.isStale(stamp))
-        // Onto a display whose shown workspace is empty: that workspace takes the focus as
-        // `workspace` gives it, keying the empty workspace window there, and the pointer
-        // stays where it is.
-        let emptyWorkspace = skip == .notTiled
-            ? entered.display.flatMap { focusFollowsMouse.emptyWorkspace(entered: $0, in: session) } : nil
+        // Onto the desktop of a display whose shown workspace is empty: that workspace takes
+        // the focus as `workspace` gives it, keying the empty workspace window there, and the
+        // pointer stays where it is. Only then is the window's level read from WindowServer.
+        let emptyWorkspace = skip == .notTiled ? entered.display.flatMap { display in
+            focusFollowsMouse.emptyWorkspace(entered: display, overDesktop: window == 0 || SkyLight.rows([window]).first
+                .map { FocusFollowsMouse.isDesktop(level: $0.level) } == true, in: session)
+        } : nil
         if let skip, emptyWorkspace == nil {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
             return
