@@ -177,8 +177,6 @@ actor AppWorker {
         }
     }
 
-    var windowIDs: [UInt32] { Array(elements.keys) }
-
     /// Whether calls go to the app: it is not backed off.
     nonisolated var answers: Bool { !backedOff.load(ordering: .relaxed) }
 
@@ -271,12 +269,6 @@ actor AppWorker {
                 raised(stamp)
             }
         }
-    }
-
-    /// Reads the app's focused window for the focus queue, which waits for it at most 30 ms.
-    /// `done` gets nil when the app did not answer.
-    nonisolated func readFocusedWindow(_ done: @escaping @Sendable (UInt32??) -> Void) {
-        executor.perform { self.assumeIsolated { done($0.focusedWindow()) } }
     }
 
     /// The public focus path for a window, for when the private one is off or its call fails

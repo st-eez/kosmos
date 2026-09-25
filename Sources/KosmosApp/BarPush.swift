@@ -20,18 +20,6 @@ final class BarPush: Sendable {
         queue.async { self.flush(retry: true) }
     }
 
-    /// Sends `--query bar` and waits for the reply, which fails if SketchyBar changed its
-    /// wire format. Returns false when no bar answers.
-    func checkFormat() -> Bool {
-        let payload = Self.payload(["--query", "bar"])
-        var reply = [CChar](repeating: 0, count: 4096)
-        let count = payload.withUnsafeBufferPointer {
-            kosmos_bar_query(Self.barName, $0.baseAddress, UInt32($0.count), &reply, UInt32(reply.count), 500)
-        }
-        if count <= 0 { barLog.error("SketchyBar did not answer --query bar") }
-        return count > 0
-    }
-
     private func flush(retry: Bool) {
         guard let snapshot = pending.withLock({ $0 }) else { return }
         let payload = Self.payload(["--trigger", Self.event, "STATE=" + String(decoding: snapshot, as: UTF8.self)])

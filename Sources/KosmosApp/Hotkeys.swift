@@ -87,12 +87,6 @@ final class Hotkeys: NSObject {
         return apply()
     }
 
-    /// Unregisters every hotkey, to pause Kosmos. `switchMode(to: mode)` registers them again.
-    func unregisterAll() {
-        for key in Array(registered.keys) { unregister(key) }
-        table = HotkeyTable([], layout: layout)
-    }
-
     private func apply() -> [Problem] {
         let next = HotkeyTable(modes[mode] ?? [], layout: layout)
         var problems = next.collisions.map { collision in
@@ -130,8 +124,7 @@ final class Hotkeys: NSObject {
     }
 
     private func pressed(_ key: PhysicalKey) {
-        // A press queued before a mode switch or unregisterAll took its key out of the table
-        // is dropped.
+        // A press queued before a mode switch took its key out of the table is dropped.
         guard let binding = table.bindings[key] else { return }
         handler(binding)
     }

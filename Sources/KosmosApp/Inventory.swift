@@ -109,10 +109,9 @@ final class Inventory {
     private var swept = false
     /// The windows the first sweep found, which were there before Kosmos launched.
     private var atLaunch: Set<UInt32> = []
-    private(set) var missedByEvents = 0
-    /// When a sweep last counted each window as missed by events. An event for one within
+    /// When a sweep last found each window missed by events. An event for one within
     /// `lateBound` is logged, as it may be the event for the change the sweep read, late.
-    private var countedMissed: [UInt32: ContinuousClock.Instant] = [:]
+    private var markedMissed: [UInt32: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)
     /// Whether each process is a regular app, false for a process LaunchServices does not
     /// know, such as JankyBorders. LaunchServices answers each read with a synchronous XPC
@@ -367,8 +366,8 @@ final class Inventory {
 
     private func handle(_ event: WindowServerEvent) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
-        if let id = event.window, let counted = countedMissed.removeValue(forKey: id) {
-            let after = ContinuousClock.now - counted
+        if let id = event.window, let marked = markedMissed.removeValue(forKey: id) {
+            let after = ContinuousClock.now - marked
             if after < Self.lateBound {
                 inventoryLog.notice("""
                     event \(String(describing: event), privacy: .public) came \
@@ -631,19 +630,19 @@ final class Inventory {
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
-        countedMissed = countedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
+        markedMissed = markedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
         // Windows the lock held back were reported, and so were those of an app found regular
         // only at its launch, so the sweep does not count them.
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
             if swept, arrivedWhileLocked[row.id] == nil, !launchedLate.contains(row.pid) {
-                countMissed(row.id)
+                markMissed(row.id)
                 inventoryLog.notice("sweep found \(row.id), missed by events")
             }
             apply(row)
         }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
             if !removedWhileLocked.contains(id) {
-                countMissed(id)
+                markMissed(id)
                 inventoryLog.notice("sweep lost \(id), missed by events")
             }
             remove(id, reason: "absent from sweep")
@@ -654,7 +653,7 @@ final class Inventory {
             guard let old = windows[row.id] else { continue }
             apply(row)
             guard let new = windows[row.id], new.orderedIn != old.orderedIn || isCandidate(new) != isCandidate(old) else { continue }
-            countMissed(row.id)
+            markMissed(row.id)
             inventoryLog.notice("""
                 sweep corrected \(row.id), missed by events: \(self.appName(row.pid), privacy: .public) \
                 ordered in \(old.orderedIn) to \(new.orderedIn), level \(old.level) to \(new.level), \
@@ -685,8 +684,7 @@ final class Inventory {
         }
     }
 
-    private func countMissed(_ id: UInt32) {
-        missedByEvents += 1
-        countedMissed[id] = .now
+    private func markMissed(_ id: UInt32) {
+        markedMissed[id] = .now
     }
 }

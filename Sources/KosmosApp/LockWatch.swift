@@ -20,7 +20,6 @@ final class LockWatch: NSObject {
     /// Called with true when the session locks, and with false when it unlocks or the Mac or
     /// its displays wake while it is unlocked.
     var onChange: (@MainActor (_ locked: Bool) -> Void)?
-    var isLocked: Bool { state.isLocked }
 
     func start() {
         apply(Self.read())
