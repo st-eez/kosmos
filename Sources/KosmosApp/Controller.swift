@@ -320,7 +320,7 @@ final class Controller {
         releasedWrites.remove(id)
         writeAgain.remove(id)
         ledger.forget(id)
-        hiding.forgetHistory(of: id)
+        hiding.forgetClosed(id)
         execute(session.remove(id))
     }
 

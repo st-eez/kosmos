@@ -372,6 +372,10 @@ off the main thread).
   whose level, transform and alpha would be unknown. After a recovery it conceals into the
   newest recorded Space again only while the record names a window and that Space exists,
   and creates a new one otherwise.
+- A window that closes leaves the ledger and the record once its concealing Space no
+  longer lists it. The record's slot holds about 168 windows, and filled with closed ones it
+  would stop every conceal. A window still listed stays recorded, as one that only stopped
+  being managed or that a failed read took for closed, so recovery restores it.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

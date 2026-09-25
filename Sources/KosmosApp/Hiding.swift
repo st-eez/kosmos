@@ -60,9 +60,19 @@ final class Hiding {
         store.history.withLock { $0.wasConcealed(window, at: stamp, now: concealed.contains(window)) }
     }
 
-    /// A window that left for good has no history to keep.
-    func forgetHistory(of window: UInt32) {
+    /// Forgets a window that closed: its history at once, and on the bridge queue its entries
+    /// in the ledger and the record, once its concealing Space no longer lists it. Kept, the
+    /// record would fill with closed windows and every conceal would stop. A window still
+    /// listed stays recorded, as one that only stopped being managed or that a failed read
+    /// took for closed, so recovery restores it.
+    func forgetClosed(_ window: UInt32) {
         store.history.withLock { $0.forget(window) }
+        let store = self.store
+        bridge.async {
+            store.forgetClosed(window)
+            let concealed = store.concealed
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.concealed = concealed } }
+        }
     }
 
     /// Reveals `show`, then conceals `hide`, then confirms both, on the bridge queue.
@@ -263,6 +273,11 @@ private final class HidingStore: @unchecked Sendable {
         ids = batch.strip
         kosmos_add_windows(space, &ids, ids.count, true)
         return (batch, .now)
+    }
+
+    func forgetClosed(_ window: UInt32) {
+        guard load() else { return }
+        forget(ledger.departed([window]) { kosmos_space_windows($0) as? [UInt32] })
     }
 
     func forget(_ windows: [UInt32]) {

@@ -167,3 +167,11 @@ private struct Memberships {
     let batch = ledger.batch(show: [], hide: [1], into: 9, hasOrdinarySpace: { _ in true })
     #expect(batch.fresh == [1] && batch.mustBeIn == [1: 9])
 }
+
+/// A closed window leaves once its concealing Space no longer lists it. One still listed, or
+/// in a Space that could not be read, stays, so recovery restores it. A window the ledger
+/// does not hold leaves.
+@Test func onlyWindowsOutOfTheirSpaceDepart() {
+    let ledger = ConcealLedger(entries: [1: 9, 2: 9, 3: 8])
+    #expect(ledger.departed([1, 2, 3, 4], members: { $0 == 9 ? [2] : nil }) == [1, 4])
+}

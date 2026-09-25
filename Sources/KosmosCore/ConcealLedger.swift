@@ -92,6 +92,16 @@ public struct ConcealLedger: Equatable, Sendable {
         for window in windows { entries[window] = nil }
     }
 
+    /// The windows of `windows` out of their concealing Space, as a closed window is, and
+    /// those the ledger does not hold. `members` reads a Space; a failed read, nil, keeps
+    /// its windows.
+    public func departed(_ windows: [UInt32], members: (UInt64) -> [UInt32]?) -> [UInt32] {
+        windows.filter { window in
+            guard let space = entries[window] else { return true }
+            return members(space).map { !$0.contains(window) } ?? false
+        }
+    }
+
     /// Records a batch once it is confirmed.
     public mutating func commit(_ batch: Batch, into space: UInt64) {
         for window in batch.removals.values.joined() { entries[window] = nil }
