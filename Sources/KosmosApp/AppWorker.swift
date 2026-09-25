@@ -6,17 +6,17 @@ import Synchronization
 /// Stamped on receipt, so the main actor can order it against commands (docs/focus.md).
 struct AXReport: Sendable {
     enum Kind: Sendable {
-        case windowCreated(UInt32)
-        case windowDestroyed(UInt32)
+        case windowCreated(WindowID)
+        case windowDestroyed(WindowID)
         /// The key window: the focused window of the app that is front.
-        case focusedWindowChanged(UInt32?)
+        case focusedWindowChanged(WindowID?)
         /// The focused window of an app that is not front, as after AXRaise in it: no key
         /// window report, but it can be Kosmos's echo.
-        case backgroundFocus(UInt32?)
-        case minimized(UInt32, Bool)
-        case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
+        case backgroundFocus(WindowID?)
+        case minimized(WindowID, Bool)
+        case framesApplied([(id: WindowID, target: CGRect, readBack: CGRect)])
         /// Windows whose frame writes the worker dropped, as it knows no element for them.
-        case framesDropped([UInt32])
+        case framesDropped([WindowID])
         /// The app started, or answers again after a timeout: reads that failed can be made again.
         case answering
     }
@@ -53,8 +53,8 @@ actor AppWorker {
     private var observer: AXObserver?
     private var started = false
     private(set) var startFailure = "no answer"
-    private var elements: [UInt32: AXUIElement] = [:]
-    private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
+    private var elements: [WindowID: AXUIElement] = [:]
+    private var queuedWrites: [WindowID: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
     private var backoff = AXBackoff()
     /// `backoff.backedOff`, for the main actor (Controller.motions).
@@ -132,15 +132,15 @@ actor AppWorker {
 
     /// Answers for no window before the worker starts, so a window is admitted only after its
     /// app's focused window is reported (docs/geometry.md).
-    func info(_ ids: [UInt32]) -> [UInt32: AXWindowInfo] {
+    func info(_ ids: [WindowID]) -> [WindowID: AXWindowInfo] {
         guard started else { return [:] }
         if ids.contains(where: { elements[$0] == nil }) { _ = trackWindows() }
-        var infos: [UInt32: AXWindowInfo] = [:]
+        var infos: [WindowID: AXWindowInfo] = [:]
         for id in ids { infos[id] = info(id) }
         return infos
     }
 
-    private func info(_ id: UInt32) -> AXWindowInfo? {
+    private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
             return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
@@ -154,7 +154,7 @@ actor AppWorker {
     nonisolated var answers: Bool { !backedOff.load(ordering: .relaxed) }
 
     /// The outer nil means the app did not answer; the inner nil, that it has no focused window.
-    func focusedWindow() -> UInt32?? {
+    func focusedWindow() -> WindowID?? {
         do {
             guard let element = try copy(app, kAXFocusedWindowAttribute) else { return .some(nil) }
             let id = track(element as! AXUIElement)
@@ -170,13 +170,13 @@ actor AppWorker {
     }
 
     /// In call order: a Task per batch could run an older batch last and leave a stale frame.
-    nonisolated func enqueueFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
+    nonisolated func enqueueFrames(_ writes: [WindowID: (write: FrameWrite, target: CGRect)]) {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
     /// The split model's `WorkerStart`, `WorkerRead` and `WorkerRaise` (KosmosCore's
     /// KeyRequest). `performing` records the echo just before AXRaise (docs/focus.md).
-    nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool, request: KeyRequest,
+    nonisolated func focusPrivately(_ id: WindowID, isCurrent: @escaping @Sendable () -> Bool, request: KeyRequest,
                                     performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                     forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                     done: @escaping @Sendable () -> Void) {
@@ -203,7 +203,7 @@ actor AppWorker {
     /// Ceiling: `raised` can reach the main actor before the raise's report, which then reads
     /// as the user's choice. Forgetting the record only once the observer has handled the
     /// app's earlier notifications would close that (docs/focus.md).
-    nonisolated func raiseAfterKeyRecord(_ id: UInt32, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+    nonisolated func raiseAfterKeyRecord(_ id: WindowID, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                          raised: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
@@ -228,12 +228,12 @@ actor AppWorker {
     /// The public path, where the app chooses its key window (docs/focus.md). Each step can
     /// wait out the timeout, so each first checks the request is current; one that went stale
     /// after its record keeps the record for the reports its steps cause.
-    nonisolated func focusPublicly(_ id: UInt32, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
+    nonisolated func focusPublicly(_ id: WindowID, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
                                    performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                    forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
-                let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
+                let focused: WindowID?? = readFocus ? worker.focusedWindow() : nil
                 if readFocus, focused == nil { worker.logUnanswered(id) }
                 guard isCurrent(), focusGoesAhead(to: id, appIsFront: readFocus, focused: focused) else { return }
                 let stamp = ContinuousClock.now
@@ -249,14 +249,14 @@ actor AppWorker {
         }
     }
 
-    private func logUnanswered(_ id: UInt32) {
+    private func logUnanswered(_ id: WindowID) {
         log.notice("\(self.name, privacy: .public) did not answer the focused window read; focus on \(id) stops")
     }
 
     /// False when no raise can land: the app refused it or failed at once, or no call was made.
     /// A raise that timed out can still land, and counts as made.
     @discardableResult
-    private func raiseWindow(_ id: UInt32) -> Bool {
+    private func raiseWindow(_ id: WindowID) -> Bool {
         guard let element = elements[id] else { return false }
         AXUIElementSetMessagingTimeout(element, Self.raiseTimeout)
         defer { AXUIElementSetMessagingTimeout(element, 0) }   // back to the system wide timeout
@@ -271,7 +271,7 @@ actor AppWorker {
         return error == .success || waitedOut
     }
 
-    func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
+    func setFrames(_ writes: [WindowID: (write: FrameWrite, target: CGRect)]) {
         queuedWrites.merge(writes) { queued, new in (new.write.replacing(queued.write, target: new.target), new.target) }
         guard !drainScheduled else { return }
         drainScheduled = true
@@ -283,8 +283,8 @@ actor AppWorker {
         guard !backoff.backedOff else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
-        var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
-        var dropped: [UInt32] = []
+        var results: [(id: WindowID, target: CGRect, readBack: CGRect)] = []
+        var dropped: [WindowID] = []
         for (id, entry) in writes {
             guard let element = elements[id] else {
                 dropped.append(id)
@@ -360,8 +360,8 @@ actor AppWorker {
         if notification == kAXFocusedWindowChangedNotification {
             let received = ContinuousClock.now
             let front = kosmos_front_pid() == pid
-            var id: UInt32 = 0
-            let window: UInt32? = _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+            var id: WindowID = 0
+            let window: WindowID? = _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
             deliver(AXReport(pid: pid, kind: front ? .focusedWindowChanged(window) : .backgroundFocus(window), received: received))
         }
         executor.perform { self.assumeIsolated { $0.handle(notification, element) } }
@@ -388,7 +388,7 @@ actor AppWorker {
     /// Caches nothing before the observer exists or when a registration timed out, so a later
     /// track registers the window's notifications again and no minimize is missed for good.
     @discardableResult
-    private func track(_ element: AXUIElement) -> UInt32? {
+    private func track(_ element: AXUIElement) -> WindowID? {
         guard let id = id(of: element) else { return nil }
         guard observer != nil else { return id }
         if elements[id] == nil {
@@ -408,12 +408,12 @@ actor AppWorker {
 
     /// A tracked window's id needs no round trip, so a notification during a backoff still
     /// names its window.
-    private func id(of element: AXUIElement) -> UInt32? {
+    private func id(of element: AXUIElement) -> WindowID? {
         elements.first { CFEqual($0.value, element) }?.key ?? windowID(element)
     }
 
-    private func windowID(_ element: AXUIElement) -> UInt32? {
-        var id: UInt32 = 0
+    private func windowID(_ element: AXUIElement) -> WindowID? {
+        var id: WindowID = 0
         return ax { _AXUIElementGetWindow(element, &id) } == .success && id != 0 ? id : nil
     }
 

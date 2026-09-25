@@ -26,7 +26,7 @@ final class Slides {
     private let hiding: Hiding
     var onChange: (@MainActor () -> Void)?
     private let onscreen = Onscreen()
-    private var free: [UInt64] = []
+    private var free: [SpaceID] = []
     private let poolChecks = DispatchQueue(label: "kosmos.slide.pool", qos: .utility)
     private var links: [DisplayID: Link] = [:]
 
@@ -160,7 +160,7 @@ final class Slides {
 
     /// A Space that still lists the window, or does not read, leaves the pool, since its next
     /// slide would carry the window too (docs/geometry.md).
-    private func release(_ space: UInt64, of id: WindowID) {
+    private func release(_ space: SpaceID, of id: WindowID) {
         poolChecks.async {
             _ = kosmos_barrier(space)
             let members = SkyLight.windows(in: space)

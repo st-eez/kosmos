@@ -54,8 +54,9 @@ prefix.
   `KosmosCore/Config/KeyCombo.swift`, `KosmosCore/Config/KeyboardLayout.swift`,
   `KosmosApp/AppDelegate.swift`, `kosmos-probe/SecureInput.swift`.
 - [ipc.md](ipc.md): the socket, the CLI and the snapshots pushed to SketchyBar.
-  Code: `KosmosIPC/`, `kosmos/main.swift`, `KosmosApp/BarPush.swift`,
-  `KosmosCore/BarSnapshot.swift`, `CKosmos/KosmosBar.c`.
+  Code: `KosmosIPC/`, `kosmos/main.swift`, `KosmosCore/Query.swift`,
+  `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
+  `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
   workspaces a profile leaves out, and window rules.
   Code: `KosmosCore/Config/`, `KosmosCore/Session+Profiles.swift`,
@@ -78,7 +79,8 @@ prefix.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
-  `KosmosApp/BarPush.swift`, `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`.
+  `KosmosCore/Query.swift`, `KosmosApp/BarPush.swift`, `KosmosApp/AppDelegate.swift`,
+  `KosmosApp/Controller.swift`.
 - [displays.md](displays.md): the display orders, workspaces assigned to displays, the
   monitor commands, display changes, floating windows across displays, and dragging a
   tiled window by its title bar.

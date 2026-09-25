@@ -9,6 +9,9 @@
   closes, or for a subscription sends the response, then one frame per published snapshot
   until either side closes. A request with another protocol version gets an error
   response.
+- The queries `ping`, `version`, `state`, `list-workspaces`, `list-windows` and
+  `list-bindings` change nothing (`Query`). Any other request is a command
+  (`Command.parse`).
 - A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
   SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar applies
   snapshots by sequence number and never queries Kosmos. A bar reads the snapshot's

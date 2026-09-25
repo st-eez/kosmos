@@ -227,10 +227,10 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         let config = try #require(load(body).config)
         let main = try #require(config.modes["main"])
         #expect(main.map(\.key) == ["alt-h", "alt-shift-1", "alt-equal", "alt-r"])
-        #expect(main[0].arguments == ["focus", "left"])
-        #expect(main[1].arguments == ["move-node-to-workspace", "--focus-follows-window", "1"])
+        #expect(main[0].command == .focus(.left))
+        #expect(main[1].command == .moveNodeToWorkspace(.named("1"), focusFollowsWindow: true))
         // A string splits at any run of whitespace.
-        #expect(main[2].arguments == ["resize", "smart", "+100"])
+        #expect(main[2].command == .resize(.smart, by: 100))
         #expect(try main[1].combo == KeyCombo("shift-alt-1"))
         #expect(config.modes["resize"]?.first?.combo.modifiers == [])
     }

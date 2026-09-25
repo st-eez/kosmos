@@ -7,8 +7,8 @@ public struct ConcealLedger: Equatable, Sendable {
     public struct Batch: Equatable, Sendable {
         /// Revealed windows, by the concealing Space they leave.
         public var removals: [SpaceID: [WindowID]] = [:]
-        /// Revealed windows with no ordinary Space, to add to one before their removal. The
-        /// add strips only managed Spaces, so it leaves them in the concealing Space.
+        /// Revealed windows on no other Space, to add to an ordinary one before their removal.
+        /// The add strips only managed Spaces, so it leaves them in the concealing Space.
         public var adds: [WindowID] = []
         /// Windows concealed for the first time, which keep their ordinary Space unless in
         /// `strip` (docs/displays.md).
@@ -53,14 +53,14 @@ public struct ConcealLedger: Equatable, Sendable {
         return ConcealLedger(entries: entries)
     }
 
-    /// A revealed window with no ordinary Space, as `hasOrdinarySpace` reads it now, is added
-    /// to one first: removing it would leave it on none.
+    /// A revealed window on no other Space, as `isOnAnySpace` reads it now, is added to an
+    /// ordinary one first: removing it would leave it on none.
     public func batch(show: [WindowID], hide: [WindowID], stripping: Set<WindowID> = [], into space: SpaceID,
-                      hasOrdinarySpace: (WindowID) -> Bool) -> Batch {
+                      isOnAnySpace: (WindowID) -> Bool) -> Batch {
         var batch = Batch()
         for window in show {
             guard let held = entries[window] else { continue }
-            if !hasOrdinarySpace(window) { batch.adds.append(window) }
+            if !isOnAnySpace(window) { batch.adds.append(window) }
             batch.removals[held, default: []].append(window)
         }
         for window in Set(hide).sorted() {

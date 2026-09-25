@@ -1,5 +1,6 @@
 import AppKit
 import CKosmos
+import KosmosCore
 import KosmosSkyLight
 
 /// Reads of the user's input and the key window's holder (docs/focus-follows-mouse.md).
@@ -8,7 +9,7 @@ enum UserInput {
     /// At the Dock's level, where its icons are, and not its menus, Mission Control or
     /// Launchpad. With autohide the Dock's window can span its display, so its frame says nothing.
     static func isDock(_ window: Int) -> Bool {
-        guard window > 0, let row = SkyLight.rows([UInt32(window)]).first else { return false }
+        guard window > 0, let row = SkyLight.rows([WindowID(window)]).first else { return false }
         return row.level == CGWindowLevelForKey(.dockWindow)
             && NSRunningApplication(processIdentifier: row.pid)?.bundleIdentifier == "com.apple.dock"
     }
