@@ -5,6 +5,10 @@ func onMain(_ body: @escaping @MainActor () -> Void) {
     DispatchQueue.main.async { MainActor.assumeIsolated(body) }
 }
 
+extension Duration {
+    var milliseconds: Double { self / .milliseconds(1) }
+}
+
 /// A serial executor on a thread's own run loop, so a call that blocks, as into a hung app,
 /// holds only that thread.
 final class RunLoopExecutor: SerialExecutor, @unchecked Sendable {

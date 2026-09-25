@@ -1316,7 +1316,3 @@ final class Controller {
         return (try? encoder.encode(snapshot)) ?? Data("{}".utf8)
     }
 }
-
-extension Duration {
-    var milliseconds: Double { Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15 }
-}

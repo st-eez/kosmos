@@ -531,14 +531,14 @@ final class Inventory {
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
             let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)
             if swept, !reported {
-                markMissed(row.id)
+                markedMissed[row.id] = .now
                 inventoryLog.notice("sweep found \(row.id), missed by events")
             }
             apply(row)
         }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
             if !removedWhileLocked.contains(id) {
-                markMissed(id)
+                markedMissed[id] = .now
                 inventoryLog.notice("sweep lost \(id), missed by events")
             }
             remove(id, reason: "absent from sweep")
@@ -547,7 +547,7 @@ final class Inventory {
             guard let old = windows[row.id] else { continue }
             apply(row)
             guard let new = windows[row.id], new.orderedIn != old.orderedIn || isCandidate(new) != isCandidate(old) else { continue }
-            markMissed(row.id)
+            markedMissed[row.id] = .now
             inventoryLog.notice("""
                 sweep corrected \(row.id), missed by events: \(self.appName(row.pid), privacy: .public) \
                 ordered in \(old.orderedIn) to \(new.orderedIn), level \(old.level) to \(new.level), \
@@ -572,9 +572,5 @@ final class Inventory {
             // None counted as closed and kept while locked. The held tab switches have paired now.
             for (id, row) in windows where !row.orderedIn && isManaged(id) { looks.orderedOut(id, at: .now) }
         }
-    }
-
-    private func markMissed(_ id: UInt32) {
-        markedMissed[id] = .now
     }
 }
