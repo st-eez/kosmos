@@ -237,9 +237,7 @@ final class Slides {
     /// screen has that display.
     private func startLink(on display: DisplayID) -> Bool {
         guard links[display] == nil else { return true }
-        let number = NSDeviceDescriptionKey("NSScreenNumber")
-        guard let screen = NSScreen.screens.first(where: { ($0.deviceDescription[number] as? NSNumber)?.uint32Value == display })
-        else { return false }
+        guard let screen = NSScreen.screens.first(where: { $0.displayID == display }) else { return false }
         // The link keeps its target.
         let link = screen.displayLink(target: LinkTarget { [weak self] in self?.frame($0, on: display) },
                                       selector: #selector(LinkTarget.frame))
