@@ -328,8 +328,8 @@ private struct ConfigDecoder {
                         continue
                     }
                     seen[combo] = binding
-                    guard let parsed = command(binding.value, bindingPath) else { continue }
-                    switch parsed.command {
+                    guard let command = command(binding.value, bindingPath) else { continue }
+                    switch command {
                     case .mode(let target):
                         targets.append((target, binding.value.position, bindingPath))
                     case .profile(let target):
@@ -337,7 +337,7 @@ private struct ConfigDecoder {
                     default:
                         break
                     }
-                    bindings.append(Binding(key: binding.key, combo: combo, arguments: parsed.arguments, command: parsed.command))
+                    bindings.append(Binding(key: binding.key, combo: combo, command: command))
                 }
             }
             modes[mode.key] = bindings
@@ -352,16 +352,15 @@ private struct ConfigDecoder {
 
     /// The string splits at whitespace with no quoting: no command takes an argument that
     /// contains a space.
-    private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> (arguments: [String], command: Command)? {
+    private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> Command? {
         guard case .string = value.kind else {
             fail("expected a command as a string, found \(kindName(value))", at: value.position, path)
             return nil
         }
         guard let line = string(value, path) else { return nil }
-        let arguments = line.split(whereSeparator: \.isWhitespace).map(String.init)
-        switch Command.parse(arguments) {
+        switch Command.parse(line.split(whereSeparator: \.isWhitespace).map(String.init)) {
         case .success(let command):
-            return (arguments, command)
+            return command
         case .failure(let error):
             fail(error.message, at: value.position, path)
             return nil

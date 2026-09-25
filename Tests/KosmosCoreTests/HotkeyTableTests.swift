@@ -39,7 +39,7 @@ private func modes(_ tables: String) throws -> [String: [Binding]] {
         let changes = resize.changes(from: main.bindings.keys)
         #expect(changes.unregister == [PhysicalKey(code: 15, modifiers: .alt)])
         #expect(changes.register == [PhysicalKey(code: 53, modifiers: [])])
-        #expect(resize.bindings[PhysicalKey(code: 4, modifiers: .alt)]?.arguments == ["resize", "width", "-50"])
+        #expect(resize.bindings[PhysicalKey(code: 4, modifiers: .alt)]?.command == .resize(.width, by: -50))
         let none = main.changes(from: main.bindings.keys)
         #expect(none.unregister.isEmpty && none.register.isEmpty)
     }

@@ -228,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
             self?.controller?.endDrag()
-            _ = self?.respond(to: binding.arguments, received: .now, from: .hotkey)
+            _ = self?.run(binding.command, received: .now, from: .hotkey)
         }
         self.hotkeys = hotkeys
         let problems = hotkeys.load(config.modes)
