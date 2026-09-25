@@ -1,7 +1,6 @@
 public enum KeyWindow: Hashable, Sendable {
     case window(WindowID)
-    /// No key window: an app with none, or Kosmos's own window for an empty workspace.
-    case emptyWorkspace
+    case noWindow
 }
 
 /// What to do with a key window report (docs/focus.md; tla/Kosmos.tla, Adopt).
@@ -83,7 +82,7 @@ public struct FocusReports: Sendable {
     }
 
     /// Call it right before the call that changes the key window, so no echo comes first.
-    /// `app` is Kosmos for `.emptyWorkspace`.
+    /// `app` is Kosmos for `.noWindow`.
     public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: ContinuousClock.Instant, publicly: Bool = false) {
         if key != retried { retried = nil }
         expected.append((key, app, stamp, publicly))
@@ -178,7 +177,7 @@ public struct KeyHistory: Sendable {
     /// Returns the window key before `reported`, the one before that for a repeat
     /// (docs/focus.md). A repeat of no key window has none, since any app can report it.
     public mutating func heard(_ reported: KeyWindow) -> KeyWindow? {
-        guard reported != key else { return reported == .emptyWorkspace ? .emptyWorkspace : before }
+        guard reported != key else { return reported == .noWindow ? .noWindow : before }
         before = key
         key = reported
         return before

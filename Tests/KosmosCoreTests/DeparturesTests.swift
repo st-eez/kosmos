@@ -37,7 +37,7 @@ import Testing
     #expect(DepartureFocus.decide(focusLeft: true, key: .window(4), departing: [1], left: { $0 == 4 }) == .afterKeyReport)
     // Otherwise no report is coming.
     #expect(DepartureFocus.decide(focusLeft: true, key: .window(4), departing: [1], left: none) == .now)
-    #expect(DepartureFocus.decide(focusLeft: true, key: .emptyWorkspace, departing: [1], left: none) == .now)
+    #expect(DepartureFocus.decide(focusLeft: true, key: .noWindow, departing: [1], left: none) == .now)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
 

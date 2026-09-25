@@ -132,7 +132,7 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(skip(1, key: .window(1)) == .focused)
         // Focused, but a panel or dialog is key: entering the window keys it again.
         #expect(skip(1, key: .window(50)) == nil)
-        #expect(skip(1, key: .emptyWorkspace) == nil)
+        #expect(skip(1, key: .noWindow) == nil)
     }
 
     @Test func ignoredAppsOffAndStale() {
