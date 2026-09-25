@@ -47,10 +47,12 @@
     change 24).
   - A window the front app keyed before Kosmos admitted it, as a launching app keys its
     first window, is the user's choice too, and its report waits for the window's place
-    (`AdmissionFocus`). On a shown workspace the window becomes the focus. On a hidden one,
-    which only a rule names for a new window, the report is decided as one of a concealed
-    window whose key window before it stayed, since an app keys a window it opens, and
-    Kosmos follows it there (displays.md). A report that comes after the admission and
+    (`AdmissionFocus`). So does the report of a window closed and kept that its app keys
+    as it opens the window again, which then takes a place as a new window
+    ([tree.md](tree.md)). On a shown workspace the window becomes the focus. On a hidden
+    one, which only a rule names for a new window, the report is decided as one of a
+    concealed window whose key window before it stayed, since an app keys a window it
+    opens, and Kosmos follows it there (displays.md). A report that comes after the admission and
     before the window's conceal completes is followed the same way. After that, Kosmos
     requests its focus intent again, and a later report loses to it, as a tab's does
     (tree.md). A command received after the report wins, as over a Command-Tab. Kosmos

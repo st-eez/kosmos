@@ -465,6 +465,41 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.hide == [1])
 }
 
+/// Steve moved Activity Monitor to workspace 3, closed it with Command-W, which parked it
+/// as closed and kept, and reopened it from workspace 5, where it came back on workspace 3
+/// (live, September 25, 2026). Reopened, it opens where a new window would.
+@Test func aReopenedWindowOpensOnTheFocusedWorkspace() {
+    var s = session()
+    _ = s.perform(.workspace(.named("3")))
+    _ = s.add(3)
+    _ = s.setMinimum(3, CGSize(width: 600, height: 400))
+    _ = s.park([3])   // closed and kept
+    _ = s.perform(.workspace(.named("2")))
+    let plan = s.reopen(3, to: nil, floating: false)
+    #expect(s.workspace(of: 3) == "2" && !s.isParked(3) && s.windows(of: "3").isEmpty)
+    #expect(plan?.frames == [3: display] && plan?.show == [] && plan?.hide == [])
+    #expect(s.focused == 3 && s.focusedWorkspace == "2")
+    #expect(s.minimums[3] == CGSize(width: 600, height: 400))
+    // A window with a place of its own has nothing to reopen.
+    #expect(s.reopen(3, to: nil, floating: false) == nil)
+}
+
+@Test func aReopenedWindowTakesItsRulesWorkspaceAndIsConcealedOrRevealed() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, to: "2")   // concealed, then closed and kept
+    _ = s.park([2])
+    // Its rule names hidden workspace 3 and floats it: it floats there, concealed.
+    var plan = s.reopen(2, to: "3", floating: true)
+    #expect(s.workspace(of: 2) == "3" && s.workspaces["3"]!.floating == [2] && s.windows(of: "2").isEmpty)
+    #expect(plan?.hide == [2] && plan?.show == [])
+    // Concealed when it parked, it is revealed on the shown workspace it opens on.
+    _ = s.park([2])
+    plan = s.reopen(2, to: nil, floating: false)
+    #expect(s.workspace(of: 2) == "1" && plan?.show == [2] && plan?.hide == [])
+    #expect(plan?.frames[1] != nil && plan?.frames[2] != nil)
+}
+
 // MARK: Native tabs (docs/tree.md)
 
 @Test func aSelectedTabTakesThePlaceOfTheTabItReplaces() {
