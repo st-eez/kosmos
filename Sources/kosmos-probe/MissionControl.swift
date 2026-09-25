@@ -9,10 +9,6 @@
 import AppKit
 import CKosmos
 
-/// The Exposé notifications, as yabai names them. The Dock and WindowManager.app of macOS 27
-/// (26A428) contain the same four names.
-private let exposeNotifications = ["AXExposeShowAllWindows", "AXExposeShowFrontWindows", "AXExposeShowDesktop", "AXExposeExit"]
-
 @MainActor private let wallClock: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateFormat = "HH:mm:ss.SSS"
@@ -36,7 +32,9 @@ private let exposeNotifications = ["AXExposeShowAllWindows", "AXExposeShowFrontW
             print("\(bundle): no Accessibility observer")
             continue
         }
-        for notification in exposeNotifications {
+        // As yabai names them. The Dock and WindowManager.app of macOS 27 (26A428) contain
+        // the same four names.
+        for notification in ["AXExposeShowAllWindows", "AXExposeShowFrontWindows", "AXExposeShowDesktop", "AXExposeExit"] {
             let result = AXObserverAddNotification(observer, AXUIElementCreateApplication(pid), notification as CFString, nil)
             print("\(bundle) (pid \(pid)) \(notification): "
                   + (result == .success ? "registered" : "not registered, AXError \(result.rawValue)"))

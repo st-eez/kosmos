@@ -110,11 +110,7 @@
 //                                   connection. Passive: it opens no window and takes no
 //                                   focus, so it runs beside Kosmos while switches are timed.
 //   kosmos-probe mission-control [seconds]
-//                                   Which Mission Control signals arrive: prints each Exposé
-//                                   notification from the Dock and WindowManager.app and
-//                                   each WindowServer event 1204, with the wall clock time,
-//                                   for 120 s by default (MissionControl.swift). Passive: it
-//                                   opens no window and takes no focus.
+//                                   Which Mission Control signals arrive (MissionControl.swift).
 import AppKit
 import CKosmos
 import KosmosCore
