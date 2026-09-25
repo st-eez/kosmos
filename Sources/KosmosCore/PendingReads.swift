@@ -12,15 +12,6 @@ public struct PendingReads<FollowUp> {
         case appExited(Int32)
     }
 
-    public enum Action {
-        /// The read found the window: apply its row.
-        case apply(WindowID, FollowUp)
-        /// The read found no such window: WindowServer no longer has it.
-        case gone(WindowID, FollowUp)
-        case destroyed(WindowID)
-        case appExited(Int32)
-    }
-
     private var events: [Event] = []
 
     public init() {}
@@ -42,22 +33,8 @@ public struct PendingReads<FollowUp> {
         }
         return (events, windows)
     }
-
-    /// Each event as what to do, in the order the events came, given the windows the read
-    /// found.
-    public static func actions(_ events: [Event], found: Set<WindowID>) -> [Action] {
-        events.map { event in
-            switch event {
-            case .read(let id, let followUp): found.contains(id) ? .apply(id, followUp) : .gone(id, followUp)
-            case .destroyed(let id): .destroyed(id)
-            case .appExited(let pid): .appExited(pid)
-            }
-        }
-    }
 }
 
 extension PendingReads: Sendable where FollowUp: Sendable {}
 extension PendingReads.Event: Sendable where FollowUp: Sendable {}
-extension PendingReads.Action: Sendable where FollowUp: Sendable {}
 extension PendingReads.Event: Equatable where FollowUp: Equatable {}
-extension PendingReads.Action: Equatable where FollowUp: Equatable {}

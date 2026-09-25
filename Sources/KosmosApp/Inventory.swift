@@ -389,13 +389,14 @@ final class Inventory {
 
     private func applyReads(_ events: [PendingReads<FollowUp>.Event], _ rows: [WindowRow]) {
         let rows = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
-        for action in PendingReads.actions(events, found: Set(rows.keys)) {
-            switch action {
-            case .apply(let id, let followUp):
-                if case .changed(let at) = followUp { apply(rows[id]!, changed: at) } else { apply(rows[id]!) }
-                follow(followUp, id)
-            case .gone(let id, let followUp):
-                remove(id, reason: "gone")
+        for event in events {
+            switch event {
+            case .read(let id, let followUp):
+                if let row = rows[id] {
+                    if case .changed(let at) = followUp { apply(row, changed: at) } else { apply(row) }
+                } else {
+                    remove(id, reason: "gone")
+                }
                 follow(followUp, id)
             case .destroyed(let id):
                 remove(id, reason: "destroyed")
