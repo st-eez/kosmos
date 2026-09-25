@@ -26,21 +26,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var focusProblem: String?
     private var hiding: Hiding?
     private var secureInput: SecureInput?
-    /// The config that applies, for display changes.
     private var config = Config.defaults
-    /// The profile `profile` applied, until the displays change or the config reloads.
     private var forcedProfile: String?
-    /// The displays read last, to tell a change of displays from one of their areas.
     private var displayIDs: Set<DisplayID> = []
-    /// The response to the last display change notification, which a newer one replaces,
-    /// so a burst gets one.
     private var displayChange: DispatchWorkItem?
     private var screensAsleep = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // First, so a SIGTERM during the lock wait or startup recovery waits on the main queue
-        // and quits Kosmos with exit 0 once startup is done. Killed by the signal, Kosmos
-        // would count as crashed, and launch at login would restart it.
+        // First, so a SIGTERM during startup quits with exit 0 once startup is done. Killed by
+        // the signal, Kosmos would count as crashed, and launch at login would restart it.
         handleTerminationSignals()
         do {
             // The lock keeps a second Kosmos out and serializes recovery with the guardian,
@@ -51,9 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 acquired = try FileLock(KosmosFiles.lock)
             }
             guard let lock = acquired else {
-                // launchd restarts the login agent after a failed start, which suits a lock the
-                // guardian still holds. While another Kosmos runs, this one exits successfully,
-                // so launchd leaves the agent stopped. The guardian has no bundle identifier.
+                // launchd restarts the agent after exit 1, which suits a lock the guardian still
+                // holds, and leaves it stopped after exit 0 (docs/onboarding.md). The guardian has
+                // no bundle identifier, so it never counts as another Kosmos.
                 let running = NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.st-eez.kosmos")
                     .contains { $0 != NSRunningApplication.current }
                 log.error("\(running ? "another Kosmos is running" : "the instance lock is still held", privacy: .public)")
@@ -109,7 +103,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// One entry point for the socket and the hotkeys.
     private func respond(to arguments: [String], received: ContinuousClock.Instant, from source: CommandSource) -> Response {
         switch arguments {
         case ["ping"]: return Response(stdout: "pong")
@@ -136,17 +129,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A binding as `kosmos list-bindings` prints it.
     private struct ListedBinding: Encodable {
         var mode: String
-        /// The combination as the config writes it, such as `alt-shift-left`.
         var key: String
         var description: String
         var category: String
     }
 
-    /// The loaded bindings as JSON for launchers (docs/integrations.md): mode main first,
-    /// then the other modes by name, each in file order.
     private func listBindings() -> Response {
         guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
         let modes = hotkeys.modes.sorted { ($0.key == "main" ? 0 : 1, $0.key) < ($1.key == "main" ? 0 : 1, $1.key) }
@@ -167,8 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
     }
 
-    /// Applies a profile from the config until the displays change or the config reloads, as
-    /// `set-profile.sh` did (docs/displays.md).
+    /// The profile holds until the displays change or the config reloads (docs/displays.md).
     private func applyProfile(_ name: String) -> Response {
         guard let controller else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
         guard controller.managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
@@ -180,10 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Response()
     }
 
-    /// Reads the displays and applies the profile for them, or the one `profile` applied
-    /// while they stay the same. Displays no profile fits keep the profile that applies
-    /// (docs/displays.md). With no display at all, as in the middle of a change, the
-    /// ones read before stay.
     private func applyDisplays() {
         guard let controller else { return }
         let displays = ConfigFile.displays()
@@ -198,10 +182,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.apply(setup, barDisplays: ConfigFile.barDisplays(displays))
     }
 
-    /// Displays came or went, moved, or changed their visible areas. A burst gets one
-    /// response 0.5 s after the last notification. While the session is locked or the
-    /// displays sleep, the resync after the unlock or wake reads them instead: a sleeping
-    /// Mac can report its displays gone (docs/displays.md).
+    /// While the session is locked or the displays sleep, the resync after the unlock or wake
+    /// reads the displays instead, as a sleeping Mac can report them gone (docs/displays.md).
     private func screenParametersChanged() {
         log.notice("screen parameters changed: \(NSScreen.screens.count) displays")
         displayChange?.cancel()
@@ -216,9 +198,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: apply)
     }
 
-    /// Applies the loaded config file. With errors the running config stays; at launch there
-    /// is none, so the last good file or the defaults apply. Returns whether the file applied,
-    /// and every problem and warning for the CLI.
     private func reloadConfig(_ loaded: ConfigFile.Loaded, atLaunch: Bool) -> (applied: Bool, messages: [String]) {
         // A reload without a file changes nothing; saying the defaults apply would be false.
         if !atLaunch, !FileManager.default.fileExists(atPath: ConfigFile.url.path) {
@@ -256,7 +235,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (loaded.errors.isEmpty, messages)
     }
 
-    /// Hotkeys that could not be registered after a load or a layout change.
     private func showHotkeyProblems(_ problems: [Hotkeys.Problem]) {
         for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
         hotkeyProblems = problems.map { "Hotkey \($0.description)" }
@@ -267,13 +245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.problems = configProblems + hotkeyProblems + [hidingProblem, focusProblem].compactMap { $0 }
     }
 
-    /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
-    /// polls, so this never runs inside a switch, though an app that holds Secure Input only
-    /// while active makes it run right after one (docs/hotkeys.md).
-    ///
     /// Ceiling: a second holder's enable, or a release while another holder remains, sends no
-    /// event, so the named holder can be stale until Secure Input turns off and on. Reading
-    /// the holder again when the status menu opens would keep the menu current.
+    /// event, so the named holder can be stale (docs/hotkeys.md). Reading the holder again when
+    /// the status menu opens would keep the menu current.
     private func secureInputChanged() {
         let current = SecureInput.current()
         guard current != secureInput else { return }
@@ -293,8 +267,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Locked: windows wait and nothing on screen changes. Unlocked, or awake while unlocked:
-    /// the inventory sweeps and the Controller resyncs (docs/inventory.md).
     private func lockChanged(_ locked: Bool) {
         inventory.sessionLocked = locked
         guard !locked else {
@@ -305,7 +277,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyDisplays()
     }
 
-    /// Opens the setup window at `state`, or brings it forward at its own.
     private func showSetup(_ state: Onboarding.State, takingKey: Bool) {
         if onboarding == nil {
             onboarding = Onboarding(state, check: { [weak self] in self?.checkPermissions() ?? state },
@@ -315,8 +286,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboarding?.show(takingKey: takingKey)
     }
 
-    /// Reads the permissions for the setup window and acts on a grant: Kosmos starts once it
-    /// has Accessibility, and the pointer tap is made again once Input Monitoring is granted.
     private func checkPermissions() -> Onboarding.State {
         let trusted = AXIsProcessTrusted()
         if trusted, controller == nil {
@@ -328,10 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Onboarding.State(accessibility: trusted, inputMonitoring: CGPreflightListenEventAccess())
     }
 
-    /// The setup window closed with the key, which goes back to the window the model has
-    /// focused, or to the empty workspace's window when Kosmos had the key before. Otherwise
-    /// Kosmos steps back and macOS activates the app that had it, so no key goes to a window
-    /// of Kosmos's (docs/focus.md).
+    /// Deactivated, Kosmos leaves macOS to activate the app that had the key (docs/onboarding.md).
     private func setupClosed(fromAnotherApp: Bool) {
         if let controller, controller.managing, controller.hasFocusedWindow || !fromAnotherApp {
             controller.refocus()
