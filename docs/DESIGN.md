@@ -555,6 +555,22 @@ off the main thread).
   follows the private call with that public activation. An empty workspace would still
   leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
   fullscreen Space, which takes over the screen.
+- Open item, for the report rules of the `focus` work: echoes out of order. Each app's
+  observer thread sends its own reports, so on a fast sweep of the pointer across apps an
+  earlier request's echo can reach the main actor after a later one's. Consuming an echo
+  drops every expectation before it, so the late echo reads as the user's choice and
+  focus goes back to the window the pointer left. The hover branch's merged spec removes
+  only the matched record, together with rules that keep an expectation from lingering:
+  records have a kind, an activation record from the key record or Kosmos's own window
+  and an in-app record from the worker's raise; an activation read matches the oldest
+  activation record of its app, whatever window it reads; a notification consumes an
+  in-app record of its window and only joins an activation record; and after an echo
+  whose window is not the intent, the intent is requested again. Removing only the
+  matched record without them leaves an expectation whose echo was lost, as when
+  Apps.activated reports nothing or a background key record's only report is the
+  activation read, to swallow a later report of its window as its echo: a Command-Tab to
+  a concealed window is then not followed. tla/Kosmos.tla here still drops the earlier
+  records, so the code does too until those rules land with the spec.
 
 ### 5.5 Tree
 

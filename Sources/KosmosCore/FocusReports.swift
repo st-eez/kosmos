@@ -108,15 +108,13 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// Consumes the expectation `key` answers, if any. An echo names the requested window and
-    /// arrives after the request. Only that expectation goes: on a fast sweep across apps, an
-    /// earlier request's echo can arrive after a later one's, from another app's observer
-    /// thread, and would otherwise read as the user's choice. The hover branch's merged spec
-    /// removes only the matched record; tla/Kosmos.tla here still drops the earlier ones. A
-    /// report from an app that is not front calls this alone: it is no key window report, but
-    /// it can still be Kosmos's echo (tla/Kosmos.tla, Observe).
+    /// arrives after the request. Earlier expectations are dropped with it; a report that
+    /// matches none leaves them all. A report from an app that is not front calls this alone:
+    /// it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
+    /// Observe).
     public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
         guard let index = echo(of: key, receivedAt: stamp) else { return false }
-        expected.remove(at: index)
+        expected.removeFirst(index + 1)
         if key == retried { retried = nil }
         return true
     }
