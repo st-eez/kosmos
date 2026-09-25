@@ -32,26 +32,10 @@ final class Controller {
     var closedByApp: Set<WindowID> = []
     var tabSwitches = TabSwitches()
     var tabs = TabGroups()
-    /// The last key report of a window with no place, or parked as closed and kept, decided
-    /// when the window takes a place (docs/focus.md).
-    var unplacedKey: KeyReport?
-    /// Admitted on a shown workspace before their apps keyed them (AdmissionFocus.awaitKey).
-    /// A report within `keyAfterAdmission` brings the pointer (docs/focus-follows-mouse.md).
-    var admittedUnkeyed: [WindowID: ContinuousClock.Instant] = [:]
-    /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until their
-    /// conceal lands. macOS keyed such a window by the user's or the app's choice, so its
-    /// report is followed (docs/focus.md).
-    var placedHidden: [WindowID: Placed] = [:]
-    enum Placed { case admitted, tab }
-    /// Too old to skip a focus request against; the focus queue checks as the request runs.
-    var keyHistory = KeyHistory()
-    var key: KeyWindow? { keyHistory.key }
+    var intake = KeyReportIntake(ownApp: getpid())
+    var key: KeyWindow? { intake.key }
     /// A Date, to compare with app launch dates.
     var emptyWorkspaceKeyed = Date.distantPast
-    var held = HeldReport<KeyReport>()
-    /// A departure waiting for macOS's report of the next key window (DepartureFocus).
-    var awaitingKey: (window: WindowID, number: Int)?
-    var departureNumber = 0
     var needsResync = false
     /// Tiled windows the left button moved or resized without lifting them, which go back
     /// to their tiles at its mouse up. A resize by the edges never lifts (docs/geometry.md).
@@ -264,7 +248,7 @@ final class Controller {
             if plan.focus != nil { requestFocus(session.intent, fromCommand: fromCommand) }
             bringFloatingHome()
         } else {
-            for id in show { placedHidden[id] = nil }   // their workspace is shown
+            intake.forgetPlacedHidden(show)   // their workspace is shown
             switchGeneration += 1
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
@@ -278,7 +262,7 @@ final class Controller {
             let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
             hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
                 guard let self else { return }
-                for id in hide { self.placedHidden[id] = nil }   // the conceal that placed them hidden is done
+                self.intake.forgetPlacedHidden(hide)   // the conceal that placed them hidden is done
                 self.updateBorders()
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
