@@ -134,13 +134,13 @@ public struct ActivationInput: Equatable, Sendable {
     /// picked an app away from the pointer (DESIGN.md, section 5.11). Either a key went down
     /// in the last second, after the last click and the last pointer movement, as with
     /// Command-Tab or a launcher's hotkey, or the last left mouse down, in the last second
-    /// and after the last key and right mouse down, landed on the Dock. `onDock` is read only
-    /// then. The pointer may have moved since the Dock click, on its way to the app. A click
-    /// anywhere else, in the window, on the bar or on a link that opens another app, leaves
-    /// the pointer where it is.
-    public func bringsPointer(onDock: @autoclosure () -> Bool) -> Bool {
+    /// and after the last key and right mouse down, landed on the Dock. The pointer may have
+    /// moved since the Dock click, on its way to the app. A click anywhere else, in the
+    /// window, on the bar or on a link that opens another app, leaves the pointer where it
+    /// is. A Command-Tab switcher held open for over a second reads as a click.
+    public func bringsPointer(onDock: Bool) -> Bool {
         if key < 1, key < leftClick, key < rightClick, key < moved { return true }
-        return leftClick < 1 && leftClick < key && leftClick < rightClick && onDock()
+        return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
     }
 }
 

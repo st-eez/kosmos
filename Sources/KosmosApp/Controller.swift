@@ -993,33 +993,23 @@ final class Controller {
         CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
     }
 
-    /// Whether the user picked the activation being handled away from the pointer: with the
-    /// keyboard, as Command-Tab or a launcher's hotkey, or with a click on the Dock
-    /// (ActivationInput.bringsPointer). With focus follows mouse the user seldom clicks, so a
-    /// key press long ago would otherwise pass for a Command-Tab. A Command-Tab switcher held
-    /// open for over a second reads as a click.
+    /// Whether the activation being handled brings the pointer (ActivationInput.bringsPointer).
     private func pickedAwayFromPointer() -> Bool {
         let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
                                     rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
-        var dock: Bool?   // read only for a left click that could have activated the app
-        func onDock() -> Bool {
-            dock = Self.isDock(clickedWindow)
-            return dock!
-        }
-        let picked = input.bringsPointer(onDock: onDock())
+        let dock = Self.isDock(clickedWindow)
         pointerLog.debug("""
-            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago\
-            \(dock.map { $0 ? " on the Dock" : " off the Dock" } ?? "", privacy: .public), right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
+            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
+            \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
             pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return picked
+        return input.bringsPointer(onDock: dock)
     }
 
     /// Whether the window is the Dock's own at the Dock's level, where its icons are, and not
     /// its menus, Mission Control or Launchpad. The Dock's window can span its whole display,
     /// as with autohide on, so its frame says nothing, while WindowServer's hit test passes
-    /// through its clear parts (leftMouseDown). One read of the window's row, made only after
-    /// a left click that could have activated the app.
+    /// through its clear parts (leftMouseDown).
     private static func isDock(_ window: Int) -> Bool {
         guard window > 0, let row = SkyLight.rows([UInt32(window)]).first else { return false }
         return row.level == CGWindowLevelForKey(.dockWindow)

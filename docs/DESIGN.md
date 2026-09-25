@@ -965,7 +965,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     built-in display at level 20 (`CGWindowListCopyWindowInfo` on 2026-09-25), so its
     frame says nothing. So as each left mouse down lands, Kosmos asks WindowServer's hit
     test for the window under it (`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`),
-    and reads that window's row only at an activation within the second. The hit test runs
+    and reads that window's row at each activation it handles. The hit test runs
     at the press because the Dock starts to hide once the pointer leaves it, which can be
     before the app reports its window key. With the Dock hidden, the hit test passed
     through its window and named the windows beneath, Finder's desktop at the display's
