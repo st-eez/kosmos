@@ -17,6 +17,17 @@ public enum FrameWrite: Equatable, Sendable {
     }
 }
 
+/// What a frame read back after a write shows of the window's size.
+public enum Fit: Equatable, Sendable {
+    /// No larger than the target on either axis, past the slack.
+    case took
+    /// Larger than a target written for the first time: the target is written whole again.
+    case refused
+    /// Larger again when the target was written again: the size kept on each axis it
+    /// refused, zero on the other, which is the window's minimum.
+    case minimum(CGSize)
+}
+
 /// Decides which windows need a frame write (DESIGN.md, section 5.2). It remembers the frame
 /// last read back from each window, the target sent and not yet confirmed, and sizes an app
 /// refused.
@@ -32,6 +43,8 @@ public struct FrameLedger: Sendable {
     private var confirmedAt: [UInt32: ContinuousClock.Instant] = [:]
     /// A target whose size the app refused, and the size it kept instead.
     private var refused: [UInt32: (target: CGRect, kept: CGSize)] = [:]
+    /// A target the window read back larger than, past the slack, until the target changes.
+    private var refusedLarger: [UInt32: CGRect] = [:]
 
     public init() {}
 
@@ -59,16 +72,29 @@ public struct FrameLedger: Sendable {
     }
 
     /// Records the frame read back after a write, confirmed `now`. A size other than the
-    /// target's is a refusal, remembered until the target changes.
-    public mutating func confirm(_ id: UInt32, target: CGRect, readBack: CGRect, at now: ContinuousClock.Instant) {
+    /// target's is a refusal, remembered until the target changes. The first time a window
+    /// reads back larger than a target past the slack, the refusal is not remembered, so the
+    /// next write of the target is whole: an app can ignore a size written as its window
+    /// changes display or Space. Only a second such read back shows a minimum.
+    @discardableResult
+    public mutating func confirm(_ id: UInt32, target: CGRect, readBack: CGRect, at now: ContinuousClock.Instant) -> Fit {
         confirmed[id] = readBack
         confirmedAt[id] = now
         if pending[id] == target || pending[id] == CGRect(origin: target.origin, size: readBack.size) {
             pending[id] = nil
         }
+        let kept = CGSize(width: readBack.width > target.width + Self.slack ? readBack.width : 0,
+                          height: readBack.height > target.height + Self.slack ? readBack.height : 0)
+        guard kept == .zero || refusedLarger[id] == target else {
+            refusedLarger[id] = target
+            refused[id] = nil
+            return .refused
+        }
+        if kept == .zero { refusedLarger[id] = nil }
         if readBack.size != target.size, refused[id]?.target != target {
             refused[id] = (target, readBack.size)
         }
+        return kept == .zero ? .took : .minimum(kept)
     }
 
     /// Records a frame observed without a write of Kosmos's, such as a user resize. A size
@@ -101,9 +127,12 @@ public struct FrameLedger: Sendable {
         isWriting(id) || confirmedAt[id].map { stamp < $0 } == true
     }
 
+    /// Forgets the window's frames and refusals, so its next write is whole and a larger read
+    /// back is a first refusal again.
     public mutating func forget(_ id: UInt32) {
         confirmed[id] = nil
         pending[id] = nil
         refused[id] = nil
+        refusedLarger[id] = nil
     }
 }

@@ -42,14 +42,52 @@ private let t0 = ContinuousClock.now
     let kept = CGRect(x: 0, y: 0, width: 500, height: 600)
     _ = ledger.writes(for: [1: resized])
     ledger.confirm(1, target: resized, readBack: kept, at: t0)
+    _ = ledger.writes(for: [1: resized])
+    ledger.confirm(1, target: resized, readBack: kept, at: t0)
     #expect(ledger.writes(for: [1: resized]).isEmpty)
-    // The same target at another origin moves the window at its kept size.
-    let shifted = CGRect(x: 50, y: 0, width: 400, height: 600)
-    #expect(ledger.writes(for: [1: shifted]) == [1: .frame(shifted)])
-    ledger.confirm(1, target: shifted, readBack: CGRect(x: 50, y: 0, width: 500, height: 600), at: t0)
-    #expect(ledger.writes(for: [1: shifted]).isEmpty)
+    // The window at its kept size reads back larger than the target again.
+    let placed = CGRect(x: 0, y: 0, width: 500, height: 600)
+    #expect(ledger.confirm(1, target: resized, readBack: placed, at: t0) == .minimum(CGSize(width: 500, height: 0)))
     // A new size is tried again.
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
+}
+
+@Test func aSizeReadBackLargerIsWrittenAgainBeforeItShowsAMinimum() {
+    var ledger = FrameLedger()
+    // Asked 945 as it moved to another display, the window kept its old 1900.
+    let target = CGRect(x: 10, y: 35, width: 945, height: 1035)
+    let kept = CGRect(x: 10, y: 35, width: 1900, height: 1035)
+    _ = ledger.writes(for: [1: target])
+    #expect(ledger.confirm(1, target: target, readBack: kept, at: t0) == .refused)
+    #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
+    // It took the size written again: no minimum.
+    #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
+    // Refused on both writes of one target, the size it kept is its minimum on that axis.
+    let shifted = target.offsetBy(dx: 5, dy: 0), taller = CGRect(x: 15, y: 35, width: 945, height: 1070)
+    _ = ledger.writes(for: [1: shifted])
+    #expect(ledger.confirm(1, target: shifted, readBack: taller, at: t0) == .refused)
+    #expect(ledger.writes(for: [1: shifted]) == [1: .frame(shifted)])
+    #expect(ledger.confirm(1, target: shifted, readBack: taller, at: t0) == .minimum(CGSize(width: 0, height: 1070)))
+    #expect(ledger.writes(for: [1: shifted]).isEmpty)
+    // A read back within the slack, or smaller, took the target.
+    let within = CGRect(x: 15, y: 35, width: 947, height: 1035)
+    #expect(ledger.confirm(1, target: target, readBack: within, at: t0) == .took)
+    #expect(ledger.confirm(1, target: target, readBack: resized, at: t0) == .took)
+}
+
+@Test func aNewTargetOrForgettingTheWindowStartsTheRefusalsOver() {
+    var ledger = FrameLedger()
+    let kept = CGRect(x: 0, y: 0, width: 500, height: 600)
+    _ = ledger.writes(for: [1: resized])
+    #expect(ledger.confirm(1, target: resized, readBack: kept, at: t0) == .refused)
+    // Another target came before the one refused was written again.
+    let shifted = resized.offsetBy(dx: 50, dy: 0)
+    _ = ledger.writes(for: [1: shifted])
+    #expect(ledger.confirm(1, target: shifted, readBack: kept.offsetBy(dx: 50, dy: 0), at: t0) == .refused)
+    // A mouse up forgets the window: its write can read back an app's live resize step.
+    ledger.forget(1)
+    _ = ledger.writes(for: [1: shifted])
+    #expect(ledger.confirm(1, target: shifted, readBack: kept.offsetBy(dx: 50, dy: 0), at: t0) == .refused)
 }
 
 @Test func userResizeIsWrittenBack() {
@@ -63,6 +101,8 @@ private let t0 = ContinuousClock.now
 @Test func aUserResizeEndsARefusal() {
     var ledger = FrameLedger()
     let kept = CGRect(x: 0, y: 0, width: 500, height: 600)
+    _ = ledger.writes(for: [1: resized])
+    ledger.confirm(1, target: resized, readBack: kept, at: t0)
     _ = ledger.writes(for: [1: resized])
     ledger.confirm(1, target: resized, readBack: kept, at: t0)
     // The app's own report of the size it kept changes nothing.

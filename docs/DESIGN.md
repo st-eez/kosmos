@@ -231,9 +231,20 @@ off the main thread).
   probe window showed no such zone at a bottom edge with no display below, nor at a right
   edge another display adjoins. So a window left more than 2 pt taller than a frame write
   asked is written again through a height 40 pt shorter, then the target's, and only a
-  window still taller has a minimum.
-- A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
-  until the target changes.
+  window still taller refused the height.
+- A window whose frame reads back more than 2 pt larger than a write's target on an axis
+  refused the size. After its first refusal the target is written again whole, at the
+  window's next change event with the left button up or after 100 ms, or once the window's
+  workspace is shown if it is hidden. Only a second refusal of the target records the
+  size kept as the window's minimum on that axis, and Kosmos doesn't retry that size until
+  the target changes. On 2026-09-24 `move-node-to-workspace` sent a 1900 pt wide Preview
+  window from the main panel to a hidden workspace on the left panel, shown 13 ms later.
+  Its 945 pt target read back 1900, and an Accessibility write of 945 seconds later
+  landed, so one refusal is no limit of the app's; recorded as a minimum, the width kept
+  the window over its neighbour until Kosmos restarted.
+- A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
+  Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
+  axis. Its workspace is laid out again then, or at the mouse up during a press.
 - WindowServer reports each move and resize as a change event (`WindowServerEvent.changed`
   lists its ids), and the inventory reads the window's frame again. A frame it reads for
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
@@ -249,10 +260,9 @@ off the main thread).
   forgets the window first, so it gets a whole frame write. The resize command sizes
   tiles, and a floating window keeps the size the user gives it.
 - An app can apply a live resize step queued before the button came up after Kosmos's
-  write, and a width gets no retry. So a window sent back or dropped at a mouse up whose
-  write reads back larger records no minimum. Its ledger entry goes, and its tile is
-  written once more at its next change event with the button up, or after 100 ms; only
-  that write's read back can show a minimum.
+  write. A mouse up forgets the windows it sends back or drops from the ledger, refusals
+  too, so a write at a mouse up that reads back larger is a first refusal, and only the
+  write after it can show a minimum.
 - The inventory applies a change event after reading the window's row off the main thread
   (section 5.1), by which time Kosmos's write may be confirmed and the button up. So
   Kosmos judges the change as of its arrival. It is a write's when it came before the
