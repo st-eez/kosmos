@@ -15,7 +15,7 @@ prefix.
   manages.
   Code: `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
-  `KosmosCore/LockState.swift`, `KosmosSkyLight/SkyLight.swift`.
+  `KosmosCore/LockState.swift`, `KosmosCore/Tabs.swift`, `KosmosSkyLight/SkyLight.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.
@@ -41,7 +41,7 @@ prefix.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
-  `KosmosCore/Commands.swift`, `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`,
+  `KosmosCore/TreeCommands.swift`, `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`,
   `KosmosCore/Tabs.swift`, `KosmosApp/Controller.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
   shows Secure Input and its holder.
@@ -82,7 +82,7 @@ prefix.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,
-  `KosmosCore/Session+Drags.swift`, `KosmosCore/Commands.swift`,
+  `KosmosCore/Session+Drags.swift`, `KosmosCore/TreeCommands.swift`,
   `KosmosApp/Controller.swift`.
 - [borders.md](borders.md): borders around windows in windows of Kosmos's own, which
   windows get one, their shape, stacking and Spaces, how they follow frames, focus and

@@ -242,3 +242,66 @@ public struct FocusReports: Sendable {
         }
     }
 }
+
+/// The key window Kosmos last heard of and the one before it, by which a report is judged to
+/// follow a departure (tla/Kosmos.tla, ObserveSplit and KeyLeft). Only key window reports
+/// change them; a report from an app that is not front does not.
+public struct KeyHistory: Sendable {
+    /// The key window macOS last reported.
+    public var key: KeyWindow?
+    private var before: KeyWindow?
+
+    public init() {}
+
+    /// Hears a key window report and returns the window key before it. A report that
+    /// repeats the window last heard of, as an activation read after its app's notification
+    /// of the same change does, has the window before that one. Otherwise, after the key
+    /// window left and macOS keyed a concealed window, the notification would keep the
+    /// workspace and the read would follow that re-key (tla/README.md, change 24). A
+    /// repeated report of no key window has none: any app can make it, as Finder fronted by
+    /// a click on the desktop after the empty workspace's window was keyed.
+    public mutating func heard(_ reported: KeyWindow) -> KeyWindow? {
+        guard reported != key else { return reported == .emptyWorkspace ? .emptyWorkspace : before }
+        before = key
+        key = reported
+        return before
+    }
+}
+
+/// A key window report held until Kosmos knows whether the window key before it left
+/// (tla/Kosmos.tla, Hold). The grace decides it. Each hold carries the number of its grace
+/// timer, so a timer of a replaced or ended hold decides nothing.
+public struct HeldReport<Report: Sendable>: Sendable {
+    public private(set) var report: Report?
+    private var key: KeyWindow?
+    private var number = 0
+
+    public init() {}
+
+    /// Holds `report` of `key` in place of any held one, and returns the number of its grace
+    /// timer.
+    public mutating func hold(_ report: Report, of key: KeyWindow) -> Int {
+        number += 1
+        self.report = report
+        self.key = key
+        return number
+    }
+
+    /// A report that repeats the held window is the same activation, as after a miss: it
+    /// leaves the hold standing.
+    public func holds(_ key: KeyWindow, repeated: Bool) -> Bool {
+        repeated && report != nil && self.key == key
+    }
+
+    /// A newer activation of a window ends the hold. Returns the report it ended.
+    public mutating func end() -> Report? {
+        defer { report = nil }
+        return report
+    }
+
+    /// The grace numbered `number` ended: the report to decide, if that hold still stands.
+    public mutating func expire(_ number: Int) -> Report? {
+        guard number == self.number else { return nil }
+        return end()
+    }
+}
