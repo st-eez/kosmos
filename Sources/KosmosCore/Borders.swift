@@ -98,6 +98,7 @@ extension Session {
     /// have the focus. A parked window has none: minimized, hidden or in native fullscreen.
     public var bordered: [WindowID: Bool] {
         var bordered: [WindowID: Bool] = [:]
+        let focused = self.focused
         for name in shownWorkspaces {
             let workspace = workspaces[name]!
             let tiles = workspace.fullscreenWindow == nil ? workspace.root.windows : []
