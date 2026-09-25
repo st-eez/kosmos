@@ -127,6 +127,32 @@ import Testing
         }
     }
 
+    @Test(arguments: [false, true])
+    func aWindowReturnsToAMergedWorkspaceWithinItsDisplaysGaps(floated: Bool) {
+        // The outer gaps leave 3 one point, which 1 would take returning after it, so 1 pairs
+        // with 2. Without the gaps 3 has points to spare.
+        let display = Monitor(id: 1, frame: screen, gaps: Gaps(inner: 10, outer: Insets(top: 10, left: 300, bottom: 10, right: 300)))
+        var s = Session(names: ["a", "b"], monitors: [display])
+        _ = s.perform(.workspace(.named("b")))
+        _ = s.add(1)
+        if floated { _ = s.perform(.layout(.toggleFloating)) } else { _ = s.park([1]) }
+        _ = s.add(2); _ = s.add(3)
+        s.adopt(2)
+        _ = s.perform(.resize(.width, by: 2000))
+        s.adopt(3)
+        #expect(s.frames(of: "b")[3]?.width == 1)
+        s.reconfigure(names: ["a"], monitors: [display], assigned: [:], merge: ["b": "a"])
+        // Meanwhile 1 tiles, or returns, in a.
+        if floated {
+            s.adopt(1)
+            _ = s.perform(.layout(.toggleFloating))
+        } else {
+            _ = s.unpark([1], follow: nil)
+        }
+        s.reconfigure(names: ["a", "b"], monitors: [display], assigned: [:], merge: [:])
+        #expect(s.workspaces["b"]!.tree == "h[v[2 1] 3]")
+    }
+
     @Test func aTabSelectedWhileItsWorkspaceIsMergedReturnsInItsPlace() {
         var s = desk()
         _ = s.add(60, to: "6"); _ = s.add(62, to: "6")
