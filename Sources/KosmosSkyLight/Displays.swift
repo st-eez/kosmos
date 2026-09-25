@@ -53,7 +53,7 @@ public struct Displays {
 
     /// The ordinary Space for a window with none that is revealed on the display `id`: that
     /// display's current Space, else the window's `original` Space if that display has it,
-    /// else that display's first ordinary Space (DESIGN.md, section 5.3). A display missing
+    /// else that display's first ordinary Space (docs/hiding.md). A display missing
     /// from the Space list, or none given, leaves the choice to `ordinarySpace(original:)`.
     public func ordinarySpace(on id: CGDirectDisplayID?, original: UInt64?) -> UInt64? {
         guard let id, let display = display(for: id),

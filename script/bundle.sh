@@ -3,7 +3,7 @@
 #
 # Signing uses KOSMOS_SIGN_IDENTITY, or the first Apple Development certificate in the
 # keychain. Keep using the same certificate: the Accessibility grant is tied to it
-# (DESIGN.md, section 5.10).
+# (docs/distribution.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

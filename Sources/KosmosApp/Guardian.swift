@@ -5,7 +5,7 @@ private let guardianLog = Logger(subsystem: "io.github.st-eez.kosmos", category:
 
 /// Keeps kosmos-guardian running. It sits in its own process group, so a signal to Kosmos's
 /// group or the end of its launchd job leaves it alive to restore windows. Kosmos may hide
-/// windows only while `isReady` (DESIGN.md, section 4.1).
+/// windows only while `isReady` (docs/overview.md, section 4.1).
 @MainActor
 final class Guardian {
     private(set) var isReady = false

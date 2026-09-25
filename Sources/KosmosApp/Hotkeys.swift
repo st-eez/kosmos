@@ -8,7 +8,7 @@ private let hotkeysLog = Logger(subsystem: "io.github.st-eez.kosmos", category: 
 /// 'KSMS'. The event handler ignores hotkeys that other code in the process registers.
 private let signature: OSType = 0x4B53_4D53
 
-/// Key bindings as Carbon hotkeys (DESIGN.md, section 5.6). WindowServer matches keys itself,
+/// Key bindings as Carbon hotkeys (docs/hotkeys.md). WindowServer matches keys itself,
 /// so a keystroke that is no binding never reaches Kosmos, and Carbon sends no repeats, so a
 /// binding fires once per press. Hotkeys are registered exclusive: another app's exclusive
 /// hotkey on the same combination makes registration fail and is reported, where a shared
@@ -212,7 +212,7 @@ private func carbonModifiers(_ modifiers: KeyCombo.Modifiers) -> UInt32 {
 }
 
 /// The process holding Secure Input, which a password field turns on. While it is on, some
-/// bindings stop (DESIGN.md, section 5.6).
+/// bindings stop (docs/hotkeys.md).
 struct SecureInput: Equatable, CustomStringConvertible {
     /// The process WindowServer names. When a process with no windows of its own turns Secure
     /// Input on, WindowServer names the frontmost app instead (measured on macOS 27 with a

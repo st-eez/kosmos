@@ -1,5 +1,5 @@
-/// Whether the login session is locked or switched out, from what macOS reports (DESIGN.md,
-/// section 5.1). Either locks it, and it unlocks only when neither holds.
+/// Whether the login session is locked or switched out, from what macOS reports
+/// (docs/inventory.md). Either locks it, and it unlocks only when neither holds.
 public struct LockState: Equatable, Sendable {
     public enum Signal: Equatable, Sendable {
         /// loginwindow's com.apple.screenIsLocked and com.apple.screenIsUnlocked.

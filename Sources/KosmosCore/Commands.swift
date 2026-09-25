@@ -26,7 +26,7 @@ extension Workspace {
     }
 
     /// The workspace with each floating window that has a frame in `frames` tiled where
-    /// AeroSpace's `focus` counts it, for a focus in a direction (DESIGN.md, section 5.5).
+    /// AeroSpace's `focus` counts it, for a focus in a direction (docs/tree.md).
     func withFloatingTiled(_ frames: [WindowID: CGRect], in rect: CGRect, gaps: Gaps,
                            minimums: [WindowID: CGSize]) -> Workspace {
         let area = tilingRect(rect, gaps.outer)
@@ -189,7 +189,7 @@ extension Workspace {
     }
 
     /// Moves the window's edge on the `direction` side by `amount` points, outward when
-    /// positive, as a modifier drag with the right button does (DESIGN.md, section 5.14).
+    /// positive, as a modifier drag with the right button does (docs/modifier-drags.md).
     /// The neighbour `focus` finds in the direction (`neighbor(of:)`), the node next to the
     /// window's branch in the nearest container along the direction, gives the branch the
     /// space alone, as i3's resize with the mouse moves only the border between two

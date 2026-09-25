@@ -36,7 +36,7 @@ public enum DisplayIdentity {
     /// VG279QE5A panels share one EDID UUID, and CGDisplaySerialNumber, the EDID's numeric
     /// serial, is zero on both. Verified so far on the built-in display only, whose framebuffer
     /// has no serial; the twins wait on a run of `kosmos-probe displays` at Steve's desk
-    /// (DESIGN.md, section 5.8). When CoreDisplay stops naming the framebuffer, this returns
+    /// (docs/config.md). When CoreDisplay stops naming the framebuffer, this returns
     /// nil and serial matchers match nothing.
     public static func serial(of display: CGDirectDisplayID) -> String? {
         let info = CoreDisplay_DisplayCreateInfoDictionary(display)?.takeRetainedValue() as? [String: Any]

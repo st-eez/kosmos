@@ -45,7 +45,7 @@ public struct ProcessIdentity: Hashable, Sendable {
     }
 }
 
-/// What recovery needs to find every window Kosmos concealed (DESIGN.md, section 5.3;
+/// What recovery needs to find every window Kosmos concealed (docs/hiding.md;
 /// wm-research recovery note, section 4).
 public struct RecoveryRecord: Equatable, Sendable {
     public struct Window: Equatable, Sendable {

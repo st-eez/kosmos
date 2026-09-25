@@ -1,8 +1,8 @@
 import CoreGraphics
 
-/// Filters pointer movements for focus follows mouse on the event tap's thread (DESIGN.md,
-/// section 5.11), so it only compares numbers. A movement goes on to the main actor when it
-/// enters another window or another display than the last movement that went on, with
+/// Filters pointer movements for focus follows mouse on the event tap's thread
+/// (docs/focus-follows-mouse.md), so it only compares numbers. A movement goes on to the main actor
+/// when it enters another window or another display than the last movement that went on, with
 /// Control up.
 public struct PointerGate: Sendable {
     /// What a movement that goes on entered.
@@ -75,8 +75,8 @@ public enum PointerSkip: Equatable, Sendable {
 
 extension FocusFollowsMouse {
     /// Why the pointer entering `window` leaves focus alone, or nil when the window takes
-    /// focus. A native fullscreen window takes it, and nothing behind one can (DESIGN.md,
-    /// section 5.11).
+    /// focus. A native fullscreen window takes it, and nothing behind one can
+    /// (docs/focus-follows-mouse.md).
     /// - Parameters:
     ///   - fullscreen: the window is parked in native fullscreen.
     ///   - key: the key window macOS last reported.
@@ -131,7 +131,7 @@ public struct ActivationInput: Equatable, Sendable {
     }
 
     /// Whether mouse-follows-focus brings the pointer to the activated window: the user
-    /// picked an app away from the pointer (DESIGN.md, section 5.11). Either a key went down
+    /// picked an app away from the pointer (docs/focus-follows-mouse.md). Either a key went down
     /// in the last second, after the last click and the last pointer movement, as with
     /// Command-Tab or a launcher's hotkey, or the last left mouse down, in the last second
     /// and after the last key and right mouse down, landed on the Dock. The pointer may have
@@ -153,7 +153,7 @@ public enum CommandSource: Sendable {
 extension Command {
     /// Whether mouse-follows-focus brings the pointer to the focus after this command, unless
     /// it is there already. `toAnotherDisplay`: the focus is on another display than the
-    /// pointer (DESIGN.md, section 5.11).
+    /// pointer (docs/focus-follows-mouse.md).
     public func movesPointer(from source: CommandSource, toAnotherDisplay: Bool) -> Bool {
         guard source == .hotkey else { return false }
         switch self {

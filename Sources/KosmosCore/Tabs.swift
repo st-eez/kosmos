@@ -1,7 +1,7 @@
 import CoreGraphics
 
-/// Switches between native tabs, told from windows that come and go (DESIGN.md, section
-/// 5.5). AppKit orders the deselected tab's window out: it keeps its id and leaves every
+/// Switches between native tabs, told from windows that come and go (docs/tree.md).
+/// AppKit orders the deselected tab's window out: it keeps its id and leaves every
 /// Space (kosmos-probe tabs), and WindowServer tags it as it tags a window its app ordered
 /// out (alt-tab's measurements on macOS 26). A switch posts 1325 for the incoming tab, 816
 /// and 1326 for the outgoing, then 815 for the incoming, within 0.2 ms (kosmos-probe tabs,
@@ -48,8 +48,8 @@ public struct TabSwitches: Sendable {
     }
 }
 
-/// The order changes of candidate windows while the session is locked (DESIGN.md, section
-/// 5.1). No window is admitted or removed then, yet a tab switch can create or destroy one
+/// The order changes of candidate windows while the session is locked (docs/inventory.md).
+/// No window is admitted or removed then, yet a tab switch can create or destroy one
 /// of its two windows. Every change is held with its time, creations and destroys too, and
 /// reported at the unlock in the order it happened, before any change after it, so switches
 /// pair as they would have unlocked. The sweep after the unlock then admits and removes
@@ -116,7 +116,7 @@ public struct HeldOrder: Sendable {
     }
 }
 
-/// The tabs of native tab groups that hold no place (DESIGN.md, section 5.5): deselected
+/// The tabs of native tab groups that hold no place (docs/tree.md): deselected
 /// tabs, hidden members of the place their group's selected tab holds, and tabs selected
 /// before Kosmos admitted them, which take their place once admitted. Only admitted windows
 /// take places.

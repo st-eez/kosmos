@@ -3,7 +3,7 @@ import CKosmos
 import KosmosCore
 
 /// What an app's worker tells the main actor. Each report is stamped on receipt, so the
-/// main actor can order it against commands (DESIGN.md, section 5.4).
+/// main actor can order it against commands (docs/focus.md).
 struct AXReport: Sendable {
     enum Kind: Sendable {
         case windowCreated(UInt32)
@@ -39,7 +39,7 @@ struct AXWindowInfo: Sendable {
 /// An app that lets a call wait out the messaging timeout is backed off: the worker makes no
 /// call to it, keeps only the newest frame target of each window, and asks it for its role
 /// with a 50 ms timeout every 0.5 s. When it answers, the worker writes the held frames and
-/// reports `answering` (DESIGN.md, section 5.2).
+/// reports `answering` (docs/geometry.md).
 actor AppWorker {
     /// Every call waits this long at most, set system wide in `Apps.start`. A call to a hung
     /// app returns kAXErrorCannotComplete 5 ms after its timeout; with none set, macOS 27
@@ -119,7 +119,7 @@ actor AppWorker {
     /// process. A focus change the worker could not read is lost otherwise: one while the
     /// app was backed off, such as a Command-Tab to it, and one before the observer was
     /// registered, as a launching app's first window, whose activation read got no answer
-    /// while the app launched (DESIGN.md, section 5.4).
+    /// while the app launched (docs/focus.md).
     private func reportFrontFocus() {
         if kosmos_front_pid() == pid, let window = focusedWindow() { send(.focusedWindowChanged(window)) }
     }
@@ -234,7 +234,7 @@ actor AppWorker {
     /// read as the user's choice of the window. The spec has the app's callbacks for the raise
     /// run before the worker's read, as they run before its activation read. The upgrade is
     /// to forget the record only once the observer has handled the notifications the app sent
-    /// before answering the read (DESIGN.md, section 5.4).
+    /// before answering the read (docs/focus.md).
     nonisolated func raiseAfterKeyRecord(_ id: UInt32, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                          raised: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
@@ -244,7 +244,7 @@ actor AppWorker {
                 guard worker.elements[id] != nil,
                       KeyRequest.workerPostRaises(appIsFront: front, focused: focused, target: id) else {
                     // Logged to tell a read that came before the app handled the key record
-                    // from the user moving on (DESIGN.md, section 5.4).
+                    // from the user moving on (docs/focus.md).
                     let seen = focused.map { $0.map(String.init) ?? "none" } ?? "no answer"
                     log.info("\(worker.name, privacy: .public) raise after the key record of \(id) skipped: front \(front), focused \(seen, privacy: .public)")
                     return
@@ -265,7 +265,7 @@ actor AppWorker {
     }
 
     /// The public focus path for a window, for when the private one is off or its call fails
-    /// (DESIGN.md, section 5.4), as one job: skips a target that is key already, records the
+    /// (docs/focus.md), as one job: skips a target that is key already, records the
     /// echo through `performing`, makes the window its app's main window and raises it, then
     /// activates the app. The app keys a window of its own choosing, on this Mac often another
     /// one (wm-research focus note, section 4). Each step can wait up to the timeout on a slow
@@ -350,7 +350,7 @@ actor AppWorker {
                 continue
             }
             // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
-            // window still taller refused the height (DESIGN.md, section 5.2).
+            // window still taller refused the height (docs/geometry.md).
             if case .frame(let target) = entry.write, readBack.height > target.height + FrameLedger.slack {
                 let kept = readBack.height
                 set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))

@@ -11,7 +11,7 @@
 #
 # ~/.local/bin/kosmos links to the CLI inside the app, so the CLI always matches the running
 # app, after a rollback too. ~/.local/bin needs no sudo, and it leaves /opt/homebrew/bin to
-# Homebrew, where the planned cask links its own kosmos (DESIGN.md, section 5.10).
+# Homebrew, where the planned cask links its own kosmos (docs/distribution.md).
 #
 # A Kosmos running from the app quits first, which restores its hidden windows, and starts
 # again afterwards. --dry-run prints each command that would change something.

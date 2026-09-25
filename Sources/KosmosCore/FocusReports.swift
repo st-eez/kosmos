@@ -5,7 +5,7 @@ public enum KeyWindow: Hashable, Sendable {
     case none
 }
 
-/// What to do with a key window report (DESIGN.md, section 5.4; tla/Kosmos.tla, Adopt).
+/// What to do with a key window report (docs/focus.md; tla/Kosmos.tla, Adopt).
 public enum ReportVerdict: Equatable, Sendable {
     /// Kosmos's own focus request coming back.
     case echo
@@ -13,7 +13,7 @@ public enum ReportVerdict: Equatable, Sendable {
     /// or it names a visible window of a workspace no display shows, during a switch.
     case reassert
     /// A window on a workspace a display shows becomes the focus intent, and its display
-    /// the focused one (DESIGN.md, section 5.13).
+    /// the focused one (docs/displays.md).
     case adopt(UInt32)
     /// The user reached a hidden window, with Command-Tab or by opening it: switch to its
     /// workspace.
@@ -46,7 +46,7 @@ public enum Miss: Equatable, Sendable {
     case accept
 }
 
-/// What admitting a window does with the focus (DESIGN.md, sections 5.4 and 5.13). A window
+/// What admitting a window does with the focus (docs/focus.md and docs/displays.md). A window
 /// its app keyed before Kosmos gave it a place, as a launching app keys its first window, is
 /// the user's choice: it becomes the focus of a shown workspace, and Kosmos follows it to a
 /// hidden one a rule named, as Hyprland does for a `workspace` window rule without `silent`.
@@ -84,7 +84,7 @@ public enum AdmissionFocus: Equatable, Sendable {
 /// Whether macOS shows a native fullscreen window's Space: that window is key, or a window
 /// Kosmos does not manage is key and its app owns one, as the fullscreen app's panel or
 /// dialog. Only a command then requests focus, since focusing a desktop window takes the
-/// user out of that Space (DESIGN.md, section 5.4).
+/// user out of that Space (docs/focus.md).
 /// - Parameter fullscreen: each window parked in native fullscreen, with its app.
 public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int32?,
                                  fullscreen: [WindowID: Int32]) -> Bool {
@@ -155,7 +155,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// expectation dropped, and read as the user's choice (tla/README.md, change 19). The
     /// spec removes only the matched expectation, and matches an activation read to its
     /// app's key record whatever window it reads; the two come together or not at all
-    /// (DESIGN.md, section 5.4, Deferred).
+    /// (docs/focus.md, Deferred).
     public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
         guard let index = echo(of: key, receivedAt: stamp) else { return false }
         expected.removeFirst(index + 1)
@@ -187,7 +187,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// notification just reported, so while an older request to that app awaits its echo it
     /// reads as a miss, and the Command-Tab is lost (tla/README.md, change 21,
     /// `split-user-missrule`). The spec drops the rule together with matching an activation
-    /// read to its app's key record whatever window it reads (DESIGN.md, section 5.4,
+    /// read to its app's key record whatever window it reads (docs/focus.md,
     /// Deferred).
     /// - Parameters:
     ///   - app: the app that owns the reported window.

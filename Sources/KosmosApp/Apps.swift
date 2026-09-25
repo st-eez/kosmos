@@ -85,7 +85,7 @@ final class Apps {
     /// (tla/README.md, change 19, `split-user-actcheck`). The spec keeps such a read when
     /// Kosmos recorded an activation after its stamp, or when the app had already lost the
     /// front to Kosmos's activation as the main actor noticed it (changes 19 and 20). Both
-    /// are left out (DESIGN.md, section 5.4, Deferred).
+    /// are left out (docs/focus.md, Deferred).
     private func activated(_ pid: pid_t, received: ContinuousClock.Instant) {
         guard let worker = workers[pid] else { return }
         let report = self.report

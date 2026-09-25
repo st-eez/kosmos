@@ -1,11 +1,12 @@
 # TLA+ spec of the workspace switch
 
 The code implements changes 1 to 18 below, and the parts of changes 19 to 24 that
-[DESIGN.md](../docs/DESIGN.md) 5.4 describes; its Deferred list names the rules of those
+[docs/focus.md](../docs/focus.md) describes; its Deferred list names the rules of those
 changes the code leaves out, change 21's drop of change 12's miss rule among them.
 
 [Kosmos.tla](Kosmos.tla) specifies the switch protocol and focus classification from
-[DESIGN.md](../docs/DESIGN.md), sections 4.3 and 5.4. It models three queues: the main
+[docs/overview.md, section 4.3](../docs/overview.md#43-a-workspace-switch) and
+[docs/focus.md](../docs/focus.md). It models three queues: the main
 actor, the bridge queue that reveals and conceals windows through the holding Space, and
 the focus queue. macOS sits between them: it keys the requested window and reports every
 key window change to the main actor later. The user issues workspace commands, clicks
@@ -15,7 +16,7 @@ can report a window gone a moment after macOS keyed the next one, and fronting a
 window of the key app can miss.
 
 Each display shows one workspace, and each workspace belongs on one display, as the
-active profile assigns them ([DESIGN.md](../docs/DESIGN.md), section 5.13). A window of
+active profile assigns them ([docs/displays.md](../docs/displays.md)). A window of
 any shown workspace is on screen: a report of it is adopted and moves the focus to its
 display, and a command for a workspace another display shows only moves the focus.
 
@@ -277,7 +278,8 @@ Each change below started as a counterexample from TLC.
 
     The model does not rely on which window Command-Tab lands on. Kosmos keeps every
     concealed window's ordinary Space membership on one display, so Command-Tab lands on
-    the app's most recently used window, which can be hidden (DESIGN 5.3). CmdTab lets it
+    the app's most recently used window, which can be hidden
+    ([docs/hiding.md](../docs/hiding.md)). CmdTab lets it
     land on any window of the app, that one included, and Open covers a hidden window
     keyed some other way, as by Command-backtick.
 13. **Departures with no report of the next key window.** A departure of Kosmos's focus
@@ -379,7 +381,8 @@ change that removed it:
 
     One case is left: when Kosmos keys an app again before that app's activation read
     runs, the read finds Kosmos's window, and no report says which window the user
-    activated. The spec exempts it with a ghost (`lastAmb`) and DESIGN.md 5.4 records it.
+    activated. The spec exempts it with a ghost (`lastAmb`) and
+    [docs/focus.md](../docs/focus.md) records it.
 20. **Callbacks after the change.** An app's observer callback runs some time after the
     change it reports, and stamps it and checks the front app and the window's hiddenness
     then (`NoteDelay`). The main actor likewise notices an activation some time after it
@@ -405,7 +408,8 @@ change that removed it:
       (`split-user-notice-nocheck`). The notice now records that its app had already
       lost the front to an activation Kosmos recorded, and such a read stands.
 
-    Two more cases are left, exempted with ghosts and recorded in DESIGN.md 5.4. A click
+    Two more cases are left, exempted with ghosts and recorded in
+    [docs/focus.md](../docs/focus.md). A click
     inside the front app is lost when a request Kosmos made before it activates another
     app before the click's callback runs (`lastLost`; `split-user-lostclick` checks
     without the exemption). A switch that reveals or conceals a window between the user's

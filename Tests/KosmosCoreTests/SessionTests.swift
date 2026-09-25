@@ -319,7 +319,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.focused == 7)
 }
 
-// MARK: Returning windows (DESIGN.md, section 5.5)
+// MARK: Returning windows (docs/tree.md)
 
 @Test func aReturningWindowTakesKosmosToItsWorkspace() {
     var s = session()
@@ -465,7 +465,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.hide == [1])
 }
 
-// MARK: Native tabs (DESIGN.md, section 5.5)
+// MARK: Native tabs (docs/tree.md)
 
 @Test func aSelectedTabTakesThePlaceOfTheTabItReplaces() {
     var s = session()

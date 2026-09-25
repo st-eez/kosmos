@@ -7,8 +7,8 @@ import os
 
 private let focusLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
 
-/// Makes windows key off the main thread (DESIGN.md, sections 4.2 and 5.4). Each request
-/// carries the focus generation it was made for, and is dropped when a newer intent exists
+/// Makes windows key off the main thread (docs/overview.md, section 4.2, and docs/focus.md). Each
+/// request carries the focus generation it was made for, and is dropped when a newer intent exists
 /// by the time the queue reaches it.
 final class FocusQueue: Sendable {
     private let queue = DispatchQueue(label: "kosmos.focus", qos: .userInteractive)
@@ -101,7 +101,7 @@ final class FocusQueue: Sendable {
     }
 
     /// Runs the worker's job for a private request and waits for it no longer than the main
-    /// actor waits on a worker (DESIGN.md, section 4.2). On macOS 27 the key record alone
+    /// actor waits on a worker (docs/overview.md, section 4.2). On macOS 27 the key record alone
     /// left the key window unchanged inside the app that is already frontmost 20 times in 20,
     /// while AXRaise keyed the right window 20 times in 20 (`kosmos-probe keying`). A slow
     /// app's job finishes on its own, and a hung app holds only its own worker. With no

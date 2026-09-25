@@ -1,5 +1,5 @@
 /// Which Space holds each concealed window, and the operations a batch of reveals and
-/// conceals needs (DESIGN.md, section 5.3). Only the bridge queue changes it, in batch
+/// conceals needs (docs/hiding.md). Only the bridge queue changes it, in batch
 /// order, so a reveal always undoes what was really done.
 public struct ConcealLedger: Equatable, Sendable {
     /// The operations for one batch.
@@ -12,7 +12,7 @@ public struct ConcealLedger: Equatable, Sendable {
         /// Windows to conceal for the first time. They keep their ordinary Space, except
         /// those in `strip`.
         public var fresh: [UInt32] = []
-        /// The windows of `fresh` that lose their ordinary Space (DESIGN.md, section 5.13).
+        /// The windows of `fresh` that lose their ordinary Space (docs/displays.md).
         public var strip: [UInt32] = []
         /// After the batch: each window to hide and the Space it must be in.
         public var mustBeIn: [UInt32: UInt64] = [:]
