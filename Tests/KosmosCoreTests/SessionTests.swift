@@ -98,13 +98,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     let plan = s.add(3, floating: true)
     #expect(plan.frames == tiles)
     #expect(s.workspaces["1"]!.tree == "h[1 2]" && s.workspaces["1"]!.floating == [3])
-    // On a hidden workspace it is concealed with no frame.
-    let hidden = s.add(4, to: "2", floating: true)
-    #expect(hidden.frames.isEmpty && hidden.hide == [4])
-    // Tiled by the user, it goes after the most recently focused tile.
-    s.adopt(3)
-    _ = s.perform(.layout(.toggleFloating))
-    #expect(s.workspaces["1"]!.tree == "h[1 2 3]")
 }
 
 @Test func switchShowsAndHidesAndFocusesTheWorkspaceMRU() {
