@@ -9,25 +9,27 @@ prefix.
   verification, milestones and what the first version leaves out. Read it first.
   Code: `KosmosApp/Controller.swift`, `KosmosApp/RunLoopExecutor.swift`,
   `KosmosApp/Guardian.swift`, `kosmos-guardian/main.swift`,
-  `KosmosApp/LaunchAtLogin.swift`, `kosmos-probe/`.
+  `KosmosApp/LaunchAtLogin.swift`, `kosmos-probe/main.swift`, `kosmos-probe/Support.swift`.
 - [inventory.md](inventory.md): how Kosmos tracks windows from WindowServer, Accessibility
   and NSWorkspace events, the sweeps, the screen lock and wake, and which new windows it
   manages.
   Code: `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
-  `KosmosCore/LockState.swift`, `KosmosSkyLight/SkyLight.swift`.
+  `KosmosCore/LockState.swift`, `KosmosSkyLight/SkyLight.swift`,
+  `kosmos-probe/Events.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.
   Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
   `KosmosCore/LeftButton.swift`, `KosmosCore/Slide.swift`, `KosmosApp/AppWorker.swift`,
-  `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`, `script/bench-relayout.sh`.
+  `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`, `script/bench-relayout.sh`,
+  `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
   Control.
   Code: `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`,
   `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosRecovery/`,
-  `KosmosSkyLight/Displays.swift`, `CKosmos/KosmosBridge.m`,
+  `KosmosSkyLight/Displays.swift`, `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`,
   `kosmos-probe/MissionControl.swift`.
 - [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, the
   private focus path with its kill switch and public fallback, departures, and the empty
@@ -37,12 +39,12 @@ prefix.
   `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`, `KosmosCore/FocusReports.swift`,
   `KosmosCore/KeyRequest.swift`, `KosmosCore/FocusRead.swift`,
   `KosmosCore/FocusMisses.swift`, `KosmosCore/Departures.swift`,
-  `KosmosCore/ConcealHistory.swift`, `tla/Kosmos.tla`.
+  `KosmosCore/ConcealHistory.swift`, `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
   `KosmosCore/Commands.swift`, `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`,
-  `KosmosCore/Tabs.swift`, `KosmosApp/Controller.swift`.
+  `KosmosCore/Tabs.swift`, `KosmosApp/Controller.swift`, `kosmos-probe/Tree.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
   shows Secure Input and its holder.
   Code: `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,
@@ -54,7 +56,7 @@ prefix.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
   workspaces a profile leaves out, and window rules.
   Code: `KosmosCore/Config/`, `KosmosApp/ConfigFile.swift`,
-  `KosmosSkyLight/DisplayIdentity.swift`.
+  `KosmosSkyLight/DisplayIdentity.swift`, `kosmos-probe/Displays.swift`.
 - [onboarding.md](onboarding.md): the status item, the setup window that asks for
   permissions, and launch at login.
   Code: `KosmosApp/StatusItem.swift`, `KosmosApp/Onboarding.swift`,
