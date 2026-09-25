@@ -933,8 +933,8 @@ final class Controller {
                     total \(total.milliseconds, format: .fixed(precision: 3)) ms, \(String(describing: outcome), privacy: .public)
                     """)
                 switch outcome {
-                case .confirmed, .revealedOnly(.missing): break
-                case .revealedOnly(.guardianNotReady):
+                case .confirmed: break
+                case .revealedOnly:
                     controllerLog.error("guardian not ready: windows were revealed but not concealed")
                     self.needsResync = true
                 case .failed:

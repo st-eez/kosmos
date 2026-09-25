@@ -66,8 +66,8 @@
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
   On a macOS that lacks one of the bridged operation classes, as after an update that
-  renames one, Kosmos logs one fault at startup, conceals nothing and names the class in
-  its status menu.
+  renames one, Kosmos logs one fault at startup and names the class in its status menu from
+  launch. It conceals nothing, and a batch that confirms its reveals counts as confirmed.
 - The record is a file of two 4 KiB slots, mapped shared. A publish fills the older slot
   with a CRC32 of its payload and stores its generation last, so a crash in a publish
   leaves the other slot for the reader. Nothing is synced to disk, since the record only
