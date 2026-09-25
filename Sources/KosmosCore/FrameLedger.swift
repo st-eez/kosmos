@@ -21,6 +21,10 @@ public enum FrameWrite: Equatable, Sendable {
 /// last read back from each window, the target sent and not yet confirmed, and sizes an app
 /// refused.
 public struct FrameLedger: Sendable {
+    /// How much larger than its target a window may read back on an axis and still count as
+    /// having taken it, so apps that round their size do not read as refusing it.
+    public static let slack: CGFloat = 2
+
     private var confirmed: [UInt32: CGRect] = [:]
     private var pending: [UInt32: CGRect] = [:]
     /// A target whose size the app refused, and the size it kept instead.

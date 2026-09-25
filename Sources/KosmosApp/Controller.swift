@@ -510,11 +510,10 @@ final class Controller {
         case .framesApplied(let results):
             for result in results {
                 ledger.confirm(result.id, target: result.target, readBack: result.readBack)
-                // A window that kept more than it was given refused the size: that is its
-                // minimum on that axis (DESIGN.md, section 5.2). A few points of slack keep
-                // apps that round their size from reading as a refusal.
-                let wider = result.readBack.width > result.target.width + 2
-                let taller = result.readBack.height > result.target.height + 2
+                // A window that kept more than it was given, past the slack, refused the
+                // size: that is its minimum on that axis (DESIGN.md, section 5.2).
+                let wider = result.readBack.width > result.target.width + FrameLedger.slack
+                let taller = result.readBack.height > result.target.height + FrameLedger.slack
                 if wider || taller {
                     controllerLog.notice("""
                         minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
