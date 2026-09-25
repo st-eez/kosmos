@@ -147,8 +147,8 @@ public enum DepartureFocus: Equatable, Sendable {
 
 /// When a managed window its app ordered out counts as closed and kept, as a closed
 /// NSWindowController window does: still ordered out, for none of the reasons with reports
-/// of their own (docs/tree.md). The inventory looks a pairing window after the order-out,
-/// when a native tab switch has paired.
+/// of their own (docs/tree.md). The inventory looks at it as soon as no read of window rows
+/// is under way (Looks), when a native tab switch has paired.
 public enum ClosedAndKept {
     /// Outlasts a native fullscreen transition's order-out (docs/tree.md).
     static let longWait: Duration = .seconds(1)
@@ -163,5 +163,37 @@ public enum ClosedAndKept {
         let transition = spacesChanged.map { orderedOut - $0 < longWait } == true
         guard claimed || transition, now - orderedOut < longWait else { return nil }
         return orderedOut + longWait - now
+    }
+
+    /// The managed windows seen ordered out, waiting for their look until no read of window
+    /// rows is under way and no event waits for one. A native tab switch's two halves came
+    /// within 0.2 ms of each other (kosmos-probe tabs), so a switch whose halves came in
+    /// separate reads has paired by then, and a close is looked at when the read that saw
+    /// its order-out is applied.
+    public struct Looks: Sendable {
+        private var waiting: [(window: WindowID, orderedOut: ContinuousClock.Instant)] = []
+        private var reads = 0
+
+        public init() {}
+
+        /// A read of window rows was asked for: a batch of events or a sweep.
+        public mutating func readAsked() {
+            reads += 1
+        }
+
+        /// A managed window was seen ordered out at `at`, in the read being applied.
+        public mutating func orderedOut(_ window: WindowID, at: ContinuousClock.Instant) {
+            waiting.append((window, at))
+        }
+
+        /// A read was applied. Returns the windows to look at now, with when each was seen
+        /// ordered out: every one waiting once no other read is under way and no event waits
+        /// for one (`eventsWaiting`), else none.
+        public mutating func readApplied(eventsWaiting: Bool) -> [(window: WindowID, orderedOut: ContinuousClock.Instant)] {
+            reads -= 1
+            guard reads == 0, !eventsWaiting else { return [] }
+            defer { waiting = [] }
+            return waiting
+        }
     }
 }

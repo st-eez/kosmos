@@ -70,9 +70,10 @@ final class Inventory {
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out a pairing window after it left, for none of the
-    /// reasons with their own reports: its app closed it and kept it, as NSWindowController
-    /// does, or deselected its native tab. With when the inventory saw it ordered out.
+    /// A managed window still ordered out once the reads under way when it left are applied,
+    /// for none of the reasons with their own reports: its app closed it and kept it, as
+    /// NSWindowController does, or deselected its native tab. With when the inventory saw it
+    /// ordered out.
     var onKeptOrderedOut: (@MainActor (UInt32, ContinuousClock.Instant) -> Void)?
     /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
     /// in (false), with its frame, and when: what a switch between native tabs is made of.
@@ -145,6 +146,9 @@ final class Inventory {
     /// `reads` too, so every result reaches the main actor in read order (docs/inventory.md).
     private var pending: [PendingEvent] = []
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
+    /// Managed windows seen ordered out, looked at as closed and kept once no read is under
+    /// way.
+    private var looks = ClosedAndKept.Looks()
 
     /// WindowServer tracking needs no permission and starts at once.
     func start() {
@@ -304,14 +308,17 @@ final class Inventory {
 
     /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
     /// probe), and a minimize, a hide and native fullscreen have their own reports. It is
-    /// looked at again a pairing window later, when a native tab switch has paired, and the
-    /// controller decides whether it waits more (ClosedAndKept).
+    /// looked at again once no read is under way, when a native tab switch has paired, and
+    /// the controller decides whether it waits more (ClosedAndKept).
     private func checkOrderedOut(_ id: UInt32) {
-        let orderedOut = ContinuousClock.now
-        Task { [weak self] in
-            try? await Task.sleep(for: TabSwitches.window)
-            guard let self, self.isKeptOrderedOut(id) else { return }
-            self.onKeptOrderedOut?(id, orderedOut)
+        looks.orderedOut(id, at: .now)
+    }
+
+    /// A read was applied: the windows seen ordered out are looked at, once no other read is
+    /// under way (ClosedAndKept.Looks).
+    private func readApplied() {
+        for (id, orderedOut) in looks.readApplied(eventsWaiting: !pending.isEmpty) where isKeptOrderedOut(id) {
+            onKeptOrderedOut?(id, orderedOut)
         }
     }
 
@@ -419,6 +426,7 @@ final class Inventory {
             guard case .read(let id, _) = event else { return nil }
             return id
         })
+        looks.readAsked()
         reads.async {
             let rows = SkyLight.rows(Array(ids))
             DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
@@ -426,6 +434,7 @@ final class Inventory {
     }
 
     private func applyReads(_ events: [PendingEvent], _ rows: [WindowRow]) {
+        defer { readApplied() }
         let rows = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
         for event in events {
             switch event {
@@ -599,6 +608,7 @@ final class Inventory {
         touchedDuringSweep = []
         flushReads()
         let tracked = Array(windows.keys) + arrivedWhileLocked.keys
+        looks.readAsked()
         reads.async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
@@ -616,6 +626,7 @@ final class Inventory {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
         defer { if sweepAgain { sweepAgain = false; sweep() } }
+        defer { readApplied() }
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))

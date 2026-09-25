@@ -806,6 +806,9 @@ final class Controller {
                                    miss: miss, admitted: placed == .admitted),
                          keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
+            // Parked as closed and kept already if its order-out was looked at before this
+            // report came: it is minimized, and returns when restored.
+            closedByApp.remove(id)
             depart([id])
         case .minimized(let id, false):
             returned([id], follow: id, at: report.received)

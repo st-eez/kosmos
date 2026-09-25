@@ -54,15 +54,36 @@
     as at launch, is parked at once on the workspace it joins.
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
     as a minimized one does, its focus moves on as [focus.md](focus.md) says for a window
-    closed and kept, and it returns when the app orders it in again. Kosmos takes
-    a window still ordered out a pairing window after its order-out, for none of the
-    other reasons, as one, so the others reflow then. A conceal leaves a window ordered in
-    (`kosmos-probe reveal`). A deselected tab is not one: its switch paired within the
-    pairing window, and it left the session. A tab whose place a new tab claims before
-    Kosmos admits it waits for that admission until a second after its order-out, then
-    parks, and gives its place back if the new tab takes it later. Parking it sooner
-    would request focus for the workspace's next window, away from the new tab the user
-    just selected, and reflow twice once the new tab takes the place.
+    closed and kept, and it returns when the app orders it in again. Kosmos takes a
+    managed window ordered out for none of the other reasons as one, and looks at it as
+    soon as the read that saw its order-out is applied with no other read of window rows
+    under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A conceal
+    leaves a window ordered in (`kosmos-probe reveal`). Before this, the look came a
+    pairing window, 250 ms, after the order-out, and Activity Monitor's Command-W parked
+    257 and 267 ms after it (live log, September 25, 2026).
+  - A deselected tab is not one: its switch has paired by the look, and it left the
+    session. A switch's two halves came 0.2 ms apart (`kosmos-probe tabs`), and a read took
+    about 1.4 ms at the desk ([inventory.md](inventory.md)), so when the halves fall in two
+    reads, the second is asked for before the first is applied, and the look waits for
+    it. Whether halves ever fell in two reads is unmeasured: Kosmos logs order changes at
+    debug level, and the live logs of September 23 to 25 kept info level, where the five
+    pairings, four Terminal tab switches and the misfire below, have no times for their
+    halves. A half that reached Kosmos only after the other's read was applied would come
+    after the look, and the deselected tab would park as closed and kept, then give its
+    place to the new tab when the switch pairs, after one reflow and focus change too many.
+  - A minimize and a hide have reports of their own, taken to come before the order-out:
+    a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
+    and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize
+    reported after the look changes the window's reason, and it returns when restored.
+    The ceiling: a hide reported after the look leaves the window parked as closed and
+    kept, to return a pairing window after its own order-in rather than with its app. The
+    upgrade path is for the hide to take its app's windows that parked as closed and kept
+    within the departure bound.
+  - A tab whose place a new tab claims before Kosmos admits it waits for that admission
+    until a second after its order-out, then parks, and gives its place back if the new
+    tab takes it later. Parking it sooner would request focus for the workspace's next
+    window, away from the new tab the user just selected, and reflow twice once the new
+    tab takes the place.
   - A native fullscreen transition orders its window out for about 0.53 s: entering, from
     84 ms after toggleFullScreen to 612 ms, and leaving, from 225 ms to 751 ms
     (`kosmos-probe fullscreen`, September 23, 2026). Entering, the window counts as in
