@@ -766,16 +766,17 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
   - The front process, and the process that holds the key window, are Kosmos or have a
-    worker (`Controller.unmanagedKeyHolder`). A launcher's panel, as Raycast's, Spotlight's or Alfred's, or a password
-    prompt belongs to a process with none, as Apps keeps workers for regular apps only,
-    and focusing a window would take the key window from it, which closes a launcher.
-    AutoRaise left the front apps its `stayFocusedBundleIds` listed alone. Kosmos reads the
-    front process from LaunchServices, which costs WindowServer nothing. A non-activating
-    panel, as Spotlight's, holds the key window while another app stays front, and only
-    WindowServer knows that (`SLPSGetKeyFocusProcess`): 30 us back to back, and 111 us at
-    the median and 4.8 ms at most read every 50 ms. So that read comes last, only when the
-    window or an empty workspace would take focus. Which read names each of those
-    processes is for the live test, with `kosmos-probe key-holder`.
+    worker (`Controller.unmanagedKeyHolder`). A launcher's panel, as Raycast's,
+    Spotlight's or Alfred's, or a password prompt belongs to a process with none, as Apps
+    keeps workers for regular apps only, and focusing a window would take the key window
+    from it, which closes a launcher. AutoRaise left the front apps its
+    `stayFocusedBundleIds` listed alone. Kosmos reads the front process from
+    LaunchServices, which costs WindowServer nothing. A non-activating panel, as
+    Spotlight's, holds the key window while another app stays front, and only WindowServer
+    knows that (`SLPSGetKeyFocusProcess`): 30 us back to back, and 111 us at the median
+    and 4.8 ms at most read every 50 ms. So that read comes last, only when the window or
+    an empty workspace would take focus. Which read names each of those processes is for
+    the live test, with `kosmos-probe key-holder`.
 - The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
   does, and never focuses anything over one, display by display. On a display that shows
   a fullscreen Space, the windows under the pointer are the fullscreen window and its
@@ -809,8 +810,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   movement with a button down is a drag event, which the tap does not receive.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
   keyboard moves focus to another window or moves the focused window, and either no
-  workspace is switched or the focus is on another display than the pointer
-  (KosmosCore's `Command.movesPointer`). Omarchy on the development Mac centers the pointer only when
+  workspace is switched or the focus is on another display than the pointer (KosmosCore's
+  `Command.movesPointer`). Omarchy on the development Mac centers the pointer only when
   focus moves between windows of one workspace, and Steve's AeroSpace config chained
   `move-mouse window-lazy-center` onto hotkey bindings only.
   - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
@@ -867,7 +868,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   Kosmos's grant is enough is open until a live test settles it. The tap is created only
   when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
   granted when it creates the tap, whether the tap is enabled when it turns on, and when
-  the first event arrives.
+  the first event arrives. When macOS refuses the tap, Kosmos logs an error,
+  `focus-follows-mouse on` exits 1 and says to allow Input Monitoring, and the next turn on
+  or config load creates the tap again.
 - Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
   `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead, and only PointerTap's
   event source changes; the gate and everything after it stay. AeroSpace's and Amethyst's

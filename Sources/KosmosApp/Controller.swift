@@ -68,7 +68,8 @@ final class Controller {
     var focusFollowsMouse = FocusFollowsMouse() {
         didSet {
             // Creating the tap may ask for Input Monitoring, so it waits until focus follows
-            // mouse is first turned on.
+            // mouse is first turned on. A tap WindowServer refused is tried again at the next
+            // turn on or config load, as after the user grants Input Monitoring.
             if focusFollowsMouse.enabled, managing, pointer == nil {
                 pointer = PointerTap { [weak self] entered, stamp in self?.pointerEntered(entered, at: stamp) }
                 pointer?.setMonitors(session.monitors)
@@ -184,6 +185,13 @@ final class Controller {
             case .on: true
             case .off: false
             case .toggle: !focusFollowsMouse.enabled
+            }
+            if focusFollowsMouse.enabled, pointer == nil {
+                return (1, """
+                    focus follows mouse gets no pointer movement: macOS refused Kosmos's event tap. \
+                    Allow Kosmos in System Settings, Privacy & Security, Input Monitoring, then run \
+                    kosmos focus-follows-mouse on
+                    """)
             }
             return (0, "")
         case .success(let command):

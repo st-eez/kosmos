@@ -15,11 +15,7 @@ let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "pointer
 /// display with Control up goes on to the main actor. Only mouse moved events are tapped: a movement
 /// with a button down is a drag, so nothing is focused while a button is down.
 ///
-/// On macOS 27 creating even this mouse-only tap asked a process without Input Monitoring
-/// for it, and the tap stayed silent. Whether Kosmos's Accessibility grant is enough is
-/// not known yet, so the tap is created only when focus follows mouse is first turned on.
-/// The log says whether Input Monitoring is granted, whether the tap is enabled, and when
-/// the first event arrives.
+/// Creating the tap may ask for Input Monitoring (DESIGN.md, section 5.11).
 final class PointerTap: Sendable {
     private let executor = RunLoopExecutor(name: "kosmos.pointer")
     /// Set once in `init`.
@@ -30,8 +26,8 @@ final class PointerTap: Sendable {
     private let entered: @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void
 
     /// `entered` runs on the main actor with what the pointer moved into and when the tap
-    /// saw the movement.
-    init(entered: @escaping @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void) {
+    /// saw the movement. Nil when WindowServer refuses the tap.
+    init?(entered: @escaping @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void) {
         self.entered = entered
         port = CGEvent.tapCreate(
             tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
@@ -43,7 +39,8 @@ final class PointerTap: Sendable {
             userInfo: Unmanaged.passUnretained(self).toOpaque())
         guard let port else {
             pointerLog.error("pointer tap not created; Input Monitoring granted: \(CGPreflightListenEventAccess(), privacy: .public)")
-            return
+            executor.stop()
+            return nil
         }
         CGEvent.tapEnable(tap: port, enable: false)
         CFRunLoopAddSource(executor.runLoop, CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
