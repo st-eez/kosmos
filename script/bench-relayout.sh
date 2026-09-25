@@ -25,39 +25,18 @@
 # processes that draw it.
 #
 # Run it once per mode with the build under test, from this checkout. The script reads the
-# mode from `animations` in ~/.config/kosmos/kosmos.toml, so reload the config after an edit:
+# mode from `animations` in ~/.config/kosmos/kosmos.toml, so reload the config after an edit.
+# script/install.sh swaps the build in and keeps the installed copy, and --rollback swaps
+# that copy back:
 #
-#   script/bundle.sh
-#   launchctl bootout gui/$(id -u)/io.github.st-eez.kosmos   # quits the installed Kosmos
-#   open .build/dist/Kosmos.app
-#   script/bench-relayout.sh 9 20                           # animations on
+#   script/install.sh
+#   script/bench-relayout.sh 9 20        # animations on
 #   # add `animations = false` to the config
-#   .build/dist/bin/kosmos reload-config
+#   kosmos reload-config
 #   script/bench-relayout.sh 9 20
 #   # take the line out again
-#   .build/dist/bin/kosmos reload-config
-#   pkill -TERM -x Kosmos; while pgrep -qx Kosmos; do sleep 0.2; done
-#
-# SIGTERM quits Kosmos through AppKit, which ends every slide, brings its hidden windows back
-# and destroys the pool's Spaces. `open` makes Kosmos its own responsible process, so
-# macOS checks Kosmos's Accessibility grant, which a build signed with the same certificate
-# keeps (docs/INSTALL.md); started from the terminal, Kosmos would be checked against the
-# terminal's grant.
-#
-# Then take the copy under test out of LaunchServices, which `open` registered, and start the
-# installed Kosmos again as script/install.sh does with launch at login on: registering the
-# agent again starts it through launchd. SMAppService submitted the agent, and its plist
-# names the program as BundleProgram, so it goes back through SMAppService rather than
-# launchctl bootstrap.
-#
-#   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/.build/dist/Kosmos.app"
-#   /Applications/Kosmos.app/Contents/MacOS/Kosmos launch-at-login status   # enabled
-#   /Applications/Kosmos.app/Contents/MacOS/Kosmos launch-at-login off
-#   /Applications/Kosmos.app/Contents/MacOS/Kosmos launch-at-login on
-#   launchctl print gui/$(id -u)/io.github.st-eez.kosmos | grep -E 'state =|program'
-#
-# If registering fails, `open /Applications/Kosmos.app` runs Kosmos without crash restarts,
-# and launchd starts the agent again at the next login.
+#   kosmos reload-config
+#   script/install.sh --rollback
 #
 # Each run writes .build/bench/<time>-animate-<mode>/ and prints its summary:
 #   steps.tsv      rep, step, when it was sent, when it answered, when the next query
