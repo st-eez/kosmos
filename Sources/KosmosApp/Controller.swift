@@ -417,16 +417,11 @@ final class Controller {
         }
     }
 
-    /// A tiled or floating window of a shown workspace moved or resized. The frame ledger
-    /// records where it is, so the next layout and the floating check write their targets
-    /// again. A change while a write of Kosmos's is in flight is that write's, and a
-    /// concealed window's frame, which reads as off every display, is not where it returns.
-    /// A change that a WindowServer change event, `changed`, reports with the left button
-    /// down is the user's: a tiled window keeps a resize by its edges or goes back to its
-    /// tile when the button comes up (leftMouseUp), and a floating key window dragged onto a display showing another
-    /// workspace joins that workspace, as AeroSpace's isManipulatedWithMouse and
-    /// moveWithMouse have it. macOS moving the windows of a display that leaves, and a
-    /// reveal's Space change, are no drag (DESIGN.md, sections 5.2 and 5.13).
+    /// A tiled or floating window of a shown workspace moved or resized, not by a write of
+    /// Kosmos's in flight: the frame ledger records it. A `.changed` event with the left
+    /// button down is the user's: a tiled window waits for the button to come up
+    /// (leftMouseUp), and a floating key window may join another display's workspace
+    /// (DESIGN.md, sections 5.2 and 5.13).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }

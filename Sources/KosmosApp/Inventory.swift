@@ -76,8 +76,8 @@ final class Inventory {
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
     /// A managed window moved or resized, with its frame before and now, and whether a
-    /// WindowServer change event (806 to 808, 815, 816) reported it. A Space change, as a
-    /// reveal makes, a creation or a sweep can read a new frame too.
+    /// `.changed` event reported it. A Space change, as a reveal makes, a creation or a
+    /// sweep can read a new frame too.
     var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, Bool) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
@@ -326,7 +326,7 @@ final class Inventory {
     }
 
     /// Reads one window's row (about 0.01 ms) and admits, updates or drops it. `changed`: a
-    /// WindowServer change event asked for it.
+    /// `.changed` event asked for it.
     private func refresh(_ id: UInt32, changed: Bool = false) {
         guard let row = SkyLight.rows([id]).first else {
             remove(id, reason: "gone")

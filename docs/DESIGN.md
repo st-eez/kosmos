@@ -206,12 +206,12 @@ off the main thread).
   window still taller has a minimum.
 - A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
   until the target changes.
-- WindowServer reports each move and resize (806, 807), and the inventory reads the
-  window's frame again. A frame it reads for a tiled or floating window of a shown
-  workspace while no write of Kosmos's is in flight replaces the confirmed one, and a size
-  other than the one the window kept at a refusal ends that refusal, so the next layout
-  writes the target again. A concealed window's frame reads as off every display and is
-  left out.
+- WindowServer reports each move and resize as a change event (`WindowServerEvent.changed`
+  lists its ids), and the inventory reads the window's frame again. A frame it reads for
+  a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
+  replaces the confirmed one, and a size other than the one the window kept at a refusal
+  ends that refusal, so the next layout writes the target again. A concealed window's
+  frame reads as off every display and is left out.
 - A tiled window the user moves or resizes with the left button down, as such a change
   event reports it, is settled when the button comes up, which an `NSEvent` global
   monitor hears, as AeroSpace's GlobalObserver does. Each edge that moved more than 5 pt
@@ -220,9 +220,7 @@ off the main thread).
   and each container in between keeps its other windows' lengths, as AeroSpace's
   `resizeWithMouse` turns edges into weights. The resize command's limits hold. A window
   moved whole, or with its center off its workspace's display, as when macOS shrank it to
-  fit another display on the way, goes back to its tile. Before, the ledger kept
-  Kosmos's last write as the window's frame, so a tiled window macOS shrank to fit the
-  built-in display as Steve dragged it there and back kept that size.
+  fit another display on the way, goes back to its tile.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -829,12 +827,12 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - A floating window the user drags onto a display showing another workspace joins that
   workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
   check above leaves it there. Kosmos takes a move of a floating window of a shown
-  workspace for a drag when a WindowServer change event (806 to 808, 815, 816) reports
-  it, no frame write of its own is in flight for it, the window is key and the left
-  button is down, as AeroSpace's `isManipulatedWithMouse` checks. macOS moving the
-  windows of a display that leaves is no drag, and the check moves them back. A reveal's
-  Space change reads the window's frame again and is no drag either. A tiled window
-  dragged to another display goes back to its tile (section 5.2).
+  workspace for a drag when a change event (section 5.2) reports it, no frame write of
+  its own is in flight for it, the window is key and the left button is down, as
+  AeroSpace's `isManipulatedWithMouse` checks. macOS moving the windows of a display that
+  leaves is no drag, and the check moves them back. A reveal's Space change reads the
+  window's frame again and is no drag either. A tiled window dragged to another display
+  goes back to its tile (section 5.2).
 - A concealed window keeps its ordinary Space, as on one display, unless its app's most
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display (section
