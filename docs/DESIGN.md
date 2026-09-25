@@ -599,7 +599,8 @@ off the main thread).
     `split-open-postraisenone` fails, and with a record kept until matched
     `split-open-postraisekept` does (changes 21 and 23). The ceiling: the worker's read can
     reach the app before the app handles the key record, and then finds the window it had
-    focused before and skips the raise. `kosmos-probe keying` measures that read in its
+    focused before and skips the raise. Each skip is logged with whether the app was front
+    and the window it had focused, and `kosmos-probe keying` measures that read in its
     `record, then AXRaise while front and focused` order, which has not run yet.
   - Only the raise after a key record has its record forgotten, once the raise is done, so
     no late answer can orphan any other call; `dropped` otherwise serves only a call that

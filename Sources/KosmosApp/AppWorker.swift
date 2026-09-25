@@ -222,9 +222,14 @@ actor AppWorker {
         executor.perform {
             self.assumeIsolated { worker in
                 let focused = worker.focusedWindow()
-                guard worker.elements[id] != nil,
-                      KeyRequest.workerPostRaises(appIsFront: kosmos_front_pid() == worker.pid, focused: focused, target: id)
-                else { return }
+                let front = kosmos_front_pid() == worker.pid
+                guard worker.elements[id] != nil, KeyRequest.workerPostRaises(appIsFront: front, focused: focused, target: id) else {
+                    // Logged to tell a read that came before the app handled the key record
+                    // from the user moving on (DESIGN.md, section 5.4).
+                    let seen = focused.map { $0.map(String.init) ?? "none" } ?? "no answer"
+                    log.info("\(worker.name, privacy: .public) raise after the key record of \(id) skipped: front \(front), focused \(seen, privacy: .public)")
+                    return
+                }
                 let stamp = ContinuousClock.now
                 performing(stamp)
                 worker.raiseWindow(id)
