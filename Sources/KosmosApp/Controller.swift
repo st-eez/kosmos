@@ -7,9 +7,10 @@ import os
 private let controllerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "controller")
 private let signposter = OSSignposter(subsystem: "io.github.st-eez.kosmos", category: .pointsOfInterest)
 
-/// Carries out the Session's plans: frame writes through the app workers, reveals and
-/// conceals through Hiding, and focus through the focus queue once the switch is confirmed
-/// (docs/overview.md, section 4.3; tla/Kosmos.tla).
+/// Turns commands, the inventory's window events and key window reports, mouse presses,
+/// modifier drags and pointer movement into Session changes. Carries out the Session's plans
+/// through the app workers, Hiding, the focus queue and Slides, and publishes each change to
+/// the bar and the borders (docs/overview.md, section 4.3; tla/Kosmos.tla).
 @MainActor
 final class Controller {
     private var session: Session

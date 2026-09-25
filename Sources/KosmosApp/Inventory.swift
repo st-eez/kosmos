@@ -9,9 +9,6 @@ private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category
 /// evidence or app exit removes a window (docs/inventory.md). Whether a window could be
 /// tiled is a property of its row: apps such as Helium change a window's level while it
 /// lives, and dropping it would lose it until the next sweep.
-///
-/// Observer mode: nothing here changes a window. The sweep counts what the events missed,
-/// which is the measurement this milestone exists for.
 @MainActor
 final class Inventory {
     private(set) var windows: [UInt32: WindowRow] = [:]
@@ -192,7 +189,7 @@ final class Inventory {
     }
 
     /// A window is managed when it is a candidate and Accessibility calls it a standard
-    /// window. Dialog and popup heuristics come with tiling.
+    /// window.
     func isManaged(_ id: UInt32) -> Bool {
         guard let row = windows[id] else { return false }
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
@@ -575,7 +572,7 @@ final class Inventory {
         sweep()
     }
 
-    /// Parentless level 0 windows. Accessibility role checks come with the per-app workers.
+    /// Parentless level 0 windows.
     private func isCandidate(_ row: WindowRow) -> Bool {
         row.parent == 0 && row.level == 0
     }

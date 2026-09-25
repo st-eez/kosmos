@@ -77,7 +77,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 
 | Context | Owns | Never does |
 | --- | --- | --- |
-| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot, the display links that step slides and the bridged sends of a slide (below), the border windows | AX calls, any other bridged Space operation, waiting on another process, file syncs, process launches |
+| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot, the display links that step slides and the bridged sends of a slide (below), the border windows | AX calls, any other bridged Space operation, waiting on another process beyond the reads listed below, file syncs, process launches |
 | One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, the raise that keys a window of the front app, and the raise after a key record. Its observer runs on a second thread, which stamps each focus notification and checks the front process in its callback | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | The bridged Space operations of hiding and recovery, the reads that confirm them, the barrier read, and creating the Spaces windows slide in | Run past its time budget |
@@ -90,6 +90,20 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 
 The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
 on its own and never delays another app.
+
+The main actor makes these synchronous reads of other processes. Of them, a switch reads
+only the pointer's location before it sends its batch, with mouse follows focus on. What is
+known of their cost:
+
+| Read | When | Cost |
+| --- | --- | --- |
+| A few windows' rows from WindowServer (`SkyLight.rows`) | Whether the window a focus request names, or the key window before a report whose verdict needs it, just left the screen (`Inventory.leftScreen`); the shown floating windows' frames after a switch's focus request (`bringFloatingHome`); the Dock check of an activation after a click, with mouse follows focus on; the level of the window the pointer entered on a display whose workspace is empty | About 0.1 ms a read on the laptop, and 1.4 ms at the desk while a switch's Space transaction commits ([inventory.md](inventory.md)). The focus request's read was 29 of about 290 busy main thread samples in 40 switches, an open item in [focus.md](focus.md). `bringFloatingHome` logs each read's time |
+| The front process (`kosmos_front_pid`) | Each activation's report, once the app's worker answers; hover focus | 1.6 us ([focus.md](focus.md)), and 54 us at the median in the key holder probe ([focus-follows-mouse.md](focus-follows-mouse.md)) |
+| The process holding the key window (`kosmos_key_focus_pid`) | Hover focus, only when a window or an empty workspace would take focus | 120 us at the median, 42 ms at most ([focus-follows-mouse.md](focus-follows-mouse.md)) |
+| LaunchServices through `NSRunningApplication`, one synchronous XPC call each | A process's activation policy, once; whether a window's app is hidden at each admission, unhide and look; an app's launch date when it keys no window on an empty workspace; the Dock check's bundle identifier; the name of an app Apps has no worker for, and of the Secure Input holder | Unmeasured per call. Read at every window event, the activation policy showed up in samples of switches, so it is read once per process ([inventory.md](inventory.md)) |
+| The pointer's location (`CGEvent(source: nil)`), and the session's event times and button state (`CGEventSource`, `NSEvent.pressedMouseButtons`) | The first change event of a press; a drop at a hotkey; each hotkey while modifier drags are on; mouse follows focus's move, and a workspace command from a hotkey with it on; each activation with it on | Unmeasured |
+| WindowServer's hit test (`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`) and the display under a point (`CGGetDisplaysWithPoint`) | Each left mouse down, the hit test only with mouse follows focus on | Unmeasured |
+| The displays (`NSScreen`, `DisplayIdentity`), the session dictionary (`CGSessionCopyCurrentDictionary`) and the permission checks | Launch and each display change; the dictionary every 5 s while locked and at each Secure Input change while it is on; the permissions at a config load and twice a second while the setup window shows | Unmeasured |
 
 Bridged Space operations do not run on the bridge queue alone. The main actor sends a
 slide's: it adds the window to a Space of the pool, sets the Space's transform and alpha at
@@ -105,8 +119,8 @@ queue sends its batches, to other Spaces.
 1. A hotkey or socket command arrives. The main actor updates the model: the new visible
    workspace with a new switch generation, and a focus intent with a new focus generation.
 2. The incoming workspace was laid out while hidden, so its frames are usually current.
-   One batched SkyLight query validates its windows; layout runs only if something changed,
-   and changed frames go to their apps' workers.
+   The frame ledger leaves out each target a window already has or was already sent, with
+   no read from WindowServer, and only changed frames go to their apps' workers.
 3. The bridge queue sends the reveal of the incoming windows and the conceal of the
    outgoing windows back to back, then reads the holding Space until it shows them done.
    Revealing first shows windows of both workspaces for the length of one bridged
