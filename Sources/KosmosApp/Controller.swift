@@ -39,8 +39,7 @@ final class Controller {
     /// Admitted on a shown workspace before their apps keyed them (AdmissionFocus.awaitKey).
     /// A report within `keyAfterAdmission` brings the pointer (docs/focus-follows-mouse.md).
     private var admittedUnkeyed: [WindowID: ContinuousClock.Instant] = [:]
-    /// As long as ActivationInput allows a key before an activation.
-    private static let keyAfterAdmission: Duration = .seconds(1)
+    private static let keyAfterAdmission: Duration = .seconds(ActivationInput.maxAge)
     /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until their
     /// conceal lands. macOS keyed such a window by the user's or the app's choice, so its
     /// report is followed (docs/focus.md).
@@ -117,15 +116,17 @@ final class Controller {
         self.barDisplays = barDisplays
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
-        inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
+        inventory.onFullscreenChange = { [weak self] id, entered, spaceChangeBegan in
+            self?.fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
+        }
         inventory.onKeptOrderedOut = { [weak self] id, orderedOut in self?.keptOrderedOut(id, orderedOut: orderedOut) }
         inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
             self?.updateBorders()
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, old, frame, receivedAt in
-            self?.frameChanged(id, from: old, to: frame, receivedAt: receivedAt)
+        inventory.onFrameChange = { [weak self] id, old, frame, changedAt in
+            self?.frameChanged(id, from: old, to: frame, changedAt: changedAt)
             self?.updateBorders()
         }
         inventory.onReordered = { [weak self] id in self?.borderWindows.raise(id) }
@@ -387,9 +388,8 @@ final class Controller {
         execute(session.remove(id))
     }
 
-    /// A native fullscreen window is on a Space of its own, so it parks. `since` is when it
-    /// started to leave its Space (docs/tree.md).
-    private func fullscreenChanged(_ id: WindowID, _ entered: Bool, since: ContinuousClock.Instant) {
+    /// A native fullscreen window is on a Space of its own, so it parks (docs/tree.md).
+    private func fullscreenChanged(_ id: WindowID, _ entered: Bool, spaceChangeBegan: ContinuousClock.Instant) {
         if entered {
             // Parked as closed and kept, as when its transition posted no Space event near its
             // order-out: it changes reason.
@@ -403,7 +403,7 @@ final class Controller {
         } else if fullscreenParked.remove(id) != nil {
             // macOS restores the frame it had; write the tile's frame again all the same.
             ledger.forget(id)
-            returned([id], follow: id, at: since)
+            returned([id], follow: id, at: spaceChangeBegan)
         }
     }
 
@@ -549,17 +549,17 @@ final class Controller {
         }
     }
 
-    /// Judged as of `receivedAt`, as the inventory applies a change after an off main read.
+    /// Judged as of `changedAt`, as the inventory applies a change after an off main read.
     /// The key tiled window lifts only once it moved whole past Session.liftDistance, so a
     /// click that jitters the title bar does not lift it (docs/geometry.md, docs/displays.md).
-    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, receivedAt: ContinuousClock.Instant?) {
+    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
-        if let receivedAt, ledger.isWriting(id, at: receivedAt) {
+        if let changedAt, ledger.isWriting(id, at: changedAt) {
             ledger.observeAfterConfirm(id, frame: frame)
             return
         }
-        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
+        let button = changedAt.map { leftButton.state(at: $0) } ?? .up
         // The user moves or resizes it, unless the change is its own write landing after the
         // read back, as the other tiles' reflow at a lift lands while the user drags.
         if button != .up { slides?.changedInPress(id, to: frame) }
@@ -715,7 +715,7 @@ final class Controller {
             // decided when it takes one.
             if let id, session.workspace(of: id) == nil || session.isParked(id) {
                 unplacedKey = session.workspace(of: id) == nil || closedByApp.contains(id)
-                    ? KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
+                    ? KeyReport(key: reported, received: report.received, reporter: report.pid, previous: previous,
                                 concealed: false, miss: miss) : nil
                 // Kosmos keyed a native fullscreen window, as for hover focus: this is its echo.
                 if session.isParked(id), reports.consumeEcho(reported, receivedAt: report.received) {
@@ -729,7 +729,7 @@ final class Controller {
             // the verdict needs it, as the read can wait on a switch's Space transaction.
             // Concealment is judged at the stamp (docs/focus.md; tla/README.md, change 22).
             let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
-            decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
+            decidePlaced(KeyReport(key: reported, received: report.received, reporter: report.pid, previous: previous,
                                    concealed: placed != nil || id.map { hiding.wasConcealed($0, at: report.received) } ?? false,
                                    miss: miss, admitted: keyedAfterAdmission || placed == .admitted),
                          keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
@@ -774,8 +774,7 @@ final class Controller {
     private struct KeyReport {
         let key: KeyWindow
         let received: ContinuousClock.Instant
-        /// The app that reported it.
-        let pid: pid_t
+        let reporter: pid_t
         /// The key window before it, when that was another window.
         let previous: WindowID?
         /// At the report's stamp.
@@ -793,8 +792,8 @@ final class Controller {
 
     private func decidePlaced(_ report: KeyReport, keyLeft: @autoclosure () -> Departure) {
         let echo = reports.isEcho(report.key, receivedAt: report.received)
-        misses.reported(report.key, pid: report.pid, receivedAt: report.received, echo: echo)
-        if !echo { reports.publicRequestsAnswered(by: report.pid, receivedAt: report.received) }
+        misses.reported(report.key, pid: report.reporter, receivedAt: report.received, echo: echo)
+        if !echo { reports.publicRequestsAnswered(by: report.reporter, receivedAt: report.received) }
         decide(report, keyLeft: keyLeft())
     }
 
@@ -821,10 +820,10 @@ final class Controller {
             // macOS or an app fronted an app with no key window on an empty workspace: the
             // empty workspace keys its window again, so Cmd-Q reaches no app. After a click, a
             // Command-Tab or an app's launch it is the user's choice (docs/focus.md).
-            guard report.key == .none, report.pid != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
-                  NSRunningApplication(processIdentifier: report.pid)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
+            guard report.key == .none, report.reporter != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
+                  NSRunningApplication(processIdentifier: report.reporter)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
             else { break }
-            controllerLog.notice("\(self.inventory.appIdentity(report.pid).name ?? String(report.pid), privacy: .public) has no key window on an empty workspace; keying its window again")
+            controllerLog.notice("\(self.inventory.appIdentity(report.reporter).name ?? String(report.reporter), privacy: .public) has no key window on an empty workspace; keying its window again")
             requestFocus(.none)
         case .undecided:
             let number = held.hold(report, of: report.key)

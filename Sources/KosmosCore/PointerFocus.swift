@@ -118,6 +118,9 @@ extension FocusFollowsMouse {
 /// How long before an app activation Kosmos adopts or follows the user's last input came, in
 /// seconds, as the session's event state gives it (`CGEventSource.secondsSinceLastEventType`).
 public struct ActivationInput: Equatable, Sendable {
+    /// In seconds: an input older than this is not the one behind the activation.
+    public static let maxAge: Double = 1
+
     public var key: Double
     public var leftClick: Double
     public var rightClick: Double
@@ -139,8 +142,8 @@ public struct ActivationInput: Equatable, Sendable {
     /// window, on the bar or on a link that opens another app, leaves the pointer where it
     /// is. A Command-Tab switcher held open for over a second reads as a click.
     public func bringsPointer(onDock: Bool) -> Bool {
-        if key < 1, key < leftClick, key < rightClick, key < moved { return true }
-        return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
+        if key < Self.maxAge, key < leftClick, key < rightClick, key < moved { return true }
+        return onDock && leftClick < Self.maxAge && leftClick < key && leftClick < rightClick
     }
 }
 

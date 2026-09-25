@@ -74,7 +74,7 @@ final class Inventory {
     private var touchedDuringSweep: Set<UInt32>?
     private var sweepAgain = false
     private var swept = false
-    private var atLaunch: Set<UInt32> = []
+    private var presentAtStart: Set<UInt32> = []
     private var markedMissed: [UInt32: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)
     /// Read once for each process, as each read is a synchronous LaunchServices call, and
@@ -141,7 +141,7 @@ final class Inventory {
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
 
-    func wasThereAtLaunch(_ id: UInt32) -> Bool { atLaunch.contains(id) }
+    func wasThereAtLaunch(_ id: UInt32) -> Bool { presentAtStart.contains(id) }
 
     func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
 
@@ -530,7 +530,8 @@ final class Inventory {
         let seen = Set(rows.map(\.id))
         markedMissed = markedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
-            if swept, arrivedWhileLocked[row.id] == nil, !foundRegularAtLaunch.contains(row.pid) {
+            let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)
+            if swept, !reported {
                 markMissed(row.id)
                 inventoryLog.notice("sweep found \(row.id), missed by events")
             }
@@ -562,7 +563,7 @@ final class Inventory {
         }
         // A sweep that follows was asked for after this snapshot, and may find the late windows.
         if !sweepAgain { foundRegularAtLaunch = [] }
-        if !swept { atLaunch = seen }
+        if !swept { presentAtStart = seen }
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false
