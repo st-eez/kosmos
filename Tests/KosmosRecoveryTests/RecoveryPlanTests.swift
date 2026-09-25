@@ -126,7 +126,6 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
     #expect(full.pruned(alive: [], keeping: [3, 4], seen: [4]) == nil)
 }
 
-/// Holding Spaces 9 and 10 and animation Spaces 12 and 13, with one window.
 private let kept = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 5, start: 6),
                                   spaces: [9, 10], windows: [.init(id: 1, owner: app, originalSpace: 5)],
                                   animationSpaces: [12, 13])
