@@ -8,8 +8,8 @@ import os
 private let focusLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
 
 /// Makes windows key off the main thread (docs/overview.md, section 4.2, and docs/focus.md). Each
-/// request carries the focus generation it was made for, and is dropped when a newer intent exists
-/// by the time the queue reaches it.
+/// request starts a focus generation, and is dropped when a newer request exists by the time the
+/// queue reaches it.
 final class FocusQueue: Sendable {
     private let queue = DispatchQueue(label: "kosmos.focus", qos: .userInteractive)
     private let current = Atomic<UInt64>(0)
@@ -19,11 +19,6 @@ final class FocusQueue: Sendable {
 
     init(emptyWorkspace: EmptyWorkspaceWindow.Target) {
         self.emptyWorkspace = emptyWorkspace
-    }
-
-    /// Starts a new focus intent; requests from older intents are dropped.
-    func newGeneration() -> UInt64 {
-        current.add(1, ordering: .relaxed).newValue
     }
 
     /// Uses the private path when `privately`, as the kill switch said on the main actor, and
@@ -49,9 +44,9 @@ final class FocusQueue: Sendable {
     /// done, which forgets its record unless a report used it. Recording when the request is
     /// made failed TLC: a request still queued took a click on its window for its echo.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
-                 generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
                  dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
+        let generation = current.add(1, ordering: .relaxed).newValue
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !concealed else { return }

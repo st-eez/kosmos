@@ -1242,8 +1242,7 @@ final class Controller {
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
-        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately,
-                           concealed: concealed, generation: focusQueue.newGeneration(),
+        focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately, concealed: concealed,
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
