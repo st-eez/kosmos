@@ -497,10 +497,15 @@ off the main thread).
     change 24).
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
-    window key before it. A report of another window replaces it. Every held report logs
-    its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
-    happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
-    1, where macOS keyed Ghostty.
+    window key before it. A report of another window replaces it, and a held report whose
+    window is no longer the key window last heard of when the grace ends is dropped. Every
+    held report logs its outcome. A Command-Tab after that report follows as usual, 100 ms
+    late. This happened live: Command-H on the only window of workspace 2 took Kosmos to
+    workspace 1, where macOS keyed Ghostty. So did the drop, on 2026-09-25: from
+    workspace 6, alt-1 key-recorded Ghostty's window on workspace 1, Ghostty first keyed
+    its last key window, concealed on workspace 5, then the requested one, and the held
+    report of the first, decided after Kosmos's echo of the second, took Kosmos to
+    workspace 5.
   - A report that repeats the key window Kosmos last heard of, while a request of Kosmos's
     to another window of that app awaits its echo, is a miss of that request, not the
     user's choice: the app kept its key window, or keyed another one itself before
