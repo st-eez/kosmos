@@ -1,10 +1,7 @@
 import Foundation
 
-/// The recovery record in an 8 KiB file mapped shared, with two 4 KiB slots. A publish fills
-/// the older slot and stores its generation last; a reader takes the valid slot with the
-/// higher generation. Nothing is synced to disk: the record only has to outlive Kosmos, not
-/// the machine, and the page cache keeps it when the process dies (wm-research recovery
-/// note, section 4).
+/// Two slots in a file mapped shared, never synced: the page cache keeps the record when the
+/// process dies (docs/hiding.md).
 public final class RecordFile {
     static let slotSize = 4096
     /// generation (8), CRC32 of length and payload (4), payload length (4).
@@ -27,11 +24,10 @@ public final class RecordFile {
 
     deinit { munmap(memory, 2 * Self.slotSize) }
 
-    /// The newest valid record, or nil when there is none.
     public func read() -> RecoveryRecord? { Self.newest(in: memory) }
 
-    /// The newest valid record in the file at `url`, read without opening it for writing, as
-    /// `kosmos-probe holding` reads a running Kosmos's record. Nil when there is none.
+    /// Reads without opening the file for writing, as `kosmos-probe holding` reads a running
+    /// Kosmos's record.
     public static func peek(_ url: URL) -> RecoveryRecord? {
         guard let data = try? Data(contentsOf: url), data.count == 2 * slotSize else { return nil }
         return data.withUnsafeBytes { newest(in: $0.baseAddress!) }
@@ -43,7 +39,7 @@ public final class RecordFile {
         return RecoveryRecord(decoding: newest.payload)
     }
 
-    /// Publishes a record. Returns false when it does not fit in a slot.
+    /// False when the record does not fit in a slot.
     @discardableResult
     public func publish(_ record: RecoveryRecord) -> Bool {
         guard let payload = record.encoded(), payload.count <= Self.capacity else { return false }
@@ -65,7 +61,6 @@ public final class RecordFile {
         return true
     }
 
-    /// Clears both slots.
     public func clear() {
         memset(memory, 0, 2 * Self.slotSize)
     }

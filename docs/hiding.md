@@ -67,6 +67,10 @@
   On a macOS that lacks one of the bridged operation classes, as after an update that
   renames one, Kosmos logs one fault at startup and conceals nothing, instead of failing
   every switch.
+- The record is a file of two 4 KiB slots, mapped shared. A publish fills the older slot
+  with a CRC32 of its payload and stores its generation last, so a crash in a publish
+  leaves the other slot for the reader. Nothing is synced to disk: the record only has to
+  outlive Kosmos, and the page cache keeps it when the process dies.
 - Recovery restores the windows Kosmos concealed: each recorded window in a recorded
   Space, any other window there whose app owns a recorded window, such as a sheet, and a
   child of a concealed window, as the Open or Save panel of a sandboxed app, which the

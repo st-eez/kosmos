@@ -6,9 +6,8 @@ import os
 
 private let recoveryLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "recovery")
 
-/// Restores every window Kosmos concealed and destroys its Spaces (wm-research recovery
-/// note, section 4). Every step can run again after an interruption. The caller holds
-/// KosmosFiles.lock.
+/// Every step can run again after an interruption. The caller holds KosmosFiles.lock
+/// (docs/hiding.md).
 public enum Recovery {
     public enum Outcome: Equatable, Sendable {
         case nothingRecorded
@@ -16,11 +15,9 @@ public enum Recovery {
         case staleSession
         /// The WindowServer could not be identified; the record is kept.
         case windowServerUnknown
-        /// `spaces` counts the Spaces read back as gone after their destroy. One that is not
-        /// stays in the record, with no windows.
+        /// `spaces` counts the Spaces read back as gone after their destroy.
         case restored(windows: Int, spaces: Int)
-        /// Some windows are still in a recorded Space or on no Space; the record is kept
-        /// for another attempt.
+        /// Windows are left in a recorded Space or on no Space; the record is kept.
         case incomplete(remaining: Int)
 
         /// False when another attempt could restore more.
@@ -32,9 +29,8 @@ public enum Recovery {
         }
     }
 
-    /// `keepingAnimationSpaces`: the running Kosmos's recovery, after a batch that failed,
-    /// leaves the Spaces windows slide in to it, recorded. After Kosmos exits, and at its
-    /// startup and quit, they go too.
+    /// `keeping`: the running Kosmos keeps the Spaces windows slide in, recorded; after it
+    /// exits, and at its startup and quit, they go too.
     public static func run(file: RecordFile, keepingAnimationSpaces keeping: Bool = false) -> Outcome {
         guard let record = file.read() else { return .nothingRecorded }
         guard let windowServer = ProcessIdentity.windowServer() else { return .windowServerUnknown }
@@ -50,9 +46,6 @@ public enum Recovery {
             kosmos_space_set_transform(space, .identity)
             kosmos_space_set_alpha(space, 1)
         }
-        // An operation Kosmos sent just before it died may still be landing. A Space that no
-        // longer exists holds nothing and leaves the record. Windows of other processes stay
-        // where they are, except in an animation Space (SpaceMembers).
         let recorded = record.spaces + animation
         let (members, gone) = settledMembers(recorded, of: record)
         let liveSpaces = recorded.filter { !gone.contains($0) }
@@ -91,10 +84,8 @@ public enum Recovery {
             file.publish(record.keptAfterIncomplete(gone: gone.union(after.gone), keepingAnimationSpaces: keeping))
             return .incomplete(remaining: remaining + withoutSpace)
         }
-        // A destroy's return says only that it was sent, and whether it takes away a Space
-        // that still holds windows of other processes is unconfirmed. A barrier and a read
-        // show each Space gone or not; one that is not stays in the record, with no windows,
-        // for the next recovery to destroy again.
+        // A destroy is only sent, and one that leaves a Space holding another process's
+        // windows is unconfirmed, so a barrier and a read show each Space gone or not.
         for space in liveSpaces { kosmos_space_destroy(space) }
         let left = liveSpaces.filter { space in
             _ = kosmos_barrier(space)
@@ -111,9 +102,8 @@ public enum Recovery {
         return .restored(windows: handled.count, spaces: destroyed)
     }
 
-    /// The windows to take out of each existing Space of `spaces` (SpaceMembers.read) once
-    /// two reads 100 ms apart agree, for at most about 1 s; past that, the newest read, which
-    /// the check after the adds and removals backs up. Spaces that are gone are listed apart.
+    /// An operation sent just before Kosmos died may still be landing, so the members are
+    /// read until two reads 100 ms apart agree, for about 1 s at most.
     private static func settledMembers(_ spaces: [UInt64], of record: RecoveryRecord)
         -> (members: [UInt64: [UInt32]], gone: Set<UInt64>) {
         var previous = SpaceMembers.read(spaces, of: record)
@@ -127,8 +117,6 @@ public enum Recovery {
         return (previous.members, previous.gone)
     }
 
-    /// The current ordinary Space of the display under `frame`, else the Space a reveal would
-    /// use; nil only when there is none.
     private static func destination(for frame: CGRect?, original: UInt64?, in displays: Displays) -> UInt64? {
         if let frame, let space = displays.currentSpace(at: CGPoint(x: frame.midX, y: frame.midY)) { return space }
         return displays.ordinarySpace(original: original)
