@@ -340,4 +340,31 @@ private func desk() -> Session {
         #expect(s.focused == 10 && s.focusedWorkspace == "5")
         #expect(s.frames(of: s.focusedWorkspace)[10] == across.frames[10])
     }
+
+    @Test func commandTabAndADockClickBringThePointerToTheAppTheyPick() {
+        var reads = 0
+        // Outside #expect, which reads every argument to report it.
+        func brings(_ input: ActivationInput, onDock dock: Bool) -> Bool {
+            input.bringsPointer(onDock: { reads += 1; return dock }())
+        }
+        let never = 3600.0
+        // Command-Tab, or a launcher's hotkey, with the pointer at rest since.
+        #expect(brings(ActivationInput(key: 0.2, leftClick: never, rightClick: never, moved: 4), onDock: false))
+        // The pointer moved after the key, as when the app activated itself later.
+        #expect(!brings(ActivationInput(key: 0.2, leftClick: never, rightClick: never, moved: 0.1), onDock: true))
+        #expect(reads == 0)
+        // Teams clicked in the Dock, and the pointer already on its way up.
+        let click = ActivationInput(key: 30, leftClick: 0.3, rightClick: never, moved: 0.05)
+        #expect(brings(click, onDock: true))
+        // The same click in a window, on a bar pill or on a link that opens another app.
+        #expect(!brings(click, onDock: false))
+        #expect(reads == 2)
+        // A Dock click over a second ago, a key or a right click since: the Dock is not read.
+        for input in [ActivationInput(key: 30, leftClick: 1.5, rightClick: never, moved: 1),
+                      ActivationInput(key: 0.1, leftClick: 0.3, rightClick: never, moved: 0.05),
+                      ActivationInput(key: 30, leftClick: 0.3, rightClick: 0.2, moved: 0.05)] {
+            #expect(!brings(input, onDock: true))
+        }
+        #expect(reads == 2)
+    }
 }

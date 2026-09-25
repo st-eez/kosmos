@@ -64,6 +64,8 @@ final class Controller {
     /// never lifts them. They go back to their tiles when the button comes up.
     private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
     private var leftButton = LeftButton()
+    /// The window the last left mouse down landed on, for mouse-follows-focus, or 0.
+    private var clickedWindow = 0
     /// Windows whose write read back larger than the target for the first time, as when the
     /// app applied a live resize step after a write at a mouse up, or ignored a size written
     /// as the window changed display or Space. The tile is written once more when the app
@@ -559,11 +561,18 @@ final class Controller {
 
     /// The left button went down at `point`. kosmos_make_key posts a synthesized mouse down
     /// far past every display with no mouse up, so a press off every display is left out.
+    /// With mouse-follows-focus, the window the press landed on is found as it lands: the
+    /// Dock, when autohide is on, starts to hide once the pointer leaves it, which can be
+    /// before the app it activates reports its window key (pickedAwayFromPointer).
     private func leftMouseDown(at point: CGPoint) {
         var display: CGDirectDisplayID = 0, count: UInt32 = 0
         let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
         controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
-        if onDisplay { leftButton.pressed(at: .now) }
+        guard onDisplay else { return }
+        leftButton.pressed(at: .now)
+        // WindowServer's hit test, in AppKit's coordinates, from the bottom of the main display.
+        let height = CGDisplayBounds(CGMainDisplayID()).height
+        clickedWindow = mouseFollowsFocus ? NSWindow.windowNumber(at: NSPoint(x: point.x, y: height - point.y), belowWindowWithWindowNumber: 0) : 0
     }
 
     /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
@@ -761,16 +770,16 @@ final class Controller {
             // after the user's choice; the worker finds this one key already and records
             // nothing (tla/Kosmos.tla, Adopt).
             requestFocus(.window(window))
-            // Command-Tab to a window away from the pointer brings the pointer along; a click,
-            // on the window or the Dock, leaves it.
-            if mouseFollowsFocus, Self.keyPressedLast() { centerPointer() }
+            // Command-Tab or a Dock click to a window away from the pointer brings the pointer
+            // along; a click on the window leaves it.
+            if mouseFollowsFocus, pickedAwayFromPointer() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)
-            // Command-Tab or a launcher's hotkey names a window, and the pointer goes to it,
-            // on the pointer's own display too, unlike a workspace switch command.
+            // Command-Tab, a launcher's hotkey or a Dock click names a window, and the pointer
+            // goes to it, on the pointer's own display too, unlike a workspace switch command.
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast())
+            execute(plan, movePointer: mouseFollowsFocus && pickedAwayFromPointer())
         }
     }
 
@@ -992,19 +1001,37 @@ final class Controller {
         CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
     }
 
-    /// Whether the keyboard made the activation being handled, as Command-Tab or a
-    /// launcher's hotkey does: a key went down in the last second, after the last click and
-    /// the last pointer movement. With focus follows mouse the user seldom clicks, so a key
-    /// press long ago would otherwise pass for a Command-Tab. A Command-Tab switcher held open
-    /// for over a second reads as a click.
-    private static func keyPressedLast() -> Bool {
-        let key = secondsSince(.keyDown), click = min(secondsSince(.leftMouseDown), secondsSince(.rightMouseDown))
-        let moved = secondsSince(.mouseMoved)
+    /// Whether the user picked the activation being handled away from the pointer: with the
+    /// keyboard, as Command-Tab or a launcher's hotkey, or with a click on the Dock
+    /// (ActivationInput.bringsPointer). With focus follows mouse the user seldom clicks, so a
+    /// key press long ago would otherwise pass for a Command-Tab. A Command-Tab switcher held
+    /// open for over a second reads as a click.
+    private func pickedAwayFromPointer() -> Bool {
+        let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
+                                    rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
+        var dock: Bool?   // read only for a left click that could have activated the app
+        func onDock() -> Bool {
+            dock = Self.isDock(clickedWindow)
+            return dock!
+        }
+        let picked = input.bringsPointer(onDock: onDock())
         pointerLog.debug("""
-            activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago, \
-            pointer moved \(moved, format: .fixed(precision: 3)) s ago
+            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago\
+            \(dock.map { $0 ? " on the Dock" : " off the Dock" } ?? "", privacy: .public), right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
+            pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return key < 1 && key < click && key < moved
+        return picked
+    }
+
+    /// Whether the window is the Dock's own at the Dock's level, where its icons are, and not
+    /// its menus, Mission Control or Launchpad. The Dock's window can span its whole display,
+    /// as with autohide on, so its frame says nothing, while WindowServer's hit test passes
+    /// through its clear parts (leftMouseDown). One read of the window's row, made only after
+    /// a left click that could have activated the app.
+    private static func isDock(_ window: Int) -> Bool {
+        guard window > 0, let row = SkyLight.rows([UInt32(window)]).first else { return false }
+        return row.level == CGWindowLevelForKey(.dockWindow)
+            && NSRunningApplication(processIdentifier: row.pid)?.bundleIdentifier == "com.apple.dock"
     }
 
     /// Whether a key or a mouse button went down in the last second.

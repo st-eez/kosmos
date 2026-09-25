@@ -946,13 +946,28 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     which the left panel then showed in place of empty workspace 7, and the pointer stayed
     on the main panel; and Command-Tab from workspace 7 to Spotify on workspace 6, both on
     the left panel, left the pointer where it was, before this. Kosmos tells Command-Tab
-    from a click, on the window or the Dock, when it handles the activation: a key went
-    down within the last second, and after the last left or right mouse down and the last
-    pointer movement (`CGEventSource.secondsSinceLastEventType` in the combined session
-    state). With focus follows mouse the user seldom clicks, so a key press long ago would
-    otherwise pass for Command-Tab when an app activates itself. The read takes no event
-    tap, and the log gives the three times. A Command-Tab switcher held open for over a
-    second reads as a click.
+    from a click when it handles the activation: a key went down within the last second,
+    and after the last left or right mouse down and the last pointer movement
+    (`CGEventSource.secondsSinceLastEventType` in the combined session state). With focus
+    follows mouse the user seldom clicks, so a key press long ago would otherwise pass for
+    Command-Tab when an app activates itself. The read takes no event tap, and the log
+    gives the times. A Command-Tab switcher held open for over a second reads as a click.
+  - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
+    window it activates the same way. Left on the Dock, the pointer would focus every
+    window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and
+    the pointer stayed there. The activation counts as a Dock click when the last left
+    mouse down came within the last second, after the last key and right mouse down, and
+    landed on the Dock's window at the Dock's level (`ActivationInput.bringsPointer`). The
+    pointer may have moved since. With autohide on, the Dock's one window spans the whole
+    built-in display at level 20 (`CGWindowListCopyWindowInfo` on 2026-09-25), so its
+    frame says nothing. So as each left mouse down lands, Kosmos asks WindowServer's hit
+    test for the window under it (`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`),
+    and reads that window's row only at an activation within the second. The hit test runs
+    at the press because the Dock starts to hide once the pointer leaves it, which can be
+    before the app reports its window key. With the Dock hidden, the hit test passed
+    through its window and named the windows beneath, Finder's desktop at the display's
+    bottom edge; a click on a shown Dock's icon is unmeasured. A click on the Dock's menus,
+    Mission Control or Launchpad is left out, at other levels.
   - A workspace switch command on the pointer's display leaves the pointer where it is:
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
     `move-node-to-workspace --focus-follows-window`.
@@ -965,8 +980,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     `focusmonitor` puts it.
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
     leaves the pointer, so a click on the bar's workspaces, a script or a launcher running
-    `kosmos` never moves it. Neither does a click that Kosmos follows or adopts, a hover
-    focus, nor a layout, resize or `join-with` command.
+    `kosmos` never moves it. Neither does a click Kosmos follows or adopts, other than on
+    the Dock, a hover focus, nor a layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
     window, or the empty workspace's display. A tile's frame is the layout's after the
     change, the one Kosmos is writing, which the app's worker may not have applied yet;
