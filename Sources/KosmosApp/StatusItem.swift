@@ -28,17 +28,12 @@ final class StatusItem: NSObject, NSMenuDelegate {
     /// Waiting for Accessibility outranks Secure Input, which explains keys that do nothing
     /// right now; problems come next, then running normally, shown as the app icon's mark.
     private func updateImage() {
-        let symbol = accessibilityMissing ? "exclamationmark.triangle"
+        let name = accessibilityMissing ? "exclamationmark.triangle"
             : secureInput != nil ? "lock.square"
-            : problems.isEmpty ? nil : "exclamationmark.octagon"
-        let name = symbol ?? "mark"
+            : problems.isEmpty ? "mark" : "exclamationmark.octagon"
         guard name != shownImage else { return }
         shownImage = name
-        guard let symbol else {
-            item.button?.image = Self.mark
-            return
-        }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Kosmos")
+        let image = name == "mark" ? Self.mark : NSImage(systemSymbolName: name, accessibilityDescription: "Kosmos")
         image?.isTemplate = true
         item.button?.image = image
     }

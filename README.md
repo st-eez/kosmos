@@ -51,9 +51,7 @@ swift test                  # unit tests
 
 `script/bundle.sh` signs with your first Apple Development certificate, or the identity in
 `KOSMOS_SIGN_IDENTITY`. Keep using the same one: macOS ties the Accessibility grant to it.
-The app icon is checked in as `Resources/Kosmos.icns`. After a change to `script/icon.swift`,
-which draws it, regenerate the file with
-`swift script/icon.swift /tmp/Kosmos.iconset && iconutil -c icns /tmp/Kosmos.iconset -o Resources/Kosmos.icns`.
+`script/icon.swift` draws the app icon, `Resources/Kosmos.icns`; regenerate it with `swift script/icon.swift /tmp/Kosmos.iconset && iconutil -c icns /tmp/Kosmos.iconset -o Resources/Kosmos.icns`.
 [docs/INSTALL.md](docs/INSTALL.md) covers installing, launch at login, switching from
 AeroSpace and rolling back.
 

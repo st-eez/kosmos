@@ -823,9 +823,9 @@ off the main thread).
     right after one (section 5.6). No test checks that yet; the work counts in section 6
     are meant to.
   - Kosmos keeps running when the user removes the item.
-- Onboarding is a setup window listing each permission Kosmos waits for, with a checkmark
-  once granted or a button to its pane in System Settings: Accessibility, at a launch
-  without it, and Input Monitoring when section 5.11 calls for it.
+- Onboarding is a setup window, headed by the app icon, listing each permission Kosmos waits
+  for, with a checkmark once granted or a button to its pane in System Settings:
+  Accessibility, at a launch without it, and Input Monitoring when section 5.11 calls for it.
   - macOS sends no notification for either grant, so the window checks twice a second,
     and after the user closes it too, so Kosmos still starts on its own. A revoked grant
     shows as missing again, and a row leaves the list once nothing needs it. When
@@ -854,12 +854,14 @@ off the main thread).
 - Notarization needs a Developer ID certificate. Adding it would remove the need to strip
   quarantine.
 - The app icon is a plain `.icns`, checked in as `Resources/Kosmos.icns` and copied into the
-  bundle. `script/icon.swift` draws it from vectors at every size and regenerates the file
-  when the design changes. macOS 27 shows an `.icns` at full size when its artwork
-  fills the system icon mask (824 of 1024 px, superellipse corners 34% across, exponent
-  2.78, measured from Terminal's icon), and shrinks one that does not onto a grey rounded
-  square. An Icon Composer `.icon` compiled by `actool` into `Assets.car` renders the same
-  artwork at the same size, so the extra format buys nothing while Kosmos has one appearance.
+  bundle. `script/icon.swift` draws it from vectors at every size, inside the macOS 27 icon
+  mask whose measurements it states, and regenerates the file when the design changes. The
+  format was compared in the Dark icon style at 16 to 128 px: macOS 27 showed the `.icns` at
+  full size because its artwork fills the mask, where it shrinks an `.icns` that does not
+  onto a grey rounded square, and an Icon Composer `.icon` with one flat layer, compiled by
+  `actool` into `Assets.car`, rendered the same artwork at the same size. The other icon
+  styles were not tested. The `.icon` format can come when Kosmos has more than one
+  appearance to show.
 
 ### 5.11 Focus follows mouse
 
@@ -1358,6 +1360,3 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles with the mouse
 (section 5.2), an embedded scripting language, window title matchers, marks, persistence
 across restarts, and one macOS Space per workspace.
-
-The app icon is still to be designed. Until then the setup window draws a placeholder
-mark (section 5.9).
