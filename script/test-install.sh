@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Checks script/install.sh in a temporary directory: install three times, roll back twice,
-# uninstall, then fail an install after it quit a running Kosmos. It builds and signs as
-# install.sh does, and leaves /Applications and ~/.local/bin alone. install.sh handles
-# launch at login only for /Applications, so the registration is never read or changed.
+# uninstall, fail an install after it quit a running Kosmos, then uninstall while a guardian
+# outlives Kosmos. It builds and signs as install.sh does, and leaves /Applications and
+# ~/.local/bin alone. install.sh handles launch at login only for /Applications, so the
+# registration is never read or changed.
 #
 # Nothing here asks LaunchServices whether it registered Kosmos-previous: it registers no
 # bundle in /tmp until something opens it, so such a check passes even for a .app name.
@@ -60,4 +61,24 @@ fi
 [[ -z $(lsof -t -a -d txt -c Kosmos "$apps/Kosmos-previous/Contents/MacOS/Kosmos" 2>/dev/null || true) ]] ||
     fail "the running Kosmos was not quit"
 [[ $(cat "$root/opened" 2>/dev/null) == "$app" ]] || fail "the failed install did not start Kosmos again"
-echo "install, rollback, uninstall and restart after a failure passed"
+
+# The guardian retries an incomplete recovery for about 30 s after Kosmos quits, and install.sh
+# waits for it. A stub guardian outlives the stub Kosmos by 12 s, past the 10 s Kosmos gets.
+rm -rf "$apps"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers"
+printf '#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n' | cc -x c -o "$app/Contents/MacOS/Kosmos" -
+cc -x c -o "$app/Contents/Helpers/kosmos-guardian" - <<'STUB'
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    while (kill(atoi(argv[1]), 0) == 0) usleep(100000);
+    sleep(12);
+    return 0;
+}
+STUB
+kosmos=$("$app/Contents/MacOS/Kosmos" > /dev/null 2>&1 & echo $!)
+guardian=$("$app/Contents/Helpers/kosmos-guardian" "$kosmos" > /dev/null 2>&1 & echo $!)
+script/install.sh "${flags[@]}" --uninstall > /dev/null || fail "an uninstall did not wait for the guardian"
+! kill -0 "$guardian" 2>/dev/null || fail "an uninstall finished while the guardian ran"
+echo "install, rollback, uninstall, restart after a failure and the wait for the guardian passed"

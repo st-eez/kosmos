@@ -132,6 +132,12 @@
     frame. A display link per display, at that display's rate, steps the windows sliding on
     it, and stops once none is left; at the end the Space goes back to identity and the
     window leaves it.
+  - WindowServer applies a Space's transform to each window the Space shows in that
+    window's own coordinates, origin at its top left and y down, and maps where a point
+    shows to the window's point: a translation of 300 in x shows the window 300 points
+    left, and a scale of 2 shows it at half size, its top left corner in place. The hit
+    test and the window list's bounds follow; SkyLight's bounds and the Accessibility frame
+    do not (kosmos-probe space-anim, branch spaceanim).
   - A transform lands within about 0.4 ms, where an Accessibility write lands with the
     app's next commit, 9 ms later at the median and 15 ms at most, so the two cannot land
     together (kosmos-probe space-anim and its demo, branch spaceanim). A transform sent
@@ -173,11 +179,11 @@
     the end of a wait with no reopen, as after its order-out or a fullscreen report.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
-  - A window slides only while the guardian is ready, and each Space of the pool is
-    recorded before any window enters it ([hiding.md](hiding.md)). Kosmos makes 8 when
-    animations first turn on, and a window that finds none free jumps and is logged.
-    Turning animations off ends every slide and keeps the Spaces. Quit ends every slide,
-    then recovery destroys the Spaces.
+  - A window slides only while Kosmos can conceal, with the guardian ready and every
+    bridged operation present, and each Space of the pool is recorded before any window
+    enters it ([hiding.md](hiding.md)). Kosmos makes 8 when animations first turn on, and
+    a window that finds none free jumps and is logged. Turning animations off ends every
+    slide and keeps the Spaces. Quit ends every slide, then recovery destroys the Spaces.
   - A slide's Space goes back to the pool once a barrier and a read of its windows, off
     the main thread, show its window out of it. A Space that still lists the window, as
     after a removal that did not land, or whose read fails, leaves the pool and is logged,
@@ -208,6 +214,21 @@
     the main thread and the slide queue while the bridge queue sends its batches.
     `script/bench-relayout.sh` times the CPU of Kosmos, the app, WindowManager and
     WindowServer with animations on and off, and counts the reads.
+  - The bench's latency is to the last frame change the stub saw for a step, the final
+    frame Kosmos wrote, and to the log line of each window's final write, which Kosmos logs
+    after reading the frame back, in millisecond steps. With animations on, the window
+    takes its final frame at once and shows at it when its slide ends, 0.38 s after the
+    write, or for a pop 0.41 s after its write lands. Each step's next response is a
+    `list-workspaces` query sent as soon as the step's command answers, which Kosmos
+    answers on the main actor, where every slide's display frames also run. CPU times come
+    from `ps -o time=` in 10 ms steps, fine for a run's total divided by its relayouts.
+    WindowServer's include every other app's drawing, so the summary also gives each
+    process's time over 10 s of rest with the windows tiled, scaled to the run's length.
+    The stub prints a line per frame change, a cost both modes share. A real app's window,
+    given by id, reports no frames of its own, so its latency is to its final write in
+    Kosmos's log, and its CPU is its app's main process, without the helper processes that
+    draw it. The summary records each app's AXEnhancedUserInterface (`kosmos-probe eui`),
+    which makes Chrome and Firefox animate Accessibility moves themselves.
   - Open until the live test: `kill -9` of Kosmos mid-slide and mid-pop, after which the
     guardian's recovery should show the window at its own frame and alpha 1, out of the
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next

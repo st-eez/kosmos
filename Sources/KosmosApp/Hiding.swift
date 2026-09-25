@@ -21,6 +21,8 @@ final class Hiding {
     }
 
     enum Outcome: Sendable {
+        /// With a bridged operation missing, nothing was concealed, and the status menu names
+        /// it from launch.
         case confirmed
         /// No guardian was ready, so nothing was concealed.
         case revealedOnly
@@ -29,6 +31,7 @@ final class Hiding {
     }
 
     private let guardian: Guardian
+    private let missingOperation = SkyLight.missingBridgedOperation
     private let bridge = DispatchQueue(label: "kosmos.bridge", qos: .userInteractive)
     private let store: HidingStore
     /// A copy of the bridge queue's ledger as of its last job.
@@ -48,8 +51,9 @@ final class Hiding {
 
     func isConcealedOrConcealing(_ window: UInt32) -> Bool { concealed.contains(window) || batchesConcealing[window] != nil }
 
-    /// Windows slide through the pool's Spaces only while the guardian would recover them.
-    var guardianReady: Bool { guardian.isReady }
+    /// Windows are concealed, and slide through the pool's Spaces, only while this macOS has
+    /// every bridged operation and the guardian would recover them.
+    var canConceal: Bool { missingOperation == nil && guardian.isReady }
 
     func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
         let store = self.store
@@ -79,7 +83,7 @@ final class Hiding {
     /// `stripping` lose their ordinary Space only if this batch conceals them.
     func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32], stripping: Set<UInt32>,
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
-        let canConceal = guardian.isReady
+        let revealedOnly = missingOperation == nil && !guardian.isReady
         let hide = canConceal ? hide : []
         for window in hide { batchesConcealing[window, default: 0] += 1 }
         let store = self.store
@@ -102,7 +106,7 @@ final class Hiding {
                     if self.batchesConcealing[window] == 0 { self.batchesConcealing[window] = nil }
                 }
                 if let outcome { self.report(outcome) }
-                done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
+                done(!confirmed ? .failed : revealedOnly ? .revealedOnly : .confirmed, timing)
             }
         }
     }
@@ -191,7 +195,7 @@ private final class HidingStore: @unchecked Sendable {
         func done() -> Bool {
             var members: [UInt64: Set<UInt32>] = [:]
             for space in touched {
-                if let list = kosmos_space_windows(space) as? [UInt32] { members[space] = Set(list) }
+                if let list = SkyLight.windows(in: space) { members[space] = Set(list) }
             }
             return batch.isDone(members: members)
         }
@@ -261,8 +265,8 @@ private final class HidingStore: @unchecked Sendable {
 
     func forgetClosed(_ window: UInt32) {
         guard load() else { return }
-        forget(ledger.departed([window], members: { kosmos_space_windows($0) as? [UInt32] },
-                               settled: { SkyLight.rows([$0]).isEmpty || !((kosmos_window_spaces($0) as? [UInt64]) ?? []).isEmpty }))
+        forget(ledger.departed([window], members: SkyLight.windows(in:),
+                               settled: { SkyLight.rows([$0]).isEmpty || SkyLight.spaces(of: $0)?.isEmpty == false }))
     }
 
     func forget(_ windows: [UInt32]) {
@@ -291,7 +295,7 @@ private final class HidingStore: @unchecked Sendable {
         let new = windows.filter { !known.contains($0) }
         for id in new {
             guard let owner = owners[id] else { return abandon(created) }
-            let original = (kosmos_window_spaces(id) as? [UInt64])?.first ?? 0
+            let original = SkyLight.spaces(of: id)?.first ?? 0
             next.windows.append(.init(id: id, owner: owner, originalSpace: original))
         }
         if !record.publish(next) {
@@ -350,6 +354,6 @@ private final class HidingStore: @unchecked Sendable {
     /// kosmos_window_spaces leaves out the holding Space. A fullscreen Space counts too: an add
     /// to an ordinary Space would take the window out of it.
     private static func hasOrdinarySpace(_ window: UInt32) -> Bool {
-        !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
+        SkyLight.spaces(of: window)?.isEmpty == false
     }
 }

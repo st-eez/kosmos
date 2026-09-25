@@ -5,7 +5,9 @@
   - no `tiles` container nests a `tiles` child with the same orientation (it is spliced
     into the parent at unchanged on-screen sizes);
   - weights are positive fractions;
-  - each window has exactly one place.
+  - each window has exactly one place;
+  - a root holds no lone container: normalizing puts that container in its place, as
+    AeroSpace does, so the root's orientation is the one on screen.
 - The layout is a pure function of the tree, the display area, the gaps and the sizes
   windows refuse to go below ([geometry.md](geometry.md)). Frames have whole point edges,
   and a fullscreen window gets the whole area. When a container's minimums fit, each
@@ -14,9 +16,21 @@
   once a minimum stops binding. When the minimums do not fit, the container splits by
   weight alone, and each window with a minimum takes it anyway, moved back inside the
   tiling rectangle over its neighbours. Outer and inner gaps shrink as sway's do, to leave
-  each window 100 by 60 pt.
+  each window 100 by 60 pt, sway's `MIN_SANE_W` and `MIN_SANE_H`
+  (include/sway/tree/node.h): the outer gaps on an axis in proportion, as
+  `workspace_add_gaps` does, and the inner gaps to whole points, as `apply_horiz_layout`
+  does (sway/tree/arrange.c).
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
+  A workspace with tiled or floating windows always has a focused one, as in i3.
+- `move` takes one step, as i3's `tree_move` does (src/move.c). Into a sibling container
+  the window lands beside that container's window at the near edge, or its most recently
+  focused one when the container runs across the direction, as i3's
+  `con_descend_direction` picks it. At the workspace's edge a plain `move` wraps the root
+  along the direction, as i3 and AeroSpace do ([displays.md](displays.md)).
+- `join-with` is AeroSpace's: the window joins its neighbour in the direction in a new
+  container across the neighbour's parent. A neighbour that is a container already runs
+  across its parent, so the window joins it.
 - `resize` takes the space from the window's siblings in proportion to their shares. For
   a dimension across the window's container, the nearest ancestor in a container along
   the dimension resizes. It stops where it would take a window below its minimum, or
@@ -25,7 +39,9 @@
   Stopping there does as much as the key press can, so repeated presses reach the limit
   exactly, and the weights never ask for less than a window takes.
 - `focus` in a direction goes up the tree to the nearest container along the direction
-  with a sibling on that side, then into that sibling by focus order, as i3's does. The
+  with a sibling on that side, then into that sibling by focus order, as i3's
+  `get_tree_next` does. Focus order takes the child holding the most recently focused
+  window, the last one on a tie, as AeroSpace's `mostRecentChild` does. The
   workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
   (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard
   reaches a floating window a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).

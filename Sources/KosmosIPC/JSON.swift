@@ -1,9 +1,7 @@
-// A small JSON codec. Linking Foundation for its codec would add about 1.8 ms to every CLI
-// launch, measured as 1.4 ms for a Swift binary that links only Darwin and 3.2 ms for one that
-// also links Foundation.
+// Foundation's codec would add about 1.8 ms to every CLI launch: 1.4 ms for a binary that
+// links only Darwin, 3.2 ms with Foundation.
 
-/// A JSON value. The protocol carries objects, arrays, strings, integers and booleans, so
-/// numbers are integers only, and a fraction or an exponent is rejected as malformed.
+/// Numbers are integers only, since the protocol carries no others.
 enum JSON: Equatable {
     case null
     case bool(Bool)
@@ -14,7 +12,6 @@ enum JSON: Equatable {
 }
 
 extension JSON {
-    /// Parses one JSON value that fills `bytes`.
     init(parsing bytes: [UInt8]) throws(IPCError) {
         var parser = Parser(bytes: bytes)
         self = try parser.value(depth: 0)
@@ -22,7 +19,7 @@ extension JSON {
         guard parser.index == bytes.count else { throw parser.error("trailing characters") }
     }
 
-    /// The compact encoding, with no newlines and with object keys sorted.
+    /// With no newlines, and object keys sorted.
     var encoded: [UInt8] {
         var out: [UInt8] = []
         write(to: &out)

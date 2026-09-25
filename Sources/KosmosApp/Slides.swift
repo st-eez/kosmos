@@ -127,7 +127,7 @@ final class Slides {
     /// or `endHold` (docs/geometry.md). An order-out takes a window out of every Space, so a
     /// window ordered in again is added again.
     func hold(_ id: WindowID) {
-        guard hiding.guardianReady, let space = held[id] ?? free.popLast() else { return }
+        guard hiding.canConceal, let space = held[id] ?? free.popLast() else { return }
         held[id] = space
         kosmos_space_set_alpha(space, 0)
         var ids = [id]
@@ -146,7 +146,7 @@ final class Slides {
 
     /// False when the window jumps. A pop's Space turns transparent before the window joins it.
     private func begin(_ id: WindowID, from: CGRect, to target: CGRect, _ motion: Motion, at now: Double) -> Bool {
-        guard hiding.guardianReady else { return false }
+        guard hiding.canConceal else { return false }
         let holding = motion.pop ? held.removeValue(forKey: id) : nil
         guard let space = holding ?? free.popLast() else {
             slideLog.notice("\(id) jumps: no animation Space is free")
@@ -187,7 +187,7 @@ final class Slides {
     private func release(_ space: UInt64, of id: WindowID) {
         poolChecks.async {
             _ = kosmos_barrier(space)
-            let members = kosmos_space_windows(space) as? [UInt32]
+            let members = SkyLight.windows(in: space)
             guard let members, !members.contains(id) else {
                 let why = members == nil ? "its windows did not read" : "\(id) is still in it"
                 slideLog.error("animation Space \(space) leaves the pool until recovery: \(why, privacy: .public)")

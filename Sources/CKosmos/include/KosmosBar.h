@@ -1,6 +1,4 @@
-// Messages to SketchyBar over its Mach port, in the format its own CLI uses: arguments
-// joined by NUL with one more NUL at the end, in one out of line descriptor. SketchyBar
-// has no written spec for it (wm-research ipc note, section 2).
+// SketchyBar's Mach messages, in the format its own CLI sends (docs/ipc.md).
 #pragma once
 
 #include <mach/mach.h>

@@ -1,8 +1,7 @@
 import CoreGraphics
 
-/// Sent whole on every change, so the bar never queries (docs/integrations.md). A bar reads
-/// `version` first: a new version may rename or remove fields, and new fields can appear in
-/// any version.
+/// Sent whole on every change, so the bar never queries. A bar reads `version` first
+/// (docs/ipc.md).
 public struct BarSnapshot: Codable, Equatable, Sendable {
     public struct Display: Codable, Equatable, Sendable {
         /// SketchyBar's number for the display, the value an item's `display` property takes.
@@ -49,11 +48,8 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
 }
 
 extension BarSnapshot {
-    /// SketchyBar's number for a display, from the same display list (docs/integrations.md).
-    /// - Parameters:
-    ///   - uuid: the display's UUID (CGDisplayCreateUUIDFromDisplayID).
-    ///   - active: how many displays are active (CGGetActiveDisplayList).
-    ///   - managed: the display UUIDs from SLSCopyManagedDisplays, in its order.
+    /// SketchyBar's number for the display `uuid` among `active` displays, from `managed`,
+    /// SLSCopyManagedDisplays's list (docs/integrations.md).
     public static func displayNumber(uuid: String?, active: Int, managed: [String]) -> Int {
         if active == 1 { return 1 }
         return managed.firstIndex { $0 == uuid }.map { $0 + 1 } ?? 0
@@ -61,10 +57,8 @@ extension BarSnapshot {
 }
 
 extension Session {
-    /// - Parameters:
-    ///   - displays: a workspace whose display is missing here gets display 0, as SketchyBar
-    ///     numbers a display it cannot find.
-    ///   - frame: where a floating window is.
+    /// A workspace whose display `displays` lacks gets display 0 (docs/integrations.md).
+    /// `frame` gives where a floating window is.
     public func barSnapshot(profile: String?, displays: [DisplayID: BarSnapshot.Display],
                             app: (WindowID) -> String?, frame: (WindowID) -> CGRect?) -> BarSnapshot {
         let workspaces = names.map { name -> BarSnapshot.Workspace in

@@ -11,7 +11,9 @@
   as left out. On a French layout 6 needs Shift, so `alt-6` takes the key a US keyboard
   has 6 on, which types §, the key `alt-sectionSign` names. Keypad keys stay out of the
   layout's table: on French and Czech layouts only the keypad types a digit unshifted, so
-  `alt-1` names the number row key, which a laptop has.
+  `alt-1` names the number row key, which a laptop has. Letters and digits name
+  themselves, and punctuation takes AeroSpace's names, such as `minus` and
+  `leftSquareBracket`.
 - Each hotkey is registered exclusive. Another app's exclusive hotkey on the same
   combination makes the registration fail, and Kosmos reports it; a shared registration
   would give the key to both apps.
@@ -45,14 +47,17 @@
   working.
 - WindowServer sends event 752 when Secure Input turns on and 753 when it turns off,
   whichever process changes it, and 753 when the last holder exits (measured September 24,
-  2026 with throwaway programs that turned it on and off from other processes). Kosmos
-  registers both on its own connection, then reads `IsSecureEventInputEnabled` and names
-  the holder from the session dictionary. Nothing polls. The handler runs on the main
-  actor when an event arrives, never inside a switch, though it can run right after one:
-  an app that holds Secure Input only while it is active, such as Terminal with Secure
-  Keyboard Entry, turns it off and on as a switch leaves or enters its workspace, and the
-  status item image changes with it. Checks on app activation or focus reports would
-  miss a password field focused inside the active app.
+  2026 with throwaway programs that turned it on and off from other processes). With two
+  overlapping holders, only the first enable and the last release sent one. AppKit's
+  password field turns it on with EnableSecureEventInput, which AppKit imports from
+  HIToolbox (`dyld_info -imports`, macOS 27), so a holder that crashes or is killed
+  releases it too. Kosmos registers both on its own connection, then reads
+  `IsSecureEventInputEnabled` and names the holder from the session dictionary. Nothing
+  polls. The handler runs on the main actor when an event arrives, never inside a switch,
+  though it can run right after one: an app that holds Secure Input only while it is
+  active, such as Terminal with Secure Keyboard Entry, turns it off and on as a switch
+  leaves or enters its workspace, and the status item image changes with it. Checks on app
+  activation or focus reports would miss a password field focused inside the active app.
 - The events follow the session's state. With two holders, the second enable and a
   release while the other remains send no event, so the named holder can be stale until
   Secure Input turns off and on again.

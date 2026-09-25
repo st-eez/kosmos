@@ -1,7 +1,6 @@
 import CoreGraphics
 
-/// A command from a hotkey or the CLI. Names follow AeroSpace's, so existing bindings
-/// carry over.
+/// A command from a hotkey or the CLI (docs/displays.md).
 public enum Command: Equatable, Sendable {
     public enum Workspace: Equatable, Sendable {
         case named(String)
@@ -9,7 +8,7 @@ public enum Command: Equatable, Sendable {
         case previous
     }
 
-    /// Where `focus` and `move` stop, AeroSpace's `--boundaries` and `--boundaries-action`.
+    /// Where `focus` and `move` stop.
     public enum Boundaries: Equatable, Sendable {
         case workspace
         /// The edge of the outermost display in the direction: at the edge of the
@@ -81,8 +80,6 @@ public enum Command: Equatable, Sendable {
         case "workspace-back-and-forth":
             return rest.isEmpty ? .success(.workspaceBackAndForth) : usage
         case "focus", "move":
-            // AeroSpace's --boundaries and --boundaries-action, before or after the direction. A
-            // move takes only the wrap, which AeroSpace gives focus alone (docs/displays.md).
             var across = false, wraps = false, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
@@ -114,7 +111,7 @@ public enum Command: Equatable, Sendable {
             guard let direction = direction(rest[0]) else { return fail("\(name): unknown direction \(rest[0])") }
             return .success(name == "swap" ? .swap(direction) : .joinWith(direction))
         case "move-node-to-workspace":
-            guard let options = options(rest, movesNode: true, wraps: false), options.targets.count == 1,
+            guard let options = options(rest, movesNode: true), !options.wrap, options.targets.count == 1,
                   !options.targets[0].hasPrefix("--") else {
                 return fail("usage: move-node-to-workspace [--focus-follows-window] [--window-id <id>] <name|next|prev>")
             }
@@ -156,7 +153,7 @@ public enum Command: Equatable, Sendable {
             let movesNode = name == "move-node-to-monitor"
             let usageText = "usage: \(name) " + (movesNode ? "[--focus-follows-window] [--window-id <id>] " : "")
                 + "[--wrap-around] <left|right|up|down|next|prev|number>"
-            guard let options = options(rest, movesNode: movesNode, wraps: true), options.targets.count == 1,
+            guard let options = options(rest, movesNode: movesNode), options.targets.count == 1,
                   let target = monitor(options.targets[0]) else { return fail(usageText) }
             if options.wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
             return .success(movesNode
@@ -173,14 +170,20 @@ public enum Command: Equatable, Sendable {
         }
     }
 
+    private struct Options {
+        var follow = false
+        var wrap = false
+        var window: WindowID?
+        var targets: [String] = []
+    }
+
     /// Nil when `--window-id` has no id.
-    private static func options(_ words: [String], movesNode: Bool, wraps: Bool)
-        -> (follow: Bool, wrap: Bool, window: WindowID?, targets: [String])? {
-        var options: (follow: Bool, wrap: Bool, window: WindowID?, targets: [String]) = (false, false, nil, [])
+    private static func options(_ words: [String], movesNode: Bool) -> Options? {
+        var options = Options()
         var words = words[...]
         while let word = words.popFirst() {
             switch word {
-            case "--wrap-around" where wraps: options.wrap = true
+            case "--wrap-around": options.wrap = true
             case "--focus-follows-window" where movesNode: options.follow = true
             case "--window-id" where movesNode:
                 guard let id = words.popFirst().flatMap(WindowID.init) else { return nil }

@@ -62,11 +62,8 @@ public enum PointerSkip: Equatable, Sendable {
 }
 
 extension FocusFollowsMouse {
-    /// Nil when the window takes focus (docs/focus-follows-mouse.md).
-    /// - Parameters:
-    ///   - fullscreen: the window is parked in native fullscreen.
-    ///   - stale: a command, or a focus follows mouse focus, came after the movement
-    ///     (`FocusReports.isStale`).
+    /// Nil when the window takes focus (docs/focus-follows-mouse.md). `fullscreen`: the
+    /// window is parked in native fullscreen.
     public func skip(_ window: WindowID, in session: Session, fullscreen: Bool, key: KeyWindow?,
                      app: (bundleID: String?, name: String?)?, stale: Bool) -> PointerSkip? {
         guard enabled else { return .off }
@@ -78,8 +75,8 @@ extension FocusFollowsMouse {
         return nil
     }
 
-    /// The empty workspace to focus when the pointer entered `display` over the desktop, as
-    /// Hyprland's `follow_mouse` moves the monitor focus (docs/focus-follows-mouse.md).
+    /// The empty workspace to focus when the pointer entered `display` over the desktop
+    /// (docs/focus-follows-mouse.md).
     public func emptyWorkspace(entered display: DisplayID, overDesktop: @autoclosure () -> Bool,
                                in session: Session) -> String? {
         guard enabled, let name = session.workspace(shownOn: display), name != session.focusedWorkspace,
@@ -113,8 +110,7 @@ public struct ActivationInput: Equatable, Sendable {
     }
 
     /// The user picked an app away from the pointer, with a key such as Command-Tab or with a
-    /// Dock click, within the last second (docs/focus-follows-mouse.md). A Command-Tab
-    /// switcher held open for over a second reads as a click.
+    /// Dock click, within the last second (docs/focus-follows-mouse.md).
     public func bringsPointer(onDock: Bool) -> Bool {
         if key < Self.maxAge, key < leftClick, key < rightClick, key < moved { return true }
         return onDock && leftClick < Self.maxAge && leftClick < key && leftClick < rightClick
@@ -128,9 +124,8 @@ public enum CommandSource: Sendable {
 }
 
 extension Command {
-    /// Whether mouse-follows-focus brings the pointer to the focus after this command, unless
-    /// it is there already. `toAnotherDisplay`: the focus is on another display than the
-    /// pointer, read only for a workspace command (docs/focus-follows-mouse.md).
+    /// Whether mouse-follows-focus brings the pointer to the focus after this command. It reads
+    /// `toAnotherDisplay` only for a workspace command (docs/focus-follows-mouse.md).
     public func movesPointer(from source: CommandSource, toAnotherDisplay: @autoclosure () -> Bool) -> Bool {
         guard source == .hotkey else { return false }
         switch self {

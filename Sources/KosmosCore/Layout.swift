@@ -74,14 +74,13 @@ extension Workspace {
     }
 }
 
-/// sway's smallest sane window size (`MIN_SANE_W` and `MIN_SANE_H` in
-/// include/sway/tree/node.h). Gaps shrink before they squeeze a window below it.
+/// Gaps shrink to leave each window this long (docs/tree.md).
 private func minimumLength(_ orientation: Orientation) -> CGFloat {
     orientation == .horizontal ? 100 : 60
 }
 
-/// Inset by the outer gaps, with whole point edges. As in sway's `workspace_add_gaps`, the gaps
-/// on an axis shrink in proportion when they would leave less than the minimum length.
+/// Inset by the outer gaps, with whole point edges. The gaps on an axis shrink in proportion
+/// when they would leave less than the minimum length.
 func tilingRect(_ rect: CGRect, _ outer: Insets) -> CGRect {
     let rect = rect.standardized
     let (left, right) = fit(outer.left, outer.right, in: rect.width, keeping: minimumLength(.horizontal))
@@ -99,8 +98,8 @@ private func fit(_ first: CGFloat, _ second: CGFloat, in length: CGFloat, keepin
     return (share, total - share)
 }
 
-/// As sway's `apply_horiz_layout` in sway/tree/arrange.c, the gaps take at most what leaves
-/// each of `count` children the minimum length, in whole points.
+/// The gaps take at most what leaves each of `count` children the minimum length, in whole
+/// points.
 private func innerGap(_ gap: CGFloat, count: Int, length: CGFloat, orientation: Orientation) -> CGFloat {
     guard count > 1 else { return 0 }
     let total = min(max(0, gap) * CGFloat(count - 1), max(0, length - minimumLength(orientation) * CGFloat(count)))
@@ -136,8 +135,8 @@ private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimum
     return frames
 }
 
-/// Each child at least its minimum and the rest by weight, as rift's `solve_axis_lengths`
-/// does with minimums alone. Nil when no minimum binds, and when the minimums do not fit.
+/// Each child at least its minimum and the rest by weight (docs/tree.md). Nil when no minimum
+/// binds, and when the minimums do not fit.
 private func fitted(_ weights: [Double], _ minimums: [CGFloat], _ usable: CGFloat) -> [CGFloat]? {
     guard minimums.contains(where: { $0 > 0 }), minimums.reduce(0, +) <= usable else { return nil }
     var bound: Set<Int> = []

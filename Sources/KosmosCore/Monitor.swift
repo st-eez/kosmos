@@ -22,15 +22,12 @@ public struct Monitor: Equatable, Sendable {
 }
 
 extension Monitor {
-    /// Left to right, then top to bottom, the order AeroSpace numbers monitors in.
     static func arranged(_ monitors: [Monitor]) -> [Monitor] {
         monitors.sorted { ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id) }
     }
 
     /// `monitors` is in `arranged` order. A direction looks along the displays beside or
-    /// stacked with `current`, as AeroSpace's `findRelativeMonitor` does, and orders a column
-    /// top to bottom, where AeroSpace goes left to right, so a display below and to the left of
-    /// another is still below it.
+    /// stacked with `current` (docs/displays.md).
     static func resolve(_ target: Command.MonitorTarget, from current: Monitor, in monitors: [Monitor],
                         wrapAround: Bool) -> Monitor? {
         func step(_ line: [Monitor], by offset: Int) -> Monitor? {

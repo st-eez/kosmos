@@ -53,7 +53,10 @@
   - `focus-monitor` and `move-node-to-monitor` take a direction, `next`, `prev` or a
     monitor number, and `--wrap-around`. `move-node-to-monitor` moves the window to the
     workspace the target display shows, at the edge it enters by when the target is a
-    direction, and `--focus-follows-window` follows it.
+    direction, and `--focus-follows-window` follows it. A direction looks along the
+    displays beside or stacked with the one the command starts from, as AeroSpace's
+    `findRelativeMonitor` does, and orders a column top to bottom, where AeroSpace goes
+    left to right, so a display below and to the left of another is still below it.
   - Left out until a binding needs them: `move-workspace-to-monitor`, which every
     workspace of Steve's four profiles would refuse, since each is assigned, and
     AeroSpace's monitor patterns by name.
@@ -134,14 +137,14 @@
   Hyprland's dwindle layout places it (Hyprland 0.56.2, `DwindleAlgorithm::addTarget` and
   `DragController.cpp`; Steve checked the behavior on Omarchy).
   - A change event that finds the key tiled window of a shown workspace moved whole more
-    than 10 pt from where it stood when the left button went down lifts the window: it
-    leaves the tree, parked where it stood, and the other windows fill its space at once.
-    A click that jitters the title bar moves it less. A window whose size changed during
-    the press, or with the pointer on a resize border at its first change event
-    (`TitleBarDrag.onResizeBorder`), is being resized and never lifts, since WindowServer can
-    apply a resize by the left or top edge as a move first. Kosmos writes the lifted
-    window no frame while macOS moves it, and a switch the CLI asks for meanwhile leaves
-    it in the user's hand.
+    than 10 pt (`TitleBarDrag.dragThreshold`) from where it stood when the left button went
+    down lifts the window: it leaves the tree, parked where it stood, and the other windows
+    fill its space at once. A click that jitters the title bar moves it less. A window
+    whose size changed during the press, or with the pointer on a resize border at its
+    first change event (`TitleBarDrag.onResizeBorder`), is being resized and never lifts,
+    since WindowServer can apply a resize by the left or top edge as a move first. Kosmos
+    writes the lifted window no frame while macOS moves it, and a switch the CLI asks for
+    meanwhile leaves it in the user's hand.
   - A hotkey pressed during the drag first drops the window where the pointer is, as the
     button coming up would, and its command then runs, as Hyprland 0.56.2's
     `KeybindManager.cpp` ends a drag in `ensureMouseBindState()` before a bind fires. So

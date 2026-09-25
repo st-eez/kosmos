@@ -143,8 +143,7 @@ public struct WindowRule: Equatable, Sendable {
     }
 
     /// Whether this rule matches every window `other` matches, so `other` never applies after
-    /// it. Names match by containment, so matching `other`'s own values proves it, and a rule on
-    /// the name never covers one on the bundle identifier alone, whose app name is unknown.
+    /// it (docs/config.md).
     func covers(_ other: WindowRule) -> Bool {
         matches(appID: other.appID, appName: other.appName)
     }

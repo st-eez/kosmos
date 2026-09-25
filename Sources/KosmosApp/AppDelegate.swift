@@ -242,7 +242,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateProblems() {
-        statusItem?.problems = configProblems + hotkeyProblems + [hidingProblem, focusProblem].compactMap { $0 }
+        let missing = SkyLight.missingBridgedOperation.map { "This macOS lacks \($0), so Kosmos hides no windows" }
+        statusItem?.problems = configProblems + hotkeyProblems + [missing, hidingProblem, focusProblem].compactMap { $0 }
     }
 
     /// Ceiling: a second holder's enable, or a release while another holder remains, sends no

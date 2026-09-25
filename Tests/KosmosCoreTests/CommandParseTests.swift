@@ -34,6 +34,7 @@ import Testing
                       ["fullscreen", "--no-outer-gaps"], ["layout", "accordion"], ["move-node-to-workspace"],
                       ["workspace", "1", "2"], ["exec-and-forget", "true"], ["mode"], ["mode", "a", "b"],
                       ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"],
+                      ["move-node-to-workspace", "--wrap-around", "2"],
                       ["focus-follows-mouse"], ["focus-follows-mouse", "true"], ["focus-follows-mouse", "on", "off"]] {
         guard case .failure = Command.parse(arguments) else {
             Issue.record("accepted \(arguments)")
