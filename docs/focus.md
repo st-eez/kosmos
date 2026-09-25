@@ -50,21 +50,22 @@
     (`AdmissionFocus`). On a shown workspace the window becomes the focus. On a hidden one,
     which only a rule names for a new window, the report is decided as one of a concealed
     window whose key window before it stayed, since an app keys a window it opens, and
-    Kosmos follows it there, as Hyprland does for a `workspace` window rule without
-    `silent` (displays.md). A report that comes after the admission and before the
-    window's conceal completes is followed the same way. After that, Kosmos requests its
-    focus intent again, and a later report loses to it, as a tab's does (tree.md). A
-    command received after the report wins, as over a Command-Tab. A window its app opens
-    in the background has no key window report, and Kosmos stays put. Nor does it follow a
-    window parked at admission, one admitted while the session is locked, or one there
-    when Kosmos launched (displays.md). On 2026-09-25 at 10:25:31 Steve launched Chrome
-    from workspace 8, and a rule put its first window on workspace 4, which no display
-    showed. The log has no key window report from Chrome, and Accessibility answered for
-    the window 854 ms after WindowServer made it a candidate, within the launch retries:
-    Chrome keyed the window before its worker's observer was registered, and its
-    activation read got no answer while it launched. Kosmos concealed the window, keyed
-    Claude on workspace 8 again, and Steve pressed alt-4 himself. A worker now reports the
-    front app's focused window when it starts (geometry.md).
+    Kosmos follows it there (displays.md). A report that comes after the admission and
+    before the window's conceal completes is followed the same way. After that, Kosmos
+    requests its focus intent again, and a later report loses to it, as a tab's does
+    (tree.md). A command received after the report wins, as over a Command-Tab. Kosmos
+    follows no window parked at admission or admitted while the session is locked.
+    On 2026-09-25 at 10:25:31 Steve launched Chrome from workspace 8, and a rule put its
+    first window on workspace 4, which no display showed. The log has no key window report
+    from Chrome, and Accessibility answered for the window 854 ms after WindowServer made
+    it a candidate, within the launch retries: Chrome keyed the window before its worker's
+    observer was registered, and its activation read got no answer while it launched.
+    Kosmos concealed the window, keyed Claude on workspace 8 again, and Steve pressed alt-4
+    himself. A worker now reports its app's focused window when it starts, before any of
+    the app's windows is admitted (geometry.md). KosmosCore's tests cover `AdmissionFocus`
+    and the classification. No test covers the worker's report at its start, its refusal
+    of window reads before it, or the Controller handing the waiting report to the
+    classification at the admission: they are in KosmosApp, which has no test target.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
     window key before it. A report of another window replaces it, and a held report whose
