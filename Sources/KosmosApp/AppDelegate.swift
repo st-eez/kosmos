@@ -107,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let query = Query(arguments) { return answer(query) }
         switch Command.parse(arguments) {
         case .success(let command): return run(command, received: received, from: source)
-        case .failure(let error): return controller == nil ? Self.waiting : failure(error.message)
+        case .failure(let error): return failure(error.message)
         }
     }
 
