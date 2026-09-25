@@ -366,7 +366,7 @@ final class Controller {
             case .takes(let old): if tabSwitched(from: old, to: id, frame: inventory.windows[id]?.frame) { return }
             case .own: break
             }
-            place(id, pid: pid, ruleWorkspace: true)
+            place(id, pid: pid, ruleWorkspace: true, reopened: false)
         } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
             // Perhaps the selected tab closed before the next tab came in, in native
             // fullscreen too: its place waits for that tab for the pairing window.
@@ -386,7 +386,7 @@ final class Controller {
     /// a new window its app keyed, before its admission or just after (admittedUnkeyed).
     /// `reopened`: a parked window its app closed and kept, ordered in again, which opens as
     /// a new window does and leaves its parked place (docs/tree.md).
-    private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool, reopened: Bool = false) {
+    private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool, reopened: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
         // A window there at launch joins the workspace of the display under it; a later one
@@ -397,8 +397,6 @@ final class Controller {
         let placed: Session.Plan? = reopened ? session.reopen(id, to: workspace, floating: floats)
                                              : session.add(id, to: workspace, at: center, floating: floats)
         guard var plan = placed else { return }
-        // Its next write is whole, as a new window's is.
-        if reopened { ledger.forget(id) }
         if floats, let frame = inventory.windows[id]?.frame {
             controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
         }
@@ -493,9 +491,15 @@ final class Controller {
         after(TabSwitches.window) { controller in
             guard controller.inventory.windows[id]?.orderedIn == true else { return }
             if controller.closedByApp.remove(id) != nil {
+                // It opens as a new window: its next write is whole, and a conceal from before
+                // it closed is forgotten once the holding Space no longer lists it, as an
+                // ordered out window leaves every Space. Kept, it would fail the next batch's
+                // confirmation, which expects the window in the holding Space.
+                controller.ledger.forget(id)
+                controller.hiding.forgetClosed(id)
                 controller.place(id, pid: pid, ruleWorkspace: true, reopened: true)
             } else if controller.tabs.detached(id), let pid = controller.owner[id] {
-                controller.place(id, pid: pid, ruleWorkspace: false)
+                controller.place(id, pid: pid, ruleWorkspace: false, reopened: false)
             }
         }
     }
