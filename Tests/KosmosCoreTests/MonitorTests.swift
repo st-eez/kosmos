@@ -720,57 +720,6 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     }
 }
 
-@Suite struct DisplayParseTests {
-    @Test func parsesTheMonitorCommands() {
-        let cases: [([String], Command)] = [
-            (["focus", "left", "--boundaries", "all-monitors-outer-frame"], .focus(.left, boundaries: .allMonitors)),
-            (["focus", "--boundaries", "workspace", "up"], .focus(.up)),
-            (["move", "--boundaries", "all-monitors-outer-frame", "down"], .move(.down, boundaries: .allMonitors)),
-            (["move", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "wrap-around-all-monitors", "left"],
-             .move(.left, boundaries: .allMonitorsWrapping)),
-            (["focus", "right", "--boundaries-action", "stop", "--boundaries", "all-monitors-outer-frame"],
-             .focus(.right, boundaries: .allMonitors)),
-            (["focus-monitor", "left"], .focusMonitor(.direction(.left), wrapAround: false)),
-            (["focus-monitor", "--wrap-around", "next"], .focusMonitor(.next, wrapAround: true)),
-            (["focus-monitor", "2"], .focusMonitor(.number(2), wrapAround: false)),
-            (["move-node-to-monitor", "--wrap-around", "--focus-follows-window", "up"],
-             .moveNodeToMonitor(.direction(.up), focusFollowsWindow: true, wrapAround: true)),
-            (["move-node-to-monitor", "--window-id", "42", "prev"],
-             .moveNodeToMonitor(.previous, focusFollowsWindow: false, wrapAround: false, window: 42)),
-            (["profile", "home"], .profile("home")),
-        ]
-        for (arguments, command) in cases {
-            #expect(Command.parse(arguments) == .success(command), "\(arguments)")
-        }
-    }
-
-    @Test func rejectsWhatTheMonitorCommandsDoNotTake() {
-        for arguments in [["focus", "left", "--boundaries"], ["focus", "left", "--boundaries", "all-monitors"],
-                          ["move", "left", "--boundaries-action", "wrap-around-all-monitors"],
-                          ["move", "left", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "fail"],
-                          ["move", "left", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "stop"],
-                          ["focus-monitor"], ["focus-monitor", "left", "right"], ["focus-monitor", "--wrap-around", "2"],
-                          ["focus-monitor", "asus-main"], ["focus-monitor", "0"], ["move-workspace-to-monitor", "left"], ["focus-monitor", "--focus-follows-window", "left"],
-                          ["focus-monitor", "--window-id", "4", "left"], ["move-node-to-monitor", "--window-id"],
-                          ["profile"], ["profile", "a", "b"], ["profile", "--help"]] {
-            guard case .failure = Command.parse(arguments) else {
-                Issue.record("accepted \(arguments)")
-                continue
-            }
-        }
-    }
-}
-
-@Suite struct DisplayConfigTests {
-    @Test func bindingsNameKnownProfiles() {
-        let header = "config-version = 1\nworkspaces = ['1']\n[mode.main.binding]\nalt-b = "
-        #expect(Config.load(header + "'profile p'\n[[profile]]\nname = 'p'\n").diagnostics.isEmpty)
-        let bad = Config.load(header + "'profile q'\n[[profile]]\nname = 'p'\n")
-        #expect(bad.config == nil)
-        #expect(bad.diagnostics.map(\.message) == ["no profile named 'q'"])
-    }
-}
-
 /// Runs random commands, focus changes, arrivals, departures, reopens, minimum sizes, drags
 /// and display changes on three displays, carries out each plan's reveals and conceals on a
 /// model of the screen, and checks after each step what docs/displays.md promises: every

@@ -371,6 +371,14 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 }
 
 @Suite struct ProfileTests {
+    @Test func bindingsNameKnownProfiles() {
+        let header = "config-version = 1\nworkspaces = ['1']\n[mode.main.binding]\nalt-b = "
+        #expect(Config.load(header + "'profile p'\n[[profile]]\nname = 'p'\n").diagnostics.isEmpty)
+        let bad = Config.load(header + "'profile q'\n[[profile]]\nname = 'p'\n")
+        #expect(bad.config == nil)
+        #expect(bad.diagnostics.map(\.message) == ["no profile named 'q'"])
+    }
+
     private static let text = """
     config-version = 1
     workspaces = ['1', '2', '3', '4']

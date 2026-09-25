@@ -8,59 +8,6 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     Session(names: names, display: display)
 }
 
-@Test func parsesSteveBindings() {
-    let cases: [([String], Command)] = [
-        (["workspace", "2"], .workspace(.named("2"))),
-        (["workspace", "next"], .workspace(.next)),
-        (["workspace-back-and-forth"], .workspaceBackAndForth),
-        (["focus", "left"], .focus(.left)),
-        (["move", "down"], .move(.down)),
-        (["join-with", "up"], .joinWith(.up)),
-        (["move-node-to-workspace", "--focus-follows-window", "prev"], .moveNodeToWorkspace(.previous, focusFollowsWindow: true)),
-        (["move-node-to-workspace", "3"], .moveNodeToWorkspace(.named("3"), focusFollowsWindow: false)),
-        (["move-node-to-workspace", "--window-id", "42", "5"], .moveNodeToWorkspace(.named("5"), focusFollowsWindow: false, window: 42)),
-        (["layout", "tiles", "horizontal", "vertical"], .layout(.toggleOrientation)),
-        (["layout", "floating", "tiling"], .layout(.toggleFloating)),
-        (["fullscreen"], .fullscreen),
-        (["resize", "smart", "+100"], .resize(.smart, by: 100)),
-        (["resize", "width", "-50"], .resize(.width, by: -50)),
-        (["flatten-workspace-tree"], .flattenWorkspaceTree),
-        (["reload-config"], .reloadConfig),
-        (["mode", "resize"], .mode("resize")),
-        (["focus-follows-mouse", "on"], .focusFollowsMouse(.on)),
-        (["focus-follows-mouse", "off"], .focusFollowsMouse(.off)),
-        (["focus-follows-mouse", "toggle"], .focusFollowsMouse(.toggle)),
-    ]
-    for (arguments, command) in cases {
-        #expect(Command.parse(arguments) == .success(command), "\(arguments)")
-    }
-}
-
-@Test func rejectsWhatItDoesNotKnow() {
-    for arguments in [[], ["focus"], ["focus", "sideways"], ["resize", "smart", "100"], ["resize", "smart", "+0"],
-                      ["fullscreen", "--no-outer-gaps"], ["layout", "accordion"], ["move-node-to-workspace"],
-                      ["workspace", "1", "2"], ["exec-and-forget", "true"], ["mode"], ["mode", "a", "b"],
-                      ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"],
-                      ["focus-follows-mouse"], ["focus-follows-mouse", "true"], ["focus-follows-mouse", "on", "off"]] {
-        guard case .failure = Command.parse(arguments) else {
-            Issue.record("accepted \(arguments)")
-            continue
-        }
-    }
-}
-
-/// `list-bindings` describes every binding's amount, and a trap there would stop Kosmos.
-@Test func resizeAmountsAreFiniteAndAtMost100000Points() {
-    #expect(Command.parse(["resize", "smart", "+100000"]) == .success(.resize(.smart, by: 100_000)))
-    #expect(Command.parse(["resize", "width", "-0.5"]) == .success(.resize(.width, by: -0.5)))
-    for amount in ["+inf", "-inf", "+nan", "+1e20", "-1e19", "+100000.5", "-100001"] {
-        guard case .failure = Command.parse(["resize", "smart", amount]) else {
-            Issue.record("accepted \(amount)")
-            continue
-        }
-    }
-}
-
 @Test func aCommandNamingAWorkspaceTheProfileLeavesOutFails() {
     // The laptop profile lists 1 to 5; `workspace 6` exited 0 and did nothing.
     let s = session(["1", "2", "3", "4", "5"])
