@@ -9,8 +9,7 @@ extension Workspace {
         precondition(validate().isEmpty, "\(validate())")
     }
 
-    /// Builds a workspace that may break the invariants, for tests of `validate` and
-    /// `normalize`.
+    /// May break the invariants, for tests of `validate` and `normalize`.
     init(unchecked description: String) {
         self.init()
         var characters = Array(description)[...]
@@ -50,7 +49,6 @@ extension Workspace {
 
     var tree: String { root.description }
 
-    /// `frames` with no minimums.
     func frames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
         frames(in: rect, gaps: gaps, minimums: [:])
     }
@@ -60,18 +58,17 @@ extension Workspace {
         focus(direction, from: window, frames: frames, in: screen, gaps: deskGaps, minimums: [:])
     }
 
-    /// `resize` with no minimums.
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         resize(window, dimension, by: amount, in: rect, gaps: gaps, minimums: [:])
     }
 
-    /// `unpark` on `screen` with no gaps, which only matter for stale hints.
+    /// On `screen` with no gaps, which matter only for stale hints.
     mutating func unpark(_ windows: [WindowID]) {
         unpark(windows, in: screen, gaps: Gaps())
     }
 
-    /// `tile` on `screen` with no gaps, which only matter for stale hints.
+    /// On `screen` with no gaps, which matter only for stale hints.
     @discardableResult
     mutating func tile(_ window: WindowID) -> Bool {
         tile(window, in: screen, gaps: Gaps())
@@ -111,7 +108,8 @@ extension Workspace {
     /// The weights of the root's children, rounded to thousandths.
     var shares: [Double] { root.children.map { ($0.weight * 1000).rounded() / 1000 } }
 
-    /// The weights of the children of the container holding the window.
+    /// The weights of the children of the container holding the window, rounded to
+    /// thousandths.
     func shares(around window: WindowID) -> [Double] {
         root[root.path(to: window)!.dropLast()].children.map { ($0.weight * 1000).rounded() / 1000 }
     }

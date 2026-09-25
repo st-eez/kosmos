@@ -25,7 +25,6 @@ public enum Direction: Sendable {
     }
 }
 
-/// A window or a container in a workspace tree, with its share of the parent.
 struct Node: Sendable {
     enum Kind: Sendable {
         case window(WindowID)
@@ -39,7 +38,7 @@ struct Node: Sendable {
 
 /// An i3 `tiles` container: its children side by side along its orientation.
 struct Container: Sendable {
-    /// Unique within a workspace, so a restore hint can find the container again.
+    /// Unique within a workspace.
     let id: Int
     var orientation: Orientation
     var children: [Node]
@@ -123,10 +122,8 @@ extension Container {
         children.insert(Node(kind: kind, weight: weight), at: index)
     }
 
-    /// Restores the invariants below this container and scales its weights to sum to 1.
-    /// A container left empty is dropped. One left with a single child is replaced by that
-    /// child, which takes its weight. A child container with this container's orientation
-    /// is spliced in, and its children keep their sizes on screen.
+    /// Restores the invariants below this container (docs/tree.md), keeping on-screen sizes,
+    /// and scales its weights to sum to 1.
     mutating func normalize() {
         var normalized: [Node] = []
         for var child in children {

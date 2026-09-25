@@ -2,11 +2,8 @@ import CoreGraphics
 import Testing
 @testable import KosmosCore
 
-/// Runs random operations and checks after each one that the workspace is sound, that a
-/// failed operation changed nothing, and that a move moved the window. A third of the
-/// windows have minimum sizes. Frames by weight tile the display rectangle without
-/// overlapping, and frames with the minimums stay inside it. When the minimums fit, every
-/// window gets its minimum and none overlap.
+/// After each random operation the workspace is sound, a failed operation changed nothing,
+/// a move moved the window, and the frames tile the area, each with its minimum when they fit.
 @Test(arguments: 1...8 as ClosedRange<UInt64>)
 func randomOperationsKeepTheInvariants(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -81,8 +78,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 30: workspace.balanceSizes()
         case 31: workspace.flattenWorkspaceTree()
         case 32:
-            // A tab switch: another window takes this one's place, and every frame stays. The
-            // new tab inherits a tiled tab's minimum, as Session.replace gives it.
+            // A tab switch. The new tab inherits a tiled tab's minimum, as Session.replace gives it.
             let before = workspace.frames(in: screen, gaps: gaps)
             let parked = workspace.parked.contains { $0.window == window }
             attempt { $0.replace(window, with: nextWindow) }
@@ -126,10 +122,8 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
     }
 }
 
-/// Shapes random trees, then parks or floats a random set of windows in random order and
-/// returns them one at a time in another random order. With nothing else in between, the
-/// tree and every share come back. With other commands in between, the hints are stale,
-/// and each return must leave every window that had a point with one.
+/// With nothing else in between, the tree and every share come back. With other commands in
+/// between, each stale return leaves every window that had a point with one.
 @Test(arguments: 1...20 as ClosedRange<UInt64>)
 func leavingAndReturningInAnyOrder(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -205,9 +199,7 @@ func tiles(_ frames: [WindowID: CGRect]) -> Bool {
     }
 }
 
-/// The least size a container needs for each window in it to get its minimum: its
-/// children side by side along its orientation with whole point gaps between them, and
-/// the largest of them across.
+/// The least size that gives each window in the container its minimum.
 func leastSize(of container: Container, _ minimums: [WindowID: CGSize], gap: CGFloat) -> CGSize {
     let sizes = container.children.map { child in
         switch child.kind {

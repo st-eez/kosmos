@@ -95,8 +95,7 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
 
 // MARK: Minimums
 
-/// Ghostty and Activity Monitor side by side on the built-in display: Activity Monitor
-/// refuses widths under about 740 points.
+/// Activity Monitor refuses widths under about 740 points.
 @Test func minimumKeepsAWindowWholeAndOnScreen() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let minimums = [WindowID(2): CGSize(width: 740, height: 400)]

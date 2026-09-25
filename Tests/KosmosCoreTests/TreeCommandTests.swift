@@ -407,7 +407,6 @@ import Testing
     #expect(frames[1] == before[1])
     #expect(frames[2]!.minX == before[2]!.minX && frames[2]!.maxX == before[2]!.maxX + 100)
     #expect(frames[3]!.maxX == before[3]!.maxX)
-    // Inward, and on the other side.
     #expect(workspace.moveEdge(2, .left, by: -50, in: screen, gaps: Gaps(), minimums: [:]) == true)
     frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1]!.maxX == before[1]!.maxX + 50 && frames[2]!.maxX == before[2]!.maxX + 100)
@@ -421,7 +420,6 @@ import Testing
 @Test func movingAnEdgeKeepsTheLengthsOfNestedNeighbors() {
     var workspace = Workspace("h[1 v[h[2 3] 4]]")
     let before = workspace.frames(in: screen, gaps: Gaps())
-    // The root gives the column 100 pt from 1, and inside it only 2 grows: 3 stays.
     #expect(workspace.moveEdge(2, .left, by: 100, in: screen, gaps: Gaps(), minimums: [:]) == true)
     let frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1]!.width == before[1]!.width - 100)
@@ -466,15 +464,13 @@ import Testing
     #expect(empty.tree == "h[]")
 }
 
-/// Joining a window into its neighbor and back out, as Ctrl-Alt-Left then Ctrl-Alt-Up does,
-/// must not grow the window left alone. It grew by a sixth of the width on every cycle.
 @Test func joinAndUnjoinLeaveOtherWindowsAlone() {
     let screen = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     var w = Workspace("h[1 2 3]")
     for _ in 1...5 {
         #expect(w.joinWith(3, .left) == true)
         var f = w.frames(in: screen, gaps: Gaps(), minimums: [:])
-        #expect(f[1]!.width == 576)                       // untouched by the join
+        #expect(f[1]!.width == 576)
         #expect(f[2]!.width == 1152 && f[3]!.width == 1152)
         #expect(w.joinWith(3, .up) == true)                // unjoin
         f = w.frames(in: screen, gaps: Gaps(), minimums: [:])
