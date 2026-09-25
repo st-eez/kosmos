@@ -95,14 +95,16 @@ state, and during a slide the frame the slide shows the window at.
   `SLSMoveWindowsToManagedSpace` when it is in none of them. A border moved to
   another display's Space was there when read back. The target's Spaces can include the
   holding Space or a slide's animation Space, whose transform would draw the border too,
-  so Kosmos chooses from the displays' ordinary Spaces alone.
+  so Kosmos chooses from the ordinary Spaces of the border's own display alone, and leaves
+  the border where it is when the target has none there, as during a drag or a slide
+  across displays.
 - A border window keeps to one display, and a window that moves to another display takes
   a border window of that display's. Before 2026-09-25 one pool served every display, so
   Steve's one border window moved between displays with the focus, and Kosmos moved it to
   the new display's Space. `kosmos-probe border-watch` sampled it every 1.5 ms while Steve
   moved the focus 28 times between Ghostty on the main display and a window on the
-  built-in one. In 12 of the hops the border showed on the new display at the last
-  window's size for 9 to 40 ms. Toward Ghostty it showed at the other window's 1712 by
+  built-in one. In 12 of the 28 hops, 8 of the 20 Steve made while he watched for it, the
+  border showed on the new display at the last window's size for 9 to 40 ms. Toward Ghostty it showed at the other window's 1712 by
   1074 points at (8, -2), then at Ghostty's 1904 by 1039 at (8, 33), and Steve saw it
   appear inside Ghostty and stretch to fill it. Toward the built-in display it showed at
   Ghostty's size at (8, 1150), and the built-in display showed it there for 8 to 33 ms.
@@ -157,6 +159,10 @@ state, and during a slide the frame the slide shows the window at.
 - Open until the live test:
   - whether a focus move between displays still shows the border at the last window's
     size (`kosmos-probe border-watch` with the border window's id);
+  - whether the first focus on a display that comes back shows its border at an old frame
+    once, as WindowServer may move a pooled window when its display goes
+    (`kosmos-probe border-watch` over an unplug and replug); if it does, Kosmos should
+    close a gone display's pool at the display change;
   - whether the ring's inner corners meet the window's: they are circular arcs of the
     window's radius, so corners of another curve would show a sliver of the desktop, or of
     the ring over the window, at each corner, which JankyBorders' line below the window
