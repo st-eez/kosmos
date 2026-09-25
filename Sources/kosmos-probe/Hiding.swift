@@ -30,28 +30,16 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// Invisible and off every display, in an app that can never be front. Prints its id. With
-/// `levels` it prints the uptime and level of each change (`kosmos-probe level`).
-@MainActor func showHiddenWindow(levels: Bool) -> Never {
+/// Invisible and off every display, in an app that can never be front. Prints its id.
+@MainActor func showHiddenWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let origin = CommandLine.arguments.contains("onscreen") ? NSScreen.main?.visibleFrame.origin ?? .zero : NSPoint(x: -4000, y: -4000)
-    let window = NSWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 60, height: 60)),
+    let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 60, height: 60),
                           styleMask: [.borderless], backing: .buffered, defer: false)
-    window.alphaValue = CommandLine.arguments.contains("opaque") ? 1 : 0
+    window.alphaValue = 0
     window.ignoresMouseEvents = true
     window.orderFrontRegardless()
     print(window.windowNumber)
-    if levels {
-        for (step, level) in [NSWindow.Level.floating, .normal, .floating, .normal, .floating, .normal].enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(step + 1)) {
-                let before = uptime()
-                window.level = level
-                print(String(format: "%.3f level %d", before, level.rawValue))
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { exit(0) }
-    }
     app.run()
     exit(0)
 }

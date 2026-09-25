@@ -16,6 +16,30 @@ nonisolated(unsafe) var levelEvents: [(id: UInt32, at: Double, payload: [UInt8])
 /// Each change: when the child asked for it, and when WindowServer first read the new level.
 nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)] = []
 
+/// Like `hidden-window`, onscreen and opaque on request. Prints its id, then the uptime and
+/// level of each change.
+@MainActor func levelWindow() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let origin = CommandLine.arguments.contains("onscreen") ? NSScreen.main?.visibleFrame.origin ?? .zero : NSPoint(x: -4000, y: -4000)
+    let window = NSWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 60, height: 60)),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    window.alphaValue = CommandLine.arguments.contains("opaque") ? 1 : 0
+    window.ignoresMouseEvents = true
+    window.orderFrontRegardless()
+    print(window.windowNumber)
+    for (step, level) in [NSWindow.Level.floating, .normal, .floating, .normal, .floating, .normal].enumerated() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(step + 1)) {
+            let before = uptime()
+            window.level = level
+            print(String(format: "%.3f level %d", before, level.rawValue))
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { exit(0) }
+    app.run()
+    exit(0)
+}
+
 @MainActor func levels() -> Never {
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
@@ -33,7 +57,7 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
         }, id, nil)
         if result == .success { registered += 1 }
     }
-    let child = Child(["hidden-window", "levels"] + CommandLine.arguments.dropFirst(2))
+    let child = Child(["level-window"] + CommandLine.arguments.dropFirst(2))
     let window = child.readWindows()[0]
     SkyLight.watch([window])
     print("window \(window), pid \(child.pid); \(registered) of \(ids.count) notifications registered")
