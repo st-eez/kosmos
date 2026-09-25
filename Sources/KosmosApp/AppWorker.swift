@@ -72,7 +72,8 @@ actor AppWorker {
     private var elements: [UInt32: AXUIElement] = [:]
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: QueuedWrite] = [:]
-    /// Animated writes under way (`KOSMOS_ANIMATE=1`), each with the write that ends it.
+    /// Animated writes under way (`KOSMOS_ANIMATE=1`), each with the write that ends it. A
+    /// tween runs on `ProcessInfo.systemUptime`, which changes to the wall clock leave alone.
     private var tweens: [UInt32: (tween: Tween, write: FrameWrite, target: CGRect)] = [:]
     /// Runs while `tweens` has any.
     private var tweenTimer: CFRunLoopTimer?
@@ -322,9 +323,7 @@ actor AppWorker {
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
     /// gets only its newest target.
     func setFrames(_ writes: [UInt32: QueuedWrite]) {
-        queuedWrites.merge(writes) { queued, new in
-            (new.write.replacing(queued.write, target: new.target), new.target, new.animate)
-        }
+        queuedWrites.merge(writes, uniquingKeysWith: Self.merged)
         guard !drainScheduled else { return }
         drainScheduled = true
         Task { self.drainWrites() }
@@ -335,7 +334,7 @@ actor AppWorker {
         guard !backoff.backedOff else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
-        let now = CFAbsoluteTimeGetCurrent()
+        let now = ProcessInfo.processInfo.systemUptime
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
         for (id, var entry) in writes {
             guard let element = elements[id] else { continue }
@@ -349,12 +348,10 @@ actor AppWorker {
             // target pending and every change event on the way counts as Kosmos's write.
             if entry.animate, let from = running.map({ $0.tween.frame(at: now) }) ?? frame(element) {
                 let to = switch entry.write {
-                case .position(let origin): CGRect(origin: origin, size: running?.tween.to.size ?? from.size)
+                case .position(let origin): CGRect(origin: origin, size: from.size)
                 case .frame(let frame): frame
                 }
-                let tween = running.map { $0.tween.retargeted(to: to, at: now) }
-                    ?? Tween(from: from, to: to, start: now, duration: Self.tweenDuration)
-                tweens[id] = (tween, entry.write, entry.target)
+                tweens[id] = (Tween(from: from, to: to, start: now, duration: Self.tweenDuration), entry.write, entry.target)
                 startTweenTimer()
                 continue
             }
@@ -368,14 +365,7 @@ actor AppWorker {
     /// Writes one window's frame and reads it back. Nil when the app did not answer: the
     /// write waits in the queue.
     private func apply(_ id: UInt32, _ element: AXUIElement, _ entry: QueuedWrite) -> (id: UInt32, target: CGRect, readBack: CGRect)? {
-        switch entry.write {
-        case .position(let origin):
-            set(element, kAXPositionAttribute, origin)
-        case .frame(let frame):
-            set(element, kAXSizeAttribute, frame.size)
-            set(element, kAXPositionAttribute, frame.origin)
-            set(element, kAXSizeAttribute, frame.size)
-        }
+        write(element, entry.write)
         // A write or read the app did not answer waits, with the ones after it, for the
         // app to answer again. One whose read failed otherwise waits for the app's next
         // frame write: dropped, it would leave the ledger's target pending for good.
@@ -403,45 +393,52 @@ actor AppWorker {
         return (id, entry.target, readBack)
     }
 
-    /// Queues a write that did not land for the next drain. A tween's write can be older than
-    /// one queued since, held by a backoff or waiting for its drain, and the newer target wins:
-    /// the older one would leave the ledger's newer target pending for good.
+    /// Writes the position alone, or the size, the position and the size again, since an app
+    /// may clamp the size against the old position.
+    private func write(_ element: AXUIElement, _ frameWrite: FrameWrite) {
+        switch frameWrite {
+        case .position(let origin):
+            set(element, kAXPositionAttribute, origin)
+        case .frame(let frame):
+            set(element, kAXSizeAttribute, frame.size)
+            set(element, kAXPositionAttribute, frame.origin)
+            set(element, kAXSizeAttribute, frame.size)
+        }
+    }
+
+    /// `newer` in place of `older`, a write for the same window that has not run.
+    private static func merged(_ older: QueuedWrite, _ newer: QueuedWrite) -> QueuedWrite {
+        (newer.write.replacing(older.write, target: newer.target), newer.target, newer.animate)
+    }
+
+    /// Queues a write that did not land for the next drain, behind any write queued since:
+    /// a tween's final write can be older than one a backoff holds, and put in its place it
+    /// would leave the ledger's newer target pending for good.
     private func requeue(_ id: UInt32, _ entry: QueuedWrite) {
-        queuedWrites[id] = queuedWrites[id].map { ($0.write.replacing(entry.write, target: $0.target), $0.target, $0.animate) } ?? entry
+        queuedWrites[id] = queuedWrites[id].map { Self.merged(entry, $0) } ?? entry
     }
 
     /// One step of every tween. A tween that is over ends with its ordinary write and read
-    /// back. An app that stops answering gets its targets written whole once it answers.
+    /// back. While the app is backed off the steps make no call, and the final write waits
+    /// in the queue for the app to answer again.
     private func tick() {
-        guard !backoff.backedOff else {
-            for (id, entry) in tweens { requeue(id, (entry.write, entry.target, false)) }
-            tweens = [:]
-            stopTweenTimer()
-            return
-        }
-        let now = CFAbsoluteTimeGetCurrent()
+        let now = ProcessInfo.processInfo.systemUptime
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
         for id in Array(tweens.keys) {
             guard var entry = tweens[id], let element = elements[id] else {
                 tweens[id] = nil
                 continue
             }
-            switch entry.tween.step(at: now) {
-            case .position(let origin):
-                set(element, kAXPositionAttribute, origin)
+            if let step = entry.tween.step(at: now) {
+                write(element, step)
                 tweens[id] = entry
-            case .frame(let frame):
-                set(element, kAXSizeAttribute, frame.size)
-                set(element, kAXPositionAttribute, frame.origin)
-                set(element, kAXSizeAttribute, frame.size)
-                tweens[id] = entry
-            case .finish:
-                tweens[id] = nil
-                if let result = apply(id, element, (entry.write, entry.target, false)) { results.append(result) }
-                let late = (now - entry.tween.start - entry.tween.duration) * 1000
-                let sets = entry.tween.steps + (entry.tween.sized ? 2 : 0)   // the midpoint writes three
-                log.info("\(id) animated in \(entry.tween.steps) steps (\(sets) sets), final write \(late, format: .fixed(precision: 1)) ms after due")
+                continue
             }
+            tweens[id] = nil
+            if let result = apply(id, element, (entry.write, entry.target, false)) { results.append(result) }
+            let late = (now - entry.tween.start - entry.tween.duration) * 1000
+            let sets = entry.tween.steps + (entry.tween.sized ? 2 : 0)   // the midpoint writes three
+            log.info("\(id) animated in \(entry.tween.steps) steps (\(sets) sets), final write \(late, format: .fixed(precision: 1)) ms after due")
         }
         if tweens.isEmpty { stopTweenTimer() }
         if !results.isEmpty { send(.framesApplied(results)) }

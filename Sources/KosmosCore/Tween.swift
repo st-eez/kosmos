@@ -23,16 +23,6 @@ public struct Tween: Equatable, Sendable {
         self.duration = duration
     }
 
-    public enum Step: Equatable, Sendable {
-        case position(CGPoint)
-        /// The midpoint: size, then position, then size, as `FrameWrite.frame`.
-        case frame(CGRect)
-        /// The tween is over; the caller writes the target as an ordinary write.
-        case finish
-    }
-
-    public var resizes: Bool { from.size != to.size }
-
     public func progress(at now: Double) -> Double {
         duration > 0 ? min(1, max(0, (now - start) / duration)) : 1
     }
@@ -47,22 +37,18 @@ public struct Tween: Equatable, Sendable {
                       width: size.width, height: size.height)
     }
 
-    /// The write due at `now`.
-    public mutating func step(at now: Double) -> Step {
+    /// The write due at `now`: the eased position, or at the midpoint of a resize the whole
+    /// frame at the target's size. Nil once the tween is over, when the caller writes the
+    /// target as an ordinary write.
+    public mutating func step(at now: Double) -> FrameWrite? {
         let t = progress(at: now)
-        if t >= 1 { return .finish }
+        guard t < 1 else { return nil }
         steps += 1
-        if resizes, !sized, t >= 0.5 {
+        if from.size != to.size, !sized, t >= 0.5 {
             sized = true
             return .frame(frame(at: now))
         }
         return .position(frame(at: now).origin)
-    }
-
-    /// A tween to `target` from where this one has the window at `now`, for a layout that
-    /// changes during the animation. The window goes on from there instead of jumping.
-    public func retargeted(to target: CGRect, at now: Double) -> Tween {
-        Tween(from: frame(at: now), to: target, start: now, duration: duration)
     }
 
     /// Circular ease in and out, rift's curve.

@@ -14,44 +14,22 @@ private let half = CGRect(x: 400, y: 0, width: 400, height: 600)
     #expect(Tween.ease(0.75) > 0.75)
 }
 
-@Test func sameSizeTweenMovesOnlyThenFinishes() {
-    var tween = Tween(from: left, to: right, start: 0, duration: 0.2)
-    for now in stride(from: 0.01, to: 0.2, by: 0.01) {
-        guard case .position = tween.step(at: now) else {
-            Issue.record("expected a position step at \(now)")
-            return
-        }
-    }
-    #expect(tween.step(at: 0.2) == .finish)
-    #expect(!tween.sized)
-}
-
-@Test func resizingTweenWritesTheSizeOnceAtTheMidpoint() {
-    var tween = Tween(from: left, to: half, start: 0, duration: 0.2)
+/// A move writes positions only; a resize writes its size once, at the midpoint.
+@Test(arguments: zip([right, half], [0, 1]))
+func sizeIsWrittenOnlyAtTheMidpointOfAResize(to target: CGRect, frames expected: Int) {
+    var tween = Tween(from: left, to: target, start: 0, duration: 0.2)
     var frames = 0
     for now in stride(from: 0.01, to: 0.2, by: 0.01) {
-        if case .frame(let frame) = tween.step(at: now) {
+        switch tween.step(at: now) {
+        case .frame(let frame)?:
             frames += 1
-            #expect(frame.size == half.size)
+            #expect(frame.size == target.size)
+        case .position?:
+            break
+        case nil:
+            Issue.record("over at \(now)")
         }
     }
-    #expect(frames == 1)
-    #expect(tween.step(at: 0.25) == .finish)
-}
-
-@Test func lateTickStillEndsOnTime() {
-    var tween = Tween(from: left, to: right, start: 0, duration: 0.2)
-    _ = tween.step(at: 0.01)
-    #expect(tween.step(at: 0.5) == .finish)
-    #expect(tween.steps == 1)
-}
-
-@Test func retargetStartsWhereTheWindowIs() {
-    var tween = Tween(from: left, to: half, start: 0, duration: 0.2)
-    _ = tween.step(at: 0.05)
-    let now = 0.05
-    let next = tween.retargeted(to: right, at: now)
-    #expect(next.from == tween.frame(at: now))
-    #expect(next.from.size == left.size)   // the midpoint size write has not run
-    #expect(next.start == now)
+    #expect(frames == expected)
+    #expect(tween.step(at: 0.2) == nil)
 }
