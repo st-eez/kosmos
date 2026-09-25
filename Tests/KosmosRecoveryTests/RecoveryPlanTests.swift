@@ -2,42 +2,56 @@ import Testing
 @testable import KosmosRecovery
 
 @Test func windowsWithAnOrdinarySpaceAreRemovedFromTheRecordedSpace() {
-    let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
-    #expect(plan.removals == [9: [1, 2]])
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [], alive: [], isOnAnySpace: { _ in true }, destination: { _ in 5 })
+    #expect(plan.removalsBySpace == [9: [1, 2]])
     #expect(plan.adds.isEmpty && plan.stuck.isEmpty)
 }
 
 @Test func windowsWithoutOneAreAddedToTheirDestinationAndRemoved() {
     // The exclusive add strips only managed Spaces, so it leaves them in the recorded
     // Space; the removal after it takes them out.
-    let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
-    #expect(plan.removals == [9: [1, 2]])
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [], alive: [], isOnAnySpace: { $0 == 1 }, destination: { _ in 5 })
+    #expect(plan.removalsBySpace == [9: [1, 2]])
     #expect(plan.adds == [5: [2]])
     #expect(plan.windows == [1, 2])
 }
 
 @Test func windowsWithNowhereToGoStayConcealed() {
-    let plan = RecoveryPlan.make(members: [9: [2]], stranded: [], hasOrdinarySpace: { _ in false }, destination: { _ in nil })
+    let plan = RecoveryPlan.make(members: [9: [2]], recorded: [], alive: [], isOnAnySpace: { _ in false }, destination: { _ in nil })
     #expect(plan.stuck == [2])
-    #expect(plan.removals.isEmpty && plan.adds.isEmpty)
+    #expect(plan.removalsBySpace.isEmpty && plan.adds.isEmpty)
 }
 
+/// 4 is recorded and gone, so it is left out.
 @Test func strandedRecordedWindowsAreAddedOnce() {
-    let plan = RecoveryPlan.make(members: [9: [2]], stranded: [2, 3], hasOrdinarySpace: { _ in false }, destination: { _ in 5 })
+    let plan = RecoveryPlan.make(members: [9: [2]], recorded: [2, 3, 4], alive: [2, 3], isOnAnySpace: { _ in false },
+                                 destination: { _ in 5 })
     #expect(plan.adds == [5: [2, 3]])
-    #expect(plan.removals == [9: [2]])   // 3 is in no recorded Space
+    #expect(plan.removalsBySpace == [9: [2]])   // 3 is in no recorded Space
 }
 
 @Test func anAddedWindowLeavesItsRecordedSpaceOnlyOnceItsAddLanded() {
-    let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [], alive: [1, 2], isOnAnySpace: { $0 == 1 }, destination: { _ in 5 })
     #expect(plan.removals(landed: { _ in true }) == [9: [1, 2]])
     #expect(plan.removals(landed: { _ in false }) == [9: [1]])
+}
+
+/// A removal could leave such a window on no Space, and an add could take it off its own.
+/// 2 stays in the recorded Space and 3 counts as on no Space, and each keeps the record.
+@Test func aWindowWhoseSpacesDoNotReadStaysWhereItIs() {
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [1, 3], alive: [1, 3], isOnAnySpace: { $0 == 1 ? true : nil },
+                                 destination: { _ in 5 })
+    #expect(plan.removalsBySpace == [9: [1]])
+    #expect(plan.adds.isEmpty)
+    #expect(plan.stuck == [2, 3])
+    #expect(!plan.isComplete(remainingMembers: 1, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 3 }))
 }
 
 /// Both halves: a window left in a recorded Space, as when its add did not land, and a
 /// window of the plan on no Space each keep the record.
 @Test func recoveryIsCompleteOnlyWhenNothingIsLeftAnywhere() {
-    let plan = RecoveryPlan.make(members: [9: [1, 2]], stranded: [], hasOrdinarySpace: { $0 == 1 }, destination: { _ in 5 })
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [], alive: [], isOnAnySpace: { $0 == 1 }, destination: { _ in 5 })
     #expect(plan.isComplete(remainingMembers: 0, isOnNoSpace: { _ in false }))
     #expect(!plan.isComplete(remainingMembers: 1, isOnNoSpace: { _ in false }))
     #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 2 }))
@@ -45,7 +59,7 @@ import Testing
 
 @Test func aStuckStrandedWindowKeepsTheRecord() {
     // A stranded window with no destination is on no Space, so recovery is not complete.
-    let plan = RecoveryPlan.make(members: [:], stranded: [3], hasOrdinarySpace: { _ in false }, destination: { _ in nil })
+    let plan = RecoveryPlan.make(members: [:], recorded: [3], alive: [3], isOnAnySpace: { _ in false }, destination: { _ in nil })
     #expect(plan.stuck == [3])
     #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 3 }))
 }
@@ -72,19 +86,25 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
 @Test func recoveryRestoresTheAppsWindowsAndLeavesOthersAlone() {
     let members = concealed([9: [1, 2, 3, 4, 5, 7]])
     #expect(members == [9: [1, 2, 3, 4]])
-    let plan = RecoveryPlan.make(members: members, stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
-    #expect(plan.removals == [9: [1, 2, 3, 4]])
+    let plan = RecoveryPlan.make(members: members, recorded: [], alive: [], isOnAnySpace: { _ in true }, destination: { _ in 5 })
+    #expect(plan.removalsBySpace == [9: [1, 2, 3, 4]])
     let after = concealed([9: [5, 7]])
     #expect(after == [9: []])   // the Space still exists
     #expect(plan.isComplete(remainingMembers: after.values.joined().count, isOnNoSpace: { _ in false }))
     #expect(!plan.isComplete(remainingMembers: concealed([9: [3, 7]]).values.joined().count, isOnNoSpace: { _ in false }))
 }
 
-/// A member the read missed was listed by the Space, so the read failed: it counts, and
-/// keeps the record.
-@Test func aMemberWithNoRowKeepsTheRecord() {
-    #expect(concealed([9: [1, 6]]) == [9: [1, 6]])
-    let plan = RecoveryPlan.make(members: [9: [1]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
+/// A member the read missed is either unread or closed and still listed. It counts, and
+/// recovery takes it out with the rest, though a closed window's add never lands. It keeps
+/// the record only while the Space lists it.
+@Test func aMemberWithNoRowIsTakenOut() {
+    let members = concealed([9: [1, 6]])
+    #expect(members == [9: [1, 6]])
+    let plan = RecoveryPlan.make(members: members, recorded: [1], alive: [1], isOnAnySpace: { $0 == 1 },
+                                 destination: { _ in 5 })
+    #expect(plan.adds == [5: [6]])
+    #expect(plan.removals(landed: { _ in false }) == [9: [1, 6]])
+    #expect(plan.isComplete(remainingMembers: concealed([9: []]).values.joined().count, isOnNoSpace: { _ in false }))
     #expect(!plan.isComplete(remainingMembers: concealed([9: [6]]).values.joined().count, isOnNoSpace: { _ in false }))
 }
 
@@ -105,4 +125,34 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
     #expect(pruned?.windows.map(\.id) == [1, 3, 4])
     // A read that misses the new window it just found failed, as a failed query reads nothing.
     #expect(full.pruned(alive: [], keeping: [3, 4], seen: [4]) == nil)
+}
+
+private let kept = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 5, start: 6),
+                                  spaces: [9, 10], windows: [.init(id: 1, owner: app, originalSpace: 5)],
+                                  animationSpaces: [12, 13])
+
+@Test func anIncompleteRecoveryKeepsEveryWindowAndEachSpaceNotGone() {
+    let after = kept.keptAfterIncomplete(gone: [10, 13], keepingAnimationSpaces: false)
+    #expect(after.windows == kept.windows)
+    #expect(after.spaces == [9])
+    #expect(after.animationSpaces == [12])
+}
+
+@Test func aCompleteRecoveryKeepsOnlyTheSpacesLeftAfterTheirDestroy() {
+    let after = kept.keptAfterRestore(left: [10, 12], keepingAnimationSpaces: false)
+    #expect(after?.windows == [])
+    #expect(after?.spaces == [10])
+    #expect(after?.animationSpaces == [12])
+}
+
+@Test func aCompleteRecoveryWithNoSpaceLeftClearsTheRecord() {
+    #expect(kept.keptAfterRestore(left: [], keepingAnimationSpaces: false) == nil)
+}
+
+/// The running Kosmos's recovery leaves the Spaces windows slide in to it, gone or not.
+@Test func whileKeepingThemTheAnimationSpacesStayRecorded() {
+    #expect(kept.keptAfterIncomplete(gone: [10, 13], keepingAnimationSpaces: true).animationSpaces == [12, 13])
+    let after = kept.keptAfterRestore(left: [], keepingAnimationSpaces: true)
+    #expect(after?.spaces == [])
+    #expect(after?.animationSpaces == [12, 13])
 }

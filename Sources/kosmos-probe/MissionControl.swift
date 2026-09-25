@@ -1,19 +1,9 @@
-// kosmos-probe mission-control [seconds]: which Mission Control signals reach a process on
-// macOS 27 (docs/hiding.md)? It registers the four Exposé notifications yabai
-// watches (src/mission_control.c) on the Dock, where yabai watches them, and on
-// WindowManager.app, which holds Mission Control's classes on macOS 27, and prints what each
-// registration returned. It also registers WindowServer event 1204, which yabai reads for
-// Mission Control before macOS 12. Each arrival prints with the wall clock time, and the
-// probe exits after 120 s by default. It opens no window and takes no focus. Needs
-// Accessibility for the terminal; the probe never asks for it.
+// kosmos-probe mission-control [seconds]: which Mission Control signals reach a process
+// (docs/hiding.md): yabai's four Exposé notifications on the Dock and on WindowManager.app,
+// and WindowServer event 1204, for 120 s by default. Opens no window and takes no focus.
+// Needs Accessibility for the terminal.
 import AppKit
 import CKosmos
-
-@MainActor private let wallClock: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss.SSS"
-    return formatter
-}()
 
 @MainActor func missionControl(seconds: Double) -> Never {
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
@@ -50,7 +40,6 @@ import CKosmos
     exit(0)
 }
 
-/// Prints `signal` with the wall clock time it arrived.
 private func arrived(_ signal: String) {
     let at = Date()
     DispatchQueue.main.async { MainActor.assumeIsolated { print(wallClock.string(from: at) + " " + signal) } }

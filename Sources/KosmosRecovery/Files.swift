@@ -1,7 +1,5 @@
 import Foundation
 
-/// Kosmos's private directory, created with mode 0700, and the files the app and the
-/// guardian share.
 public enum KosmosFiles {
     public static let support: URL = {
         let url = FileManager.default.homeDirectoryForCurrentUser
@@ -16,7 +14,7 @@ public enum KosmosFiles {
     public static var record: URL { support.appending(path: "recovery.record") }
 }
 
-/// An exclusive lock on a file, held until the descriptor closes or the process dies.
+/// Released when the descriptor closes, so also when the process dies.
 public final class FileLock {
     private let fd: Int32
 

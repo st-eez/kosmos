@@ -67,7 +67,6 @@ final class Canvas {
     func fill(_ path: CGPath, _ color: CGColor) {
         ctx.saveGState(); ctx.addPath(path); ctx.setFillColor(color); ctx.fillPath(); ctx.restoreGState()
     }
-    /// Fills `path` with a top to bottom gradient.
     func fill(_ path: CGPath, top: CGColor, bottom: CGColor) {
         let box = path.boundingBox
         clipped(path) {

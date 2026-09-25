@@ -1,21 +1,15 @@
 import Darwin
 
-/// Blocking calls to a running Kosmos. They use no dispatch queues or tasks, which keeps the
-/// CLI's launch near the cost of a bare Swift binary.
+/// No dispatch queues or tasks, which keeps the CLI's launch near a bare Swift binary's.
 public enum IPCClient {
-    /// How long a request may take, from connecting to reading the first response.
     private static let timeout = Duration.seconds(5)
 
-    /// Sends one command and returns Kosmos's response. Throws `IPCError.notRunning` when
-    /// nothing listens at `socketPath` and `IPCError.timedOut` when no response arrives in time.
     public static func send(_ args: [String], socketPath: String) throws(IPCError) -> Response {
         try exchange(.command(args), socketPath: socketPath).response
     }
 
-    /// Subscribes to the frames Kosmos publishes and calls `onFrame` with each frame's body
-    /// until Kosmos closes the stream. When Kosmos refuses the subscription, returns its error
-    /// at once; otherwise returns its success response once the stream ends. The timeout covers
-    /// the wait for that first response.
+    /// Returns Kosmos's refusal at once, else its success response once the stream ends. The
+    /// timeout covers only the first response.
     public static func subscribe(socketPath: String, onFrame: ([UInt8]) -> Void) throws(IPCError) -> Response {
         let (connection, response) = try exchange(.subscribe, socketPath: socketPath)
         guard response.exitCode == 0 else { return response }
@@ -23,7 +17,6 @@ public enum IPCClient {
         return response
     }
 
-    /// Connects, sends `request` and reads the first response, all within `timeout`.
     private static func exchange(
         _ request: Request, socketPath: String
     ) throws(IPCError) -> (connection: ClientConnection, response: Response) {
@@ -35,7 +28,7 @@ public enum IPCClient {
     }
 }
 
-/// A nonblocking client socket that waits with `poll`, so every wait can have a deadline.
+/// Nonblocking and waiting with `poll`, so every wait can have a deadline.
 final class ClientConnection {
     private let fd: Int32
     private var decoder = FrameDecoder()
@@ -69,9 +62,8 @@ final class ClientConnection {
             } else if errno == EAGAIN {
                 try wait(for: Int16(POLLOUT), deadline: deadline)
             } else if errno == EPIPE || errno == ENOTCONN {
-                // The server closed the connection. ENOTCONN comes when the close lands before
-                // the write: 14 of 3000 rejected clients in a loop got it, the rest EPIPE or a
-                // closed read.
+                // ENOTCONN comes when the server's close lands before the write: 14 of 3000
+                // rejected clients in a loop got it, the rest EPIPE or a closed read.
                 throw IPCError.closed
             } else if errno != EINTR {
                 throw IPCError.system("write", errno)
@@ -79,8 +71,7 @@ final class ClientConnection {
         }
     }
 
-    /// The next frame body, or nil when the server closes the connection between frames.
-    /// A nil deadline waits indefinitely.
+    /// Nil when the server closes between frames. A nil deadline waits indefinitely.
     func readFrame(deadline: ContinuousClock.Instant?) throws(IPCError) -> [UInt8]? {
         var buffer = [UInt8](repeating: 0, count: 64 << 10)
         while true {
