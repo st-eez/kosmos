@@ -382,15 +382,14 @@ off the main thread).
     AXExposeShowFrontWindows, AXExposeShowDesktop and AXExposeExit, yabai
     src/mission_control.c) and posted none while Mission Control opened by swipe and by
     Control-Up, or while App Exposé opened. It refused the two controls, AXMenuOpened and
-    AXWindowCreated, with kAXErrorNotificationUnsupported (-25207).
+    AXWindowCreated, with kAXErrorNotificationUnsupported (-25207), so no run showed that
+    the probe's observer receives any notification from the Dock. The watcher registers
+    no control, so running it again cannot settle whether the Dock posts the four names
+    until a notification the Dock accepts and posts on demand is found to serve as one.
   - WindowManager.app, which holds Mission Control's classes and the same four names on
     macOS 27, refused all six with -25207.
   - WindowServer event 1204, which yabai reads for Mission Control before macOS 12,
     registered and never arrived.
-  - With both controls refused, no run showed that the probe's observer receives any
-    notification from the Dock, so the runs leave open whether the Dock posts the four
-    names. The missing control is a notification the Dock accepts and posts while the
-    probe runs.
   - In both runs two windows that were not the probe's stayed in the holding Space after
     the probe's windows left it. After the first run their ids were gone, and a live
     window with a neighbouring id was WindowManager's "App Icon Window" at layer 17. From
