@@ -53,13 +53,16 @@ final class FocusQueue: Sendable {
                     case .none: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
-                guard performed else { return dropping(stamp) }
-                // `WorkerPost`: the key record leaves the window where it sits in its app's
-                // stacking order.
-                if case .window(let id) = key {
-                    worker?.raiseAfterKeyRecord(id, performing: raising, raised: dropping)
+                if performed {
+                    // `WorkerPost`: the key record leaves the window where it sits in its app's
+                    // stacking order.
+                    if case .window(let id) = key {
+                        worker?.raiseAfterKeyRecord(id, performing: raising, raised: dropping)
+                    }
+                    return
                 }
-                return
+                // A failed key record takes the public path (docs/focus.md).
+                dropping(stamp)
             }
             switch key {
             case .window(let id):
