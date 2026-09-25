@@ -72,9 +72,10 @@ actor AppWorker {
     private var elements: [UInt32: AXUIElement] = [:]
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: QueuedWrite] = [:]
-    /// Animated writes under way (`KOSMOS_ANIMATE=1`), each with the write that ends it. A
-    /// tween runs on `ProcessInfo.systemUptime`, which changes to the wall clock leave alone.
-    private var tweens: [UInt32: (tween: Tween, write: FrameWrite, target: CGRect)] = [:]
+    /// Animated writes under way (`KOSMOS_ANIMATE=1`), each with the write that ends it and
+    /// the seconds its steps have spent in Accessibility calls, for the log. A tween runs on
+    /// `ProcessInfo.systemUptime`, which changes to the wall clock leave alone.
+    private var tweens: [UInt32: (tween: Tween, write: FrameWrite, target: CGRect, spent: Double)] = [:]
     /// Runs while `tweens` has any.
     private var tweenTimer: CFRunLoopTimer?
     /// rift defaults to 0.3 s at 100 steps a second. 120 a second matches a ProMotion panel,
@@ -351,7 +352,7 @@ actor AppWorker {
                 case .position(let origin): CGRect(origin: origin, size: from.size)
                 case .frame(let frame): frame
                 }
-                tweens[id] = (Tween(from: from, to: to, start: now, duration: Self.tweenDuration), entry.write, entry.target)
+                tweens[id] = (Tween(from: from, to: to, start: now, duration: Self.tweenDuration), entry.write, entry.target, 0)
                 startTweenTimer()
                 continue
             }
@@ -365,6 +366,7 @@ actor AppWorker {
     /// Writes one window's frame and reads it back. Nil when the app did not answer: the
     /// write waits in the queue.
     private func apply(_ id: UInt32, _ element: AXUIElement, _ entry: QueuedWrite) -> (id: UInt32, target: CGRect, readBack: CGRect)? {
+        let start = ProcessInfo.processInfo.systemUptime
         write(element, entry.write)
         // A write or read the app did not answer waits, with the ones after it, for the
         // app to answer again. One whose read failed otherwise waits for the app's next
@@ -389,7 +391,8 @@ actor AppWorker {
             log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
         }
         // script/bench-relayout.sh counts these lines and the tweens' below.
-        log.info("\(id) written in \(sets) sets")
+        let spent = (ProcessInfo.processInfo.systemUptime - start) * 1000
+        log.info("\(id) written in \(sets) sets, AX time \(spent, format: .fixed(precision: 2)) ms")
         return (id, entry.target, readBack)
     }
 
@@ -430,7 +433,9 @@ actor AppWorker {
                 continue
             }
             if let step = entry.tween.step(at: now) {
+                let start = ProcessInfo.processInfo.systemUptime
                 write(element, step)
+                entry.spent += ProcessInfo.processInfo.systemUptime - start
                 tweens[id] = entry
                 continue
             }
@@ -438,7 +443,10 @@ actor AppWorker {
             if let result = apply(id, element, (entry.write, entry.target, false)) { results.append(result) }
             let late = (now - entry.tween.start - entry.tween.duration) * 1000
             let sets = entry.tween.steps + (entry.tween.sized ? 2 : 0)   // the midpoint writes three
-            log.info("\(id) animated in \(entry.tween.steps) steps (\(sets) sets), final write \(late, format: .fixed(precision: 1)) ms after due")
+            log.info("""
+                \(id) animated in \(entry.tween.steps) steps (\(sets) sets, AX time \(entry.spent * 1000, format: .fixed(precision: 2)) ms), \
+                final write \(late, format: .fixed(precision: 1)) ms after due
+                """)
         }
         if tweens.isEmpty { stopTweenTimer() }
         if !results.isEmpty { send(.framesApplied(results)) }

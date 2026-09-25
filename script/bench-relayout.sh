@@ -2,7 +2,7 @@
 # Times relayouts of stub windows under the running Kosmos, to compare the animation trial
 # (KOSMOS_ANIMATE=1, DESIGN.md, section 5.2) with instant moves.
 #
-#   script/bench-relayout.sh <workspace> <reps>
+#   script/bench-relayout.sh <workspace> <reps> [window-id]
 #
 # The workspace must hold no windows. The script shows it and opens 3 windows of
 # `kosmos-probe bench-windows` on its display, from a bundle, so Kosmos manages them, opened
@@ -12,6 +12,14 @@
 # a 0.6 s settle. Leave the mouse and keyboard alone during a run: with focus follows mouse
 # on, a pointer move can key another window, and the steps act on the key window. At the
 # end the stub quits and the display shows its workspace again.
+#
+# With a window id from `kosmos list-windows`, one real app's window joins the stub's:
+# `kosmos move-node-to-workspace --window-id` brings it onto the workspace, where it goes
+# leftmost, and takes it back to its own workspace at the end, also when a run fails.
+# Kosmos keys it during setup, which fronts its app. Ask Steve before moving one of his
+# windows. Only the stub reports its own frames, so the real window's latency is to its
+# final write in Kosmos's log, and its CPU is its app's main process, without the helper
+# processes that draw it.
 #
 # Run it once per mode with the trial build, from this checkout:
 #
@@ -51,26 +59,33 @@
 #   kosmos.log     Kosmos's log during the steps
 #   relayouts.tsv  per step: rep, step, response, next response and final frame in ms,
 #                  windows moved, frame changes the stub took
-#   windows.tsv    per step and window: step, window, ms to its final frame
+#   windows.tsv    per step and stub window: step, window, ms to its final frame
+#   writes.tsv     per step and window, from Kosmos's log: step number, rep, step, window,
+#                  ms to its final write
 #   summary.txt    what the script prints at the end
 #
 # Latency is to the last frame change the stub saw for the step, which is the final frame
-# Kosmos wrote. The next response is a `list-workspaces` query sent as soon as the step's
-# command answers, while the relayout runs; Kosmos answers it on the main actor, which the
-# change events of every tween step also reach. CPU time comes from `ps -o time=`, which
-# counts 10 ms steps: fine for a run's total, which the summary divides by the relayouts.
-# WindowServer's time includes every other app's drawing, so the summary also gives each
-# process's time over 10 s of rest with the stub's windows tiled, scaled to the run's
-# length. The stub prints a line per frame change, a cost both modes share.
+# Kosmos wrote, and to the log line of each window's final write, which Kosmos logs after
+# reading the frame back; the log's times have millisecond steps. The next response is a
+# `list-workspaces` query sent as soon as the step's command answers, while the relayout
+# runs; Kosmos answers it on the main actor, which the change events of every tween step
+# also reach. CPU time comes from `ps -o time=`, which counts 10 ms steps: fine for a run's
+# total, which the summary divides by the relayouts. WindowServer's time includes every
+# other app's drawing, so the summary also gives each process's time over 10 s of rest with
+# the windows tiled, scaled to the run's length. The stub prints a line per frame change, a
+# cost both modes share. Kosmos logs the Accessibility time of each final write and of each
+# tween's steps, and the summary gives both per relayout. The summary also records each
+# app's AXEnhancedUserInterface (`kosmos-probe eui`), which makes Chrome and Firefox animate
+# Accessibility moves themselves; reading it needs Accessibility for the terminal.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage="usage: script/bench-relayout.sh <workspace> <reps>"
-if (($# != 2)) || [[ ! $2 =~ ^[1-9][0-9]*$ ]]; then
+usage="usage: script/bench-relayout.sh <workspace> <reps> [window-id]"
+if (($# < 2 || $# > 3)) || [[ ! $2 =~ ^[1-9][0-9]*$ || ! ${3:-1} =~ ^[0-9]+$ ]]; then
     echo "$usage" >&2
     exit 2
 fi
-workspace=$1 reps=$2
+workspace=$1 reps=$2 real=${3:-}
 if [[ -z ${EPOCHREALTIME:-} ]]; then
     echo "This needs bash 5 or later, for EPOCHREALTIME; /bin/bash is 3.2." >&2
     exit 1
@@ -143,6 +158,18 @@ for ((i = 0; i < $(field displays); i++)); do
     [[ $(field "displays.$i.id") == "$display_id" ]] && display_name=$(field "displays.$i.name")
 done
 focused_before=$("$kosmos" list-workspaces | awk '$2 == "*" { print $1 }')
+real_home= real_app= real_pid=
+if [[ -n $real ]]; then
+    read -r real_home real_app < <("$kosmos" list-windows | awk -v id="$real" '$1 == id {
+        app = ""; for (i = 3; i <= NF; i++) if ($i != "*") app = app (app == "" ? "" : " ") $i
+        print $2, app }') || true
+    if [[ -z $real_home ]]; then
+        echo "Kosmos manages no window $real; \`kosmos list-windows\` lists the ones it does." >&2
+        exit 1
+    fi
+    real_pid=$(pgrep -x "$real_app" || true)
+    if [[ $(wc -w <<< "$real_pid") -ne 1 ]]; then real_pid=; fi
+fi
 
 # The stub is a bundle of its own holding the probe, so macOS takes it for a regular app
 # from its launch, and Kosmos gives it a worker.
@@ -166,12 +193,13 @@ PLIST
 codesign --force --sign - "$stub"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-opener_pid= log_pid=
+opener_pid= log_pid= real_moved=
 cleanup() {
     exec 3>&-   # the stub quits at the end of its stdin, and its windows go
     if [[ -n $log_pid ]]; then kill -INT "$log_pid" 2>/dev/null || true; fi
     if [[ -n $opener_pid ]]; then wait "$opener_pid" 2>/dev/null || true; fi
     "$lsregister" -u "$stub" 2>/dev/null || true
+    if [[ -n $real_moved ]]; then "$kosmos" move-node-to-workspace --window-id "$real" "$real_home" > /dev/null || true; fi
     for name in "$shown_before" "$focused_before"; do
         if [[ -n $name && $name != "$workspace" ]]; then "$kosmos" workspace "$name" > /dev/null || true; fi
     done
@@ -212,16 +240,32 @@ fi
 while read -r id name; do
     if [[ $name != "$workspace" ]]; then "$kosmos" move-node-to-workspace --window-id "$id" "$workspace"; fi
 done < <(listed)
+windows=$count
+if [[ -n $real ]]; then
+    real_moved=1
+    "$kosmos" move-node-to-workspace --window-id "$real" "$workspace"
+    windows=$((count + 1))
+fi
 "$kosmos" workspace "$workspace"
 "$kosmos" flatten-workspace-tree
 "$kosmos" layout horizontal
-for ((i = 1; i < count; i++)); do "$kosmos" focus left; done
+key() { "$kosmos" list-windows | awk '$NF == "*" { print $1 }'; }
+for ((i = 1; i < windows; i++)); do "$kosmos" focus left; done
+# The real window goes leftmost, so the one the stub closes, rightmost, is never key.
+if [[ -n $real ]]; then
+    moves=0
+    while [[ $(key) != "$real" ]] && ((moves < windows)); do
+        "$kosmos" focus right
+        moves=$((moves + 1))
+    done
+    for ((i = 0; i < moves; i++)); do "$kosmos" move left; done
+fi
 "$kosmos" focus right
 sleep 1
-key() { "$kosmos" list-windows | awk '$NF == "*" { print $1 }'; }
 key_window=$(key)
-if [[ $all_ids != *" $key_window "* ]] || [[ $(listed | awk -v ws="$workspace" '$2 == ws' | wc -l) -ne $count ]]; then
-    echo "The stub's windows are not all on $workspace with one of them key." >&2
+if [[ $all_ids != *" $key_window "* ]] || [[ $(listed | awk -v ws="$workspace" '$2 == ws' | wc -l) -ne $count ]] ||
+    { [[ -n $real ]] && ! "$kosmos" list-windows | awk -v id="$real" -v ws="$workspace" '$1 == id && $2 == ws { found = 1 } END { exit !found }'; }; then
+    echo "The windows are not all on $workspace with a stub window key." >&2
     exit 1
 fi
 
@@ -231,7 +275,8 @@ rightmost() {
         END { for (id in x) if (best == "" || x[id] > x[best]) best = id; print best }' "$dir/stub.out"
 }
 cpu() { ps -o time= -p "$1" | awk -F: '{ s = 0; for (i = 1; i <= NF; i++) s = s * 60 + $i; printf "%.2f", s }'; }
-cpus() { echo "$(cpu "$kosmos_pid") $(cpu "$stub_pid") $(cpu "$server_pid")"; }
+cpus() { echo "$(cpu "$kosmos_pid") $(cpu "$stub_pid") $(cpu "$server_pid")${real_pid:+ $(cpu "$real_pid")}"; }
+eui=$("$bin/kosmos-probe" eui "$stub_pid" ${real_pid:+"$real_pid"} | paste -sd ';' - | sed 's/;/; /g' || true)
 
 read -ra idle_before < <(cpus)
 sleep "$rest"
@@ -243,6 +288,7 @@ sleep 1
 printf 'rep\tstep\tsent\tanswered\tnext\texit\n' > "$dir/steps.tsv"
 read -ra cpu_before < <(cpus)
 start=$EPOCHREALTIME
+day=$(date -r "${start%.*}" +%Y-%m-%d)
 for ((rep = 1; rep <= reps; rep++)); do
     for step in "${steps[@]}"; do
         code=0
@@ -316,19 +362,35 @@ percentiles() {
             printf "median %.1f ms, p95 %.1f ms (n %d)\n", v[int((NR + 1) / 2)], v[p], NR
         }'
 }
-# Kosmos's writes to the stub's windows: final writes with their sets, and tweens with their
-# steps, sets, and how long after its due time each final write came.
+# Kosmos's writes to the windows, from its log: each final write's time, sets and AX time,
+# and each tween's steps, sets, AX time and how long after its due time its final write
+# came. The log gives local times, to the millisecond.
+midnight=$(date -j -f '%Y-%m-%d %H:%M:%S' "$day 00:00:00" +%s)
 : > "$dir/late.txt"
-read -r writes write_sets tweens tween_steps tween_sets < <(awk -v ids="$all_ids" -v late="$dir/late.txt" '
-    match($0, /[0-9]+ written in [0-9]+ sets/) {
+read -r writes write_sets write_ax tweens tween_steps tween_sets tween_ax < <(awk -F'\t' -v ids="$all_ids${real:+$real }" \
+    -v day="$day" -v midnight="$midnight" -v late="$dir/late.txt" -v per_window="$dir/writes.tsv" '
+    FNR == NR { if (FNR > 1) { n++; rep[n] = $1; step[n] = $2; sent[n] = $3 + 0 }; next }
+    match($0, /[0-9]+ (written in [0-9]+ sets, AX time [0-9.]+ ms|animated in [0-9]+ steps \([0-9]+ sets, AX time [0-9.]+ ms\), final write [0-9.]+ ms after due)/) {
         split(substr($0, RSTART), w, " ")
-        if (index(ids, " " w[1] " ")) { writes++; sets += w[4] }
+        if (!index(ids, " " w[1] " ")) next
+        split($2, c, ":")
+        t = midnight + ($1 == day ? 0 : 86400) + c[1] * 3600 + c[2] * 60 + c[3]
+        while (j < n && t >= sent[j + 1]) j++
+        if (w[2] == "written") {
+            writes++; sets += w[4]; ax += w[8]
+            if (j) last[j SUBSEP w[1]] = t
+        } else {
+            tweens++; steps += w[4]; tsets += substr(w[6], 2); tax += w[10]; print w[14] > late
+        }
     }
-    match($0, /[0-9]+ animated in [0-9]+ steps \([0-9]+ sets\), final write [0-9.]+ ms after due/) {
-        split(substr($0, RSTART), w, " ")
-        if (index(ids, " " w[1] " ")) { tweens++; steps += w[4]; tsets += substr(w[6], 2); print w[10] > late }
-    }
-    END { print writes + 0, sets + 0, tweens + 0, steps + 0, tsets + 0 }' "$dir/kosmos.log")
+    END {
+        for (key in last) {
+            split(key, k, SUBSEP)
+            printf "%d\t%s\t%s\t%s\t%.1f\n", k[1], rep[k[1]], step[k[1]], k[2], (last[key] - sent[k[1]]) * 1000 > per_window
+        }
+        print writes + 0, sets + 0, ax + 0, tweens + 0, steps + 0, tsets + 0, tax + 0
+    }' "$dir/steps.tsv" FS=' ' "$dir/kosmos.log")
+touch "$dir/writes.tsv"
 relayouts=$((reps * ${#steps[@]}))
 wall=$(awk -v a="$start" -v b="$end" 'BEGIN { print b - a }')
 per() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.2f", a / b }'; }
@@ -340,18 +402,25 @@ cpu_line() {
 }
 {
     echo "$(date '+%Y-%m-%d %H:%M'), $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo ' with changes'): $kosmos_path, KOSMOS_ANIMATE=$mode"
-    echo "workspace $workspace on $display_name, $count windows, $reps reps of ${#steps[@]} steps: $relayouts relayouts in $(per "$wall" 1) s"
-    echo "latency to the final frame, per relayout: $(awk -F'\t' '$5 != "-" { print $5 }' "$dir/relayouts.tsv" | percentiles)"
-    echo "latency to the final frame, per window:   $(cut -f3 "$dir/windows.tsv" | percentiles)"
+    echo "workspace $workspace on $display_name, $count stub windows${real:+ and $real_app window $real}, $reps reps of ${#steps[@]} steps: $relayouts relayouts in $(per "$wall" 1) s"
+    echo "AXEnhancedUserInterface: ${eui:-unread}"
+    echo "latency to the final frame the stub took, per relayout: $(awk -F'\t' '$5 != "-" { print $5 }' "$dir/relayouts.tsv" | percentiles)"
+    echo "latency to the final frame the stub took, per window:   $(cut -f3 "$dir/windows.tsv" | percentiles)"
+    echo "latency to the final write in Kosmos's log, per relayout: $(awk -F'\t' '$5 > m[$1] { m[$1] = $5 } END { for (j in m) print m[j] }' "$dir/writes.tsv" | percentiles)"
+    if [[ -n $real ]]; then
+        echo "latency to $real_app's final write in Kosmos's log: $(awk -F'\t' -v id="$real" '$4 == id { print $5 }' "$dir/writes.tsv" | percentiles)"
+    fi
     echo "command response:                         $(awk -F'\t' '$3 != "-" { print $3 }' "$dir/relayouts.tsv" | percentiles)"
     echo "next command response:                    $(cut -f4 "$dir/relayouts.tsv" | percentiles)"
     echo "relayouts that moved no window: $(awk -F'\t' '$5 == "-"' "$dir/relayouts.tsv" | wc -l | xargs), commands that failed: $(awk -F'\t' 'NR > 1 && $6 != 0' "$dir/steps.tsv" | wc -l | xargs)"
     echo "per relayout: $(per "$(awk -F'\t' '{ s += $7 } END { print s + 0 }' "$dir/relayouts.tsv")" "$relayouts") frame changes the stub took, $(per "$writes" "$relayouts") final writes, $(per "$((write_sets + tween_sets))" "$relayouts") Accessibility sets"
-    echo "tweens: $tweens, $(per "$tween_steps" "$((tweens > 0 ? tweens : 1))") steps each; final write after due: $(percentiles < "$dir/late.txt")"
+    echo "AX time per relayout: $(per "$write_ax" "$relayouts") ms in final writes, $(per "$tween_ax" "$relayouts") ms in tween steps"
+    echo "tweens: $tweens, $(per "$tween_steps" "$((tweens > 0 ? tweens : 1))") steps each, $(per "$tween_ax" "$((tween_steps > 0 ? tween_steps : 1))") ms of AX time per step; final write after due: $(percentiles < "$dir/late.txt")"
     echo "CPU (ps -o time=):"
     cpu_line Kosmos 0
     cpu_line stub 1
     cpu_line WindowServer 2
+    if [[ -n $real_pid ]]; then cpu_line "$real_app" 3; fi
     echo "latency to the final frame by step:"
     printf '%s\n' "${steps[@]}" | awk '!seen[$0]++' | while IFS= read -r step; do
         printf '  %-34s %s\n' "$step" "$(awk -F'\t' -v s="$step" '$2 == s && $5 != "-" { print $5 }' "$dir/relayouts.tsv" | percentiles)"
