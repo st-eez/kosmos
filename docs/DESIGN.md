@@ -1440,7 +1440,7 @@ pointer gets none of the drag's events.
   grant for Input Monitoring at a listen-only mouse tap, and whether an active one with
   Accessibility asks is for the live test. Kosmos makes the tap only after the
   Accessibility grant and logs both grants as it does. A refused tap is logged, and
-  modifier drags stay off.
+  modifier drags stay off until the next config load makes it again.
 - Open until the live test:
   - whether WindowServer takes an active tap at the annotated location and fills in the
     window under the pointer for button events there. If not, a tap at the session
