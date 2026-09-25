@@ -112,11 +112,14 @@
     unless another window of its app is ordered in at its frame: only that window's
     order-out can still pair with the order-in as a tab switch, as when the user selects
     the tab of a window Merge All Windows parked, so the reopen then waits the pairing
-    window. The app orders the window in at its old place, so while the reopen waits the
-    window is held transparent, and the reopen pops it in ([geometry.md](geometry.md)).
-    Before this, every reopen waited the pairing window, and Activity Monitor, closed with
-    Command-W on workspace 5 and reopened on workspace 6, showed at its workspace 5 tile
-    for about 270 ms after its order-in (live log, September 25, 2026). Kosmos takes a managed
+    window. The reopen pops the window in ([geometry.md](geometry.md)). Before this, every
+    reopen waited the pairing window, and Activity Monitor, closed with Command-W on
+    workspace 5 and reopened on workspace 6, showed at its workspace 5 tile for about
+    270 ms after its order-in, where its app ordered it in (live log, September 25, 2026).
+    The ceiling: a window that waits and is no tab switch shows at its old place for the
+    250 ms. A selected tab is already at its place. If the log shows such a wait, the
+    upgrade is to hold the window in a transparent Space of the pool while it waits, as a
+    new window waits for its write. Kosmos takes a managed
     window ordered out for none of the other reasons as closed and kept, and looks at it
     as soon as the read that saw its order-out is applied with no other read of window
     rows under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A
