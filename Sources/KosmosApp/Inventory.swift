@@ -70,10 +70,9 @@ final class Inventory {
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out once the reads under way when it left are applied,
-    /// for none of the reasons with their own reports: its app closed it and kept it, as
-    /// NSWindowController does, or deselected its native tab. With when the inventory saw it
-    /// ordered out.
+    /// A managed window still ordered out at its look (ClosedAndKept.Looks), for none of the
+    /// reasons with their own reports: its app closed it and kept it, as NSWindowController
+    /// does, or deselected its native tab. With when the inventory saw it ordered out.
     var onKeptOrderedOut: (@MainActor (UInt32, ContinuousClock.Instant) -> Void)?
     /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
     /// in (false), with its frame, and when: what a switch between native tabs is made of.
@@ -146,8 +145,7 @@ final class Inventory {
     /// `reads` too, so every result reaches the main actor in read order (docs/inventory.md).
     private var pending: [PendingEvent] = []
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
-    /// Managed windows seen ordered out, looked at as closed and kept once no read is under
-    /// way.
+    /// Managed windows seen ordered out, until their look (ClosedAndKept.Looks).
     private var looks = ClosedAndKept.Looks()
 
     /// WindowServer tracking needs no permission and starts at once.
@@ -306,16 +304,7 @@ final class Inventory {
         return !row.orderedIn
     }
 
-    /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
-    /// probe), and a minimize, a hide and native fullscreen have their own reports. It is
-    /// looked at again once no read is under way, when a native tab switch has paired, and
-    /// the controller decides whether it waits more (ClosedAndKept).
-    private func checkOrderedOut(_ id: UInt32) {
-        looks.orderedOut(id, at: .now)
-    }
-
-    /// A read was applied: the windows seen ordered out are looked at, once no other read is
-    /// under way (ClosedAndKept.Looks).
+    /// A read was applied: the windows whose look is due are looked at (ClosedAndKept.Looks).
     private func readApplied() {
         for (id, orderedOut) in looks.readApplied(eventsWaiting: !pending.isEmpty) where isKeptOrderedOut(id) {
             onKeptOrderedOut?(id, orderedOut)
@@ -491,7 +480,9 @@ final class Inventory {
                              at: .now, locked: sessionLocked) {
             onOrderChange?(row.id, row.pid, row.orderedIn, row.frame, .now)
         }
-        if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
+        // Perhaps closed and kept by its app. Concealing a window leaves it ordered in (the
+        // reveal probe), and a minimize, a hide and native fullscreen have their own reports.
+        if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { looks.orderedOut(row.id, at: .now) }
         // Shown now, as the second window an app launched hidden restored, with no report of
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
@@ -680,7 +671,7 @@ final class Inventory {
             heldOrder.swept()
             // No window counted as closed and kept since the lock: check each one still out,
             // now that the switches the lock held have paired.
-            for (id, row) in windows where !row.orderedIn && isManaged(id) { checkOrderedOut(id) }
+            for (id, row) in windows where !row.orderedIn && isManaged(id) { looks.orderedOut(id, at: .now) }
         }
     }
 
