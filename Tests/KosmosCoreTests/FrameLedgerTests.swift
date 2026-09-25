@@ -124,9 +124,11 @@ private let t0 = ContinuousClock.now
     // The app's own report of the size it kept changes nothing.
     ledger.observe(1, frame: kept)
     #expect(ledger.writes(for: [1: resized]).isEmpty)
-    // A drag to another size does: the target's size is written again.
+    // A drag to another size does: the target's size is written again, and refused once
+    // more, the window's minimum waits for a second refusal.
     ledger.observe(1, frame: CGRect(x: 30, y: 0, width: 700, height: 600))
     #expect(ledger.writes(for: [1: resized]) == [1: .frame(resized)])
+    #expect(ledger.confirm(1, target: resized, readBack: kept, at: t0) == .refused)
 }
 
 @Test func aPositionWriteReplacingAnUnwrittenFrameWriteWritesTheWholeFrame() {

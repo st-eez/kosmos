@@ -99,10 +99,13 @@ public struct FrameLedger: Sendable {
 
     /// Records a frame observed without a write of Kosmos's, such as a user resize. A size
     /// other than the one the window kept when it refused its target ends that refusal, so
-    /// the target's size is written again.
+    /// the target's size is written again, and a larger read back is a first refusal.
     public mutating func observe(_ id: UInt32, frame: CGRect) {
         confirmed[id] = frame
-        if let refusal = refused[id], refusal.kept != frame.size { refused[id] = nil }
+        if let refusal = refused[id], refusal.kept != frame.size {
+            refused[id] = nil
+            refusedLarger[id] = nil
+        }
     }
 
     /// The window's workspace is being shown. A target it read back larger than while hidden,

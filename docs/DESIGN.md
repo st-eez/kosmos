@@ -269,7 +269,8 @@ off the main thread).
   lists its ids), and the inventory reads the window's frame again. A frame it reads for
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
   replaces the confirmed one, and a size other than the one the window kept at a refusal
-  ends that refusal, so the next layout writes the target again. A concealed window's
+  ends that refusal, so the next layout writes the target again, and only a second
+  refusal of it records a minimum again. A concealed window's
   frame reads as off every display and is left out.
 - A tiled window the user resizes by its edges, as a change event reports it while the
   left button is down, goes back to its tile when the button comes up, which an `NSEvent`
