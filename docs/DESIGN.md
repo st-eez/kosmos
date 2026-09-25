@@ -537,6 +537,13 @@ off the main thread).
   - The user keys a window of an app between the worker's read before a raise and the
     app performing that raise. A change to the raised window reads as the raise's echo,
     and after a change to another window the raise keys its window again over the user's.
+    The report of a raise after a key record reaches the main actor from the app's
+    observer thread, and the worker's word that the raise is done from the worker's, so
+    the report can come after its record is forgotten and read as the user's choice of the
+    raised window. The spec runs the app's callbacks for the raise before the worker's
+    read. Besides this race, an app reported the window it had focused already after 6 of
+    40 such raises (section 2); read as the user's, that report takes focus back to the
+    window only when a newer request came between the raise and the report.
 - Skip activation when the target is already key, checked by the focus queue when the
   request runs: the target's app is the front process and its focused window, read on the
   app's worker, is the target. The key window last reported can be older than a request

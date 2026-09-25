@@ -210,14 +210,20 @@ actor AppWorker {
     }
 
     /// The raise after the queue's key record for this background app (`WorkerPost`,
-    /// KosmosCore's KeyRequest), which brings the keyed window to the top of its app. The key record then
-    /// AXRaise put it on top 10 times in 10, the key record alone 0 times (`kosmos-probe
-    /// keying`). The echo is recorded through `performing` just before the raise, as the raise
-    /// keys the window again if the user keyed another window of the app first. Once the raise
-    /// has returned and the worker has read the app's focused window, by when the app's
-    /// callbacks for the raise have run, as they have before its activation read, `raised`
-    /// tells the main actor to forget the record if no report used it: the raise changed
-    /// nothing (tla/README.md, change 23).
+    /// KosmosCore's KeyRequest), which brings the keyed window to the top of its app. The key
+    /// record alone put it on top 0 times in 20, the key record then AXRaise 20 times in 20
+    /// (`kosmos-probe keying`). The echo is recorded through `performing` just before the
+    /// raise, as the raise keys the window again if the user keyed another window of the app
+    /// first. Once the raise has returned and the worker has read the app's focused window,
+    /// `raised` tells the main actor to forget the record if no report used it
+    /// (tla/README.md, change 23).
+    ///
+    /// The ceiling: the raise's report hops to the main actor from the observer's thread, and
+    /// `raised` from the worker's, so the report can arrive after its record is forgotten and
+    /// read as the user's choice of the window. The spec has the app's callbacks for the raise
+    /// run before the worker's read, as they run before its activation read. The upgrade is
+    /// to forget the record only once the observer has handled the notifications the app sent
+    /// before answering the read (DESIGN.md, section 5.4).
     nonisolated func raiseAfterKeyRecord(_ id: UInt32, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                          raised: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
