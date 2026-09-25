@@ -45,13 +45,12 @@ import Testing
     #expect(reports.classify(.window(5), receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .reassert)
 }
 
-@Test func anEchoArrivingAfterTheEchoOfALaterRequestIsStillAnEcho() {   // change 19
+@Test func laterEchoDropsEarlierExpectations() {
     var reports = FocusReports<Int>()
-    // The pointer swept from app A's window 1 to app B's window 2, and A reported last.
-    reports.focusRequested(.window(1), app: 7, at: 10)
-    reports.focusRequested(.window(2), app: 8, at: 11)
-    #expect(reports.classify(.window(2), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
-    #expect(reports.classify(.window(1), receivedAt: 12, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+    reports.focusRequested(.window(1), app: nil, at: 10)
+    reports.focusRequested(.window(2), app: nil, at: 11)
+    #expect(reports.classify(.window(2), receivedAt: 12, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+    #expect(reports.classify(.window(1), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
 }
 
 @Test func emptyWorkspaceFocusIsAnEchoAndOtherwiseIgnored() {

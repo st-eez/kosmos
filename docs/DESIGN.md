@@ -465,16 +465,15 @@ off the main thread).
   which of them the code implements.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
-    app alone would take a Command-Tab to another window of that app for an echo. Only
-    the matched record goes: each app reports on its own threads, so on a fast sweep of
-    the pointer across apps an echo can come after the echo of a later request, and
-    dropped with that one it read as the user's choice and took focus back (tla/README.md,
-    change 19). The ceiling: a record whose echo never comes stays until a report of its
-    window, which it takes for its echo, or until a resync forgets it. That happens when
-    an app the key record activated already had the window focused, so it posts no
-    notification, and its activation read finds another window or gets no answer.
-    Matching the activation read to its app's key record whatever window it reads would
-    clear the first case (Deferred, below).
+    app alone would take a Command-Tab to another window of that app for an echo. Records
+    requested before the matched one go with it, so a record whose echo never comes
+    swallows no later report. Apps key another window themselves right after activating:
+    Preview re-keyed its main window within about 40 ms of a hover keying its second window
+    (live, 2026-09-24 at 23:56). One that does so before reporting the requested window
+    leaves that window's record with no echo. The ceiling:
+    each app reports on its own threads, so on a fast sweep of the pointer across apps an
+    earlier request's echo can come after the echo of a later request, find its record
+    gone, and read as the user's choice (tla/README.md, change 19; Deferred, below).
   - A report from an app that is not the front process, at the notification's callback or
     when the app answers the activation read, consumes an echo it matches and is otherwise
     ignored: background apps report windows they open, and a raise in a background app
@@ -765,14 +764,18 @@ off the main thread).
     the app front is adopted, over the user's later Command-Tab. The live evidence: a
     window adopted just after Kosmos activated its app, one the user did not pick, with its
     notification logged before the app's activation read.
-  - An activation read that matches its app's key record whatever window it reads, a
-    notification of the window that only joins that record, and an echo naming another
-    window than the intent that requests the intent again (change 19). Without them the
-    notification consumes the record and the read is a report of its own, and a record
-    whose app posts no notification and whose read finds another window stays, as above.
-    The split configs found the race before change 19, and none keeps the old rule. The
-    live evidence: a Command-Tab to a concealed window logged as an echo and not followed,
-    or a follow into another workspace by an activation read just after Kosmos's request.
+  - Removing only the matched record, together with an activation read that matches its
+    app's key record whatever window it reads, a notification of the window that only
+    joins that record, and an echo naming another window than the intent that requests
+    the intent again (change 19). They come as a pair or not at all. Removing only the
+    matched record alone leaves a record whose echo never comes, as when an app re-keys
+    another window before reporting the requested one, to swallow a later Command-Tab to
+    its window; the activation read rule consumes that record. Without them an earlier request's echo that arrives after a
+    later one's reads as the user's choice, and the notification of an activation
+    consumes its record, so the read is a report of its own. The split configs found these
+    races before change 19, and none keeps the old rules. The live evidence: on a fast
+    sweep of the pointer across apps, focus going back to a window the pointer left, with
+    that window's report logged after the echo of the later request.
   - An activation read of an app that lost the front that still stands when Kosmos
     recorded an activation after its stamp, or when the app had already lost the front to
     Kosmos's activation as the main actor noticed it (changes 19 and 20, `NoticeCheck`;
