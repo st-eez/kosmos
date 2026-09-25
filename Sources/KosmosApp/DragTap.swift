@@ -86,13 +86,19 @@ final class DragTap: Sendable {
         switch type {
         case .leftMouseDown, .rightMouseDown:
             let window = WindowID(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer))
+            let number = event.getIntegerValueField(.mouseEventNumber)
             outcome = gate.withLock {
-                $0.pressed(type == .leftMouseDown ? .left : .right, over: window, flags: event.flags, at: event.location, hid: Self.hid)
+                $0.pressed(type == .leftMouseDown ? .left : .right, number: number, over: window, flags: event.flags,
+                           at: event.location, hid: Self.hid)
             }
         case .leftMouseDragged, .rightMouseDragged:
             outcome = gate.withLock { $0.dragged(to: event.location) }
         case .leftMouseUp, .rightMouseUp:
-            outcome = gate.withLock { $0.released(type == .leftMouseUp ? .left : .right, at: event.location) }
+            let number = event.getIntegerValueField(.mouseEventNumber)
+            outcome = gate.withLock { $0.released(type == .leftMouseUp ? .left : .right, number: number, at: event.location) }
+            if outcome.ended != nil, !outcome.take {
+                dragLog.notice("mouse up \(number) is not the modifier drag's own: it ends the drag and passes on")
+            }
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             turnOnAgain(type)
             return false

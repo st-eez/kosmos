@@ -1424,9 +1424,13 @@ pointer gets none of the drag's events.
   The focus path's key record, a left down far off every display with no mouse up
   (section 3), passes and changes nothing, during a drag too: a drag that focuses a window
   of an app in the background posts one, as does a focus hotkey during a drag.
-- Kosmos takes the press, every movement until that button's mouse up, whichever button
-  macOS names with both down, and the mouse up, whatever the modifiers are by then. A
-  press of the other button during the drag passes to the app with its mouse up.
+- Kosmos takes the press, every movement until its mouse up, whichever button macOS
+  names with both down, and the mouse up, whatever the modifiers are by then. The mouse
+  up is the one with the press's event number (`kCGMouseEventNumber`, which a press and
+  its mouse up share): a mouse up of the drag's button with another number belongs to a
+  press that passed while the tap was off, so it passes to the app, which has that press,
+  and ends the drag. A press of the other button during the drag passes to the app with
+  its mouse up.
 - The drag ends at its mouse up. WindowServer turns off a tap that falls behind, passes
   on the event it waited for, and passes every event until Kosmos turns the tap on again.
   When the event it passed was the drag's press, the app has the press, so the drag ends
@@ -1436,18 +1440,20 @@ pointer gets none of the drag's events.
   ends where the pointer is (`DragGate.endIfReleased`): HID's state reads its button up,
   or counts a press of it newer than the drag's (`CGEventSourceCounterForEventType`, read
   as the tap saw the drag's press). The tap asks as it turns on again and at the other
-  button's press, and Kosmos at a hotkey, lock, resync or config load. A press of the
-  drag's own button ends it too, where the pointer last moved. A hotkey during a drag
-  whose press goes on ends Kosmos's drag at once, and the tap takes the rest of the
-  press, which changes nothing.
+  button's press, and Kosmos at a hotkey, lock, resync or config load. HID reads ahead of
+  the tap, so the drag's mouse up can still come after such an end, and the tap takes it
+  if it comes before the button's next press. A press of the drag's own button ends the
+  drag too, where the pointer last moved. A hotkey during a drag whose press goes on ends
+  Kosmos's drag at once, and the tap takes the rest of the press, which changes nothing.
 - HID's state (`kCGEventSourceStateHIDSystemState`) holds the presses of the mouse and
   trackpad. The combined session state holds those other processes post as well, which
   would read as presses newer than the drag's, and on Steve's Mac on 2026-09-25 it
   counted 15019 left downs and 15141 left ups, where HID counted 15059 of each. A drag
   begun by a press another process posts into the session reads as over at the first
-  check. A press HID counted before the tap saw the drag's own counts as the drag's: the
-  tap sees it next unless WindowServer turns the tap off first, and no public call says
-  which press HID counted when.
+  check. A press HID counted before the tap saw the drag's own counts as the drag's. The
+  tap sees that press next and it ends the drag, unless WindowServer turns the tap off
+  first; then the drag takes the press's movements until its mouse up, which passes. No
+  public call says which press HID counted when.
 - Each movement goes to the main actor in order, and AppWorker merges the frame writes an
   app has not taken yet. The debug log gives each movement's lag from the tap; if a fast
   drag lags, coalescing the movements comes back with that measurement.
@@ -1502,6 +1508,12 @@ pointer gets none of the drag's events.
     location with a hit test per modifier press (`SLSFindWindowAndOwner`, as yabai's
     `window_manager_find_window_at_point`) stands in for the field;
   - whether a taken press still activates its app; Kosmos focuses the window either way;
+  - whether a press and its mouse up carry the same event number at the annotated
+    location. The log says when a mouse up with another number ends a drag, which should
+    not happen without a timeout;
+  - whether the focus path's key record counts as a press in HID's state. If it did, a
+    drag of a window of an app in the background would end at the other button's press
+    and as the tap turns on again;
   - how smoothly apps follow a position write per movement, and whether a fast drag lags.
 - Left out:
   - Snapping, which Omarchy leaves off, `general:resize_corner` and keeping a floating

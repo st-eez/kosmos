@@ -21,8 +21,8 @@ extension KeyCombo.Modifiers {
 /// Decides on the drag tap's thread which mouse button events Kosmos takes, so no event
 /// waits on the main actor (DESIGN.md, section 5.14). A press with exactly the modifiers, on
 /// a display and over a window the gate holds as WindowServer's hit test names it, begins a
-/// drag. Kosmos takes that press, every movement until the button's mouse up and that mouse
-/// up, whatever the modifiers are by then. Every other event passes to the app under the
+/// drag. Kosmos takes that press, every movement until its mouse up and that mouse up,
+/// whatever the modifiers are by then. Every other event passes to the app under the
 /// pointer untouched, a press of the other button during the drag too.
 public struct DragGate: Sendable {
     /// A drag, as its press began it.
@@ -70,8 +70,14 @@ public struct DragGate: Sendable {
     /// as the focus path's key record is one (Controller.leftMouseDown).
     public var monitors: [Monitor] = []
     public private(set) var grab: Grab?
+    /// The mouse event number of the drag's press, which its mouse up carries too.
+    private var number: Int64 = 0
     /// The presses of the drag's button HID had counted when the tap saw the drag's press.
     private var presses: UInt32 = 0
+    /// The press number of each button's drag `endIfReleased` ended. HID reads ahead of the
+    /// tap, so the press's mouse up can still come, and the tap takes it before the button's
+    /// next press.
+    private var unheard: [DragButton: Int64] = [:]
     /// Where the pointer last moved during the drag.
     private var last = CGPoint.zero
     /// The drag's press is the last event the gate decided (`timedOut`).
@@ -79,13 +85,15 @@ public struct DragGate: Sendable {
 
     public init() {}
 
-    /// A press of `button` over `window`. `hid` reads a button as HID has it now.
-    public mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags, at point: CGPoint,
-                                 hid: (DragButton) -> ButtonState) -> Outcome {
+    /// A press of `button`, with mouse event number `number`, over `window`. `hid` reads a
+    /// button as HID has it now.
+    public mutating func pressed(_ button: DragButton, number: Int64, over window: WindowID, flags: CGEventFlags,
+                                 at point: CGPoint, hid: (DragButton) -> ButtonState) -> Outcome {
         pressWasLast = false
         // The focus path's key record, a left down off every display with no mouse up, passes
         // and changes nothing, during a drag too.
         guard monitors.contains(where: { $0.frame.contains(point) }) else { return Outcome() }
+        unheard[button] = nil
         var outcome = Outcome()
         if let grab, grab.button == button {
             // The drag's button went down again, so its mouse up went unheard, as while
@@ -105,7 +113,7 @@ public struct DragGate: Sendable {
             return outcome
         }
         let grab = Grab(button: button, window: window, start: point)
-        (self.grab, presses, last, pressWasLast) = (grab, hid(button).presses, point, true)
+        (self.grab, self.number, presses, last, pressWasLast) = (grab, number, hid(button).presses, point, true)
         outcome.take = true
         outcome.began = grab
         return outcome
@@ -113,16 +121,19 @@ public struct DragGate: Sendable {
 
     /// Ends the drag if its press is over by now, as when its mouse up passed while
     /// WindowServer had the tap off: `hid` reads its button up, or with a newer press
-    /// counted. The drag ends at `point`, or where the pointer last moved when nil.
+    /// counted. The drag ends at `point`, or where the pointer last moved when nil, and its
+    /// mouse up, if the tap has yet to see it, is taken (`unheard`).
     ///
     /// Ceiling: a press HID counted before the tap saw the drag's own counts as the drag's.
     /// The tap sees it next, as a press of the drag's button, unless WindowServer turns the
-    /// tap off first. Nothing public tells which press HID counted when.
+    /// tap off first; then the drag takes that press's movements, and its mouse up passes
+    /// and ends the drag (`released`). Nothing public tells which press HID counted when.
     public mutating func endIfReleased(hid: (DragButton) -> ButtonState, at point: CGPoint?) -> Outcome {
         guard let grab else { return Outcome() }
         let state = hid(grab.button)
         guard !state.down || state.presses != presses else { return Outcome() }
         self.grab = nil
+        unheard[grab.button] = number
         return Outcome(ended: End(grab: grab, point: point ?? last))
     }
 
@@ -135,11 +146,18 @@ public struct DragGate: Sendable {
         return Outcome(take: true, moved: point)
     }
 
-    public mutating func released(_ button: DragButton, at point: CGPoint) -> Outcome {
+    /// A mouse up of `button` with mouse event number `number`, which its press carries too.
+    /// Kosmos takes only the mouse up of a press it took, so the app gets the mouse up of
+    /// every press it got.
+    public mutating func released(_ button: DragButton, number: Int64, at point: CGPoint) -> Outcome {
         pressWasLast = false
+        if unheard.removeValue(forKey: button) == number { return Outcome(take: true) }
         guard let grab, grab.button == button else { return Outcome() }
         self.grab = nil
-        return Outcome(take: true, ended: End(grab: grab, point: point))
+        // With another number, it is the mouse up of a press that passed while WindowServer
+        // had the tap off, after the drag's own mouse up: it ends the drag, and the app that
+        // has the press gets it.
+        return Outcome(take: number == self.number, ended: End(grab: grab, point: point))
     }
 
     /// WindowServer turned the tap off after waiting too long on an event, and passed that

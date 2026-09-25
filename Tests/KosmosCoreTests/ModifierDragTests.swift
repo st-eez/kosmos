@@ -15,9 +15,15 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
 /// HID with each button down and one press of it counted: the press the gate saw goes on.
 private func held(_ button: DragButton) -> DragGate.ButtonState { DragGate.ButtonState(down: true, presses: 1) }
 
+/// Each press and mouse up with mouse event number 1, unless a test gives one.
 extension DragGate {
-    fileprivate mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags, at point: CGPoint) -> Outcome {
-        pressed(button, over: window, flags: flags, at: point, hid: held)
+    fileprivate mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags, at point: CGPoint,
+                                      hid: (DragButton) -> ButtonState = held) -> Outcome {
+        pressed(button, number: 1, over: window, flags: flags, at: point, hid: hid)
+    }
+
+    fileprivate mutating func released(_ button: DragButton, at point: CGPoint) -> Outcome {
+        released(button, number: 1, at: point)
     }
 }
 
@@ -110,7 +116,36 @@ extension DragGate {
         let next = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
         let again = { (_: DragButton) in DragGate.ButtonState(down: true, presses: 2) }
         #expect(gate.endIfReleased(hid: again, at: .zero) == DragGate.Outcome(ended: DragGate.End(grab: next, point: .zero)))
-        #expect(gate.dragged(to: point) == DragGate.Outcome() && gate.released(.left, at: point) == DragGate.Outcome())
+        #expect(gate.dragged(to: point) == DragGate.Outcome() && gate.released(.left, number: 2, at: point) == DragGate.Outcome())
+    }
+
+    @Test func theMouseUpOfADragHIDEndedFirstIsTaken() {
+        var gate = gate()
+        let grab = gate.pressed(.left, number: 7, over: 10, flags: .maskAlternate, at: point, hid: held).began!
+        // At a hotkey HID reads the button up before the tap sees the mouse up, and the
+        // hotkey's focus posts the key record meanwhile.
+        let up = { (_: DragButton) in DragGate.ButtonState(down: false, presses: 1) }
+        #expect(gate.endIfReleased(hid: up, at: point) == DragGate.Outcome(ended: DragGate.End(grab: grab, point: point)))
+        _ = gate.pressed(.left, number: 0, over: 10, flags: [], at: CGPoint(x: 300_000, y: 300_000), hid: up)
+        #expect(gate.released(.right, number: 7, at: point) == DragGate.Outcome())
+        #expect(gate.released(.left, number: 7, at: point) == DragGate.Outcome(take: true))
+        #expect(gate.released(.left, number: 7, at: point) == DragGate.Outcome())
+        // Its mouse up passed while WindowServer had the tap off: the button's next press
+        // passes, and so does every mouse up after it.
+        _ = gate.pressed(.left, number: 8, over: 10, flags: .maskAlternate, at: point, hid: held)
+        _ = gate.endIfReleased(hid: up, at: point)
+        #expect(gate.pressed(.left, number: 9, over: 10, flags: [], at: point, hid: up) == DragGate.Outcome())
+        #expect(gate.released(.left, number: 8, at: point) == DragGate.Outcome())
+    }
+
+    @Test func aMouseUpOfAnotherPressEndsTheDragAndPasses() {
+        var gate = gate()
+        let grab = gate.pressed(.left, number: 7, over: 10, flags: .maskAlternate, at: point, hid: held).began!
+        // Its mouse up and the next press passed while WindowServer had the tap off, and HID
+        // counted that press before the tap saw the drag's (DragGate.endIfReleased). The app
+        // has the press, so it gets the mouse up.
+        #expect(gate.released(.left, number: 8, at: point) == DragGate.Outcome(ended: DragGate.End(grab: grab, point: point)))
+        #expect(gate.grab == nil && gate.released(.left, number: 7, at: point) == DragGate.Outcome())
     }
 
     @Test func theOtherButtonsPressEndsADragWhosePressIsOver() {
