@@ -768,8 +768,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - The event may not name the window under the pointer; whether its `cgEvent` carries the
     annotated field is for the live test. If not, `NSWindow.windowNumber(at:
     belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point, including
-    other apps' windows, at one WindowServer call per movement. The monitor's points have a
-    bottom left origin and are flipped first.
+    other apps' windows, at one WindowServer call per movement. It takes the event's
+    location as the monitor gives it, in screen coordinates. Branch `ffm-monitor` holds this
+    variant.
 
   The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
   and Control still comes from each event's modifier flags. An active tap is the other way
