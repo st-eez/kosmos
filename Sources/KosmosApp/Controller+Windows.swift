@@ -78,29 +78,11 @@ extension Controller {
             plan.frames = session.park([id]).frames
             plan.hide.removeAll { $0 == id }
         }
-        let report = unplacedKey.flatMap { $0.key == .window(id) ? $0 : nil }
-        if report != nil { unplacedKey = nil }
-        let keyed = key == .window(id), shown = session.workspace(of: id).map(session.isShown) == true
-        let focus = AdmissionFocus.decide(keyed: keyed, shown: shown, parked: session.isParked(id),
-                                          atLaunch: atLaunch, locked: sessionLocked)
-        switch focus {
-        case .adopt: session.adopt(id)
-        case .awaitKey: admittedUnkeyed[id] = .now
-        case .placedHidden: placedHidden[id] = .admitted
-        case .none: break
-        }
-        // A new window its app keyed brings the pointer on any display
-        // (docs/focus-follows-mouse.md).
-        let new = !atLaunch
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new && !UserInput.leftButtonDown,
-                floatingCheck: floats, popping: new ? id : nil)
+        let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
+        if focus == .adopt { session.adopt(id) }
+        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: atLaunch ? nil : id)
         // The follow's switch reveals the window the plan conceals.
-        if focus == .placedHidden, var report {
-            placedHidden[id] = nil
-            report.concealed = true
-            report.admitted = true
-            decidePlaced(report, keyLeft: .stayed)
-        }
+        windowPlaced(id)
     }
 
     private func forget(_ id: WindowID, pid: pid_t) {
@@ -110,7 +92,7 @@ extension Controller {
         fullscreenParked.remove(id)
         closedByApp.remove(id)
         tabs.forget(id)
-        placedHidden[id] = nil
+        intake.forgetPlacedHidden([id])
         ledger.forget(id)
         hiding.forgetClosed(id)
         execute(session.remove(id))
@@ -190,8 +172,6 @@ extension Controller {
         let parked = closedByApp.remove(old) != nil
         if parked { _ = session.unpark([old], follow: nil) }
         guard let plan = session.replace(old, with: new) else { return false }
-        placedHidden[old] = nil
-        if plan.hide.contains(new) { placedHidden[new] = .tab }
         controllerLog.info("tab \(new) replaces \(old)\(parked ? ", after \(old) parked as closed and kept" : "", privacy: .public)")
         tabs.replaced(old, with: new)
         // Parked as closed by its app, as a window Merge All Windows made a tab.
@@ -202,16 +182,11 @@ extension Controller {
         // Space whatever was concealed (kosmos-probe tabs); the plan conceals it afresh.
         hiding.forget([old, new])
         ledger.forget(new)
-        if key == .window(old) { keyHistory.key = .window(new) }
+        intake.tabReplaced(old, with: new, concealing: plan.hide.contains(new))
         execute(plan)
         // macOS can report the new tab key before it has a place: the user's or the app's
         // choice, whose key window before it, the deselected tab, did not depart (docs/tree.md).
-        if var report = unplacedKey, report.key == .window(new), !session.isParked(new) {
-            unplacedKey = nil
-            placedHidden[new] = nil
-            report.concealed = session.workspace(of: new).map { !session.isShown($0) } ?? false
-            decidePlaced(report, keyLeft: .stayed)
-        }
+        windowPlaced(new)
         return true
     }
 
@@ -255,13 +230,9 @@ extension Controller {
             requestFocus(session.intent)
         case .afterKeyReport:
             guard case .window(let keyWindow)? = key else { break }
-            departureNumber += 1
-            let number = departureNumber
-            awaitingKey = (keyWindow, number)
+            let number = intake.awaitNextKey(after: keyWindow)
             after(Inventory.departureBound) { controller in
-                guard controller.awaitingKey?.number == number else { return }
-                controller.awaitingKey = nil
-                controller.requestFocus(controller.session.intent)
+                if controller.intake.boundEnds(number) { controller.requestFocus(controller.session.intent) }
             }
         }
     }
