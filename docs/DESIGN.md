@@ -747,8 +747,17 @@ off the main thread).
     right after one (section 5.6). No test checks that yet; the work counts in section 6
     are meant to.
   - Kosmos keeps running when the user removes the item.
-- Onboarding is an Accessibility window. Launch at login uses `SMAppService` with a
-  `KeepAlive` agent, and config errors appear in one AppKit panel.
+- Onboarding is a setup window listing each permission Kosmos waits for, with a checkmark
+  once granted or a button to its pane in System Settings. It lists Accessibility, opening
+  at a launch without it, and Input Monitoring, opening whenever focus follows mouse is on
+  and macOS refuses the pointer tap (section 5.11).
+  - macOS sends no notification for either grant, so the window checks twice a second,
+    and after the user closes it too, so Kosmos still starts on its own. Once everything
+    it lists is granted, it says Kosmos is running and closes 1.5 s later.
+  - `Kosmos onboarding-snapshot <directory>` draws each state in light and dark mode into
+    PNG files without showing a window.
+- Launch at login uses `SMAppService` with a `KeepAlive` agent, and config errors appear
+  in one AppKit panel.
 
 ### 5.10 Distribution
 
@@ -905,8 +914,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
   granted when it creates the tap, whether the tap is enabled when it turns on, and when
   the first event arrives. When macOS refuses the tap, Kosmos logs an error,
-  `focus-follows-mouse on` exits 1 and says to allow Input Monitoring, and the next turn on
-  or config load creates the tap again.
+  `focus-follows-mouse on` exits 1 and says to allow Input Monitoring, and the setup window
+  asks for Input Monitoring (section 5.9). Kosmos creates the tap again once the window
+  sees Input Monitoring granted, and at the next turn on or config load.
 - Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
   `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead, and only PointerTap's
   event source changes; the gate and everything after it stay. AeroSpace's and Amethyst's

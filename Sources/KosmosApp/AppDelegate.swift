@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var record: RecordFile?
     private var statusItem: StatusItem?
     private var onboarding: Onboarding?
+    /// Whether Input Monitoring was granted when last read, at a refused pointer tap or a
+    /// check, so a grant tries the tap once: a refused tap logs an error.
+    private var listenEventAccess = false
     private let inventory = Inventory()
     private let guardian = Guardian()
     private let lockWatch = LockWatch()
@@ -85,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             start()
         } else {
             statusItem.accessibilityMissing = true
-            onboarding = Onboarding { [weak self] in self?.accessibilityGranted() }
+            showSetup(Onboarding.State(accessibility: false))
         }
     }
 
@@ -300,10 +303,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyDisplays()
     }
 
-    private func accessibilityGranted() {
-        onboarding = nil
-        statusItem?.accessibilityMissing = false
-        start()
+    /// Opens the setup window at `state`, or brings it forward at its own.
+    private func showSetup(_ state: Onboarding.State) {
+        if onboarding == nil {
+            onboarding = Onboarding(state, check: { [weak self] in self?.checkPermissions() ?? state },
+                                    finished: { [weak self] in self?.onboarding = nil })
+        }
+        onboarding?.show()
+    }
+
+    /// Reads the permissions for the setup window and acts on a grant: Kosmos starts once it
+    /// has Accessibility, and the pointer tap is created once Input Monitoring is granted.
+    private func checkPermissions() -> Onboarding.State {
+        guard AXIsProcessTrusted() else { return Onboarding.State(accessibility: false) }
+        if controller == nil {
+            statusItem?.accessibilityMissing = false
+            start()
+        }
+        guard let controller, controller.pointerRefused else { return Onboarding.State(accessibility: true) }
+        let granted = CGPreflightListenEventAccess()
+        if granted, !listenEventAccess { controller.updatePointerTap() }
+        listenEventAccess = granted
+        return Onboarding.State(accessibility: true, inputMonitoring: controller.pointerRefused ? false : nil)
     }
 
     private func start() {
@@ -330,6 +351,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onFocusProblem = { [weak self] problem in
             self?.focusProblem = problem
             self?.updateProblems()
+        }
+        controller.onPointerRefused = { [weak self] in
+            self?.listenEventAccess = CGPreflightListenEventAccess()
+            self?.showSetup(Onboarding.State(accessibility: true, inputMonitoring: false))
         }
         focusProblem = controller.focusProblem
         updateProblems()
