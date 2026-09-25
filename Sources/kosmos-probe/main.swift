@@ -94,13 +94,15 @@
 //                                   the window is watched. Prints every event in time order
 //                                   with the level changes, then counts the events of other ids
 //                                   near a change and at other times.
-//   kosmos-probe key-holder [seconds]  Who is front, and who holds the key window: every
-//                                   50 ms for 30 s by default, prints each change of the
-//                                   front process (kosmos_front_pid) and the key focus
-//                                   process (kosmos_key_focus_pid), with each app's name and
+//   kosmos-probe key-holder [seconds]  Who is front, who holds the key window and who owns
+//                                   the menu bar: every 50 ms for 30 s by default, prints each
+//                                   change of the front process (kosmos_front_pid), the key
+//                                   focus process (kosmos_key_focus_pid) and NSWorkspace's
+//                                   menuBarOwningApplication, with each app's name and
 //                                   activation policy, then the time each read took. Passive:
 //                                   open Raycast, Spotlight, a password prompt, Control Center
-//                                   or a menu while it runs to see which read names what.
+//                                   or a menu, or focus an empty workspace in Kosmos, while it
+//                                   runs to see which read names what.
 //   kosmos-probe events [seconds]   Which SkyLight events reach Kosmos, and when: prints each
 //                                   event Kosmos registers, with the wall clock time the
 //                                   unified log uses, the window and its app, for 30 s by
@@ -1519,9 +1521,9 @@ nonisolated(unsafe) var eventTime = DateFormatter()
         return "\(app.localizedName ?? "pid \(pid)") (\(pid), \(policy))"
     }
     var frontTimes: [Double] = [], holderTimes: [Double] = []
-    var last: (front: pid_t, holder: pid_t) = (-1, -1)
+    var last: (front: pid_t, holder: pid_t, menuBar: pid_t) = (-1, -1, -1)
     let end = ContinuousClock.now + .seconds(seconds)
-    print("watching the front and key focus processes for \(seconds) s")
+    print("watching the front, key focus and menu bar owning processes for \(seconds) s")
     while ContinuousClock.now < end {
         var start = ContinuousClock.now
         let front = kosmos_front_pid()
@@ -1529,9 +1531,13 @@ nonisolated(unsafe) var eventTime = DateFormatter()
         start = ContinuousClock.now
         let holder = kosmos_key_focus_pid()
         holderTimes.append(elapsed(start))
-        if (front, holder) != last {
-            print("\(Date().formatted(date: .omitted, time: .standard)) front \(describe(front)), key focus \(describe(holder))")
-            last = (front, holder)
+        let menuBar = NSWorkspace.shared.menuBarOwningApplication?.processIdentifier ?? 0
+        if (front, holder, menuBar) != last {
+            print("""
+                \(Date().formatted(date: .omitted, time: .standard)) front \(describe(front)), key focus \(describe(holder)), \
+                menu bar \(describe(menuBar))
+                """)
+            last = (front, holder, menuBar)
         }
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
     }
