@@ -124,8 +124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case (.listBindings, _): listBindings()
         case (_, nil): Self.waiting
         case (.state, let controller?): Response(stdout: String(decoding: controller.stateJSON(), as: UTF8.self))
-        case (.listWorkspaces, let controller?): Response(stdout: controller.listWorkspaces())
-        case (.listWindows, let controller?): Response(stdout: controller.listWindows())
+        case (.listWorkspaces, let controller?): Response(stdout: controller.session.workspaceList)
+        case (.listWindows, let controller?): Response(stdout: controller.session.windowList(app: controller.appName))
         }
     }
 
@@ -146,22 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private struct ListedBinding: Encodable {
-        var mode: String
-        var key: String
-        var description: String
-        var category: String
-    }
-
     private func listBindings() -> Response {
         guard let hotkeys else { return failure("no hotkeys are registered") }
-        let modes = hotkeys.modes.sorted { ($0.key == "main" ? 0 : 1, $0.key) < ($1.key == "main" ? 0 : 1, $1.key) }
-        let bindings = modes.flatMap { mode, bindings in
-            bindings.map { ListedBinding(mode: mode, key: $0.key, description: $0.command.summary, category: $0.command.category) }
-        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return Response(stdout: String(decoding: (try? encoder.encode(bindings)) ?? Data("[]".utf8), as: UTF8.self))
+        let listed = (try? encoder.encode(ListedBinding.list(hotkeys.modes))) ?? Data("[]".utf8)
+        return Response(stdout: String(decoding: listed, as: UTF8.self))
     }
 
     private func switchMode(to name: String) -> Response {

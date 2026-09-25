@@ -190,20 +190,6 @@ final class Controller {
         return nil
     }
 
-    func listWorkspaces() -> String {
-        session.names.map { $0 == session.focusedWorkspace ? "\($0) *" : $0 }.joined(separator: "\n")
-    }
-
-    func listWindows() -> String {
-        let lines = session.names.flatMap { name in
-            session.windows(of: name).map { id in
-                let app = owner[id].flatMap { inventory.appIdentity($0).name } ?? "?"
-                return "\(id) \(name) \(app)\(id == session.focused ? " *" : "")"
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-
     private func resync(displaysChanged: Bool) {
         forgetPresses()
         guard managing else { return publishState() }
@@ -452,11 +438,13 @@ final class Controller {
         })
     }
 
+    func appName(_ window: WindowID) -> String? {
+        owner[window].flatMap { inventory.appIdentity($0).name }
+    }
+
     func stateJSON() -> Data {
-        let snapshot = session.barSnapshot(
-            profile: profile, displays: barDisplays,
-            app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
-            frame: { [inventory] id in inventory.windows[id]?.frame })
+        let snapshot = session.barSnapshot(profile: profile, displays: barDisplays, app: appName,
+                                           frame: { [inventory] id in inventory.windows[id]?.frame })
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(snapshot)) ?? Data("{}".utf8)

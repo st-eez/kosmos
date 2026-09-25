@@ -79,7 +79,8 @@ prefix.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
-  `KosmosApp/BarPush.swift`, `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`.
+  `KosmosCore/Query.swift`, `KosmosApp/BarPush.swift`, `KosmosApp/AppDelegate.swift`,
+  `KosmosApp/Controller.swift`.
 - [displays.md](displays.md): the display orders, workspaces assigned to displays, the
   monitor commands, display changes, floating windows across displays, and dragging a
   tiled window by its title bar.
