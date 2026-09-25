@@ -36,10 +36,11 @@ prefix.
   workspace's window.
   Code: `KosmosApp/FocusQueue.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/FocusKillSwitch.swift`, `KosmosApp/EmptyWorkspaceWindow.swift`,
-  `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`, `KosmosCore/FocusReports.swift`,
-  `KosmosCore/KeyRequest.swift`, `KosmosCore/FocusRead.swift`,
-  `KosmosCore/FocusMisses.swift`, `KosmosCore/Departures.swift`,
-  `KosmosCore/ConcealHistory.swift`, `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
+  `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`, `KosmosApp/UserInput.swift`,
+  `KosmosCore/FocusReports.swift`, `KosmosCore/KeyRequest.swift`,
+  `KosmosCore/FocusRead.swift`, `KosmosCore/FocusMisses.swift`,
+  `KosmosCore/Departures.swift`, `KosmosCore/ConcealHistory.swift`,
+  `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
@@ -69,7 +70,8 @@ prefix.
 - [focus-follows-mouse.md](focus-follows-mouse.md): hover focus from a pointer event tap,
   the pointer following keyboard focus, and whether the tap needs Input Monitoring.
   Code: `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
-  `KosmosApp/Controller.swift`, `KosmosCore/Config/Config.swift`.
+  `KosmosApp/Controller.swift`, `KosmosApp/UserInput.swift`,
+  `KosmosCore/Config/Config.swift`.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,

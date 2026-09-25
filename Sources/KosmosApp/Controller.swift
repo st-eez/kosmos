@@ -1,5 +1,4 @@
 import AppKit
-import CKosmos
 import KosmosCore
 import KosmosSkyLight
 import os
@@ -355,7 +354,7 @@ final class Controller {
         // A new window its app keyed brings the pointer on any display
         // (docs/focus-follows-mouse.md).
         let new = !atLaunch
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new && !Self.leftButtonDown,
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new && !UserInput.leftButtonDown,
                 floatingCheck: floats, popping: new ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
@@ -823,7 +822,7 @@ final class Controller {
             // macOS or an app fronted an app with no key window on an empty workspace: the
             // empty workspace keys its window again, so Cmd-Q reaches no app. After a click, a
             // Command-Tab or an app's launch it is the user's choice (docs/focus.md).
-            guard report.key == .noWindow, report.reporter != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
+            guard report.key == .noWindow, report.reporter != getpid(), session.focused == nil, !UserInput.userPressedJustBefore(),
                   NSRunningApplication(processIdentifier: report.reporter)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
             else { break }
             controllerLog.notice("\(self.inventory.appIdentity(report.reporter).name ?? String(report.reporter), privacy: .public) has no key window on an empty workspace; keying its window again")
@@ -843,7 +842,7 @@ final class Controller {
             requestFocus(.window(window))
             // Command-Tab or a Dock click brings the pointer, and a click on the window leaves
             // it (docs/focus-follows-mouse.md).
-            if mouseFollowsFocus, report.admitted ? !Self.leftButtonDown : pickedAwayFromPointer() { centerPointer() }
+            if mouseFollowsFocus, report.admitted ? !UserInput.leftButtonDown : pickedAwayFromPointer() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)
@@ -851,7 +850,7 @@ final class Controller {
             // own display too, and to a new window admitted to a hidden workspace
             // (docs/focus-follows-mouse.md).
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && (report.admitted ? !Self.leftButtonDown : pickedAwayFromPointer()))
+            execute(plan, movePointer: mouseFollowsFocus && (report.admitted ? !UserInput.leftButtonDown : pickedAwayFromPointer()))
         }
     }
 
@@ -1099,36 +1098,15 @@ final class Controller {
     }
 
     private func pickedAwayFromPointer() -> Bool {
-        let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
-                                    rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
-        let dock = Self.isDock(clickedWindow)
+        let input = ActivationInput(key: UserInput.secondsSince(.keyDown), leftClick: UserInput.secondsSince(.leftMouseDown),
+                                    rightClick: UserInput.secondsSince(.rightMouseDown), moved: UserInput.secondsSince(.mouseMoved))
+        let dock = UserInput.isDock(clickedWindow)
         pointerLog.debug("""
             activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
             \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
             pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
         return input.bringsPointer(onDock: dock)
-    }
-
-    /// At the Dock's level, where its icons are, and not its menus, Mission Control or
-    /// Launchpad. With autohide the Dock's window can span its display, so its frame says nothing.
-    private static func isDock(_ window: Int) -> Bool {
-        guard window > 0, let row = SkyLight.rows([UInt32(window)]).first else { return false }
-        return row.level == CGWindowLevelForKey(.dockWindow)
-            && NSRunningApplication(processIdentifier: row.pid)?.bundleIdentifier == "com.apple.dock"
-    }
-
-    /// A tab dragged out of its group is admitted while the drag goes on, which Kosmos's own
-    /// drag state does not cover.
-    private static var leftButtonDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
-
-    private static func userPressedJustBefore() -> Bool {
-        min(secondsSince(.keyDown), secondsSince(.leftMouseDown), secondsSince(.rightMouseDown)) < 1
-    }
-
-    /// Reading the session's event state takes no event tap.
-    private static func secondsSince(_ type: CGEventType) -> Double {
-        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
     }
 
     // MARK: Modifier drags
@@ -1240,7 +1218,7 @@ final class Controller {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
             return
         }
-        if let holder = keyHolderApartFromFront() {
+        if let holder = UserInput.keyHolderApartFromFront() {
             pointerLog.debug("""
                 pointer in \(window): \(NSRunningApplication(processIdentifier: holder)?.localizedName ?? String(holder), privacy: .public) \
                 holds the key window apart from the front app
@@ -1265,13 +1243,6 @@ final class Controller {
         // native fullscreen Space.
         requestFocus(.window(window), fromCommand: true)
         publishState()
-    }
-
-    /// Raycast, Spotlight, Notification Center and Control Center hold the key window while
-    /// another app stays front, and a focus would close their panels (docs/focus-follows-mouse.md).
-    private func keyHolderApartFromFront() -> pid_t? {
-        let front = kosmos_front_pid(), holder = kosmos_key_focus_pid()
-        return front != 0 && holder != 0 && holder != front && holder != getpid() ? holder : nil
     }
 
     private func touch(_ window: WindowID) {
