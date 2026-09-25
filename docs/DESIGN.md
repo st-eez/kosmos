@@ -631,7 +631,12 @@ off the main thread).
   user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
-  next window, or Kosmos's empty workspace window. A closed focus is replaced at once. A minimized or hidden one is
+  next window, or Kosmos's empty workspace window. A closed focus is replaced at once, one
+  its app closed and kept too, once Kosmos counts it closed a pairing window after its
+  order-out (5.5). A close keys the app's next window as it happens, so any report of that
+  key change has come by then. Activity Monitor's only window, closed while key, got no
+  report, and Helium became key 1.1 s after the window parked, when the second below ran
+  out (live log, September 25, 2026). A minimized or hidden one is
   replaced at once too, unless the key window macOS last reported left with it: then
   macOS's report of the next key window is still on its way and focuses. Focusing earlier
   could put Kosmos's echo between the departure and that report. When macOS keys no
@@ -854,7 +859,8 @@ off the main thread).
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
-    as a minimized one does, and returns when the app orders it in again. Kosmos takes a
+    as a minimized one does, its focus is replaced at once as a closed window's is (5.4),
+    and it returns when the app orders it in again. Kosmos takes a
     window still ordered out after the pairing window, 250 ms, for none of the other
     reasons as one, so the others reflow about 0.25 s after a Command-W. Until September
     25, 2026 it waited a second, and Helium stayed at half width for that second after

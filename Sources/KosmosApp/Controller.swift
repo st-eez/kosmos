@@ -473,7 +473,8 @@ final class Controller {
     }
 
     /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
-    /// parks as a minimized window does, and returns when the app orders it in again
+    /// parks as a minimized window does, its focus is replaced at once as a closed window's
+    /// is (DepartureFocus), and it returns when the app orders it in again
     /// (orderChanged). Removing it would lose its place, and the inventory would not admit
     /// it again, since it stays managed. A deselected tab has left the session already, and
     /// one a new tab claims waits for that tab's admission (ClosedAndKept.claimWait). A
@@ -489,7 +490,7 @@ final class Controller {
         }
         controllerLog.info("\(id) closed and kept by its app: parked \(Self.ms(ContinuousClock.now - orderedOut), privacy: .public) ms after it was seen ordered out")
         closedByApp.insert(id)
-        depart([id])
+        depart([id], closed: true)
     }
 
     /// Windows back from minimizing, hiding or fullscreen return to their places, and Kosmos
@@ -505,16 +506,17 @@ final class Controller {
         execute(plan, movePointer: mouseFollowsFocus && follow != nil && !stale && pickedAwayFromPointer())
     }
 
-    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus
-    /// leaves, the workspace's next window, or the empty workspace's, is focused now, or after
-    /// macOS's report of the next key window when the key window left too (DepartureFocus). A
-    /// report that does not come within the departure bound, as when an app keeps no key
-    /// window, has the departure focus then. The bound outlasts macOS's key change after a
-    /// minimize, which ends its animation first.
-    private func depart(_ windows: [WindowID]) {
+    /// Minimized, hidden with their app, or `closed` and kept by it (tla/Kosmos.tla,
+    /// Depart). When Kosmos's focus leaves, the workspace's next window, or the empty
+    /// workspace's, is focused now, or after macOS's report of the next key window when the
+    /// key window minimized or hid too (DepartureFocus). A report that does not come within
+    /// the departure bound, as when an app keeps no key window, has the departure focus
+    /// then. The bound outlasts macOS's key change after a minimize, which ends its
+    /// animation first.
+    private func depart(_ windows: [WindowID], closed: Bool = false) {
         let focusLeft = session.focused.map(windows.contains) == true
         execute(session.park(windows))
-        switch DepartureFocus.decide(focusLeft: focusLeft, key: key, departing: windows, left: inventory.leftScreen) {
+        switch DepartureFocus.decide(focusLeft: focusLeft, closed: closed, key: key, departing: windows, left: inventory.leftScreen) {
         case .none:
             break
         case .now:

@@ -101,8 +101,8 @@ public struct HeldReport<Report: Sendable>: Sendable {
     }
 }
 
-/// What a departure of Kosmos's focus does, when it minimized or hid with its app
-/// (tla/Kosmos.tla, Leaves).
+/// What a departure of Kosmos's focus does, when it minimized, hid with its app, or was
+/// closed and kept by its app (tla/Kosmos.tla, Depart).
 public enum DepartureFocus: Equatable, Sendable {
     /// The focus stayed: nothing to do.
     case none
@@ -114,13 +114,17 @@ public enum DepartureFocus: Equatable, Sendable {
     case afterKeyReport
 
     /// - Parameters:
+    ///   - closed: its app closed the window and kept it. A close keys the app's next window
+    ///     as it happens, and the window counts as closed a pairing window later
+    ///     (ClosedAndKept), so any report of that key change has come: the focus is replaced
+    ///     at once, as a closed window's is.
     ///   - key: the key window macOS last reported.
     ///   - departing: the windows that left together.
     ///   - left: whether a window left the screen just now.
-    public static func decide(focusLeft: Bool, key: KeyWindow?, departing: [WindowID],
+    public static func decide(focusLeft: Bool, closed: Bool = false, key: KeyWindow?, departing: [WindowID],
                               left: (WindowID) -> Bool) -> DepartureFocus {
         guard focusLeft else { return .none }
-        guard case .window(let id)? = key, departing.contains(id) || left(id) else { return .now }
+        guard !closed, case .window(let id)? = key, departing.contains(id) || left(id) else { return .now }
         return .afterKeyReport
     }
 }

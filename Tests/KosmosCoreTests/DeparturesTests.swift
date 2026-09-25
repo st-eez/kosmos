@@ -85,6 +85,16 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
 
+@Test func aDepartureOfTheFocusClosedAndKeptFocusesAtOnce() {
+    // Activity Monitor's only window closed while key: macOS keyed nothing and reported
+    // nothing, and Helium became key only when the departure bound ended (live log,
+    // September 25, 2026). The close is judged a pairing window after its order-out, when
+    // any key change of the close has been reported.
+    let left: (WindowID) -> Bool = { $0 == 1 }
+    #expect(DepartureFocus.decide(focusLeft: true, closed: true, key: .window(1), departing: [1], left: left) == .now)
+    #expect(DepartureFocus.decide(focusLeft: false, closed: true, key: .window(1), departing: [1], left: left) == .none)
+}
+
 // Native tabs: a switch orders one window of the app in and another out, in either order.
 
 @Test func aTabSwitchPairsTwoWindowsOfOneAppInEitherOrder() {
