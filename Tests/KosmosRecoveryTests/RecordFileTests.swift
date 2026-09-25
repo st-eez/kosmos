@@ -33,6 +33,8 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     file.publish(record(spaces: [1, 2], windows: 3))
     file.publish(record(spaces: [5]))
     #expect(try RecordFile(url: url).read() == record(spaces: [5]))
+    #expect(RecordFile.peek(url) == record(spaces: [5]))
+    #expect(RecordFile.peek(temporaryFile()) == nil)
 }
 
 @Test func tornSlotFallsBackToTheOlderRecord() throws {
