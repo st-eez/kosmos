@@ -739,7 +739,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     // The Space a reveal on each display lands in (docs/hiding.md).
     let spaces = Displays.current()
     for display in spaces.displays {
-        print("managed display \(display.identifier): current Space \(display.currentSpace.map(String.init) ?? "not ordinary"), ordinary Spaces \(display.spaces)")
+        print("managed display \(display.identifier): current Space \(display.currentSpace.map(String.init) ?? "not ordinary"), ordinary Spaces \(display.ordinarySpaces)")
     }
     for id in active {
         print("display \(id): a reveal there lands in Space \(spaces.ordinarySpace(on: id, original: nil).map(String.init) ?? "none")")

@@ -108,8 +108,7 @@ public enum SkyLight {
     /// Every window on every Space of every display. It can block during a Space
     /// transition, so the inventory calls it off the main thread.
     public static func allWindowIDs() -> [UInt32] {
-        let displays = SLSCopyManagedDisplaySpaces(connection)?.takeRetainedValue() as? [[String: Any]] ?? []
-        let spaces = displays.flatMap { ($0["Spaces"] as? [[String: Any]] ?? []).compactMap { $0["id64"] as? UInt64 } }
+        let spaces = Displays.current().allSpaces
         var setTags: UInt64 = 0, clearTags: UInt64 = 0
         let ids = SLSCopyWindowsWithOptionsAndTags(connection, 0, spaces as CFArray, 0x7, &setTags, &clearTags)?
             .takeRetainedValue() as? [UInt32]

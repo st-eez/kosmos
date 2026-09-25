@@ -1,26 +1,41 @@
 import CoreGraphics
 import CKosmos
 
-/// The managed displays and their Spaces, from SLSCopyManagedDisplaySpaces.
-public struct Displays {
+/// The managed displays and their Spaces, from SLSCopyManagedDisplaySpaces, whose private
+/// keys only `init(raw:)` reads.
+public struct Displays: Sendable {
+    public struct Space: Sendable, Equatable {
+        public let id: UInt64
+        /// 0 for an ordinary Space, 4 for a native fullscreen one.
+        public let type: Int?
+    }
+
     public struct Display: Sendable {
         public let identifier: String
         /// Nil while the display shows a Space that is not ordinary, such as native fullscreen.
         public let currentSpace: UInt64?
-        public let spaces: [UInt64]
+        /// Every Space, in WindowServer's order.
+        public let allSpaces: [Space]
+
+        public var ordinarySpaces: [UInt64] { allSpaces.filter { $0.type == 0 }.map(\.id) }
     }
 
     public let displays: [Display]
 
     public static func current() -> Displays {
-        let raw = SLSCopyManagedDisplaySpaces(SkyLight.connection)?.takeRetainedValue() as? [[String: Any]] ?? []
-        return Displays(displays: raw.map { display in
-            let current = display["Current Space"] as? [String: Any]
-            let ordinary = (display["Spaces"] as? [[String: Any]] ?? []).filter { ($0["type"] as? Int) == 0 }
+        Displays(raw: SLSCopyManagedDisplaySpaces(SkyLight.connection)?.takeRetainedValue() as? [[String: Any]] ?? [])
+    }
+
+    init(raw: [[String: Any]]) {
+        func space(_ entry: [String: Any]) -> Space? {
+            (entry["id64"] as? UInt64).map { Space(id: $0, type: entry["type"] as? Int) }
+        }
+        displays = raw.map { display in
+            let current = (display["Current Space"] as? [String: Any]).flatMap(space)
             return Display(identifier: display["Display Identifier"] as? String ?? "",
-                           currentSpace: (current?["type"] as? Int) == 0 ? current?["id64"] as? UInt64 : nil,
-                           spaces: ordinary.compactMap { $0["id64"] as? UInt64 })
-        })
+                           currentSpace: current?.type == 0 ? current?.id : nil,
+                           allSpaces: (display["Spaces"] as? [[String: Any]] ?? []).compactMap(space))
+        }
     }
 
     /// Whether the window is in a native fullscreen Space. Nil while it is in no Space, as
@@ -29,16 +44,12 @@ public struct Displays {
     /// thread.
     public static func isFullscreen(_ window: UInt32) -> Bool? {
         guard let spaces = SkyLight.spaces(of: window), !spaces.isEmpty else { return nil }
-        // Native fullscreen Spaces are type 4, where ordinary Spaces are type 0.
-        let raw = SLSCopyManagedDisplaySpaces(SkyLight.connection)?.takeRetainedValue() as? [[String: Any]] ?? []
-        return raw.contains { display in
-            (display["Spaces"] as? [[String: Any]] ?? []).contains {
-                ($0["type"] as? Int) == 4 && ($0["id64"] as? UInt64).map(spaces.contains) == true
-            }
-        }
+        return !current().fullscreenSpaces.isDisjoint(with: spaces)
     }
 
-    public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.spaces)) }
+    public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.ordinarySpaces)) }
+    var fullscreenSpaces: Set<UInt64> { Set(displays.flatMap(\.allSpaces).filter { $0.type == 4 }.map(\.id)) }
+    var allSpaces: [UInt64] { displays.flatMap(\.allSpaces).map(\.id) }
 
     /// The ordinary Space for a window that has none: the main display's current Space,
     /// else the window's `original` Space if it still exists, else the main display's first
@@ -46,7 +57,7 @@ public struct Displays {
     /// while one is shown. Nil only when no ordinary Space exists.
     public func ordinarySpace(original: UInt64?) -> UInt64? {
         let main = display(for: CGMainDisplayID()) ?? displays.first
-        return Self.ordinarySpace(current: main?.currentSpace, spaces: (main?.spaces ?? []) + displays.flatMap(\.spaces),
+        return Self.ordinarySpace(current: main?.currentSpace, spaces: (main?.ordinarySpaces ?? []) + displays.flatMap(\.ordinarySpaces),
                                   original: original)
     }
 
@@ -56,7 +67,7 @@ public struct Displays {
     /// from the Space list, or none given, leaves the choice to `ordinarySpace(original:)`.
     public func ordinarySpace(on id: CGDirectDisplayID?, original: UInt64?) -> UInt64? {
         guard let id, let display = display(for: id),
-              let space = Self.ordinarySpace(current: display.currentSpace, spaces: display.spaces, original: original)
+              let space = Self.ordinarySpace(current: display.currentSpace, spaces: display.ordinarySpaces, original: original)
         else { return ordinarySpace(original: original) }
         return space
     }
@@ -82,9 +93,11 @@ public struct Displays {
         return display(for: id)?.currentSpace
     }
 
+    private func display(for id: CGDirectDisplayID) -> Display? { display(uuid: DisplayIdentity.uuid(of: id)) }
+
     /// With one display macOS names it "Main" instead of by UUID.
-    private func display(for id: CGDirectDisplayID) -> Display? {
-        guard let uuid = DisplayIdentity.uuid(of: id) else { return nil }
+    func display(uuid: String?) -> Display? {
+        guard let uuid else { return nil }
         return displays.first { $0.identifier == uuid } ?? displays.first { $0.identifier == "Main" }
     }
 }
