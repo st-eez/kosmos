@@ -1,7 +1,7 @@
 import AppKit
 
 /// The setup window: each permission Kosmos waits for, with a checkmark or a button to its
-/// pane in System Settings, checked twice a second (DESIGN.md, section 5.9).
+/// pane in System Settings, checked twice a second (docs/onboarding.md).
 @MainActor
 final class Onboarding {
     /// What the window shows.
@@ -43,7 +43,7 @@ final class Onboarding {
 
     /// Brings the window to the front of the normal level, and keeps it open if it was about
     /// to close. Only a launch without Accessibility lets Kosmos take the key: otherwise a
-    /// background accessory app does not become the front app (DESIGN.md, section 5.4).
+    /// background accessory app does not become the front app (docs/focus.md).
     func show(takingKey: Bool) {
         if let closing {
             closing.cancel()

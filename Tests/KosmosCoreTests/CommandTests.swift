@@ -91,8 +91,7 @@ import Testing
     }
 }
 
-/// AeroSpace's placement marks the floating window most recently focused (DESIGN.md,
-/// section 5.5).
+/// AeroSpace's placement marks the floating window most recently focused (docs/tree.md).
 @Test func focusDescendsByEachWindowsOwnFocusOrder() {
     var workspace = Workspace("h[1 v[2 3]]")
     workspace.floating = [9]

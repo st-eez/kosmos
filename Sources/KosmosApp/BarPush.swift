@@ -6,7 +6,7 @@ import Synchronization
 private let barLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "bar")
 
 /// Pushes each state snapshot to SketchyBar as one `--trigger` event, so the bar never
-/// queries Kosmos and a switch launches no process (DESIGN.md, section 5.7).
+/// queries Kosmos and a switch launches no process (docs/ipc.md).
 final class BarPush: Sendable {
     static let barName = "git.felix.sketchybar"
     static let event = "kosmos_state"

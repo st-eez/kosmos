@@ -1,5 +1,5 @@
 /// One private focus request for a window, as the focus queue and the target app's worker
-/// take it (DESIGN.md, section 5.4). It follows the split model in tla/Kosmos.tla step for
+/// take it (docs/focus.md). It follows the split model in tla/Kosmos.tla step for
 /// step, and each method names the action it implements. Inside the front app only the
 /// worker's raise keys a window, and for a background app only the queue's key record does.
 /// Each side records the echo right before its own call that changes the key window.

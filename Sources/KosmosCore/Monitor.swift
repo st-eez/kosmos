@@ -3,7 +3,7 @@ import CoreGraphics
 /// A display's CGDirectDisplayID.
 public typealias DisplayID = UInt32
 
-/// A connected display as the session tiles it (DESIGN.md, section 5.13).
+/// A connected display as the session tiles it (docs/displays.md).
 public struct Monitor: Equatable, Sendable {
     public var id: DisplayID
     /// The whole display, in the top left origin coordinates Accessibility uses. The main

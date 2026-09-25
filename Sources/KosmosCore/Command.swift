@@ -20,7 +20,7 @@ public enum Command: Equatable, Sendable {
         case allMonitorsWrapping
     }
 
-    /// A display, as the monitor commands name one (DESIGN.md, section 5.13).
+    /// A display, as the monitor commands name one (docs/displays.md).
     public enum MonitorTarget: Equatable, Sendable {
         case direction(Direction)
         case next

@@ -1,7 +1,7 @@
 ------------------------------- MODULE Kosmos -------------------------------
 (***************************************************************************)
-(* Kosmos's workspace switch (docs/DESIGN.md, sections 4.3 and 5.4) at the *)
-(* level of its queues:                                                    *)
+(* Kosmos's workspace switch (docs/overview.md, section 4.3, and           *)
+(* docs/focus.md) at the level of its queues:                              *)
 (*                                                                         *)
 (*   mq  the main actor's jobs: commands, barrier resumptions, observer    *)
 (*       reports. A job runs to completion.                                *)
@@ -1221,7 +1221,7 @@ LastCommand(h) ==   \* 0 when another input came after the last command
 HonorsLastCommand == Quiescent /\ LastCommand(history) # 0 => s.active = LastCommand(history)
 
 \* A click, Command-Tab, return or hover after the last command wins, unless it makes no
-\* claim, or one of the races and limits DESIGN.md 5.4 lists hid what the user chose.
+\* claim, or one of the races and limits docs/focus.md lists hid what the user chose.
 HonorsLastActivation == Quiescent /\ s.lastWin # {} /\ ~s.lastAmb /\ ~s.lastLost /\ ~s.lastMis /\ ~s.lastRaced
                         /\ ~s.lastEarly
                         => s.focus \in s.lastWin

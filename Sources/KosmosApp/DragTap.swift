@@ -5,7 +5,7 @@ import os
 
 let dragLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "drag")
 
-/// Mouse button events for modifier drags (DESIGN.md, section 5.14), from an active event
+/// Mouse button events for modifier drags (docs/modifier-drags.md), from an active event
 /// tap on its own thread. It sits at the annotated session location, where WindowServer has
 /// named the window under the pointer with its own hit test, so deciding a press reads no
 /// window list. A DragGate decides each event under a lock that the main actor holds only
@@ -74,7 +74,7 @@ final class DragTap: Sendable {
 
     /// A mouse button as HID reads it now. HID's state holds the presses of the mouse and
     /// trackpad; the combined session state holds those other processes post as well, which
-    /// would read as presses newer than the drag's (DESIGN.md, section 5.14).
+    /// would read as presses newer than the drag's (docs/modifier-drags.md).
     private static func hid(_ button: DragButton) -> DragGate.ButtonState {
         let (mouse, down): (CGMouseButton, CGEventType) = button == .left ? (.left, .leftMouseDown) : (.right, .rightMouseDown)
         return DragGate.ButtonState(down: CGEventSource.buttonState(.hidSystemState, button: mouse),
@@ -93,7 +93,7 @@ final class DragTap: Sendable {
                            at: event.location, hid: Self.hid)
             }
             // The live test reads these: the gate is safe only if presses carry distinct
-            // numbers and each up carries its press's (DESIGN.md, section 5.14).
+            // numbers and each up carries its press's (docs/modifier-drags.md).
             if outcome.began != nil { dragLog.info("modifier drag's press has event number \(number)") }
         case .leftMouseDragged, .rightMouseDragged:
             outcome = gate.withLock { $0.dragged(to: event.location) }

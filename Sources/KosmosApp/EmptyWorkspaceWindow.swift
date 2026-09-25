@@ -1,8 +1,8 @@
 import AppKit
 import Synchronization
 
-/// The window an empty workspace keys, so keystrokes reach no hidden window (DESIGN.md,
-/// section 5.4). An app fronted with every window concealed keyed one of them, fronted with
+/// The window an empty workspace keys, so keystrokes reach no hidden window (docs/focus.md).
+/// An app fronted with every window concealed keyed one of them, fronted with
 /// no window brought forward or not, so no app with a concealed window can be the target.
 /// Kosmos cannot activate itself either; the focus queue keys this window by the private
 /// path, which a background accessory app did for a window of its own in 10 of 10 trials

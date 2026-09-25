@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// The mouse buttons of a modifier drag: the left moves a window and the right resizes it, as
-/// Omarchy binds Super with Hyprland's mouse:272 and mouse:273 (DESIGN.md, section 5.14).
+/// Omarchy binds Super with Hyprland's mouse:272 and mouse:273 (docs/modifier-drags.md).
 public enum DragButton: Hashable, Sendable {
     case left
     case right
@@ -19,7 +19,7 @@ extension KeyCombo.Modifiers {
 }
 
 /// Decides on the drag tap's thread which mouse button events Kosmos takes, so no event
-/// waits on the main actor (DESIGN.md, section 5.14). A press with exactly the modifiers, on
+/// waits on the main actor (docs/modifier-drags.md). A press with exactly the modifiers, on
 /// a display and over a window the gate holds as WindowServer's hit test names it, begins a
 /// drag. Kosmos takes that press, every movement until its mouse up and that mouse up,
 /// whatever the modifiers are by then. Every other event passes to the app under the
@@ -172,7 +172,7 @@ public struct DragGate: Sendable {
     }
 }
 
-/// A modifier drag as the main actor carries it out (DESIGN.md, section 5.14). Session's
+/// A modifier drag as the main actor carries it out (docs/modifier-drags.md). Session's
 /// `beginDrag` makes one.
 public struct ModifierDrag: Equatable, Sendable {
     public let grab: DragGate.Grab

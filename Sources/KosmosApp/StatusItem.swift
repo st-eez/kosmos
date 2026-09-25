@@ -4,7 +4,7 @@ import ServiceManagement
 
 /// A static menu bar icon. It changes only when Kosmos's state changes, never during a
 /// command, because a status item that changes width makes the menu bar lay itself out
-/// again (DESIGN.md, section 2). The menu is built when it opens.
+/// again (docs/overview.md, section 2). The menu is built when it opens.
 @MainActor
 final class StatusItem: NSObject, NSMenuDelegate {
     var accessibilityMissing = false { didSet { updateImage() } }
