@@ -57,7 +57,7 @@ extension Workspace {
 
     /// `focus` in a direction on `screen` with `deskGaps`, with the floating windows at `frames`.
     mutating func focus(_ direction: Direction, from window: WindowID, frames: [WindowID: CGRect] = [:]) -> WindowID? {
-        focus(direction, from: window, frames: frames, in: screen, gaps: deskGaps, minimums: [:])
+        focus(direction, from: window, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
     }
 
     /// `resize` with no minimums.

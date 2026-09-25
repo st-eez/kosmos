@@ -1,7 +1,10 @@
 # Geometry
 
 - Layout compares each target with the last confirmed frame and the pending target.
-  Unchanged windows get no write, and each window keeps only its newest target.
+  Unchanged windows get no write, and each window keeps only its newest target. A write
+  that goes to no worker, or that a worker drops for a window it has no element for,
+  makes the ledger forget the window, so its target is not left pending and the next
+  write is whole.
 - When the size changes, write size, then position, then size again; otherwise write the
   position alone. Read the frame back once per batch.
 - AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display edge
@@ -36,7 +39,8 @@
   retry, and showing the workspace forgets its refusal, so the write that shows the
   window, sent before the reveal, is a first attempt, retried until the reveal lands. A
   window a failed batch left concealed on a shown workspace is written every 100 ms while
-  it refuses, until a switch reveals it. A window moved on screen to another display, by
+  it refuses, until a switch reveals it. The upgrade: the retry skips a concealed window,
+  and the switch that reveals it after the failed batch writes its tile. A window moved on screen to another display, by
   `move-node-to-workspace --focus-follows-window` or `move-node-to-monitor`, is neither
   concealed nor revealed, so only the 100 ms retry keeps a size it ignores during the
   move from counting. One that ignores the retry too records a minimum, until it is
@@ -56,7 +60,11 @@
   `resize_on_border` off, so a tile's edges resize nothing there, and macOS gives Kosmos
   no way to stop such a resize. So does a tiled window moved while another window is
   key, as by a Command drag, or moved less than a lift takes ([displays.md](displays.md)). The ledger
-  forgets the window first, so it gets a whole frame write. The resize command sizes
+  forgets the window first, so it gets a whole frame write. A lock or a resync forgets the
+  presses and the windows they moved, and the resync lays those windows out, so a press
+  that spans a resync loses its snap-back: its later changes count as made with the button
+  up, and the window keeps what the rest of the press gives it. That is rare, and accepted.
+  The resize command sizes
   tiles, and a floating window keeps the size the user gives it.
 - The inventory applies a change event after reading the window's row off the main thread
   ([inventory.md](inventory.md)), by which time Kosmos's write may be confirmed and the button up. So
@@ -77,7 +85,8 @@
   hold the app's next step, as of a live resize, whose own event then finds no
   difference. The pointer for the resize border check is read as the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
-  out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
+  out of an app's attributes, which do not take their app element's timeout (as paneru
+  found), are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
   leave its window unknown.
 - A call that waited out at least half the timeout backs its app off. The worker then makes

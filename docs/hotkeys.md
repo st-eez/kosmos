@@ -1,7 +1,19 @@
 # Hotkeys and Secure Input
 
 - Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
-  at 8 µs per call.
+  at 8 µs per call. WindowServer matches the keys itself, so a keystroke that is no
+  binding never reaches Kosmos, and Carbon sends no key repeats, so a binding fires once
+  per press.
+- Each hotkey is registered exclusive. Another app's exclusive hotkey on the same
+  combination makes the registration fail, and Kosmos reports it; a shared registration
+  would give the key to both apps.
+- WindowServer and the Dock take a macOS keyboard shortcut before any app's hotkey, so a
+  load reports each binding that an enabled shortcut in System Settings also uses. The
+  ceiling: macOS lists arrow and function keys with the fn flag, which may mean the Globe
+  key or only the flag those keys always carry. Kosmos never registers fn, so those
+  shortcuts never compare equal, and a clash on an arrow or function key goes unreported.
+  A probe that settles what the flag means would let arrows be compared with fn masked
+  out.
 - Secure Input (a password field in any app) stops some hotkeys. `kosmos-probe
   secure-input` registers ten test hotkeys, and its window asks for a real press of each
   with Secure Input off and with its own password field focused. A hotkey that fires

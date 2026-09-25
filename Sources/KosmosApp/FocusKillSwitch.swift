@@ -3,22 +3,15 @@ import os
 
 private let switchLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
 
-/// Turns the private focus path off (docs/focus.md). Two bytes in a file mapped
-/// shared outlive the process, as the recovery record does: the first is set while a private
-/// call runs, so a crash inside it is found at the next launch, and the second keeps the path
-/// off, across restarts, until `kosmos reload-config`. Setting and clearing the first is two
-/// stores into memory with no system call, about 1.4 ns in all.
-///
-/// A kill during the call also leaves the first byte set and turns the path off; a reload
-/// turns it back on. The second byte is read and written on the main actor only, and the
-/// focus queue is told with each request which path to take.
+/// Turns the private focus path off (docs/focus.md). Two bytes in a file mapped shared outlive
+/// the process: the first is set during a private call, so a crash inside one is found at the
+/// next launch, and the second holds why the path is off, on the main actor only.
 final class FocusKillSwitch: @unchecked Sendable {
     enum Reason: UInt8 {
         case crashed = 1
         case wrongWindows = 2
     }
 
-    /// The byte set during a private call, and the reason the path is off (0 while on).
     private let bytes: UnsafeMutablePointer<UInt8>
 
     init(url: URL) {
@@ -30,7 +23,6 @@ final class FocusKillSwitch: @unchecked Sendable {
         if let mapped, mapped != MAP_FAILED {
             bytes = mapped.bindMemory(to: UInt8.self, capacity: size)
         } else {
-            // Without the file the switch still works, but a crash is forgotten.
             switchLog.error("\(url.path, privacy: .public) not mapped (\(errno)); a crash in private focus will not be remembered")
             bytes = .allocate(capacity: size)
             bytes.initialize(repeating: 0, count: size)
@@ -50,10 +42,9 @@ final class FocusKillSwitch: @unchecked Sendable {
     /// Main actor only, like `offReason`, `turnOff` and `turnOn`.
     var isOn: Bool { bytes[1] == 0 }
 
-    /// Why the path is off, or nil.
     var offReason: Reason? { Reason(rawValue: bytes[1]) }
 
-    /// Runs a private call with the first byte set. Focus queue only.
+    /// Focus queue only.
     func guarded(_ call: () -> Bool) -> Bool {
         bytes[0] = 1
         defer { bytes[0] = 0 }

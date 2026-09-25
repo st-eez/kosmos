@@ -118,6 +118,9 @@ extension FocusFollowsMouse {
 /// How long before an app activation Kosmos adopts or follows the user's last input came, in
 /// seconds, as the session's event state gives it (`CGEventSource.secondsSinceLastEventType`).
 public struct ActivationInput: Equatable, Sendable {
+    /// In seconds: an input older than this is not the one behind the activation.
+    public static let maxAge: Double = 1
+
     public var key: Double
     public var leftClick: Double
     public var rightClick: Double
@@ -139,8 +142,8 @@ public struct ActivationInput: Equatable, Sendable {
     /// window, on the bar or on a link that opens another app, leaves the pointer where it
     /// is. A Command-Tab switcher held open for over a second reads as a click.
     public func bringsPointer(onDock: Bool) -> Bool {
-        if key < 1, key < leftClick, key < rightClick, key < moved { return true }
-        return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
+        if key < Self.maxAge, key < leftClick, key < rightClick, key < moved { return true }
+        return onDock && leftClick < Self.maxAge && leftClick < key && leftClick < rightClick
     }
 }
 
@@ -153,13 +156,13 @@ public enum CommandSource: Sendable {
 extension Command {
     /// Whether mouse-follows-focus brings the pointer to the focus after this command, unless
     /// it is there already. `toAnotherDisplay`: the focus is on another display than the
-    /// pointer (docs/focus-follows-mouse.md).
-    public func movesPointer(from source: CommandSource, toAnotherDisplay: Bool) -> Bool {
+    /// pointer, read only for a workspace command (docs/focus-follows-mouse.md).
+    public func movesPointer(from source: CommandSource, toAnotherDisplay: @autoclosure () -> Bool) -> Bool {
         guard source == .hotkey else { return false }
         switch self {
         case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
-        case .workspace, .workspaceBackAndForth: return toAnotherDisplay
-        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay
+        case .workspace, .workspaceBackAndForth: return toAnotherDisplay()
+        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay()
         default: return false
         }
     }
