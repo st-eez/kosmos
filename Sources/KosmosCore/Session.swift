@@ -65,6 +65,9 @@ public struct Session: Sendable {
     /// The workspace a display showed before it left, or before a profile left that
     /// workspace out, for when it shows one again.
     private var shownBefore: [DisplayID: String] = [:]
+    /// Tiled windows the user is dragging by the title bar, parked where they stood until
+    /// the left button comes up (DESIGN.md, section 5.13).
+    public private(set) var lifted: Set<WindowID> = []
 
     /// `assigned` maps workspaces to the ids of `monitors`. The first workspace has the focus.
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
@@ -124,11 +127,15 @@ public struct Session: Sendable {
     /// the end of the workspace `merge` names for it, else of the first, and come back when a
     /// later profile lists their workspace, unless they moved since. The focused workspace
     /// keeps the focus, on its display, and every other display keeps its workspace if it may
-    /// still show it. It plans nothing: the app resyncs every window after it.
+    /// still show it. A drag that the change, a lock or a wake cut short ends with the
+    /// lifted windows back where they stood. It plans nothing: the app resyncs every window
+    /// after it.
     public mutating func reconfigure(names newNames: [String], monitors newMonitors: [Monitor],
                                      assigned newAssigned: [String: DisplayID], merge: [String: String]) {
         precondition(!newNames.isEmpty, "a session needs a workspace")
         precondition(!newMonitors.isEmpty, "a session needs a display")
+        for window in lifted { putBack(window) }
+        lifted = []
         let focusedBefore = focusedDisplay
         for name in newNames where workspaces[name] == nil {
             let area = newMonitors.first { $0.id == newAssigned[name] }?.area ?? newMonitors[0].area
@@ -265,6 +272,7 @@ public struct Session: Sendable {
         minimums[window] = nil
         merged[window] = nil
         parkedConcealed.remove(window)
+        lifted.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan()
@@ -289,8 +297,10 @@ public struct Session: Sendable {
         if let current = home.removeValue(forKey: new) {
             _ = workspaces[current]!.remove(new)
             parkedConcealed.remove(new)
+            lifted.remove(new)
             changed.insert(current)
         }
+        if lifted.remove(old) != nil { lifted.insert(new) }
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
         home[new] = name
@@ -312,11 +322,12 @@ public struct Session: Sendable {
     /// they return to their places. Parked windows take no part in switches, so Kosmos
     /// neither conceals nor reveals them, and they get no frames. Focus is left to macOS,
     /// which keys another window itself; asking for one here would pull the screen out of
-    /// a native fullscreen Space.
+    /// a native fullscreen Space. A lifted window is parked already, where it stood, and
+    /// stays parked when the drag ends.
     public mutating func park(_ windows: [WindowID]) -> Plan {
         var changed: Set<String> = []
         for window in windows {
-            guard let name = home[window], workspaces[name]!.park(window) else { continue }
+            guard let name = home[window], lifted.remove(window) != nil || workspaces[name]!.park(window) else { continue }
             changed.insert(name)
             if !isShown(name) { parkedConcealed.insert(window) }
         }
@@ -332,7 +343,7 @@ public struct Session: Sendable {
     /// windows of hidden workspaces are concealed again, and those Kosmos concealed that
     /// return to a shown workspace are revealed.
     public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
-        let returning = windows.filter { isParked($0) }
+        let returning = windows.filter { isParked($0) && !lifted.contains($0) }
         let focused = self.focused
         let changed = Set(returning.map { home[$0]! })
         for name in changed {
@@ -605,6 +616,88 @@ public struct Session: Sendable {
               let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return nil }
         var plan = move(window, from: source, to: name, follow: focused == window)
         plan.focus = nil
+        return plan
+    }
+
+    /// The user started to drag a tiled window of a shown workspace by its title bar: it
+    /// parks where it stood until `drop`. The plan has no frame for it. Nil when the window
+    /// is not tiled on a shown workspace (DESIGN.md, section 5.13).
+    public mutating func lift(_ window: WindowID) -> Plan? {
+        guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { return nil }
+        workspaces[name]!.park(window)
+        lifted.insert(window)
+        var plan = Plan()
+        plan.frames = frames(of: name)
+        return plan
+    }
+
+    /// Whether the pointer is where macOS resizes a window at `frame`: within 6 pt of its
+    /// left, right or bottom edge, or just above its top edge, outside the title bar. A
+    /// drag by the title bar keeps the pointer inside the frame, away from the side edges.
+    public static func onResizeBorder(_ pointer: CGPoint, of frame: CGRect) -> Bool {
+        let reach: CGFloat = 6
+        guard frame.insetBy(dx: -reach, dy: -reach).contains(pointer) else { return false }
+        return pointer.x <= frame.minX + reach || pointer.x >= frame.maxX - reach
+            || pointer.y >= frame.maxY - reach || pointer.y < frame.minY
+    }
+
+    /// The left button came up at `point` with windows lifted. Each tiles on the workspace
+    /// shown on the display under the pointer, beside the tile under it or the closest one,
+    /// and takes the focus; off every display, or over one showing no workspace, it goes
+    /// back to where it stood (DESIGN.md, section 5.13).
+    public mutating func drop(at point: CGPoint) -> Plan {
+        var plan = Plan()
+        var changed: Set<String> = []
+        let name = workspace(at: point)
+        for window in lifted.sorted() {
+            let source = home[window]!
+            changed.insert(source)
+            guard let name else {
+                putBack(window)
+                if !isShown(source) { plan.hide.append(window) }
+                continue
+            }
+            let tiles = frames(of: name).sorted { $0.key < $1.key }
+            func distance(_ frame: CGRect) -> CGFloat { hypot(frame.midX - point.x, frame.midY - point.y) }
+            let target = tiles.first { $0.value.contains(point) } ?? tiles.min { distance($0.value) < distance($1.value) }
+            _ = workspaces[source]!.remove(window)
+            if let target {
+                let tile = target.value, across = tile.width > tile.height
+                workspaces[name]!.insert(window, beside: target.key, across ? .horizontal : .vertical,
+                                         first: across ? point.x < tile.midX : point.y < tile.midY)
+            } else {
+                workspaces[name]!.insert(window, first: false)
+            }
+            home[window] = name
+            if name != source { merged[window] = nil }
+            workspaces[name]!.focus(window)
+            focusShown(name)
+            plan.focus = .window(window)
+            changed.insert(name)
+        }
+        lifted = []
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        return plan
+    }
+
+    /// A lifted window returns to where it stood, ending its drag.
+    private mutating func putBack(_ window: WindowID) {
+        let name = home[window]!, monitor = monitor(of: name)
+        workspaces[name]!.unpark([window], in: monitor.area, gaps: monitor.gaps)
+    }
+
+    /// The user let go of the left button after moving or resizing tiled windows of shown
+    /// workspaces without lifting them, as by their edges. Each goes back to its tile, as
+    /// Omarchy leaves Hyprland's `resize_on_border` off so a tile's edge resizes nothing. The
+    /// plan has their workspaces' frames (DESIGN.md, section 5.2).
+    public func released(_ windows: Set<WindowID>) -> Plan {
+        var changed: Set<String> = []
+        for window in windows {
+            guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { continue }
+            changed.insert(name)
+        }
+        var plan = Plan()
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
         return plan
     }
 

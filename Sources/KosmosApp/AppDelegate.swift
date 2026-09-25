@@ -218,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.mouseFollowsFocus = config.mouseFollowsFocus
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
+            self?.controller?.endDrag()
             _ = self?.respond(to: binding.arguments, received: .now)
         }
         self.hotkeys = hotkeys
