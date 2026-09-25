@@ -353,10 +353,13 @@ off the main thread).
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
 - Recovery restores the windows Kosmos concealed: each recorded window in a recorded
-  Space, and any other window there whose app owns a recorded window, such as a sheet. It
-  adds each one without an ordinary Space to the current Space of the display under it, or
-  to the Space a reveal would choose, then removes them from each recorded Space, destroys
-  the Spaces and clears the record. It removes an added window from a recorded Space only
+  Space, any other window there whose app owns a recorded window, such as a sheet, and a
+  child of a concealed window, as the Open or Save panel of a sandboxed app, which the
+  panel service owns. A window the Space lists and a read of its row misses counts too,
+  since that read failed, so it keeps the record. Recovery adds each one without an
+  ordinary Space to the current Space of the display under it, or to the Space a reveal
+  would choose, then removes them from each recorded Space, destroys the Spaces and clears
+  the record. It removes an added window from a recorded Space only
   once the add landed, and keeps the record while a concealed window is left there. Every
   step can safely run twice.
 - Recovery leaves in its Space a window whose process owns no recorded window, such as

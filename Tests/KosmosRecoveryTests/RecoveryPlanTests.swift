@@ -51,31 +51,41 @@ import Testing
 }
 
 private let app = ProcessIdentity(pid: 3, start: 4)
-/// Window 1 is recorded and 2 is a sheet of it, which its app owns; 7 is a placeholder
-/// another process added to the holding Space.
 private let record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 5, start: 6),
                                     spaces: [9], windows: [.init(id: 1, owner: app, originalSpace: 5)])
-private let owners: [UInt32: ProcessIdentity] = [1: app, 2: app, 7: ProcessIdentity(pid: 8, start: 9)]
+/// Window 1 is recorded. 2 is a sheet of it that its app owns, 3 an Open panel of it that
+/// the panel service owns, and 4 a sheet of that panel. 7 is a placeholder another process
+/// added to the holding Space, and 5 a window whose process could not be identified. The
+/// read finds no row for 6.
+private let rows: [UInt32: SpaceMembers.Row] = [
+    1: .init(owner: app, parent: 0), 2: .init(owner: app, parent: 1),
+    3: .init(owner: ProcessIdentity(pid: 8, start: 9), parent: 1), 4: .init(owner: ProcessIdentity(pid: 8, start: 9), parent: 3),
+    5: .init(owner: nil, parent: 0), 7: .init(owner: ProcessIdentity(pid: 10, start: 11), parent: 0),
+]
 private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
-    SpaceMembers.concealed(members, by: record, owners: { ids in owners.filter { ids.contains($0.key) } })
+    SpaceMembers.concealed(members, by: record, rows: { ids in rows.filter { ids.contains($0.key) } })
 }
 
-/// Recovery restores the recorded window and its app's sheet, and leaves the placeholder
-/// where it is. Left behind, the placeholder does not keep the record.
+/// Recovery restores the recorded window, its app's sheet and the panel with its sheet, and
+/// leaves the placeholder where it is. Left behind, the placeholder does not keep the
+/// record.
 @Test func recoveryRestoresTheAppsWindowsAndLeavesOthersAlone() {
-    let members = concealed([9: [1, 2, 7]])
-    #expect(members == [9: [1, 2]])
+    let members = concealed([9: [1, 2, 3, 4, 5, 7]])
+    #expect(members == [9: [1, 2, 3, 4]])
     let plan = RecoveryPlan.make(members: members, stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
-    #expect(plan.removals == [9: [1, 2]])
-    let after = concealed([9: [7]])
+    #expect(plan.removals == [9: [1, 2, 3, 4]])
+    let after = concealed([9: [5, 7]])
     #expect(after == [9: []])   // the Space still exists
     #expect(plan.isComplete(remainingMembers: after.values.joined().count, isOnNoSpace: { _ in false }))
-    #expect(!plan.isComplete(remainingMembers: concealed([9: [2, 7]]).values.joined().count, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: concealed([9: [3, 7]]).values.joined().count, isOnNoSpace: { _ in false }))
 }
 
-/// A window whose owner cannot be read, as one that no longer exists, is not restored.
-@Test func aWindowWithNoOwnerIsLeftOut() {
-    #expect(concealed([9: [1, 4]]) == [9: [1]])
+/// A member the read missed was listed by the Space, so the read failed: it counts, and
+/// keeps the record.
+@Test func aMemberWithNoRowKeepsTheRecord() {
+    #expect(concealed([9: [1, 6]]) == [9: [1, 6]])
+    let plan = RecoveryPlan.make(members: [9: [1]], stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
+    #expect(!plan.isComplete(remainingMembers: concealed([9: [6]]).values.joined().count, isOnNoSpace: { _ in false }))
 }
 
 @Test func aFullSlotDropsOnlyWindowsThatAreGoneAndNotKept() {
