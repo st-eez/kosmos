@@ -22,15 +22,20 @@ final class Hiding {
 
     enum Outcome: Sendable {
         case confirmed
-        /// No guardian was ready, or this macOS lacks a bridged operation, so nothing was
-        /// concealed.
-        case revealedOnly
+        /// Nothing was concealed.
+        case revealedOnly(Reason)
         /// Recovery ran, and the windows it could not restore stay concealed and recorded.
         case failed
+
+        enum Reason: Sendable {
+            case guardianNotReady
+            /// Lasts as long as this macOS, so it goes to `onProblem`.
+            case missing(operation: String)
+        }
     }
 
     private let guardian: Guardian
-    private let canHide = SkyLight.missingBridgedOperation == nil
+    private let missingOperation = SkyLight.missingBridgedOperation
     private let bridge = DispatchQueue(label: "kosmos.bridge", qos: .userInteractive)
     private let store: HidingStore
     /// A copy of the bridge queue's ledger as of its last job.
@@ -52,7 +57,11 @@ final class Hiding {
 
     /// Windows are concealed, and slide through the pool's Spaces, only while this macOS has
     /// every bridged operation and the guardian would recover them.
-    var canConceal: Bool { canHide && guardian.isReady }
+    var canConceal: Bool { whyNotConcealing == nil }
+
+    private var whyNotConcealing: Outcome.Reason? {
+        missingOperation.map { .missing(operation: $0) } ?? (guardian.isReady ? nil : .guardianNotReady)
+    }
 
     func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
         let store = self.store
@@ -82,8 +91,8 @@ final class Hiding {
     /// `stripping` lose their ordinary Space only if this batch conceals them.
     func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32], stripping: Set<UInt32>,
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
-        let canConceal = canConceal
-        let hide = canConceal ? hide : []
+        let reason = whyNotConcealing
+        let hide = reason == nil ? hide : []
         for window in hide { batchesConcealing[window, default: 0] += 1 }
         let store = self.store
         let submitted = ContinuousClock.now
@@ -104,8 +113,12 @@ final class Hiding {
                     self.batchesConcealing[window]! -= 1
                     if self.batchesConcealing[window] == 0 { self.batchesConcealing[window] = nil }
                 }
-                if let outcome { self.report(outcome) }
-                done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
+                if let outcome {
+                    self.report(outcome)
+                } else if case .missing(let operation)? = reason {
+                    self.onProblem?("This macOS lacks \(operation), so Kosmos hides no windows")
+                }
+                done(!confirmed ? .failed : reason.map { .revealedOnly($0) } ?? .confirmed, timing)
             }
         }
     }
