@@ -22,6 +22,14 @@ public enum Recovery {
         /// Some windows are still in a recorded Space or on no Space; the record is kept
         /// for another attempt.
         case incomplete(remaining: Int)
+
+        /// False when another attempt could restore more.
+        public var isFinal: Bool {
+            switch self {
+            case .incomplete, .windowServerUnknown: false
+            case .nothingRecorded, .staleSession, .restored: true
+            }
+        }
     }
 
     /// `keepingAnimationSpaces`: the running Kosmos's recovery, after a batch that failed,

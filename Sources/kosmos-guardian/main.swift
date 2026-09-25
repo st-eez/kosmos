@@ -2,7 +2,8 @@
 //
 //   kosmos-guardian watch <pid>   Wait for Kosmos to exit, then run recovery. Prints "R"
 //                                 once the exit watch is armed; Kosmos hides nothing before.
-//   kosmos-guardian recover       Run recovery now, for use by hand.
+//   kosmos-guardian recover       Run recovery now, for use by hand, and print each
+//                                 attempt's outcome.
 import AppKit
 import KosmosRecovery
 import os
@@ -16,7 +17,7 @@ NSApplication.shared.setActivationPolicy(.prohibited)
 
 switch (arguments.first, arguments.dropFirst().first.flatMap(Int32.init)) {
 case ("watch", let pid?): watch(pid)
-case ("recover", nil): recover()
+case ("recover", nil): recover(printing: true)
 default:
     FileHandle.standardError.write(Data("usage: kosmos-guardian watch <pid> | recover\n".utf8))
     exit(2)
@@ -33,22 +34,32 @@ func watch(_ pid: Int32) -> Never {
         while kevent(queue, nil, 0, &fired, 1, nil) < 0 && errno == EINTR {}
     }
     log.notice("Kosmos \(pid) exited")
-    recover()
+    // Kosmos closed the pipe once it read "R", so a print would raise SIGPIPE.
+    recover(printing: false)
 }
 
-func recover() -> Never {
+/// Runs recovery until it is final, every 2 s for about 30 s: without launch at login, no
+/// other recovery comes until Kosmos is started again.
+func recover(printing: Bool) -> Never {
+    let deadline = ContinuousClock.now + .seconds(30)
+    while true {
+        let outcome = attempt()
+        log.notice("recovery: \(String(describing: outcome), privacy: .public)")
+        if printing { print(outcome) }
+        if outcome.isFinal || ContinuousClock.now >= deadline { exit(outcome.isFinal ? 0 : 1) }
+        sleep(2)
+    }
+}
+
+/// One recovery, under the lock. The lock is released between attempts, since a starting
+/// Kosmos waits only 3 s for it; one that took it runs recovery itself.
+func attempt() -> Recovery.Outcome {
     do {
-        // A new Kosmos that already holds the lock runs recovery itself at startup.
         guard let lock = try FileLock(KosmosFiles.lock) else {
             log.notice("lock held by a running Kosmos; leaving recovery to it")
             exit(0)
         }
-        let outcome = Recovery.run(file: try RecordFile(url: KosmosFiles.record))
-        log.notice("recovery: \(String(describing: outcome), privacy: .public)")
-        print(outcome)
-        withExtendedLifetime(lock) {}
-        if case .incomplete = outcome { exit(1) }
-        exit(0)
+        return try withExtendedLifetime(lock) { try Recovery.run(file: RecordFile(url: KosmosFiles.record)) }
     } catch {
         log.error("recovery failed: \(error.localizedDescription, privacy: .public)")
         exit(1)

@@ -69,8 +69,12 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 - **Kosmos.app**, an agent app (LSUIElement) launched at login by a LaunchAgent with
   `KeepAlive`, so a crash restarts it.
 - **kosmos-guardian**, a separate executable in the bundle, spawned in its own process group.
-  It watches Kosmos with `NOTE_EXIT` and restores hidden windows when Kosmos dies. Kosmos
-  watches the guardian and respawns it, and hides windows only while it is alive.
+  It watches Kosmos with `NOTE_EXIT` and restores hidden windows when Kosmos dies. An
+  incomplete recovery runs again every 2 s for about 30 s, since without launch at login no
+  other recovery comes until Kosmos starts again. The guardian releases the instance lock
+  between attempts, because a starting Kosmos waits only 3 s for it, and leaves recovery to
+  a Kosmos that took it. Kosmos watches the guardian and respawns it, and hides windows only
+  while it is alive.
 - **kosmos**, the CLI, a client without AppKit for scripts and status bar clicks.
 
 ### 4.2 Threads and queues
