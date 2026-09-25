@@ -1,6 +1,6 @@
 /// The left button's presses as Kosmos's global monitors hear them. The inventory applies a
 /// window change after reading its row off the main thread, so the change is judged by the
-/// press on when it came (DESIGN.md, section 5.2).
+/// press on when it came (docs/geometry.md).
 public struct LeftButton: Sendable {
     public enum State: Equatable, Sendable {
         /// No press was on.

@@ -7,7 +7,7 @@ public struct Config: Equatable, Sendable {
     public var mouseFollowsFocus = false
     public var focusFollowsMouse = FocusFollowsMouse()
     /// The modifiers that start a modifier drag, or nil when modifier drags are off
-    /// (DESIGN.md, section 5.14).
+    /// (docs/modifier-drags.md).
     public var mouseModifier: KeyCombo.Modifiers? = .alt
     public var workspaces: [String] = []
     /// Display matchers by the name the rest of the config uses for them.
@@ -32,7 +32,7 @@ public struct Config: Equatable, Sendable {
     }()
 }
 
-/// Focus moves to the window the pointer enters (DESIGN.md, section 5.11).
+/// Focus moves to the window the pointer enters (docs/focus-follows-mouse.md).
 public struct FocusFollowsMouse: Equatable, Sendable {
     public var enabled = false
     /// Apps whose windows the pointer never focuses, each named by its bundle identifier or
@@ -177,7 +177,7 @@ public struct Setup: Equatable, Sendable {
     public var workspaces: [String]
     /// The display each workspace belongs on: the first display, left to right, then top to
     /// bottom, that the first connected monitor in the workspace's list matches. A workspace
-    /// with no connected monitor is absent, and free (DESIGN.md, section 5.13).
+    /// with no connected monitor is absent, and free (docs/displays.md).
     public var workspaceDisplays: [String: DisplayID]
     /// Windows on a workspace missing from `workspaces` move to the workspace named here.
     public var mergeWorkspaces: [String: String]
@@ -189,7 +189,7 @@ public struct Setup: Equatable, Sendable {
 }
 
 extension Config {
-    /// The profile that applies (DESIGN.md, sections 5.8 and 5.13): the one `forced` names,
+    /// The profile that applies (docs/config.md and docs/displays.md): the one `forced` names,
     /// as the `profile` command asks for, else the first whose `when` monitors are all
     /// connected, else, for the built-in display alone, the first without `when`. Other
     /// displays keep `active`, the profile that applies now, as Steve's `apply-profile.sh`

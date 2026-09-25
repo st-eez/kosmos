@@ -1,5 +1,5 @@
-/// When windows left the screen, from the first word of each departure (DESIGN.md, section
-/// 5.4). Accessibility reports a minimize as it starts, and NSWorkspace can report a hide
+/// When windows left the screen, from the first word of each departure (docs/focus.md).
+/// Accessibility reports a minimize as it starts, and NSWorkspace can report a hide
 /// before WindowServer orders the app's windows out.
 public struct DepartureLog: Sendable {
     private var leftAt: [WindowID: ContinuousClock.Instant] = [:]
@@ -130,7 +130,7 @@ public enum DepartureFocus: Equatable, Sendable {
 }
 
 /// When a managed window its app ordered out counts as closed and kept, as a closed
-/// NSWindowController window does (DESIGN.md, section 5.5): still ordered out after a wait,
+/// NSWindowController window does (docs/tree.md): still ordered out after a wait,
 /// for none of the reasons with reports of their own.
 public enum ClosedAndKept {
     /// The wait while a native fullscreen transition may be under way. A transition orders

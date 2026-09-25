@@ -1,5 +1,5 @@
 // kosmos-probe secure-input: which Carbon hotkeys fire while Secure Input is on, and the
-// WindowServer events that report it turning on and off (DESIGN.md, section 5.6).
+// WindowServer events that report it turning on and off (docs/hotkeys.md).
 //
 // The probe registers each key below as an exclusive hotkey, and its window asks the person
 // at the keyboard to press each one twice: with Secure Input off, and with the probe's own

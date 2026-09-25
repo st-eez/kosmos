@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// Everything a status bar draws, sent whole on every change so the bar never queries
-/// (DESIGN.md, sections 5.7 and 5.12). A bar reads `version` first; a new version may
+/// (docs/ipc.md and docs/integrations.md). A bar reads `version` first; a new version may
 /// rename or remove fields, while new fields can appear in any version.
 public struct BarSnapshot: Codable, Equatable, Sendable {
     public struct Display: Codable, Equatable, Sendable {
@@ -56,8 +56,7 @@ extension BarSnapshot {
     /// than its position in WindowServer's managed display list, and 0 when the list lacks it.
     /// Kosmos reads the same list, so its numbers equal SketchyBar's in whatever order
     /// WindowServer keeps it. Two displays with one UUID would share a number; whether macOS
-    /// gives Steve's twin panels one UUID is part of the pending desk check (DESIGN.md,
-    /// section 5.8).
+    /// gives Steve's twin panels one UUID is part of the pending desk check (docs/config.md).
     /// - Parameters:
     ///   - uuid: the display's UUID (CGDisplayCreateUUIDFromDisplayID).
     ///   - active: how many displays are active (CGGetActiveDisplayList).

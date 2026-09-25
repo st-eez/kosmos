@@ -1,5 +1,5 @@
 /// Counts private focus requests that keyed the wrong window, so the private path can turn
-/// itself off (DESIGN.md, section 5.4). A request misses when its app reports another of its
+/// itself off (docs/focus.md). A request misses when its app reports another of its
 /// windows key and no echo of any request arrives before Kosmos's next request. Any echo
 /// shows the path working and clears the count, including one that arrives late, after an
 /// activation read of the window that was key before.

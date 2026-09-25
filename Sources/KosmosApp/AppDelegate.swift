@@ -145,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var category: String
     }
 
-    /// The loaded bindings as JSON for launchers (DESIGN.md, section 5.12): mode main first,
+    /// The loaded bindings as JSON for launchers (docs/integrations.md): mode main first,
     /// then the other modes by name, each in file order.
     private func listBindings() -> Response {
         guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
@@ -168,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Applies a profile from the config until the displays change or the config reloads, as
-    /// `set-profile.sh` did (DESIGN.md, section 5.13).
+    /// `set-profile.sh` did (docs/displays.md).
     private func applyProfile(_ name: String) -> Response {
         guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
         guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Reads the displays and applies the profile for them, or the one `profile` applied
     /// while they stay the same. Displays no profile fits keep the profile that applies
-    /// (DESIGN.md, section 5.13). With no display at all, as in the middle of a change, the
+    /// (docs/displays.md). With no display at all, as in the middle of a change, the
     /// ones read before stay.
     private func applyDisplays() {
         guard let controller else { return }
@@ -201,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Displays came or went, moved, or changed their visible areas. A burst gets one
     /// response 0.5 s after the last notification. While the session is locked or the
     /// displays sleep, the resync after the unlock or wake reads them instead: a sleeping
-    /// Mac can report its displays gone (DESIGN.md, section 5.13).
+    /// Mac can report its displays gone (docs/displays.md).
     private func screenParametersChanged() {
         log.notice("screen parameters changed: \(NSScreen.screens.count) displays")
         displayChange?.cancel()
@@ -268,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Reads Secure Input after WindowServer reports a change, and once at launch. Nothing
     /// polls, so this never runs inside a switch, though an app that holds Secure Input only
-    /// while active makes it run right after one (DESIGN.md, section 5.6).
+    /// while active makes it run right after one (docs/hotkeys.md).
     ///
     /// Ceiling: a second holder's enable, or a release while another holder remains, sends no
     /// event, so the named holder can be stale until Secure Input turns off and on. Reading
@@ -293,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Locked: windows wait and nothing on screen changes. Unlocked, or awake while unlocked:
-    /// the inventory sweeps and the Controller resyncs (DESIGN.md, section 5.1).
+    /// the inventory sweeps and the Controller resyncs (docs/inventory.md).
     private func lockChanged(_ locked: Bool) {
         inventory.sessionLocked = locked
         guard !locked else {
@@ -330,7 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The setup window closed with the key, which goes back to the window the model has
     /// focused, or to the empty workspace's window when Kosmos had the key before. Otherwise
     /// Kosmos steps back and macOS activates the app that had it, so no key goes to a window
-    /// of Kosmos's (DESIGN.md, section 5.4).
+    /// of Kosmos's (docs/focus.md).
     private func setupClosed(fromAnotherApp: Bool) {
         if let controller, controller.managing, controller.hasFocusedWindow || !fromAnotherApp {
             controller.refocus()

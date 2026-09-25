@@ -8,9 +8,9 @@ import os
 
 private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "hiding")
 
-/// Conceals windows of hidden workspaces in one holding Space (DESIGN.md, sections 4.3 and
-/// 5.3). The record, the Space and every recovery run on the bridge queue, so a recovery
-/// never races a batch still in flight.
+/// Conceals windows of hidden workspaces in one holding Space
+/// (docs/overview.md, section 4.3, and docs/hiding.md). The record, the Space and every recovery
+/// run on the bridge queue, so a recovery never races a batch still in flight.
 @MainActor
 final class Hiding {
     /// Where a batch's time went, for the switch log: waiting behind earlier bridge jobs,

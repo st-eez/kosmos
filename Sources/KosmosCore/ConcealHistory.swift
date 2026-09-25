@@ -1,5 +1,5 @@
 /// When each window was last concealed or revealed, so a focus report can be judged by
-/// whether its window was hidden when the report was stamped (DESIGN.md, section 5.4). A
+/// whether its window was hidden when the report was stamped (docs/focus.md). A
 /// switch can reveal the window before the report is classified, which turned a Command-Tab
 /// into a click on a window being concealed, and can conceal it, which turns a click into a
 /// Command-Tab (tla/README.md, change 19).
