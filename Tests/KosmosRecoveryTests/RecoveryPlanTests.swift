@@ -31,7 +31,7 @@ import Testing
 }
 
 @Test func anAddedWindowLeavesItsRecordedSpaceOnlyOnceItsAddLanded() {
-    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [], alive: [], isOnAnySpace: { $0 == 1 }, destination: { _ in 5 })
+    let plan = RecoveryPlan.make(members: [9: [1, 2]], recorded: [], alive: [1, 2], isOnAnySpace: { $0 == 1 }, destination: { _ in 5 })
     #expect(plan.removals(landed: { _ in true }) == [9: [1, 2]])
     #expect(plan.removals(landed: { _ in false }) == [9: [1]])
 }
@@ -94,15 +94,16 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
     #expect(!plan.isComplete(remainingMembers: concealed([9: [3, 7]]).values.joined().count, isOnNoSpace: { _ in false }))
 }
 
-/// A member the read missed was listed by the Space, so the read failed: it counts, and
-/// recovery takes it out with the rest. It keeps the record only while the Space lists it.
+/// A member the read missed is either unread or closed and still listed. It counts, and
+/// recovery takes it out with the rest, though a closed window's add never lands. It keeps
+/// the record only while the Space lists it.
 @Test func aMemberWithNoRowIsTakenOut() {
     let members = concealed([9: [1, 6]])
     #expect(members == [9: [1, 6]])
     let plan = RecoveryPlan.make(members: members, recorded: [1], alive: [1], isOnAnySpace: { $0 == 1 },
                                  destination: { _ in 5 })
-    #expect(plan.removals == [9: [1, 6]])
     #expect(plan.adds == [5: [6]])
+    #expect(plan.removals(landed: { _ in false }) == [9: [1, 6]])
     #expect(plan.isComplete(remainingMembers: concealed([9: []]).values.joined().count, isOnNoSpace: { _ in false }))
     #expect(!plan.isComplete(remainingMembers: concealed([9: [6]]).values.joined().count, isOnNoSpace: { _ in false }))
 }

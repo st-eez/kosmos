@@ -75,15 +75,17 @@
   Space, any other window there whose app owns a recorded window, such as a sheet, and a
   child of a concealed window, as the Open or Save panel of a sandboxed app, which the
   panel service owns. A window the Space lists and a read of its row misses counts too,
-  since that read failed, and recovery takes it out with the rest: removing a window that
-  is gone does nothing, and left in, it would keep the record for good. Recovery adds each
-  one without an ordinary Space to the current Space of the display under it, or to the
-  Space a reveal would choose, then removes them from each recorded Space, destroys the
-  Spaces and clears the record. It removes an added window from a recorded Space only once
-  the add landed, and keeps the record while a concealed window is left there. A window
-  whose Spaces do not read stays where it is and keeps the record too, since a removal
-  could leave it on no Space and an add could take it off its own. Every step can safely
-  run twice.
+  since either that read failed or the window closed and the Space still lists it, and
+  recovery takes it out with the rest. Removing a window that is gone does nothing, and
+  left in, it would keep the record for good. Recovery adds each one without an ordinary
+  Space to the current Space of the display under it, or to the Space a reveal would
+  choose, then removes them from each recorded Space, destroys the Spaces and clears the
+  record. It removes an added window from a recorded Space only once the add landed, and
+  keeps the record while a concealed window is left there. A window with no row leaves
+  regardless, because a closed window's Spaces read as none, so recovery adds it, and that
+  add never lands. A window whose Spaces do not read stays where it is and keeps the record
+  too, since a removal could leave it on no Space and an add could take it off its own.
+  Every step can safely run twice.
 - Recovery leaves in its Space a window of another process that is neither a child of a
   concealed window nor unread, such as a JankyBorders border window (below), and so does
   the ledger rebuilt after an incomplete recovery. Whether a destroy takes away a Space
