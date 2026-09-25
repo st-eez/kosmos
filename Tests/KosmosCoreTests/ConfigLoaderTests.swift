@@ -65,6 +65,21 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         ])
     }
 
+    @Test func mouseModifier() throws {
+        #expect(try #require(load("").config).mouseModifier == .alt)
+        #expect(try #require(load("mouse-modifier = 'shift-ctrl'").config).mouseModifier == [.ctrl, .shift])
+        let off = try #require(load("mouse-modifier = 'off'").config)
+        #expect(off.mouseModifier == nil)
+        #expect(load("mouse-modifier = 'option'").diagnostics == [
+            "3:18: error: mouse-modifier: 'option' is not a modifier; use cmd, ctrl, alt or shift",
+        ])
+        #expect(load("mouse-modifier = 'alt-alt'").diagnostics == ["3:18: error: mouse-modifier: 'alt' appears twice"])
+        #expect(load("mouse-modifier = 'alt-'").diagnostics == [
+            "3:18: error: mouse-modifier: expected modifiers joined by '-', such as ctrl-alt",
+        ])
+        #expect(load("mouse-modifier = true").diagnostics == ["3:18: error: mouse-modifier: expected a string, found a boolean"])
+    }
+
     @Test func unknownKeysSuggestTheNearestKey() {
         #expect(load("mouse-follow-focus = true\n[gaps]\ninnr = 1\n[[rules]]").diagnostics == [
             "3:1: error: mouse-follow-focus: unknown key; did you mean 'mouse-follows-focus'?",

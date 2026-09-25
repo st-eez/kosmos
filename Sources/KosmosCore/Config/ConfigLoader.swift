@@ -35,7 +35,7 @@ private struct ConfigDecoder {
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
             "config-version", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
-            "workspaces", "monitors", "workspace-monitor", "gaps", "mode", "rule", "profile",
+            "mouse-modifier", "workspaces", "monitors", "workspace-monitor", "gaps", "mode", "rule", "profile",
         ])
         var config = Config()
 
@@ -55,6 +55,13 @@ private struct ConfigDecoder {
         if let entry = root["focus-follows-mouse-ignore-apps"], let items = array(entry.value, path.key(entry.key)) {
             for (index, item) in items.enumerated() {
                 if let app = string(item, path.key(entry.key).index(index)) { config.focusFollowsMouse.ignoreApps.append(app) }
+            }
+        }
+        if let entry = root["mouse-modifier"], let text = string(entry.value, path.key(entry.key)) {
+            do {
+                config.mouseModifier = text == "off" ? nil : try KeyCombo.Modifiers(text)
+            } catch {
+                fail(error.message, at: entry.value.position, path.key(entry.key))
             }
         }
         if let entry = root["monitors"] {
