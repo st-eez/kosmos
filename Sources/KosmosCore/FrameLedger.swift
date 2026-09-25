@@ -108,10 +108,11 @@ public struct FrameLedger: Sendable {
         }
     }
 
-    /// The window's workspace is being shown. A target it read back larger than while hidden,
-    /// on its way to the holding Space or another display, says nothing of the app's limit,
-    /// so the write that shows it is a first attempt again.
-    public mutating func shown(_ id: UInt32) {
+    /// Forgets the target the window read back larger than, so its next larger read back is
+    /// a first refusal. A window concealed or on a hidden workspace can ignore a size on its
+    /// way to the holding Space or another display, so a refusal read back then, or before
+    /// its workspace was last shown, says nothing of the app's limit.
+    public mutating func forgetLargerReadBack(_ id: UInt32) {
         refusedLarger[id] = nil
     }
 

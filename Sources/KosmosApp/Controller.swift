@@ -670,7 +670,13 @@ final class Controller {
                 let asked = "asked \(Int(result.target.width))x\(Int(result.target.height)), kept \(Int(result.readBack.width))x\(Int(result.readBack.height))"
                 // A window that kept more than it was given, past the slack, refused the
                 // size. Written again, it shows its minimum on that axis if it refuses again
-                // (DESIGN.md, section 5.2).
+                // (DESIGN.md, section 5.2). Concealed, as until its reveal lands, or on a
+                // hidden workspace, it refused once at most, and its retry waits for the
+                // reveal. The ceiling: a window a failed batch left concealed on a shown
+                // workspace is written every 100 ms while it refuses, until a switch reveals it.
+                if hiding.isConcealed(result.id) || session.workspace(of: result.id).map(session.isShown) != true {
+                    ledger.forgetLargerReadBack(result.id)
+                }
                 switch ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now) {
                 case .took:
                     break
@@ -823,7 +829,7 @@ final class Controller {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried after the reveal (DESIGN.md, section 5.2).
-        for id in plan.show { ledger.shown(id) }
+        for id in plan.show { ledger.forgetLargerReadBack(id) }
         writeFrames(plan.frames)
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
