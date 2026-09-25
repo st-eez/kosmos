@@ -89,6 +89,17 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.workspace(of: 7) == "3")
 }
 
+@Test func aWindowARuleFloatsKeepsTheFrameItsAppGaveIt() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    let tiles = s.frames(of: "1")
+    // As a new Finder window beside two tiles: no frame for it, and the tiles stay.
+    let plan = s.add(3, floating: true)
+    #expect(plan.frames == tiles)
+    #expect(s.workspaces["1"]!.tree == "h[1 2]" && s.workspaces["1"]!.floating == [3])
+}
+
 @Test func switchShowsAndHidesAndFocusesTheWorkspaceMRU() {
     var s = session()
     _ = s.add(1); _ = s.add(2)

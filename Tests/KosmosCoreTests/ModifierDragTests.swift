@@ -284,8 +284,7 @@ extension DragGate {
 
     @Test func aFloatingWindowResizesFromTheCornerNearestThePress() throws {
         var s = Session(names: ["1"], display: display)
-        _ = s.add(20)
-        _ = s.float(20)
+        _ = s.add(20, floating: true)
         let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
         let topLeft = try #require(s.beginDrag(grab(20, at: CGPoint(x: 150, y: 150)), frame: frame))
         #expect(topLeft.floating && topLeft.edges == [.left, .up])

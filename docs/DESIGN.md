@@ -886,7 +886,8 @@ off the main thread).
     out, in native fullscreen too. Closing the group's last tab is a close.
   - A window ordered in with no tab leaving is back after the pairing window if it is
     still ordered in. A hidden member dragged out of its group takes a place of its own,
-    parked at once when it is minimized, in native fullscreen or hidden with its app.
+    parked at once when it is minimized, in native fullscreen or hidden with its app. It
+    floats when a rule floats its app, and the workspace a rule names does not apply to it.
     A window its app had closed and kept returns to its place, and Kosmos follows it, so
     a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
     windows that way, and selecting one's tab brings it to the group's place.
@@ -1340,6 +1341,12 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - A new window joins the workspace a rule names, else the focused workspace. A window that
   was there when Kosmos launched joins the workspace shown on the display under its
   center, so each keeps its display. AeroSpace does the same (MacWindow.swift).
+- A window a rule floats joins its workspace's floating windows and never the tree, so it
+  keeps the frame its app gave it and no tile moves, on a hidden workspace and at launch
+  too. Kosmos logs that frame at admission. A new Finder window on the left panel had come
+  up at the tile a third window beside Preview and Ghostty would have had, behind
+  Ghostty's tile, when Kosmos tiled a ruled window before floating it (live log,
+  September 25, 2026).
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which
