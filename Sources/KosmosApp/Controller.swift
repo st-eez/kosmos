@@ -380,11 +380,12 @@ final class Controller {
         switch focus {
         case .adopt: session.adopt(id)
         case .placedHidden: placedHidden.insert(id)
-        case .follow, .none: break
+        case .none: break
         }
         execute(plan, floatingCheck: floats)
         // The follow's switch reveals the window the plan conceals.
-        if focus == .follow, var report {
+        if focus == .placedHidden, var report {
+            placedHidden.remove(id)
             report.concealed = true
             decidePlaced(report, keyLeft: .stayed)
         }

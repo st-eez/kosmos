@@ -46,21 +46,18 @@ public enum Miss: Equatable, Sendable {
     case accept
 }
 
-/// What admitting a window does with the focus (docs/focus.md and docs/displays.md). A window
-/// its app keyed before Kosmos gave it a place, as a launching app keys its first window, is
-/// the user's choice: it becomes the focus of a shown workspace, and Kosmos follows it to a
-/// hidden one a rule named, as Hyprland does for a `workspace` window rule without `silent`.
+/// What admitting a window does with the focus (docs/focus.md and docs/displays.md). A
+/// window its app keyed before Kosmos gave it a place, as a launching app keys its first
+/// window, is the user's choice.
 public enum AdmissionFocus: Equatable, Sendable {
     case none
     /// The window was key before it had a place, on a shown workspace: it becomes the focus
     /// there.
     case adopt
-    /// The window was key before it had a place, on a hidden workspace: its report is
-    /// decided as one of a concealed window whose key window before it stayed, which Kosmos
-    /// follows as it follows a Command-Tab.
-    case follow
-    /// The window's place is on a hidden workspace, and no report named it yet: one that
-    /// comes before its conceal completes is decided the same way.
+    /// The window's place is on a hidden workspace. Its key window report, one that waited
+    /// for the place or one that comes before its conceal completes, is decided as one of a
+    /// concealed window whose key window before it stayed, which Kosmos follows as it
+    /// follows a Command-Tab.
     case placedHidden
 
     /// - Parameters:
@@ -69,15 +66,12 @@ public enum AdmissionFocus: Equatable, Sendable {
     ///   - shown: its place is on a workspace a display shows.
     ///   - parked: it waits parked, as a window minimized, hidden with its app or in native
     ///     fullscreen when Kosmos admits it, and its return decides the focus.
-    ///   - atLaunch: it was there when Kosmos launched. Its report is Kosmos's own read of
-    ///     the key window, and a follow during the launch sweep would change the workspace a
-    ///     display shows while the sweep still places windows by the display under them.
+    ///   - atLaunch: it was there when Kosmos launched, and the launch sweep follows none.
     ///   - locked: the session is locked, and Kosmos ignores focus reports.
     public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
         guard !locked, !parked else { return .none }
         if shown { return keyed ? .adopt : .none }
-        guard !atLaunch else { return .none }
-        return keyed ? .follow : .placedHidden
+        return atLaunch ? .none : .placedHidden
     }
 }
 
