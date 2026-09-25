@@ -15,6 +15,8 @@ uint64_t kosmos_holding_create(void);
 // opaque (alpha 1), then shown: the float Space of `kosmos-probe float-layer`. Returns 0
 // on failure, with any partial Space destroyed.
 uint64_t kosmos_float_space_create(int32_t level);
+// Sets a Space's ordering weight, a bridged operation with no reading counterpart.
+bool kosmos_space_set_ordering_weight(uint64_t space, int32_t weight);
 bool kosmos_space_destroy(uint64_t space);
 // Adds windows to a Space. With exclusive false they keep their other Space memberships,
 // as every window Kosmos conceals does, so Command-Tab still picks it. Exclusive true

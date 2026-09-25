@@ -31,6 +31,7 @@
 - (instancetype)initWithOptions:(uint32_t)options values:(NSDictionary *)values;
 - (instancetype)initWithSpaceID:(uint64_t)space;
 - (instancetype)initWithSpaceID:(uint64_t)space level:(int32_t)level;
+- (instancetype)initWithSpaceID:(uint64_t)space weight:(int32_t)weight;
 - (instancetype)initWithSpaceID:(uint64_t)space alpha:(float)alpha;
 - (instancetype)initWithSpaces:(NSArray *)spaces;
 - (instancetype)initWithWindows:(NSArray *)windows spaces:(NSArray *)spaces;
@@ -118,6 +119,13 @@ uint64_t kosmos_holding_create(void) {
 
 uint64_t kosmos_float_space_create(int32_t level) {
     return createSpace(level, CGAffineTransformIdentity, 1);
+}
+
+bool kosmos_space_set_ordering_weight(uint64_t space, int32_t weight) {
+    @try {
+        Class cls = operationClass(@"SLSBridgedSpaceSetOrderingWeightOperation", @selector(initWithSpaceID:weight:));
+        return perform([[cls alloc] initWithSpaceID:space weight:weight]) != nil;
+    } @catch (NSException *exception) { return false; }
 }
 
 bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive) {
