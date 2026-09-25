@@ -930,7 +930,7 @@ final class Controller {
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (DESIGN.md, section 5.2).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames)
+        writeFrames(plan.frames, animating: animated(plan))
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -1011,13 +1011,33 @@ final class Controller {
         writeFrames(targets)
     }
 
-    private func writeFrames(_ targets: [WindowID: CGRect]) {
+    private func writeFrames(_ targets: [WindowID: CGRect], animating: Set<WindowID> = []) {
         guard !sessionLocked else { return }
         let writes = ledger.writes(for: targets)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] ?? 0 }) where pid != 0 {
-            let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
+            let batch = Dictionary(uniqueKeysWithValues: group.map {
+                ($0.key, (write: $0.value, target: targets[$0.key]!, animate: animating.contains($0.key)))
+            })
             inventory.worker(pid)?.enqueueFrames(batch)
         }
+    }
+
+    /// Animation trial: `KOSMOS_ANIMATE=1` in the environment, read once at launch.
+    private static let animates = ProcessInfo.processInfo.environment["KOSMOS_ANIMATE"] == "1"
+
+    /// The windows whose writes in `plan` animate: ones already on screen, on a shown
+    /// workspace. A window being revealed, one concealed or on a hidden workspace, and the
+    /// one a modifier drag holds jump to their frames, as every window does in Low Power
+    /// Mode. Drags, the 100 ms retry and floating windows brought home never animate, since
+    /// they do not come through here.
+    private func animated(_ plan: Session.Plan) -> Set<WindowID> {
+        guard Self.animates, !ProcessInfo.processInfo.isLowPowerModeEnabled else { return [] }
+        let show = Set(plan.show)
+        let held = modifierDrag?.grab.window
+        return Set(plan.frames.keys.filter { id in
+            !show.contains(id) && !placedHidden.contains(id) && !hiding.isConcealed(id) && id != held
+                && session.workspace(of: id).map { session.isShown($0) } == true
+        })
     }
 
     /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:

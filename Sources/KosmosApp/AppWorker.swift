@@ -26,6 +26,9 @@ struct AXReport: Sendable {
     let received: ContinuousClock.Instant
 }
 
+/// A frame write for a worker: the write, the target it aims for, and whether it animates.
+typealias QueuedWrite = (write: FrameWrite, target: CGRect, animate: Bool)
+
 /// Accessibility facts about one window.
 struct AXWindowInfo: Sendable {
     let role: String?
@@ -68,7 +71,15 @@ actor AppWorker {
     private var started = false
     private var elements: [UInt32: AXUIElement] = [:]
     /// Writes waiting for the next drain; a newer target replaces an older one.
-    private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
+    private var queuedWrites: [UInt32: QueuedWrite] = [:]
+    /// Animated writes under way (`KOSMOS_ANIMATE=1`), each with the write that ends it.
+    private var tweens: [UInt32: (tween: Tween, write: FrameWrite, target: CGRect)] = [:]
+    /// Runs while `tweens` has any.
+    private var tweenTimer: CFRunLoopTimer?
+    /// rift defaults to 0.3 s at 100 steps a second. 120 a second matches a ProMotion panel,
+    /// and time-based progress makes a missed step cost smoothness only. Not yet measured.
+    static let tweenDuration: Double = 0.2
+    static let tweenInterval: Double = 1.0 / 120
     private var drainScheduled = false
     private var backoff = AXBackoff<ContinuousClock.Instant>()
     /// Runs while `backoff` is asking.
@@ -124,6 +135,8 @@ actor AppWorker {
     func stop() {
         if let observer { CFRunLoopRemoveSource(observerLoop.runLoop, AXObserverGetRunLoopSource(observer), .defaultMode) }
         if let probe { CFRunLoopTimerInvalidate(probe) }
+        stopTweenTimer()
+        tweens = [:]
         observer = nil
         probe = nil
         elements = [:]
@@ -177,7 +190,7 @@ actor AppWorker {
 
     /// Queues frame writes from any thread, in the order of the calls. A Task per batch
     /// could run an older batch last and leave a stale frame.
-    nonisolated func enqueueFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
+    nonisolated func enqueueFrames(_ writes: [UInt32: QueuedWrite]) {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
@@ -308,8 +321,10 @@ actor AppWorker {
 
     /// Queues frame writes. Writes queued before the drain runs are merged, so each window
     /// gets only its newest target.
-    func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
-        queuedWrites.merge(writes) { queued, new in (new.write.replacing(queued.write, target: new.target), new.target) }
+    func setFrames(_ writes: [UInt32: QueuedWrite]) {
+        queuedWrites.merge(writes) { queued, new in
+            (new.write.replacing(queued.write, target: new.target), new.target, new.animate)
+        }
         guard !drainScheduled else { return }
         drainScheduled = true
         Task { self.drainWrites() }
@@ -320,40 +335,113 @@ actor AppWorker {
         guard !backoff.backedOff else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
+        let now = CFAbsoluteTimeGetCurrent()
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
         for (id, entry) in writes {
             guard let element = elements[id] else { continue }
-            switch entry.write {
+            // An animated write starts where the window is, or where a tween under way has
+            // it. Its read back and report come when the tween ends, so the ledger keeps the
+            // target pending and every change event on the way counts as Kosmos's write.
+            if entry.animate, let from = tweens[id].map({ $0.tween.frame(at: now) }) ?? frame(element) {
+                let to = switch entry.write {
+                case .position(let origin): CGRect(origin: origin, size: from.size)
+                case .frame(let frame): frame
+                }
+                let tween = tweens[id].map { $0.tween.retargeted(to: to, at: now) }
+                    ?? Tween(from: from, to: to, start: now, duration: Self.tweenDuration)
+                tweens[id] = (tween, entry.write, entry.target)
+                startTweenTimer()
+                continue
+            }
+            // A write that does not animate, as a drag's, ends a tween of the window at once.
+            tweens[id] = nil
+            if let result = apply(id, element, entry) { results.append(result) }
+        }
+        if !results.isEmpty { send(.framesApplied(results)) }
+    }
+
+    /// Writes one window's frame and reads it back. Nil when the app did not answer: the
+    /// write waits in the queue.
+    private func apply(_ id: UInt32, _ element: AXUIElement, _ entry: QueuedWrite) -> (id: UInt32, target: CGRect, readBack: CGRect)? {
+        switch entry.write {
+        case .position(let origin):
+            set(element, kAXPositionAttribute, origin)
+        case .frame(let frame):
+            set(element, kAXSizeAttribute, frame.size)
+            set(element, kAXPositionAttribute, frame.origin)
+            set(element, kAXSizeAttribute, frame.size)
+        }
+        // A write or read the app did not answer waits, with the ones after it, for the
+        // app to answer again. One whose read failed otherwise waits for the app's next
+        // frame write: dropped, it would leave the ledger's target pending for good.
+        guard !backoff.backedOff, var readBack = frame(element) else {
+            queuedWrites[id] = entry
+            return nil
+        }
+        // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
+        // window still taller refused the height (DESIGN.md, section 5.2).
+        if case .frame(let target) = entry.write, readBack.height > target.height + FrameLedger.slack {
+            let kept = readBack.height
+            set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))
+            set(element, kAXSizeAttribute, target.size)
+            guard !backoff.backedOff, let retried = frame(element) else {
+                queuedWrites[id] = entry
+                return nil
+            }
+            readBack = retried
+            log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
+        }
+        return (id, entry.target, readBack)
+    }
+
+    /// One step of every tween. A tween that is over ends with its ordinary write and read
+    /// back. An app that stops answering gets its targets written whole once it answers.
+    private func tick() {
+        guard !backoff.backedOff else {
+            for (id, entry) in tweens { queuedWrites[id] = (entry.write, entry.target, false) }
+            tweens = [:]
+            stopTweenTimer()
+            return
+        }
+        let now = CFAbsoluteTimeGetCurrent()
+        var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
+        for id in Array(tweens.keys) {
+            guard var entry = tweens[id], let element = elements[id] else {
+                tweens[id] = nil
+                continue
+            }
+            switch entry.tween.step(at: now) {
             case .position(let origin):
                 set(element, kAXPositionAttribute, origin)
+                tweens[id] = entry
             case .frame(let frame):
                 set(element, kAXSizeAttribute, frame.size)
                 set(element, kAXPositionAttribute, frame.origin)
                 set(element, kAXSizeAttribute, frame.size)
+                tweens[id] = entry
+            case .finish:
+                tweens[id] = nil
+                if let result = apply(id, element, (entry.write, entry.target, false)) { results.append(result) }
+                let late = (now - entry.tween.start - entry.tween.duration) * 1000
+                log.info("\(id) animated in \(entry.tween.steps) steps, final write \(late, format: .fixed(precision: 1)) ms after due")
             }
-            // A write or read the app did not answer waits, with the ones after it, for the
-            // app to answer again. One whose read failed otherwise waits for the app's next
-            // frame write: dropped, it would leave the ledger's target pending for good.
-            guard !backoff.backedOff, var readBack = frame(element) else {
-                queuedWrites[id] = entry
-                continue
-            }
-            // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
-            // window still taller refused the height (DESIGN.md, section 5.2).
-            if case .frame(let target) = entry.write, readBack.height > target.height + FrameLedger.slack {
-                let kept = readBack.height
-                set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))
-                set(element, kAXSizeAttribute, target.size)
-                guard !backoff.backedOff, let retried = frame(element) else {
-                    queuedWrites[id] = entry
-                    continue
-                }
-                readBack = retried
-                log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
-            }
-            results.append((id, entry.target, readBack))
         }
+        if tweens.isEmpty { stopTweenTimer() }
         if !results.isEmpty { send(.framesApplied(results)) }
+    }
+
+    private func startTweenTimer() {
+        guard tweenTimer == nil else { return }
+        let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + Self.tweenInterval, Self.tweenInterval, 0, 0) { [weak self] _ in
+            self?.assumeIsolated { $0.tick() }
+        }
+        CFRunLoopAddTimer(executor.runLoop, timer, .defaultMode)
+        tweenTimer = timer
+    }
+
+    private func stopTweenTimer() {
+        if let tweenTimer { CFRunLoopTimerInvalidate(tweenTimer) }
+        tweenTimer = nil
     }
 
     private func set(_ element: AXUIElement, _ attribute: String, _ point: CGPoint) {

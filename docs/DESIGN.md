@@ -320,6 +320,16 @@ off the main thread).
   the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
   left to the launch retries.
 
+- **Animation trial**, behind `KOSMOS_ANIMATE=1`, after rift's `animation.rs`. A command's
+  write to a window already on screen, on a shown workspace, tweens on the app's worker:
+  position only at 120 steps a second with circular easing over 0.2 s, the size once at
+  the midpoint, then the ordinary write and its read back. Progress follows the clock, so a
+  slow app skips steps and ends on time. A newer target starts from where the tween has the
+  window. Reveals, hidden workspaces, drags, retries and Low Power Mode jump. The ledger
+  keeps the target pending until the final read back, so the tween's change events are
+  Kosmos's. Unmeasured: the cost per step, and a user's press on a window mid-tween, which
+  `frameChanged` ignores until the tween ends.
+
 ### 5.3 Hiding and recovery
 
 - Create the holding Space once per session, and record its id in the durable record
