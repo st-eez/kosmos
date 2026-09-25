@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Checks script/install.sh in a temporary directory: install three times, roll back twice,
 # uninstall, fail an install after it quit a running Kosmos, then uninstall while a guardian
-# outlives Kosmos. It builds and signs as
-# install.sh does, and leaves /Applications and ~/.local/bin alone. install.sh handles
-# launch at login only for /Applications, so the registration is never read or changed.
+# outlives Kosmos. It builds and signs as install.sh does, and leaves /Applications and
+# ~/.local/bin alone. install.sh handles launch at login only for /Applications, so the
+# registration is never read or changed.
 #
 # Nothing here asks LaunchServices whether it registered Kosmos-previous: it registers no
 # bundle in /tmp until something opens it, so such a check passes even for a .app name.
