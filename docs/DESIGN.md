@@ -522,7 +522,7 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again. After a batch fails,
     recovery shows every workspace's windows until a switch conceals them again. A
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
-- Four races leave Kosmos nothing to tell the cases apart. They are known limits, and the
+- Five races leave Kosmos nothing to tell the cases apart. They are known limits, and the
   TLA+ spec exempts them:
   - Kosmos keys an app again before that app's activation read runs. The read finds
     Kosmos's window, and a Command-Tab to another window of that app is lost.
@@ -544,6 +544,11 @@ off the main thread).
     read. Besides this race, an app reported the window it had focused already after 6 of
     40 such raises (section 2); read as the user's, that report takes focus back to the
     window only when a newer request came between the raise and the report.
+  - The key window closes or minimizes, and macOS reports no next key window. Kosmos counts
+    the departure for a second from when it heard of it (DepartureLog), so a Command-Tab
+    within that second reads as macOS's re-key, and Kosmos keeps its workspace. The spec
+    lets the second pass once Kosmos has every report (tla/README.md, change 24, `Age`),
+    and exempts input inside it (`lastEarly`).
 - Skip activation when the target is already key, checked by the focus queue when the
   request runs: the target's app is the front process and its focused window, read on the
   app's worker, is the target. The key window last reported can be older than a request
@@ -641,8 +646,7 @@ off the main thread).
   minimize. A window keyed during the animation, by Kosmos or the user, is taken to leave
   macOS nothing to key when it ends (not measured; the departures probe asks). A click
   or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
-  its workspace. So does one within the second after the key window left with no report
-  of a next key window.
+  its workspace.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
   - A crash guard. A byte in a file mapped shared is set during each private call and
@@ -744,9 +748,9 @@ off the main thread).
   follows the private call with that public activation. An empty workspace would still
   leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
   fullscreen Space, which takes over the screen.
-- Deferred. The spec's split model has these rules too (tla/README.md, changes 19 to 24).
-  Each answers a race TLC found, and none has been seen live, so Kosmos leaves them out
-  until one is:
+- Deferred. The spec's split model makes these changes too (tla/README.md, changes 19 to
+  24). Each answers a race TLC found, and none has been seen live, so Kosmos leaves them
+  out until one is:
   - Held notifications (change 20, `HoldNotes`; `split-user-background-nohold`). A
     notification from an app Kosmos activated, received before that activation's read,
     waits for the read, and stands only if the read finds its window. Without it, a
@@ -754,33 +758,26 @@ off the main thread).
     the app front is adopted, over the user's later Command-Tab. The live evidence: a
     window adopted just after Kosmos activated its app, one the user did not pick, with its
     notification logged before the app's activation read.
-  - Removing only the matched record, together with an activation read that matches its
-    app's key record whatever window it reads, a notification of the window that only
-    joins that record, and an echo naming another window than the intent that requests
-    the intent again (change 19). They come as a pair or not at all. Removing only the
-    matched record alone leaves a record whose echo never comes, as when an app re-keys
-    another window before reporting the requested one, to swallow a later Command-Tab to
-    its window; the activation read rule consumes that record. Without them an earlier request's echo that arrives after a
-    later one's reads as the user's choice, and the notification of an activation
-    consumes its record, so the read is a report of its own. The split configs found these
-    races before change 19, and none keeps the old rules. The live evidence: on a fast
-    sweep of the pointer across apps, focus going back to a window the pointer left, with
-    that window's report logged after the echo of the later request.
+  - Removing only the matched record, with three rules that come with it (change 19): an
+    activation read matches its app's key record whatever window it reads, a notification
+    of that window only joins the record, and an echo that names a window other than the
+    intent requests the intent again. Removing only the matched record alone leaves a
+    record whose echo never comes, as when an app re-keys another window before reporting
+    the requested one, to swallow a later Command-Tab to its window, and the activation
+    read rule consumes that record. Kosmos drops the records before the matched one, so an
+    earlier request's echo that arrives after a later one's reads as the user's choice.
+    Kosmos also lets the notification of its own activation consume the record, so the
+    activation read is a report of its own. The split configs found these races before
+    change 19, and none keeps the old rules. The live evidence: on a fast sweep of the
+    pointer across apps, focus going back to a window the pointer left, with that
+    window's report logged after the echo of the later request.
   - An activation read of an app that lost the front that still stands when Kosmos
     recorded an activation after its stamp, or when the app had already lost the front to
     Kosmos's activation as the main actor noticed it (changes 19 and 20, `NoticeCheck`;
-    `split-user-actcheck`, `split-user-notice-nocheck`). The live evidence: a Command-Tab
-    logged as a background report, with a request of Kosmos's to another app just before.
-  - Notifications checked when the app sends them (change 19). Kosmos checks each in its
-    observer callback, which the split configs model as running later (`NoteDelay`), and
-    the spec exempts what happens in between (`lastLost`, `lastMis`). The live evidence: a
-    click inside the front app logged as a background report.
-  - The second of departure evidence passing once Kosmos has every report (change 24,
-    `Age`, with input inside it exempted as `lastEarly`; `split-leave`). Kosmos counts a
-    departure for a second from when it heard of it (DepartureLog), so a Command-Tab within
-    that second, with no report of a next key window, reads as macOS's re-key, and Kosmos
-    keeps its workspace. The live evidence: a Command-Tab to another workspace ignored just
-    after the key window closed or minimized.
+    `split-user-actcheck`, `split-user-notice-nocheck`). Kosmos ignores such a read, so
+    a Command-Tab is lost when an older request of Kosmos's fronts another app before the
+    read runs (Apps.activated). The live evidence: a Command-Tab that Kosmos did not
+    follow, with a request of Kosmos's to another app just before.
   - Dropping the miss rule (change 21). The rule dates from the key record inside the
     front app, which keys nothing there (section 2): live, Kosmos fronted Ghostty for a
     window of workspace 1, Ghostty reported the window a switch had just concealed on
