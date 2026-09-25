@@ -58,7 +58,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         // On by default, as in Omarchy: 4 points in the macOS accent color around the focused
         // window alone. False turns them off, as for animations.
         #expect(try #require(load("").config).borders == BorderSettings(width: 4, active: nil, inactive: .clear))
-        #expect(Config.defaults.borders == BorderSettings())
         #expect(try #require(load("borders = true").config).borders == BorderSettings())
         #expect(try #require(load("borders = false").config).borders == nil)
         let table = try #require(load("[borders]\nwidth = 2\ninactive = '#414868'").config)

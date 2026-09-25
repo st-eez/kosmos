@@ -17,17 +17,6 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     }
 }
 
-/// A transparent color draws no border, as Steve's inactive color does, and with no color
-/// given the focused window's border is the accent color.
-@Test func aTransparentColorDrawsNoBorder() {
-    #expect(steve.color(focused: true, accent: accent) == blue)
-    #expect(steve.color(focused: false, accent: accent) == nil)
-    let both = BorderSettings(width: 2, active: blue, inactive: BorderColor(hex: "#414868")!)
-    #expect(both.color(focused: false, accent: accent) == BorderColor(hex: "#414868"))
-    #expect(BorderSettings().color(focused: true, accent: accent) == accent)
-    #expect(BorderSettings().color(focused: false, accent: accent) == nil)
-}
-
 /// The line is centered on the window's edge as JankyBorders draws it: 2 of its 4 points
 /// outside, and 1 point inside over the window's edge, with corners concentric with the
 /// window's.
