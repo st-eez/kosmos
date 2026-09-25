@@ -53,7 +53,10 @@
   - `focus-monitor` and `move-node-to-monitor` take a direction, `next`, `prev` or a
     monitor number, and `--wrap-around`. `move-node-to-monitor` moves the window to the
     workspace the target display shows, at the edge it enters by when the target is a
-    direction, and `--focus-follows-window` follows it.
+    direction, and `--focus-follows-window` follows it. A direction looks along the
+    displays beside or stacked with the one the command starts from, as AeroSpace's
+    `findRelativeMonitor` does, and orders a column top to bottom, where AeroSpace goes
+    left to right, so a display below and to the left of another is still below it.
   - Left out until a binding needs them: `move-workspace-to-monitor`, which every
     workspace of Steve's four profiles would refuse, since each is assigned, and
     AeroSpace's monitor patterns by name.

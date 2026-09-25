@@ -1,7 +1,6 @@
 import CoreGraphics
 
-/// A command from a hotkey or the CLI. Names follow AeroSpace's, so existing bindings
-/// carry over.
+/// A command from a hotkey or the CLI (docs/displays.md).
 public enum Command: Equatable, Sendable {
     public enum Workspace: Equatable, Sendable {
         case named(String)
@@ -9,7 +8,7 @@ public enum Command: Equatable, Sendable {
         case previous
     }
 
-    /// Where `focus` and `move` stop, AeroSpace's `--boundaries` and `--boundaries-action`.
+    /// Where `focus` and `move` stop.
     public enum Boundaries: Equatable, Sendable {
         case workspace
         /// The edge of the outermost display in the direction: at the edge of the
@@ -81,8 +80,6 @@ public enum Command: Equatable, Sendable {
         case "workspace-back-and-forth":
             return rest.isEmpty ? .success(.workspaceBackAndForth) : usage
         case "focus", "move":
-            // AeroSpace's --boundaries and --boundaries-action, before or after the direction. A
-            // move takes only the wrap, which AeroSpace gives focus alone (docs/displays.md).
             var across = false, wraps = false, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {

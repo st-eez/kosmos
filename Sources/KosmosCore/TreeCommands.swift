@@ -10,12 +10,8 @@ public enum ResizeDimension: Sendable {
 }
 
 extension Workspace {
-    /// Focuses the window next to `window` in the direction and returns it, or returns nil
-    /// at the edge of the workspace. Like i3's `focus`, it walks up to the nearest container
-    /// that runs along the direction and has a sibling on that side, then descends into the
-    /// sibling by focus order. `frame` gives where a floating window is
-    /// (`withFloatingTiled`), and `rect`, `gaps` and `minimums` are the ones
-    /// `frames(in:gaps:minimums:)` gets.
+    /// Focuses the window next to `window` in the direction and returns it, or returns nil at
+    /// the edge of the workspace (docs/tree.md).
     mutating func focus(_ direction: Direction, from window: WindowID, frame: (WindowID) -> CGRect?,
                         in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
         let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
@@ -25,8 +21,8 @@ extension Workspace {
         return target
     }
 
-    /// The workspace with each floating window that `frame` places tiled where AeroSpace's
-    /// `focus` counts it, for a focus in a direction (docs/tree.md).
+    /// The workspace with each floating window that `frame` places tiled, for a focus in a
+    /// direction (docs/tree.md).
     func withFloatingTiled(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
                            minimums: [WindowID: CGSize]) -> Workspace {
         let area = tilingRect(rect, gaps.outer)
@@ -71,10 +67,8 @@ extension Workspace {
         return true
     }
 
-    /// One step, as i3's `tree_move` (src/move.c). At the workspace's edge
-    /// `implicitContainer` wraps the root along the direction, as i3 and AeroSpace do. False
-    /// at the edge otherwise and at the end of a root along the direction, where a move
-    /// across displays goes on to the next display.
+    /// One step (docs/tree.md). At the workspace's edge `implicitContainer` wraps the root along
+    /// the direction, and without it the move returns false (docs/displays.md).
     @discardableResult
     mutating func move(_ window: WindowID, _ direction: Direction, implicitContainer: Bool = true) -> Bool {
         // Wrapping a lone window's root would only flip its orientation.
@@ -86,8 +80,7 @@ extension Workspace {
         return true
     }
 
-    /// As AeroSpace's `join-with`. A neighbor that is a container already runs across its
-    /// parent, so the window joins it.
+    /// A neighbor that is a container already runs across its parent, so the window joins it.
     @discardableResult
     mutating func joinWith(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let target = neighbor(of: window, direction) else { return false }
@@ -141,7 +134,7 @@ extension Workspace {
     }
 
     /// Takes the space from the siblings in proportion to their shares, and stops at the
-    /// limits `change` keeps, where i3 refuses the resize (docs/tree.md).
+    /// limits `change` keeps (docs/tree.md).
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Bool {
         guard let path = root.path(to: window) else { return false }
@@ -255,7 +248,7 @@ extension Workspace {
 }
 
 extension Workspace {
-    /// The path of the node `focus` reaches in the direction, as i3's `get_tree_next`.
+    /// The path of the node `focus` reaches in the direction.
     func neighbor(of window: WindowID, _ direction: Direction) -> [Int]? {
         guard var path = root.path(to: window) else { return nil }
         while let index = path.popLast() {
@@ -301,8 +294,7 @@ extension Workspace {
         return true
     }
 
-    /// The window a move lands beside when it enters `container`, as i3's
-    /// `con_descend_direction`.
+    /// The window a move lands beside when it enters `container`.
     private func edgeWindow(of container: Container, _ direction: Direction) -> WindowID {
         let child: Node
         if container.orientation == direction.orientation {

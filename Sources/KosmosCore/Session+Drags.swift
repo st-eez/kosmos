@@ -17,9 +17,8 @@ public enum TitleBarDrag {
 }
 
 extension Session {
-    /// A floating window whose center lands on a display showing another workspace joins it,
-    /// as AeroSpace's moveWithMouse binds it (docs/displays.md). The plan asks for no focus:
-    /// the window is key.
+    /// A floating window whose center lands on a display showing another workspace joins it
+    /// (docs/displays.md). The plan asks for no focus: the window is key.
     public mutating func dragged(_ window: WindowID, to frame: CGRect) -> Plan? {
         defer { check() }
         guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window),
@@ -39,7 +38,6 @@ extension Session {
         return Plan(frames: frames(of: name))
     }
 
-    /// The drop follows Hyprland's dwindle layout (docs/displays.md).
     public mutating func drop(at point: CGPoint) -> Plan {
         defer { check() }
         var plan = Plan()
@@ -81,8 +79,7 @@ extension Session {
         workspaces[name]!.unpark([window], in: monitor.area, gaps: monitor.gaps)
     }
 
-    /// Tiles the user moved or resized without a lift go back, as Omarchy leaves Hyprland's
-    /// `resize_on_border` off (docs/geometry.md).
+    /// Tiles the user moved or resized without a lift go back (docs/geometry.md).
     public func released(_ windows: Set<WindowID>) -> Plan {
         var changed: Set<String> = []
         for window in windows {
@@ -92,9 +89,8 @@ extension Session {
         return Plan(frames: frames(of: changed))
     }
 
-    /// A resize moves the edges on the press's side of the center, as Hyprland's DragController
-    /// picks the corner, and a tile with no neighbour there moves the other edge, as its dwindle
-    /// layout does (docs/modifier-drags.md).
+    /// A resize moves the edges on the press's side of the center, and a tile with no neighbour
+    /// there moves the other edge (docs/modifier-drags.md).
     public func beginDrag(_ grab: DragGate.Grab, frame: CGRect) -> ModifierDrag? {
         guard isVisible(grab.window), let name = home[grab.window] else { return nil }
         let workspace = workspaces[name]!
@@ -132,8 +128,7 @@ extension Session {
         return Plan(frames: frames(of: name))
     }
 
-    /// As Hyprland's DragController resizes a floating window, down to the recorded minimum or
-    /// 20 pt, its MIN_WINDOW_SIZE.
+    /// Down to the recorded minimum or 20 pt (docs/modifier-drags.md).
     public func resized(_ drag: ModifierDrag, by delta: CGSize) -> CGRect {
         let start = drag.frame, least = minimums[drag.grab.window] ?? .zero
         let (width, height) = (max(least.width, 20), max(least.height, 20))

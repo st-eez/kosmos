@@ -299,7 +299,7 @@ private func desk() -> Session {
     @Test func keyboardFocusOnAnEmptyWorkspaceOfAnotherDisplayGoesToThatDisplay() throws {
         // alt-7 shows empty workspace 7 on the left panel; focus-monitor left reaches it where
         // the left panel shows it. With no window to center on, the pointer goes to the
-        // display's center, as Hyprland's focusmonitor puts it.
+        // display's center.
         var shown = desk()
         _ = shown.perform(.workspace(.named("7")))
         _ = shown.perform(.workspace(.named("1")))

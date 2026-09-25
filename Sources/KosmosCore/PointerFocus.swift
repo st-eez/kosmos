@@ -78,8 +78,8 @@ extension FocusFollowsMouse {
         return nil
     }
 
-    /// The empty workspace to focus when the pointer entered `display` over the desktop, as
-    /// Hyprland's `follow_mouse` moves the monitor focus (docs/focus-follows-mouse.md).
+    /// The empty workspace to focus when the pointer entered `display` over the desktop
+    /// (docs/focus-follows-mouse.md).
     public func emptyWorkspace(entered display: DisplayID, overDesktop: @autoclosure () -> Bool,
                                in session: Session) -> String? {
         guard enabled, let name = session.workspace(shownOn: display), name != session.focusedWorkspace,

@@ -182,7 +182,6 @@ public struct Session: Sendable {
         guard home[window] == nil else { return Plan() }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
-        // As in i3, a workspace with windows always has a focused one.
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan(frames: frames(of: target))
@@ -361,10 +360,7 @@ public struct Session: Sendable {
             return performOnFocused(command, frame: frame)
                 ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
         case .move(let direction, let boundaries) where boundaries != .workspace:
-            // At the edge of the workspace the window crosses to the next display, as in
-            // AeroSpace.
             if let plan = performOnFocused(command) { return plan }
-            // A floating window has no edge to cross, as in AeroSpace.
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
             return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
                                               wrapAround: boundaries == .allMonitorsWrapping))
@@ -427,8 +423,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// AeroSpace creates a workspace on demand. Kosmos's are the profile's, so a command that
-    /// names another fails (docs/config.md).
+    /// The workspaces are the profile's, so a command that names another fails
+    /// (docs/config.md).
     public func missingWorkspace(in command: Command) -> String? {
         switch command {
         case .workspace(.named(let name)), .moveNodeToWorkspace(.named(let name), _, _):
@@ -443,7 +439,6 @@ public struct Session: Sendable {
         case .named(let name):
             return workspaces[name] != nil ? name : nil
         case .next, .previous:
-            // The focused display's workspaces, as AeroSpace walks them.
             let cycle = names.filter { monitor(of: $0).id == focusedDisplay }
             let index = cycle.firstIndex(of: focusedWorkspace)!
             let step = target == .next ? 1 : -1
@@ -525,9 +520,8 @@ public struct Session: Sendable {
 
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
-    /// Targets for the floating windows of shown workspaces that sit on a display showing
-    /// another workspace, as AeroSpace's layoutFloatingWindow moves them (docs/displays.md). A
-    /// concealed window's center is on no display, so it stays.
+    /// Targets for the shown workspaces' floating windows on a display showing another workspace
+    /// (docs/displays.md). A concealed window's center is on no display, so it stays.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {

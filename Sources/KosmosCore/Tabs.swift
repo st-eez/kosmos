@@ -4,7 +4,7 @@ import CoreGraphics
 /// selected tab's in. Only two windows with one frame pair, as the tabs of a group share
 /// theirs (kosmos-probe tabs, docs/tree.md).
 public struct TabSwitches: Sendable {
-    /// Two changes this close form one switch, as in the yabai forks that follow tabs.
+    /// Two changes this close form one switch (docs/tree.md).
     public static let window: Duration = .milliseconds(250)
     private struct Change {
         let window: WindowID
