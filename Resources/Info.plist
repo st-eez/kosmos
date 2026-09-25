@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleExecutable</key>
 	<string>Kosmos</string>
+	<key>CFBundleIconFile</key>
+	<string>Kosmos</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.st-eez.kosmos</string>
 	<key>CFBundleName</key>
