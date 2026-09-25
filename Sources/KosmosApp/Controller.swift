@@ -145,8 +145,6 @@ final class Controller {
         }
     }
 
-    /// At a config reload, an unlock, a wake or a display change (docs/inventory.md and
-    /// docs/displays.md).
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
         slides?.endAll("at a reload, a display change, a wake or an unlock")
         rules = setup.rules
@@ -349,7 +347,6 @@ final class Controller {
             plan.frames = session.park([id]).frames
             plan.hide.removeAll { $0 == id }
         }
-        // A key report that waited for this window's place is decided now.
         let report = unplacedKey.flatMap { $0.key == .window(id) ? $0 : nil }
         if report != nil { unplacedKey = nil }
         let keyed = key == .window(id), shown = session.workspace(of: id).map(session.isShown) == true
@@ -929,7 +926,6 @@ final class Controller {
             hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
                 guard let self else { return }
                 for id in hide { self.placedHidden[id] = nil }   // the conceal that placed them hidden is done
-                // Revealed now, the incoming windows get their borders.
                 self.updateBorders()
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received

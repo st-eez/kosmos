@@ -77,7 +77,6 @@ actor AppWorker {
 
     /// False while the app does not answer Accessibility yet.
     func start() -> Bool {
-        // The launch retries and askAgain both call this.
         guard !started else { return true }
         if observer == nil {
             var created: AXObserver?

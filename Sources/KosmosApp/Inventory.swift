@@ -59,7 +59,6 @@ final class Inventory {
     var onFrameChange: (@MainActor (_ window: UInt32, _ old: CGRect, _ new: CGRect, _ changedAt: ContinuousClock.Instant?) -> Void)?
     /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
     var onReordered: (@MainActor (_ window: UInt32) -> Void)?
-    /// A managed window's level or corner radius changed, which its border takes.
     var onStyleChange: (@MainActor () -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
