@@ -47,6 +47,9 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(keys.heard(.window(1)) == .window(2))
     #expect(keys.heard(.window(3)) == .window(1))
     #expect(keys.key == .window(3))
+    // No key window after 3 left, then another app's report of none: that one has none.
+    #expect(keys.heard(.none) == .window(3))
+    #expect(keys.heard(.none) == KeyWindow.none)
 }
 
 @Test func aHeldReportIsDecidedOnceByItsGrace() {

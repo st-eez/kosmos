@@ -52,12 +52,13 @@ public struct KeyHistory: Sendable {
     /// repeats the window last heard of, as an activation read after its app's notification
     /// of the same change does, has the window before that one. Otherwise, after the key
     /// window left and macOS keyed a concealed window, the notification would keep the
-    /// workspace and the read would follow that re-key (tla/README.md, change 24).
+    /// workspace and the read would follow that re-key (tla/README.md, change 24). A
+    /// repeated report of no key window has none: any app can make it, as Finder fronted by
+    /// a click on the desktop after the empty workspace's window was keyed.
     public mutating func heard(_ reported: KeyWindow) -> KeyWindow? {
-        if reported != key {
-            before = key
-            key = reported
-        }
+        guard reported != key else { return reported == .none ? KeyWindow.none : before }
+        before = key
+        key = reported
         return before
     }
 }

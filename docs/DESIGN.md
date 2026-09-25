@@ -777,8 +777,11 @@ off the main thread).
     rule above that an activation read matches its app's key record whatever window it
     reads. On the private path the miss rule is what clears a key record whose echo never
     comes, as when Preview re-keyed its main window, and without either that record
-    swallows the user's later report of its window. The live evidence: a Command-Tab lost
-    as a miss, with "focus request missed" logged for the window it reached.
+    swallows the user's later report of its window. The spec drops the held report's
+    repeat check with the rule; Kosmos keeps it, so a newer Command-Tab to the window of
+    an older held report is taken for that report, and lost when the grace finds the
+    older one stale. The live evidence: a Command-Tab lost as a miss, with "focus request
+    missed" logged for the window it reached, or lost at a grace's end.
   - Reports overtaken by a newer one (changes 19 to 21). A report stamped before the last
     report Kosmos adopted or followed is ignored, as is one stamped before a held report,
     which it would otherwise end and replace: the user clicked a window of one app, then of
