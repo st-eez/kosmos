@@ -809,10 +809,13 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     it on the window focused next. With focus follows mouse, a pointer left behind would
     focus the neighbour on the next bump.
   - Command-Tab to a window of a shown workspace centers the pointer on it. Kosmos tells
-    Command-Tab from a click, on the window or the Dock, by which came last when it handles
-    the activation: `CGEventSource.secondsSinceLastEventType` for key down against left and
-    right mouse down, in the combined session state. The read takes no event tap, and the
-    log gives both times.
+    Command-Tab from a click, on the window or the Dock, when it handles the activation:
+    a key went down within the last second, and after the last left or right mouse down
+    and the last pointer movement (`CGEventSource.secondsSinceLastEventType` in the
+    combined session state). With focus follows mouse the user seldom clicks, so a key
+    press long ago would otherwise pass for Command-Tab when an app activates itself. The
+    read takes no event tap, and the log gives the three times. A Command-Tab switcher held
+    open for over a second reads as a click.
   - A workspace switch on the pointer's display leaves the pointer where it is:
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth`,
     `move-node-to-workspace --focus-follows-window`, and Command-Tab that Kosmos follows

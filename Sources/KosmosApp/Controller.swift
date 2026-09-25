@@ -824,13 +824,20 @@ final class Controller {
         CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
     }
 
-    /// Whether a key press came after the last click, from the times the session's event
-    /// state keeps, which reading takes no event tap.
+    /// Whether the keyboard made the activation being handled, as Command-Tab or a
+    /// launcher's hotkey does: a key went down in the last second, after the last click and
+    /// the last pointer movement. With focus follows mouse the user seldom clicks, so a key
+    /// press long ago would otherwise pass for a Command-Tab. The session's event state keeps
+    /// the times, which reading takes no event tap. A Command-Tab switcher held open for over
+    /// a second reads as a click.
     private static func keyPressedLast() -> Bool {
         let since = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
-        let key = since(.keyDown), click = min(since(.leftMouseDown), since(.rightMouseDown))
-        pointerLog.debug("activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago")
-        return key < click
+        let key = since(.keyDown), click = min(since(.leftMouseDown), since(.rightMouseDown)), moved = since(.mouseMoved)
+        pointerLog.debug("""
+            activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago, \
+            pointer moved \(moved, format: .fixed(precision: 3)) s ago
+            """)
+        return key < 1 && key < click && key < moved
     }
 
     // MARK: Focus follows mouse
