@@ -11,8 +11,8 @@ import os
 let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "guardian")
 let arguments = Array(CommandLine.arguments.dropFirst())
 
-// The bridged Space operations are refused for a process that is not an AppKit client.
-// Prohibited keeps the guardian out of the Dock and Command-Tab.
+// Bridged Space operations do nothing from a process that has not started AppKit
+// (docs/overview.md).
 NSApplication.shared.setActivationPolicy(.prohibited)
 
 switch (arguments.first, arguments.dropFirst().first.flatMap(Int32.init)) {
