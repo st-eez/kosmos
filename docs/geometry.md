@@ -1,7 +1,10 @@
 # Geometry
 
 - Layout compares each target with the last confirmed frame and the pending target.
-  Unchanged windows get no write, and each window keeps only its newest target.
+  Unchanged windows get no write, and each window keeps only its newest target. A write
+  that goes to no worker, or that a worker drops for a window it has no element for,
+  makes the ledger forget the window, so its target is not left pending and the next
+  write is whole.
 - When the size changes, write size, then position, then size again; otherwise write the
   position alone. Read the frame back once per batch.
 - AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display edge

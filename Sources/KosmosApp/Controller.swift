@@ -903,6 +903,9 @@ final class Controller {
                     execute(session.setMinimum(result.id, size))
                 }
             }
+        case .framesDropped(let ids):
+            // Forgotten, so their targets are not pending for good and the next writes are whole.
+            for id in ids { ledger.forget(id) }
         case .windowCreated, .windowDestroyed, .answering:
             break
         }
@@ -1151,9 +1154,12 @@ final class Controller {
         guard !sessionLocked else { return }
         let writes = ledger.writes(for: targets)
         slides?.writing(Dictionary(uniqueKeysWithValues: writes.keys.map { ($0, targets[$0]!) }), sliding: sliding)
-        for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] ?? 0 }) where pid != 0 {
-            let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
-            inventory.worker(pid)?.enqueueFrames(batch)
+        for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] }) {
+            guard let worker = pid.flatMap(inventory.worker) else {
+                for (id, _) in group { ledger.forget(id) }
+                continue
+            }
+            worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) }))
         }
     }
 

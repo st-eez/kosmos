@@ -17,6 +17,8 @@ struct AXReport: Sendable {
         case minimized(UInt32, Bool)
         /// Frames read back after writes, with the target each write aimed for.
         case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
+        /// Windows whose frame writes the worker dropped, as it knows no element for them.
+        case framesDropped([UInt32])
         /// The app answers Accessibility: it started, or answered again after a timeout.
         /// Reads that failed before can be made again.
         case answering
@@ -345,8 +347,12 @@ actor AppWorker {
         let writes = queuedWrites
         queuedWrites = [:]
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
+        var dropped: [UInt32] = []
         for (id, entry) in writes {
-            guard let element = elements[id] else { continue }
+            guard let element = elements[id] else {
+                dropped.append(id)
+                continue
+            }
             let start = ContinuousClock.now
             switch entry.write {
             case .position(let origin):
@@ -358,7 +364,7 @@ actor AppWorker {
             }
             // A write or read the app did not answer waits, with the ones after it, for the
             // app to answer again. One whose read failed otherwise waits for the app's next
-            // frame write: dropped, it would leave the ledger's target pending for good.
+            // frame write.
             guard !backoff.backedOff, var readBack = frame(element) else {
                 queuedWrites[id] = entry
                 continue
@@ -381,6 +387,10 @@ actor AppWorker {
             let ms = Double(spent.components.seconds) * 1000 + Double(spent.components.attoseconds) / 1e15
             log.info("\(id) written, AX time \(ms, format: .fixed(precision: 2)) ms")
             results.append((id, entry.target, readBack))
+        }
+        if !dropped.isEmpty {
+            log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
+            send(.framesDropped(dropped))
         }
         if !results.isEmpty { send(.framesApplied(results)) }
     }
