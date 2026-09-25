@@ -439,9 +439,9 @@ public struct Session: Sendable {
     // MARK: Commands
 
     /// Carries out a command. Nil when it does not apply, such as a focus at the edge.
-    /// `floatingFrames` holds where floating windows are now. A focus in a direction counts
-    /// those of the focused workspace as tiles (Workspace.withFloatingTiled).
-    public mutating func perform(_ command: Command, floating floatingFrames: [WindowID: CGRect] = [:]) -> Plan? {
+    /// `frames` holds where windows are now, for a focus in a direction
+    /// (Workspace.withFloatingTiled).
+    public mutating func perform(_ command: Command, frames windowFrames: [WindowID: CGRect] = [:]) -> Plan? {
         switch command {
         case .workspace(let target):
             guard let name = resolve(target), name != focusedWorkspace else { return nil }
@@ -455,7 +455,7 @@ public struct Session: Sendable {
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
         case .focus(let direction, let boundaries) where boundaries != .workspace:
-            return performOnFocused(command, floating: floatingFrames)
+            return performOnFocused(command, frames: windowFrames)
                 ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
         case .move(let direction, let boundaries) where boundaries != .workspace:
             // At the edge of the workspace the window crosses to the next display, as in
@@ -479,11 +479,11 @@ public struct Session: Sendable {
             return nil   // the app reloads the config, switches hotkeys, applies the profile
                          // or turns focus follows mouse on or off
         default:
-            return performOnFocused(command, floating: floatingFrames)
+            return performOnFocused(command, frames: windowFrames)
         }
     }
 
-    private mutating func performOnFocused(_ command: Command, floating floatingFrames: [WindowID: CGRect] = [:]) -> Plan? {
+    private mutating func performOnFocused(_ command: Command, frames windowFrames: [WindowID: CGRect] = [:]) -> Plan? {
         guard let window = focused else { return nil }
         var workspace = workspaces[focusedWorkspace]!
         let monitor = monitor(of: focusedWorkspace)
@@ -491,7 +491,7 @@ public struct Session: Sendable {
         var plan = Plan()
         switch command {
         case .focus(let direction, _):
-            guard let target = workspace.focus(direction, from: window, floating: floatingFrames, in: display, gaps: gaps,
+            guard let target = workspace.focus(direction, from: window, frames: windowFrames, in: display, gaps: gaps,
                                                minimums: minimums) else { return nil }
             plan.focus = .window(target)
         case .move(let direction, let boundaries):

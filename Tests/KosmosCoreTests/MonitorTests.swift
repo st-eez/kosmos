@@ -275,11 +275,11 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         // A parked window and another workspace's floating window count nowhere, whatever
         // their frames.
         s.adopt(10)
-        #expect(s.perform(.focus(.right, boundaries: .allMonitors), floating: frames)?.focus == .window(11))
+        #expect(s.perform(.focus(.right, boundaries: .allMonitors), frames: frames)?.focus == .window(11))
         s.adopt(10)
-        #expect(s.perform(.focus(.left, boundaries: .allMonitors), floating: frames)?.focus == .window(12))
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frames: frames)?.focus == .window(12))
         #expect(s.focusedWorkspace == "1")
-        #expect(s.perform(.focus(.left, boundaries: .allMonitors), floating: frames)?.focus == .window(50))
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frames: frames)?.focus == .window(50))
         #expect(s.focusedWorkspace == "5")
     }
 

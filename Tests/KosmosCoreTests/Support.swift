@@ -55,9 +55,9 @@ extension Workspace {
         frames(in: rect, gaps: gaps, minimums: [:])
     }
 
-    /// `focus` in a direction among the tiles alone.
-    mutating func focus(_ direction: Direction, from window: WindowID) -> WindowID? {
-        focus(direction, from: window, floating: [:], in: screen, gaps: Gaps(), minimums: [:])
+    /// `focus` in a direction on `screen` with `deskGaps`, with the floating windows at `frames`.
+    mutating func focus(_ direction: Direction, from window: WindowID, frames: [WindowID: CGRect] = [:]) -> WindowID? {
+        focus(direction, from: window, frames: frames, in: screen, gaps: deskGaps, minimums: [:])
     }
 
     /// `resize` with no minimums.
@@ -118,6 +118,9 @@ extension Workspace {
 }
 
 let screen = CGRect(x: 0, y: 0, width: 1000, height: 600)
+
+/// Steve's gaps. On `screen`, `h[1 2]` has tile 1 at x 10 to 495 and tile 2 at x 505 to 990.
+let deskGaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
 
 /// Deterministic, so a failing sequence can be replayed.
 struct SplitMix64: RandomNumberGenerator {

@@ -286,12 +286,9 @@ final class Controller {
                 return (1, "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))")
             }
             reports.commandExecuted(receivedAt: received)
-            // A focus in a direction counts the floating windows where the inventory last
-            // heard them, as the pointer's center does, so nothing waits on WindowServer.
-            let floating = Dictionary(uniqueKeysWithValues: session.shownFloatingWindows.compactMap { id in
-                inventory.windows[id].map { (id, $0.frame) }
-            })
-            if let plan = session.perform(command, floating: floating) {
+            // A focus in a direction reads floating windows where the inventory last heard
+            // them, as the pointer's center does, so nothing waits on WindowServer.
+            if let plan = session.perform(command, frames: inventory.windows.mapValues(\.frame)) {
                 execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
             }
             return (0, "")
