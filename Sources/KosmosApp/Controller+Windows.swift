@@ -78,14 +78,9 @@ extension Controller {
             plan.frames = session.park([id]).frames
             plan.hide.removeAll { $0 == id }
         }
-        let focus = intake.admit(id, shown: session.workspace(of: id).map(session.isShown) == true,
-                                 parked: session.isParked(id), atLaunch: atLaunch, locked: sessionLocked, at: .now)
+        let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
         if focus == .adopt { session.adopt(id) }
-        // A new window its app keyed brings the pointer on any display
-        // (docs/focus-follows-mouse.md).
-        let new = !atLaunch
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new && !UserInput.leftButtonDown,
-                floatingCheck: floats, popping: new ? id : nil)
+        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: atLaunch ? nil : id)
         // The follow's switch reveals the window the plan conceals.
         windowPlaced(id)
     }

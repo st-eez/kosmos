@@ -180,10 +180,11 @@ public struct KeyReportIntake: Sendable {
 
     /// Admits `window`. The report its app keyed it by before it had a place waits for
     /// `placed` when Kosmos follows it to a hidden workspace, and is dropped otherwise.
-    public mutating func admit(_ window: WindowID, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool,
-                               at now: ContinuousClock.Instant) -> AdmissionFocus {
-        let focus = AdmissionFocus.decide(keyed: key == .window(window), shown: shown, parked: parked,
-                                          atLaunch: atLaunch, locked: locked)
+    public mutating func admit(_ window: WindowID, atLaunch: Bool, at now: ContinuousClock.Instant,
+                               facts: Facts) -> (focus: AdmissionFocus, bringsPointer: Bool) {
+        let focus = AdmissionFocus.decide(keyed: key == .window(window),
+                                          shown: facts.workspace(window).map(facts.isShown) == true,
+                                          parked: facts.isParked(window), atLaunch: atLaunch, locked: facts.locked)
         switch focus {
         case .awaitKey: admittedUnkeyed[window] = now
         case .placedHidden: placedHidden[window] = .admitted
@@ -197,7 +198,9 @@ public struct KeyReportIntake: Sendable {
                 unplaced = nil
             }
         }
-        return focus
+        // A new window its app keyed brings the pointer on any display
+        // (docs/focus-follows-mouse.md).
+        return (focus, facts.mouseFollowsFocus && focus == .adopt && !atLaunch && !facts.leftButtonDown())
     }
 
     /// `new` takes the deselected tab's place (docs/tree.md), before the replace's plan runs.
