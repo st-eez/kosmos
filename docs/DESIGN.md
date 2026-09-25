@@ -79,6 +79,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
+| Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
 
 The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
 on its own and never delays another app.
@@ -151,14 +152,22 @@ off the main thread).
   reorder, order change or Space change, or at the next sweep, which logs the change as
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
   level change is unmeasured, as the probe keeps its window invisible.
-- Open item: every switch posts 815 about twice for each watched window, including windows
-  the switch never touched. Kosmos watches only the windows it tracks, those of regular
-  apps. In 40 switches (`kosmos-probe events`, 2026-09-24) they got 278 of 815 and 41 of
-  808: Activity Monitor's, Ghostty's, Helium's and ChatGPT's windows. The probe watches
-  every window, so it also counted JankyBorders' (279 and 41) and Wispr Flow's (83), which
-  Kosmos never gets. Each event reads its window's row synchronously on the main thread,
-  about 0.8 ms a switch (33 of about 66 busy main thread samples). One query for every
-  window named in a run loop turn would cut that if it ever matters.
+- An event that names a window is answered with the window's row, read from WindowServer,
+  and a read during a switch waits for WindowServer to commit the switch's Space
+  transaction. Every switch posts 815 about twice for each watched window, including
+  windows it never touched: on the laptop Kosmos's windows got 278 of 815 and 41 of 808 in
+  40 switches, and at Steve's desk (three displays, six managed windows) 360 of 815 and 20
+  of 807, 9.5 events a switch, with no Space event (`kosmos-probe events`, 2026-09-24; the
+  probe watches every window, so its totals also count JankyBorders' and Wispr Flow's,
+  which Kosmos never gets). At the desk each read took about 1.4 ms, against about 0.1 ms
+  on the laptop alone, and the reads blocked the main actor for about 13 ms a switch (525
+  main thread samples in 40 switches). So the events of one main run loop turn wait
+  together: one query on a serial queue off the main thread reads every window they name,
+  and the main actor applies the events in the order they came when the rows return
+  (PendingReads). A destroyed window and an app's exit wait in the same order, a sweep
+  reads on the same queue after the events already waiting, and the lock rules are checked
+  as each event applies. A window an event names counts as changed during a running sweep
+  from the moment the event arrives.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
@@ -279,9 +288,11 @@ off the main thread).
   changes (367cd28), 3.75 and 10.25 ms, and 3 such waits, so the switch time is the same
   within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
   but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
-  10 ms stalls until 248f668 removed it. Half of the about 66 left are the 815 reads in
-  section 5.1. On a quiet machine, 53dc6af took 1.81 ms at the median, 2.21 ms at p90 and
-  2.50 ms at most, and the completion waited at most 0.39 ms.
+  10 ms stalls until 248f668 removed it. Half of the about 66 left were the 815 reads in
+  section 5.1, which at Steve's desk blocked the main actor for about 13 ms a switch (4.66
+  ms from keypress to the end at the median and 17 ms at p90, timed under the sampler);
+  they now run off the main thread. On a quiet machine, 53dc6af took 1.81 ms at the
+  median, 2.21 ms at p90 and 2.50 ms at most, and the completion waited at most 0.39 ms.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
   else to that display's first ordinary Space. A display missing from WindowServer's Space
