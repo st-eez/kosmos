@@ -20,8 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: Controller?
     private var server: IPCServer?
     private var hotkeys: Hotkeys?
-    /// False while another tiling window manager runs.
-    private var managing = false
     private var configProblems: [String] = []
     private var hotkeyProblems: [String] = []
     private var hidingProblem: String?
@@ -117,9 +115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case ["ping"]: return Response(stdout: "pong")
         case ["version"]: return Response(stdout: kosmosVersion)
         case ["reload-config"]:
-            guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
-            guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
-            controller?.turnOnPrivateFocus()
+            guard let controller else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
+            guard controller.managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+            controller.turnOnPrivateFocus()
             let (applied, messages) = reloadConfig(ConfigFile.load(atLaunch: false), atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
         case ["list-bindings"]:
@@ -172,8 +170,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Applies a profile from the config until the displays change or the config reloads, as
     /// `set-profile.sh` did (docs/displays.md).
     private func applyProfile(_ name: String) -> Response {
-        guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
-        guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+        guard let controller else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
+        guard controller.managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
         guard config.profiles.contains(where: { $0.name == name }) else {
             return Response(exitCode: 1, stderr: "kosmos: no profile named '\(name)'")
         }
@@ -376,7 +374,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.controller = controller
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.
-        self.managing = managing
         if managing { _ = reloadConfig(loaded, atLaunch: true) }
         inventory.startAccessibility()
         let center = NSWorkspace.shared.notificationCenter
