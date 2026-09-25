@@ -560,6 +560,13 @@ off the main thread).
   - Kosmos has no main menu, and the window swallows every key and key equivalent, so
     typing on an empty workspace neither beeps nor reaches a menu command such as Quit.
     Hotkeys still fire: Carbon hotkeys are taken before the key reaches any window.
+  - Another app fronted with no key window takes the keys and key equivalents instead. Live
+    on 2026-09-24, a click on the desktop of the left panel, which showed an empty
+    workspace, fronted Finder, and Cmd-Q quit it; the report of no key window from Finder
+    repeated the empty workspace's and went unnoticed. After a key press or a click in the
+    last second such a report is the user's choice and stays, as is an app launched since
+    the empty workspace window became key, which activates before its first window. With
+    neither, macOS or the app fronted it, and Kosmos keys the empty workspace window again.
   - The kill switch guards the call like any private call, and a crash inside it turns the
     path off. The wrong window count judges only key records to other apps' windows, so
     that trigger leaves the empty workspace's window keyed privately. After a crash the

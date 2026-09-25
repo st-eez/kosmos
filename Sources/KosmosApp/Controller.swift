@@ -47,6 +47,8 @@ final class Controller {
     /// The key window macOS last reported. Too old to skip a focus request against, which the
     /// focus queue decides when the request runs.
     private var key: KeyWindow?
+    /// When Kosmos's empty workspace window last became key, on the clock app launch dates use.
+    private var emptyWorkspaceKeyed = Date.distantPast
     /// A report whose verdict waits for the departure of the window key before it
     /// (tla/Kosmos.tla, Hold).
     private var held = HeldReport<KeyReport>()
@@ -617,6 +619,7 @@ final class Controller {
             let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             let repeated = key == reported
             key = reported
+            if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
             // macOS's report of the next key window, which a departure waited for. Kosmos's
             // own echo is not it: a window keyed during a minimize's animation leaves macOS
@@ -737,8 +740,19 @@ final class Controller {
                 """)
         }
         switch verdict {
-        case .echo, .ignore:
+        case .echo:
             break
+        case .ignore:
+            // Another app has no key window while an empty workspace has the focus, and no key
+            // or mouse button went down just before: macOS or the app fronted it, and the
+            // empty workspace keys its window again, so key equivalents such as Cmd-Q reach no
+            // app. After a click on the desktop or a Command-Tab it is the user's choice, and
+            // so is an app launched since, which activates before its first window.
+            guard report.key == .none, report.pid != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
+                  NSRunningApplication(processIdentifier: report.pid)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
+            else { break }
+            controllerLog.notice("\(self.inventory.appIdentity(report.pid).name ?? String(report.pid), privacy: .public) has no key window on an empty workspace; keying its window again")
+            requestFocus(.none)
         case .undecided:
             let number = held.hold(report, of: report.key)
             after(Self.grace) { controller in
@@ -987,17 +1001,27 @@ final class Controller {
     /// Whether the keyboard made the activation being handled, as Command-Tab or a
     /// launcher's hotkey does: a key went down in the last second, after the last click and
     /// the last pointer movement. With focus follows mouse the user seldom clicks, so a key
-    /// press long ago would otherwise pass for a Command-Tab. The session's event state keeps
-    /// the times, which reading takes no event tap. A Command-Tab switcher held open for over
-    /// a second reads as a click.
+    /// press long ago would otherwise pass for a Command-Tab. A Command-Tab switcher held open
+    /// for over a second reads as a click.
     private static func keyPressedLast() -> Bool {
-        let since = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
-        let key = since(.keyDown), click = min(since(.leftMouseDown), since(.rightMouseDown)), moved = since(.mouseMoved)
+        let key = secondsSince(.keyDown), click = min(secondsSince(.leftMouseDown), secondsSince(.rightMouseDown))
+        let moved = secondsSince(.mouseMoved)
         pointerLog.debug("""
             activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago, \
             pointer moved \(moved, format: .fixed(precision: 3)) s ago
             """)
         return key < 1 && key < click && key < moved
+    }
+
+    /// Whether a key or a mouse button went down in the last second.
+    private static func userPressedJustBefore() -> Bool {
+        min(secondsSince(.keyDown), secondsSince(.leftMouseDown), secondsSince(.rightMouseDown)) < 1
+    }
+
+    /// Seconds since the last event of `type`, from the session's event state, which reading
+    /// takes no event tap.
+    private static func secondsSince(_ type: CGEventType) -> Double {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
     }
 
     // MARK: Focus follows mouse
