@@ -1,6 +1,6 @@
-// The holding Space operations are performed by WindowManager.app through SkyLight's window
-// management bridge, without injection and with SIP on (wm-research hiding note). They follow WindowKit's WindowStash
-// (https://github.com/ejbills/WindowKit), used under this license:
+// WindowManager.app performs the holding Space operations through SkyLight's window management
+// bridge, without injection and with SIP on (docs/overview.md). They follow WindowKit's
+// WindowStash (https://github.com/ejbills/WindowKit), used under this license:
 //
 // Copyright 2026 ejbills
 //
@@ -117,8 +117,6 @@ static bool readTransform(uint64_t space, CGAffineTransform *transform) {
     return true;
 }
 
-// Creates an auxiliary Space at the absolute level, with the transform and alpha read back,
-// then shows it. Returns 0 on failure, with any partial Space destroyed.
 static uint64_t createSpace(int32_t absoluteLevel, CGAffineTransform wanted, float wantedAlpha) {
     uint64_t space = 0;
     @try {
@@ -147,10 +145,9 @@ fail:
 }
 
 uint64_t kosmos_holding_create(void) {
-    // Alpha alone leaves transparent windows in pointer hit testing. Moving the Space
-    // far off every display removes their presentation and hit regions without
-    // changing their Accessibility geometry. Displays fit within 100,000 points of the
-    // origin; larger arrangements would need an offset derived from display bounds.
+    // Alpha alone leaves transparent windows in hit testing, so the Space also moves far off
+    // every display. Ceiling: displays within 100,000 points of the origin; past that, derive
+    // the offset from the display bounds.
     return createSpace(400, CGAffineTransformMakeTranslation(100000, 100000), 0);
 }
 
@@ -201,7 +198,7 @@ CFArrayRef kosmos_window_spaces(uint32_t window) {
     return SLSCopySpacesForWindows(SLSMainConnectionID(), 7, (__bridge CFArrayRef)@[@(window)]);
 }
 
-// Focus. The same front-process call as yabai and Amethyst.
+// The same front-process call as yabai and Amethyst.
 extern CGError _SLPSSetFrontProcessWithOptions(ProcessSerialNumber *psn, uint32_t window, uint32_t mode);
 extern CGError SLPSPostEventRecordTo(ProcessSerialNumber *psn, uint8_t *bytes);
 extern CGError _SLPSGetFrontProcess(ProcessSerialNumber *psn);
@@ -222,11 +219,10 @@ bool kosmos_make_key(pid_t pid, uint32_t window) {
     ProcessSerialNumber psn;
     if (!processForPID(pid, &psn)) return false;
     if (_SLPSSetFrontProcessWithOptions(&psn, window, kCPSUserGenerated) != kCGErrorSuccess) return false;
-    // One synthesized left mouse down makes the window key, as alt-tab and Loop post it.
-    // The location is far past every display: a NaN location quits Chromium web apps
-    // (yabai #2816) and a point near the frame lands in the resize region on macOS 27
-    // (alt-tab #5900). The record declares 0xf8 bytes; a buffer shorter than 0x100 crashed
-    // the encoder (yabai #1961).
+    // One left mouse down keys the window, as alt-tab and Loop post it, far past every
+    // display: a NaN location quits Chromium web apps (yabai #2816), and one near the frame
+    // lands in the resize region on macOS 27 (alt-tab #5900). A buffer under 0x100 bytes
+    // crashed the encoder (yabai #1961).
     uint8_t bytes[0x100] = {0};
     bytes[0x04] = 0xf8;
     bytes[0x08] = 0x01; // kCGEventLeftMouseDown

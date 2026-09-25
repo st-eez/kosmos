@@ -1,4 +1,3 @@
-// Holding Space and focus operations, implemented in KosmosBridge.m.
 #pragma once
 
 #include <stdbool.h>
@@ -8,52 +7,37 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CGAffineTransform.h>
 
-// The first bridged operation class this macOS lacks, or NULL when it has them all. The
-// operations below that change a Space return nothing: WindowManager.app performs them later,
-// and a read shows whether one landed.
+// The first bridged operation class this macOS lacks, or NULL. The operations below that
+// change a Space return nothing: WindowManager.app performs them later, and a read shows it.
 const char *kosmos_bridge_missing(void);
-// Creates the holding Space: an auxiliary Space at absolute level 400, moved far off
-// every display and fully transparent, then shown. Returns 0 on failure, with any
-// partial Space destroyed.
+// Returns 0 on failure, with any partial Space destroyed.
 uint64_t kosmos_holding_create(void);
-// Creates an auxiliary Space at the absolute level, in place (identity transform) and
-// opaque (alpha 1), then shown, as the Spaces windows slide in are (Slides.swift). Returns 0
-// on failure, with any partial Space destroyed.
+// In place and opaque. Returns 0 on failure, with any partial Space destroyed.
 uint64_t kosmos_float_space_create(int32_t level);
-// Sets a Space's transform. WindowServer applies it to each window the Space shows in that
-// window's own coordinates, origin at its top left and y down, mapping where a point shows to
-// the window's point: a translation of 300 in x shows the window 300 points left, and a scale
-// of 2 shows it at half size, its top left corner in place. The hit test and the window list's
-// bounds follow; SkyLight's bounds and the Accessibility frame do not (kosmos-probe
-// space-anim, branch spaceanim).
+// Applies in each window's own coordinates, y down, mapping where a point shows to the
+// window's point: a translation of 300 in x shows the window 300 points left. The hit test
+// follows; the Accessibility frame does not (docs/geometry.md).
 void kosmos_space_set_transform(uint64_t space, CGAffineTransform transform);
 void kosmos_space_set_alpha(uint64_t space, float alpha);
 void kosmos_space_destroy(uint64_t space);
-// Adds windows to a Space. With exclusive false they keep their other Space memberships,
-// as every window Kosmos conceals does, so Command-Tab still picks it. Exclusive true
-// strips only managed Spaces: a window added exclusively to an ordinary Space stays in the
-// holding Space, which is not managed, until it is removed from it (kosmos-probe reveal).
+// Exclusive strips only managed Spaces: a window added exclusively to an ordinary Space
+// stays in the holding Space until it is removed from it (`kosmos-probe reveal`).
 void kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive);
-// Removes windows from a Space. A window removed from its only Space lands on the active
-// Space (kosmos-probe reveal).
+// A window removed from its only Space lands on the active Space (`kosmos-probe reveal`).
 void kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count);
-// A bridged read of the Space's alpha. Returns true when the read succeeds.
+// A bridged read of the Space's alpha; false when the read fails.
 bool kosmos_barrier(uint64_t space);
-// The windows in the Space, or NULL if the query fails.
+// NULL when the query fails.
 CFArrayRef kosmos_space_windows(uint64_t space) CF_RETURNS_RETAINED;
-// The Spaces a window belongs to. Auxiliary Spaces such as the holding Space are not listed.
+// Auxiliary Spaces, such as the holding Space, are not listed.
 CFArrayRef kosmos_window_spaces(uint32_t window) CF_RETURNS_RETAINED;
 
-// Makes the window key: fronts its process, then posts one mouse-down key record far off
-// every window. Inside the app that is already frontmost the record alone leaves the key
-// window unchanged on macOS 27; the caller raises the window with AXRaise first.
+// Inside the front app the key record alone leaves the key window as it was on macOS 27,
+// so the caller raises the window with AXRaise first (docs/focus.md).
 bool kosmos_make_key(pid_t pid, uint32_t window);
-// Fronts a process with no key window (Finder for an empty workspace).
 bool kosmos_front_without_windows(pid_t pid);
-// The front process's pid, as yabai reads it, or 0. About 1.6 us.
+// 0 on failure. About 1.6 us (docs/focus.md).
 pid_t kosmos_front_pid(void);
-// The pid of the process that holds the key window, or 0. A non-activating panel holds it
-// while another process stays front. A round trip to WindowServer: 30 us back to back, and
-// 120 us at the median and 42 ms at most read every 50 ms at the desk (kosmos-probe
-// key-holder).
+// A non-activating panel holds the key window while another process stays front. 0 on
+// failure. 120 us at the median, 42 ms at most (docs/focus-follows-mouse.md).
 pid_t kosmos_key_focus_pid(void);

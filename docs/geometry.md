@@ -119,6 +119,12 @@
     frame. A display link per display, at that display's rate, steps the windows sliding on
     it, and stops once none is left; at the end the Space goes back to identity and the
     window leaves it.
+  - WindowServer applies a Space's transform to each window the Space shows in that
+    window's own coordinates, origin at its top left and y down, and maps where a point
+    shows to the window's point: a translation of 300 in x shows the window 300 points
+    left, and a scale of 2 shows it at half size, its top left corner in place. The hit
+    test and the window list's bounds follow; SkyLight's bounds and the Accessibility frame
+    do not (kosmos-probe space-anim, branch spaceanim).
   - A transform lands within about 0.4 ms, where an Accessibility write lands with the
     app's next commit, 9 ms later at the median and 15 ms at most, so the two cannot land
     together (kosmos-probe space-anim and its demo, branch spaceanim). A transform sent
