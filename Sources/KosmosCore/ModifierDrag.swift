@@ -178,15 +178,17 @@ public struct ModifierDrag: Equatable, Sendable {
     public let grab: DragGate.Grab
     /// The window's frame when the button went down, as WindowServer last reported it.
     public let frame: CGRect
-    public let floating: Bool
     /// The edges a resize moves, at most one on each axis.
     public let edges: [Direction]
-    /// A tiled window's tile when the button went down, where its edges start from.
+    /// A tiled window's tile when the button went down, where its edges start from, and nil
+    /// for a floating window.
     let tile: CGRect?
     private var started = false
 
-    init(grab: DragGate.Grab, frame: CGRect, floating: Bool, edges: [Direction], tile: CGRect?) {
-        (self.grab, self.frame, self.floating, self.edges, self.tile) = (grab, frame, floating, edges, tile)
+    public var floating: Bool { tile == nil }
+
+    init(grab: DragGate.Grab, frame: CGRect, edges: [Direction], tile: CGRect?) {
+        (self.grab, self.frame, self.edges, self.tile) = (grab, frame, edges, tile)
     }
 
     /// How far the pointer at `point` is from where the button went down, in whole points,

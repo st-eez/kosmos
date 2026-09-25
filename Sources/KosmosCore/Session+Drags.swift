@@ -115,10 +115,10 @@ extension Session {
         let workspace = workspaces[name]!
         let sides: [Direction] = [grab.start.x < frame.midX ? .left : .right, grab.start.y < frame.midY ? .up : .down]
         if workspace.floating.contains(grab.window) {
-            return ModifierDrag(grab: grab, frame: frame, floating: true, edges: sides, tile: nil)
+            return ModifierDrag(grab: grab, frame: frame, edges: sides, tile: nil)
         }
         let edges = sides.compactMap { side in [side, side.opposite].first { workspace.neighbor(of: grab.window, $0) != nil } }
-        return ModifierDrag(grab: grab, frame: frame, floating: false, edges: edges, tile: frames(of: name)[grab.window])
+        return ModifierDrag(grab: grab, frame: frame, edges: edges, tile: frames(of: name)[grab.window])
     }
 
     /// Moves the edges of a modifier drag's tiled window where the pointer takes them,
