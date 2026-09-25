@@ -29,6 +29,11 @@ final class Slides {
     /// How long a new window waits, transparent, for its write to land before it pops in
     /// where it is.
     private static let popWait = 0.25
+    /// How long after its write a slide that is over holds its window at the target while the
+    /// write has not landed, so the window does not show at its old frame and then jump again.
+    /// Past it the slide ends where WindowServer has the window. The worker's calls time out
+    /// after 1 s.
+    private static let landingWait = 1.0
 
     private struct Entry {
         let space: UInt64
@@ -41,6 +46,8 @@ final class Slides {
         /// When the newest write was queued and when it landed, on CACurrentMediaTime's clock.
         var sent: Double
         var landed: Double?
+        /// The newest write did not land within `landingWait`.
+        var gaveUp = false
         /// When the window last showed where the slide had it: the display frame it was
         /// stepped for.
         var shownAt: Double
@@ -130,7 +137,7 @@ final class Slides {
         let ticket = tickets
         if var entry = entries[id] {
             entry.slide = entry.slide?.retargeted(to: target, at: entry.shownAt)
-            (entry.target, entry.ticket, entry.sent, entry.landed) = (target, ticket, now, nil)
+            (entry.target, entry.ticket, entry.sent, entry.landed, entry.gaveUp) = (target, ticket, now, nil, false)
             entries[id] = entry
             let waiting = entry.slide == nil
             onscreen.state.withLock { state in
@@ -140,10 +147,11 @@ final class Slides {
                     kosmos_space_set_transform(window.space, Slide.transform(showing: window.shown, at: window.actual))
                 }
                 window.awaiting = Onscreen.Awaiting(target: target, before: window.actual, ticket: ticket, changedAt: now,
-                                                    deadline: now + (waiting ? Self.popWait : Slide.moveDuration))
+                                                    deadline: now + (waiting ? Self.popWait : Self.landingWait))
                 state.windows[id] = window
             }
             follow()
+            endLate(id, ticket)
             return true
         }
         guard let from, from != target, hiding.guardianReady else { return false }
@@ -164,13 +172,27 @@ final class Slides {
             state.windows[id] = Onscreen.Window(
                 space: space, shown: shown, alpha: pop ? 0 : 1, actual: from,
                 awaiting: Onscreen.Awaiting(target: target, before: from, ticket: ticket, changedAt: now,
-                                            deadline: now + (pop ? Self.popWait : Slide.moveDuration)))
+                                            deadline: now + (pop ? Self.popWait : Self.landingWait)))
         }
         entries[id] = Entry(space: space, pop: pop, target: target, slide: pop ? nil : .move(from: from, to: target, at: now),
                             ticket: ticket, sent: now, shownAt: now)
         follow()
         startLink()
+        endLate(id, ticket)
         return true
+    }
+
+    /// Ends the slide for write `ticket` once no slide can still run, should the display link
+    /// stop stepping it, as it might when its display goes: a move holds its window for
+    /// `landingWait` at most, and a pop starts within `popWait` and lasts `popDuration`.
+    private func endLate(_ id: WindowID, _ ticket: Int) {
+        let late = Self.landingWait + Self.popWait + Slide.popDuration
+        DispatchQueue.main.asyncAfter(deadline: .now() + late) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.entries[id]?.ticket == ticket else { return }
+                self.end(id, "late, past every slide's end")
+            }
+        }
     }
 
     /// A write landed, or its wait ran out: a move ends at the frame WindowServer has, and a
@@ -178,10 +200,13 @@ final class Slides {
     private func landed(_ landings: [Onscreen.Landing]) {
         for landing in landings {
             guard var entry = entries[landing.id], entry.ticket == landing.ticket else { continue }
-            entry.landed = landing.at
-            if entry.slide != nil {
-                entry.slide!.to = landing.frame
+            if landing.timedOut {
+                entry.gaveUp = true
             } else {
+                entry.landed = landing.at
+                entry.slide?.to = landing.frame
+            }
+            if entry.slide == nil {
                 let now = CACurrentMediaTime()
                 entry.slide = .pop(to: landing.frame, at: now)
                 entry.shownAt = now
@@ -191,7 +216,8 @@ final class Slides {
     }
 
     /// One display frame: each slide shows its window where it has it at the time the frame
-    /// shows, and a slide that is over ends.
+    /// shows, and a slide that is over ends, or holds its window at the target until its
+    /// write lands.
     private func frame(_ link: CADisplayLink) {
         let began = CACurrentMediaTime()
         let at = link.targetTimestamp
@@ -199,7 +225,12 @@ final class Slides {
         for (id, entry) in entries {
             guard let slide = entry.slide else { continue }
             if slide.isOver(at: at) {
-                over.append(id)
+                if entry.landed == nil, !entry.gaveUp {
+                    steps.append((id, slide.to, 1))
+                    entries[id]!.shownAt = at
+                } else {
+                    over.append(id)
+                }
                 continue
             }
             steps.append((id, slide.shown(at: at), Float(slide.alpha(at: at))))
@@ -209,7 +240,9 @@ final class Slides {
         let due = steps
         onscreen.state.withLock { state in
             for step in due {
-                guard var window = state.windows[step.id] else { continue }
+                // A window held at its target needs no new transform: the landing reads send
+                // one at each new frame.
+                guard var window = state.windows[step.id], window.shown != step.shown || window.alpha != step.alpha else { continue }
                 window.shown = step.shown
                 kosmos_space_set_transform(window.space, Slide.transform(showing: step.shown, at: window.actual))
                 if step.alpha != window.alpha {
@@ -314,6 +347,8 @@ private final class Onscreen: Sendable {
         let frame: CGRect
         let ticket: Int
         let at: Double
+        /// The deadline came first.
+        let timedOut: Bool
     }
 
     struct State: Sendable {
@@ -323,18 +358,20 @@ private final class Onscreen: Sendable {
 
     let state = Mutex(State())
     let queue = DispatchQueue(label: "kosmos.slide", qos: .userInteractive)
-    /// How long a new frame at the target's origin with another size must stay before it
-    /// counts as landed, as an app that rounds its size or refuses it leaves it. A size,
-    /// position and size written in turn can land in more than one commit. Not measured.
-    private static let settle = 0.025
+    /// How long a new frame other than the target must stay before it counts as landed: at
+    /// the target's origin, as an app that rounds or refuses its size leaves it, and
+    /// elsewhere, as an app that places the window itself does. A size, position and size
+    /// written in turn can land in more than one commit, and a write a newer one replaces
+    /// can land first, at another origin. Not measured.
+    private static let settle = 0.025, settleElsewhere = 0.1
 
     /// Reads the rows of the windows whose writes have not landed every 0.1 ms, as Hiding
     /// reads a batch's Spaces, until none is left. At each new frame WindowServer gives a
     /// window, its transform keeps it where it shows. A write lands with the app's next
     /// commit, 9 ms after it at the median and 15 ms at most in `kosmos-probe space-anim demo`
     /// (branch spaceanim), where a transform lands within about 0.4 ms. A window has landed
-    /// once it has the target, or has kept a new frame at the target's origin for `settle`,
-    /// or at its deadline. `landed` gets each with that frame.
+    /// once it has the target, or has kept a new frame for `settle`, or at its deadline,
+    /// which it reports as timed out. `landed` gets each with that frame.
     func follow(_ landed: @Sendable ([Landing]) -> Void) {
         while true {
             let ids = state.withLock { state in
@@ -359,11 +396,12 @@ private final class Onscreen: Sendable {
                         awaiting.changedAt = now
                         kosmos_space_set_transform(window.space, Slide.transform(showing: window.shown, at: frame))
                     }
-                    let settled = frame != awaiting.before && frame.origin == awaiting.target.origin
-                        && now - awaiting.changedAt >= Self.settle
+                    let settled = frame != awaiting.before
+                        && now - awaiting.changedAt >= (frame.origin == awaiting.target.origin ? Self.settle : Self.settleElsewhere)
                     if frame == awaiting.target || settled || now >= awaiting.deadline {
                         window.awaiting = nil
-                        landings.append(Landing(id: id, frame: frame, ticket: awaiting.ticket, at: now))
+                        landings.append(Landing(id: id, frame: frame, ticket: awaiting.ticket, at: now,
+                                                timedOut: frame != awaiting.target && !settled))
                     } else {
                         window.awaiting = awaiting
                     }
