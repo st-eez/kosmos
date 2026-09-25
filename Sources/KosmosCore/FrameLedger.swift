@@ -107,11 +107,8 @@ public struct FrameLedger: Sendable {
 
     public func isWriting(_ id: WindowID) -> Bool { pending[id] != nil }
 
-    /// Whether a change that came at `stamp` can be a write's. The inventory applies a change
-    /// after an off main read, by which time its write can be confirmed.
-    ///
-    /// Ceiling: a change that came before a write was sent counts too. Recording when each
-    /// write was sent would tell the two apart.
+    /// Whether a change that came at `stamp` can be a write's. Ceiling: a change that came
+    /// before the write was sent counts too (docs/geometry.md).
     public func isWriting(_ id: WindowID, at stamp: ContinuousClock.Instant) -> Bool {
         isWriting(id) || confirmedAt[id].map { stamp < $0 } == true
     }

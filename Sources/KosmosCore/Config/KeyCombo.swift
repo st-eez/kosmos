@@ -41,9 +41,8 @@ public struct KeyCombo: Hashable, Sendable {
         }
     }
 
-    /// `layout` maps each character the current keyboard layout types without modifiers to its
-    /// key code. A character it lacks keeps its US keyboard place, so `alt-1` on a French layout
-    /// is the key labelled 1 and &.
+    /// `layout` maps each character the keyboard layout types without modifiers to its key
+    /// code. A character it lacks keeps its US keyboard place (docs/hotkeys.md).
     public func physicalKey(layout: [Character: UInt16]) -> PhysicalKey {
         let code = switch key {
         case .character(let character): layout[character] ?? usKeyCodes[character]!
@@ -92,8 +91,8 @@ public struct PhysicalKey: Hashable, Sendable {
 
 private let modifierNames: [String: KeyCombo.Modifiers] = ["cmd": .cmd, "ctrl": .ctrl, "alt": .alt, "shift": .shift]
 
-/// Keys named by the character they type. Letters and digits name themselves; punctuation has
-/// the names AeroSpace uses.
+/// Keys named by the character they type. Letters and digits name themselves
+/// (docs/hotkeys.md).
 private let characterKeys: [String: Character] = {
     var keys: [String: Character] = [
         "minus": "-", "equal": "=", "leftSquareBracket": "[", "rightSquareBracket": "]", "backslash": "\\",

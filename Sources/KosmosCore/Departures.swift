@@ -1,6 +1,5 @@
-/// When windows left the screen, from the first report of each departure: Accessibility
-/// reports a minimize as it starts, and NSWorkspace a hide before WindowServer orders the
-/// app's windows out (docs/focus.md).
+/// When windows left the screen, from each departure's first report, which can come before
+/// WindowServer orders the windows out (docs/focus.md).
 public struct DepartureLog: Sendable {
     private var leftAt: [WindowID: ContinuousClock.Instant] = [:]
     /// How long a departure counts as just now.
@@ -59,9 +58,8 @@ public enum DepartureFocus: Equatable, Sendable {
         var keyable: Bool { orderedIn && !minimized }
     }
 
-    /// - Parameter remaining: the app's other candidate windows when its key window closed and
-    ///   was kept, and nil for a minimize or a hide. With none macOS can key, no report comes
-    ///   (docs/focus.md).
+    /// `remaining`: the app's other candidate windows when its key window closed and was kept,
+    /// and nil for a minimize or a hide (docs/focus.md).
     public static func decide(focusLeft: Bool, key: KeyWindow?, departing: [WindowID],
                               left: (WindowID) -> Bool, remaining: [OtherWindow]? = nil) -> DepartureFocus {
         guard focusLeft else { return .none }

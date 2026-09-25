@@ -72,8 +72,11 @@ The probes are in `Sources/kosmos-probe`. Each acts only on a window it creates.
 ## Credits
 
 Kosmos learns from [AeroSpace](https://github.com/nikitabobko/AeroSpace),
-[i3](https://i3wm.org), [yabai](https://github.com/koekeishiya/yabai),
+[i3](https://i3wm.org), [sway](https://swaywm.org), [Hyprland](https://hyprland.org) as
+[Omarchy](https://omarchy.org) configures it, [yabai](https://github.com/koekeishiya/yabai),
 [rift](https://github.com/acsandmann/rift), [AltTab](https://github.com/lwouis/alt-tab-macos),
+[JankyBorders](https://github.com/FelixKratz/JankyBorders),
+[SketchyBar](https://github.com/FelixKratz/SketchyBar),
 [WindowKit](https://github.com/ejbills/WindowKit) and others. Where their code shaped a
 decision, the design docs say so.
 

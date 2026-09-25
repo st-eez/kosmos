@@ -97,11 +97,8 @@ public struct DragGate: Sendable {
         return outcome
     }
 
-    /// A press can end unheard, as while WindowServer had the tap off. A nil `point` ends the
-    /// drag where the pointer last moved.
-    ///
-    /// Ceiling: a press HID counted before the tap saw the drag's own counts as the drag's,
-    /// and nothing public tells which press HID counted when (docs/modifier-drags.md).
+    /// A nil `point` ends the drag where the pointer last moved. Ceiling: a press HID counted
+    /// before the tap saw the drag's own counts as the drag's (docs/modifier-drags.md).
     public mutating func endIfReleased(hid: (DragButton) -> ButtonState, at point: CGPoint?) -> Outcome {
         guard let grab else { return Outcome() }
         let state = hid(grab.button)
@@ -143,6 +140,8 @@ public struct DragGate: Sendable {
 
 /// A modifier drag as the main actor carries it out (docs/modifier-drags.md).
 public struct ModifierDrag: Equatable, Sendable {
+    static let smallestSide: CGFloat = 20
+
     public let grab: DragGate.Grab
     /// The window's frame when the button went down, as WindowServer last reported it.
     public let frame: CGRect
@@ -160,7 +159,7 @@ public struct ModifierDrag: Equatable, Sendable {
 
     public mutating func delta(to point: CGPoint) -> CGSize? {
         let delta = CGSize(width: (point.x - grab.start.x).rounded(), height: (point.y - grab.start.y).rounded())
-        guard started || hypot(delta.width, delta.height) > TitleBarDrag.liftDistance else { return nil }
+        guard started || hypot(delta.width, delta.height) > TitleBarDrag.dragThreshold else { return nil }
         started = true
         return delta
     }

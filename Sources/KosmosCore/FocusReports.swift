@@ -1,7 +1,6 @@
 public enum KeyWindow: Hashable, Sendable {
     case window(WindowID)
-    /// No key window: an app with none, or Kosmos's own window for an empty workspace.
-    case emptyWorkspace
+    case noWindow
 }
 
 /// What to do with a key window report (docs/focus.md; tla/Kosmos.tla, Adopt).
@@ -49,9 +48,8 @@ public enum AdmissionFocus: Equatable, Sendable {
     /// Kosmos follows its key report there, as it follows a Command-Tab (docs/focus.md).
     case placedHidden
 
-    /// - Parameters:
-    ///   - keyed: the window is the key window Kosmos last heard of.
-    ///   - parked: its return decides the focus instead.
+    /// `keyed`: the window is the key window Kosmos last heard of. A parked window's return
+    /// decides the focus instead.
     public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
         guard !locked, !parked else { return .none }
         if shown { return keyed ? .adopt : atLaunch ? .none : .awaitKey }
@@ -59,9 +57,8 @@ public enum AdmissionFocus: Equatable, Sendable {
     }
 }
 
-/// Whether macOS shows a native fullscreen window's Space, where only a command requests
-/// focus (docs/focus.md). The fullscreen app's own panel or dialog keeps the Space shown.
-/// - Parameter fullscreen: the app of each window parked in native fullscreen.
+/// Whether macOS shows a native fullscreen window's Space, which the app's own panel or
+/// dialog keeps shown (docs/focus.md). `fullscreen` gives each such window's app.
 public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int32?,
                                  fullscreen: [WindowID: Int32]) -> Bool {
     guard case .window(let id)? = key else { return false }
@@ -85,15 +82,14 @@ public struct FocusReports: Sendable {
     }
 
     /// Call it right before the call that changes the key window, so no echo comes first.
-    /// `app` is Kosmos for `.emptyWorkspace`.
+    /// `app` is Kosmos for `.noWindow`.
     public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: ContinuousClock.Instant, publicly: Bool = false) {
         if key != retried { retried = nil }
         expected.append((key, app, stamp, publicly))
     }
 
-    /// A report from `app` that is no echo answers its public requests: the public path lets
-    /// the app key a window of its choosing (docs/focus.md). Private requests stay until
-    /// matched (tla/README.md, change 6).
+    /// A report from `app` that is no echo answers its public requests, since the public path
+    /// lets the app choose the window, and private ones stay until matched (docs/focus.md).
     public mutating func publicRequestsAnswered(by app: Int32, receivedAt stamp: ContinuousClock.Instant) {
         expected.removeAll { $0.publicly && $0.app == app && $0.requested <= stamp }
     }
@@ -112,13 +108,8 @@ public struct FocusReports: Sendable {
         expected.firstIndex { $0.key == key && $0.requested <= stamp }
     }
 
-    /// Consumes the expectation `key` answers and every one before it, so one whose echo
-    /// never comes goes once a later echo does. A report from an app that is not front calls
-    /// only this (tla/Kosmos.tla, ObserveSplit).
-    ///
-    /// Ceiling: an earlier request's echo that arrives after a later one's reads as the
-    /// user's choice (tla/README.md, change 19). The upgrade is docs/focus.md's deferred
-    /// removal of only the matched record.
+    /// Consumes the expectation `key` answers and every one before it. Ceiling: an earlier
+    /// echo after a later one reads as the user's choice (docs/focus.md, Deferred).
     public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Bool {
         guard let index = echo(of: key, receivedAt: stamp) else { return false }
         expected.removeFirst(index + 1)
@@ -137,15 +128,8 @@ public struct FocusReports: Sendable {
         }
     }
 
-    /// Call it for every report, before `classify`. The missed request, the oldest to the app
-    /// as the focus queue runs requests in order, never comes back, so it leaves the
-    /// expectations. An echo is no miss: an app can report a window again after the raise
-    /// that follows its key record (`kosmos-probe keying`, 6 of 40).
-    ///
-    /// Ceiling: a Command-Tab's activation read repeats the window its notification just
-    /// reported, so it is lost as a miss while an older request to that app awaits its echo
-    /// (tla/README.md, change 21). The upgrade is docs/focus.md's deferred drop of the rule.
-    /// - Parameter repeated: the report names the key window Kosmos last heard of.
+    /// Call it for every report, before `classify`. `repeated`: it names the last key window.
+    /// Ceiling: a Command-Tab's activation read can be lost as a miss (docs/focus.md, Deferred).
     public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: ContinuousClock.Instant) -> Miss {
         guard repeated, let app, echo(of: key, receivedAt: stamp) == nil,
               let index = expected.firstIndex(where: { $0.app == app && $0.key != key && $0.requested <= stamp })
@@ -159,12 +143,8 @@ public struct FocusReports: Sendable {
         return .retry
     }
 
-    /// - Parameters:
-    ///   - concealed: the window was concealed at the report's stamp, so only the user
-    ///     reached it.
-    ///   - recovered: recovery showed the hidden workspaces' windows, so a click reaches them.
-    ///   - keyLeft: read only when the verdict depends on it, as it can read WindowServer. A
-    ///     window key after a departure is macOS's choice (tla/Kosmos.tla, KeyLeft).
+    /// `concealed` and `recovered` say whether only the user could reach the window.
+    /// `keyLeft` is read only when the verdict needs it, as it can read WindowServer.
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant, onShownWorkspace: Bool,
                                   concealed: Bool, recovered: Bool = false, miss: Miss = .none,
                                   keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
@@ -194,11 +174,10 @@ public struct KeyHistory: Sendable {
 
     public init() {}
 
-    /// Returns the window key before `reported`. A repeat of the window last heard of, as an
-    /// activation read after its app's notification, has the one before that (tla/README.md,
-    /// change 24). A repeat of no key window has none: any app can report it.
+    /// Returns the window key before `reported`, the one before that for a repeat
+    /// (docs/focus.md). A repeat of no key window has none, since any app can report it.
     public mutating func heard(_ reported: KeyWindow) -> KeyWindow? {
-        guard reported != key else { return reported == .emptyWorkspace ? .emptyWorkspace : before }
+        guard reported != key else { return reported == .noWindow ? .noWindow : before }
         before = key
         key = reported
         return before

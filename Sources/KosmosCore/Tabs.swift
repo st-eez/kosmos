@@ -1,10 +1,9 @@
 import CoreGraphics
 
-/// A native tab switch orders the deselected tab's window out, or destroys it, and orders the
-/// selected tab's in. Only two windows with one frame pair, as the tabs of a group share
-/// theirs (kosmos-probe tabs, docs/tree.md).
+/// Pairs a native tab switch's halves, the deselected tab's order-out or destroy and the
+/// selected tab's order-in, when the two windows have one frame (docs/tree.md).
 public struct TabSwitches: Sendable {
-    /// Two changes this close form one switch, as in the yabai forks that follow tabs.
+    /// Two changes this close form one switch (docs/tree.md).
     public static let window: Duration = .milliseconds(250)
     private struct Change {
         let window: WindowID
@@ -48,9 +47,8 @@ public enum ClosedAndKept {
         return orderedOut + wait - now
     }
 
-    /// Windows seen ordered out wait for their look until no read of window rows is under
-    /// way and no event waits for one, so a tab switch split across two reads pairs first
-    /// (docs/tree.md).
+    /// Windows seen ordered out wait for their look until no read of window rows is under way
+    /// or waiting, so a tab switch split across two reads pairs first (docs/tree.md).
     public struct Looks: Sendable {
         private var waiting: [(window: WindowID, orderedOut: ContinuousClock.Instant)] = []
         private var reads = 0
@@ -163,9 +161,8 @@ public struct TabGroups: Sendable {
 
     public init() {}
 
-    /// `sharesFrame` is asked of the holder a claim passes the place to, since the pairing
-    /// compared only the two windows that switched, so no window takes a native fullscreen
-    /// tab's parked place without its frame.
+    /// `sharesFrame` is asked of the holder a claim passes the place to, so no window takes a
+    /// native fullscreen tab's parked place without its frame (docs/tree.md).
     public mutating func switched(from old: WindowID, to new: WindowID, admitted: Bool,
                                   placed: (WindowID) -> Bool, sharesFrame: (WindowID) -> Bool) -> Switch {
         var holder = old

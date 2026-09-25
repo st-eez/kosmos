@@ -36,7 +36,7 @@ struct Node: Sendable {
     var weight: Double
 }
 
-/// An i3 `tiles` container: its children side by side along its orientation.
+/// A `tiles` container: its children side by side along its orientation.
 struct Container: Sendable {
     /// Unique within a workspace.
     let id: Int

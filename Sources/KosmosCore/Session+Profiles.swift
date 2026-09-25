@@ -19,7 +19,7 @@ extension Session {
             mergedAway[name] = workspaces[name]
             for window in allWindows(of: name) {
                 carry(window, to: target)
-                if merged[window] == nil { merged[window] = name }
+                if mergedFrom[window] == nil { mergedFrom[window] = name }
             }
             workspaces[name] = nil
             if focusedWorkspace == name { focusedWorkspace = target }
@@ -31,16 +31,15 @@ extension Session {
         arrange(focusing: focusedWorkspace, near: focusedBefore)
     }
 
-    /// Each returning window keeps the state it has now, parked or not, tiled or floating. They
-    /// return in the saved order, since a return to a changed tree depends on the ones before
-    /// it (docs/tree.md).
+    /// The windows return in the saved order, since a return to a changed tree depends on the
+    /// ones before it (docs/tree.md).
     private mutating func restored(_ saved: Workspace, as name: String, on monitor: Monitor) -> Workspace {
         var workspace = saved
         let windows = saved.root.windows + saved.floating + saved.parked.map(\.window)
-        for window in windows where merged[window] != name {
+        for window in windows where mergedFrom[window] != name {
             workspace.remove(window)
         }
-        for window in windows where merged[window] == name {
+        for window in windows where mergedFrom[window] == name {
             let current = workspaces[home[window]!]!
             let parked = current.parked.first { $0.window == window }
             let floating = parked?.floating ?? current.floating.contains(window)
@@ -52,7 +51,7 @@ extension Session {
             if !floating, workspace.floating.contains(window) { workspace.tile(window, in: monitor.area, gaps: monitor.gaps) }
             if parked != nil { workspace.park(window) }
             home[window] = name
-            merged[window] = nil
+            mergedFrom[window] = nil
         }
         return workspace
     }

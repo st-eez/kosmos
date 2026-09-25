@@ -1,8 +1,7 @@
 import CoreServices
 
 /// The key code of each character the layout types without modifiers, the lowest code where
-/// several keys type one. Keypad keys stay out: on French and Czech layouts only the keypad
-/// types a digit unshifted, and `alt-1` must fall back to the number row, which a laptop has.
+/// several keys type one. Keypad keys stay out (docs/hotkeys.md).
 public func keyboardLayout(_ layout: UnsafePointer<UCKeyboardLayout>, keyboardType: UInt32) -> [Character: UInt16] {
     var codes: [Character: UInt16] = [:]
     for code in UInt16(0)..<128 where !keypadCodes.contains(code) {
