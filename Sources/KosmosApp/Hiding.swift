@@ -295,13 +295,18 @@ private final class HidingStore: @unchecked Sendable {
             next.windows.append(.init(id: id, owner: owner, originalSpace: original))
         }
         if !record.publish(next) {
-            // The slot is full: drop records of windows that no longer exist.
+            // The slot is full: drop records of windows that no longer exist, keeping the
+            // concealed ones and this batch's.
             let alive = Set(SkyLight.rows(next.windows.map(\.id)).map(\.id))
-            next.windows.removeAll { !alive.contains($0.id) }
-            guard record.publish(next) else {
+            guard let pruned = next.pruned(alive: alive, keeping: Set(ledger.entries.keys).union(windows), seen: new) else {
+                hidingLog.error("the recorded windows could not be read; not concealing")
+                return abandon(created)
+            }
+            guard record.publish(pruned) else {
                 hidingLog.error("the recovery record is full; not concealing")
                 return abandon(created)
             }
+            next = pruned
         }
         state = next
         if created != 0 { space = created }

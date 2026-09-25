@@ -76,6 +76,17 @@ public struct RecoveryRecord: Equatable, Sendable {
         self.windows = windows
     }
 
+    /// The record without the windows that no longer exist, to make room in a full slot.
+    /// `alive` is a read of the recorded windows. The windows of `keeping`, the concealed
+    /// ones and the ones about to be, stay whatever it says. Nil when it misses a window of
+    /// `seen`, which an earlier read found: the read failed, as a failed query reads nothing.
+    public func pruned(alive: Set<UInt32>, keeping: Set<UInt32>, seen: [UInt32]) -> RecoveryRecord? {
+        guard seen.allSatisfy(alive.contains) else { return nil }
+        var pruned = self
+        pruned.windows.removeAll { !alive.contains($0.id) && !keeping.contains($0.id) }
+        return pruned
+    }
+
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"
     static let version: UInt32 = 1
 

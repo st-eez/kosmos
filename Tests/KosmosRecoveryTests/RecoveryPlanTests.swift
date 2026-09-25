@@ -78,3 +78,12 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
     #expect(concealed([9: [1, 4]]) == [9: [1]])
 }
 
+@Test func aFullSlotDropsOnlyWindowsThatAreGoneAndNotKept() {
+    let windows = (1...4).map { RecoveryRecord.Window(id: $0, owner: app, originalSpace: 5) }
+    let full = RecoveryRecord(windowServer: app, manager: app, spaces: [9], windows: windows)
+    // 2 is gone, 3 is gone but concealed, 4 is new and was just read.
+    let pruned = full.pruned(alive: [1, 4], keeping: [3, 4], seen: [4])
+    #expect(pruned?.windows.map(\.id) == [1, 3, 4])
+    // A read that misses the new window it just found failed, as a failed query reads nothing.
+    #expect(full.pruned(alive: [], keeping: [3, 4], seen: [4]) == nil)
+}
