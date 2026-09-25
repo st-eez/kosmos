@@ -64,6 +64,9 @@
   switch works while one is on screen.
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
+  On a macOS that lacks one of the bridged operation classes, as after an update that
+  renames one, Kosmos logs one fault at startup and conceals nothing, instead of failing
+  every switch.
 - Recovery restores the windows Kosmos concealed: each recorded window in a recorded
   Space, any other window there whose app owns a recorded window, such as a sheet, and a
   child of a concealed window, as the Open or Save panel of a sandboxed app, which the

@@ -28,7 +28,8 @@ final class Hiding {
 
     enum Outcome: Sendable {
         case confirmed
-        /// Without a ready guardian nothing is concealed; windows were only revealed.
+        /// Without a ready guardian, or on a macOS that lacks a bridged operation, nothing is
+        /// concealed; windows were only revealed.
         case revealedOnly
         /// A bridged operation was not confirmed and recovery ran; windows it could not
         /// restore stay concealed and recorded.
@@ -36,6 +37,7 @@ final class Hiding {
     }
 
     private let guardian: Guardian
+    private let canHide = SkyLight.missingBridgedOperation == nil
     private let bridge = DispatchQueue(label: "kosmos.bridge", qos: .userInteractive)
     private let store: HidingStore
     /// The windows concealed after the last batch the bridge finished, for focus reports.
@@ -102,7 +104,7 @@ final class Hiding {
     /// keep it. Concealing needs a ready guardian; revealing does not.
     func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32], stripping: Set<UInt32>,
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
-        let canConceal = guardian.isReady
+        let canConceal = canHide && guardian.isReady
         let hide = canConceal ? hide : []
         for window in hide { concealing[window, default: 0] += 1 }
         let store = self.store

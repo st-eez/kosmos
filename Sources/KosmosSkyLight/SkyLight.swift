@@ -61,6 +61,15 @@ public struct WindowRow: Sendable, Equatable {
 public enum SkyLight {
     public static let connection = SLSMainConnectionID()
 
+    /// The first bridged Space operation class this macOS lacks, or nil. Read once; a missing
+    /// class logs one fault, and Kosmos then conceals nothing.
+    public static let missingBridgedOperation: String? = {
+        guard let name = kosmos_bridge_missing() else { return nil }
+        let missing = String(cString: name)
+        log.fault("\(missing, privacy: .public) is missing from this macOS; hiding stays off")
+        return missing
+    }()
+
     /// Delivers every event on the main queue in the order WindowServer sent it. Call once.
     public static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) {
         let sink = Unmanaged.passRetained(EventSink(handler)).toOpaque()   // lives for the process

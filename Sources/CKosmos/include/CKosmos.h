@@ -37,7 +37,6 @@ extern uint32_t SLSWindowIteratorGetWindowID(CFTypeRef iterator);
 extern uint32_t SLSWindowIteratorGetParentID(CFTypeRef iterator);
 extern int SLSWindowIteratorGetLevel(CFTypeRef iterator);
 extern int SLSWindowIteratorGetPID(CFTypeRef iterator);
-extern uint64_t SLSWindowIteratorGetTags(CFTypeRef iterator);
 // Bit 0x2 is set while the window is ordered in (matches SLSWindowIsOrderedIn).
 extern uint64_t SLSWindowIteratorGetAttributes(CFTypeRef iterator);
 extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);

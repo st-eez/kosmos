@@ -8,6 +8,10 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CGAffineTransform.h>
 
+// The first bridged operation class this macOS lacks, or NULL when it has them all. The
+// operations below that change a Space return nothing: WindowManager.app performs them later,
+// and a read shows whether one landed.
+const char *kosmos_bridge_missing(void);
 // Creates the holding Space: an auxiliary Space at absolute level 400, moved far off
 // every display and fully transparent, then shown. Returns 0 on failure, with any
 // partial Space destroyed.
@@ -21,19 +25,18 @@ uint64_t kosmos_float_space_create(int32_t level);
 // the window's point: a translation of 300 in x shows the window 300 points left, and a scale
 // of 2 shows it at half size, its top left corner in place. The hit test and the window list's
 // bounds follow; SkyLight's bounds and the Accessibility frame do not (kosmos-probe
-// space-anim, branch spaceanim). Returns once the operation is sent.
-bool kosmos_space_set_transform(uint64_t space, CGAffineTransform transform);
-// Sets a Space's alpha. Returns once the operation is sent.
-bool kosmos_space_set_alpha(uint64_t space, float alpha);
-bool kosmos_space_destroy(uint64_t space);
+// space-anim, branch spaceanim).
+void kosmos_space_set_transform(uint64_t space, CGAffineTransform transform);
+void kosmos_space_set_alpha(uint64_t space, float alpha);
+void kosmos_space_destroy(uint64_t space);
 // Adds windows to a Space. With exclusive false they keep their other Space memberships,
 // as every window Kosmos conceals does, so Command-Tab still picks it. Exclusive true
 // strips only managed Spaces: a window added exclusively to an ordinary Space stays in the
 // holding Space, which is not managed, until it is removed from it (kosmos-probe reveal).
-bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive);
+void kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive);
 // Removes windows from a Space. A window removed from its only Space lands on the active
 // Space (kosmos-probe reveal).
-bool kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count);
+void kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count);
 // A bridged read of the Space's alpha. Returns true when the read succeeds.
 bool kosmos_barrier(uint64_t space);
 // The windows in the Space, or NULL if the query fails.

@@ -40,17 +40,45 @@
 - (uint64_t)spaceID;
 @end
 
+static SEL bridgeSelector(void) { return sel_registerName("performWithWMBridgeDelegate"); }
+
 // The class, if this macOS has it with the initializer Kosmos calls.
 static Class operationClass(NSString *name, SEL initializer) {
     Class cls = NSClassFromString(name);
-    return cls && class_getInstanceMethod(cls, initializer) ? cls : Nil;
+    return cls && class_getInstanceMethod(cls, initializer) && class_respondsToSelector(cls, bridgeSelector()) ? cls : Nil;
 }
 
-// Runs a bridged operation and returns its result, or nil.
+// Runs a bridged read and returns its result, else the operation, or nil.
 static id perform(id operation) {
-    SEL selector = sel_registerName("performWithWMBridgeDelegate");
-    if (!operation || ![operation respondsToSelector:selector]) return nil;
-    return ((id (*)(id, SEL))objc_msgSend)(operation, selector) ?: operation;
+    if (!operation) return nil;
+    return ((id (*)(id, SEL))objc_msgSend)(operation, bridgeSelector()) ?: operation;
+}
+
+// Sends a bridged operation whose result says nothing. False when the operation is nil, as
+// on a macOS that lacks its class.
+static bool submit(id operation) {
+    if (!operation) return false;
+    ((id (*)(id, SEL))objc_msgSend)(operation, bridgeSelector());
+    return true;
+}
+
+const char *kosmos_bridge_missing(void) {
+    NSDictionary<NSString *, NSString *> *initializers = @{
+        @"SLSBridgedSpaceCreateOperation": @"initWithOptions:values:",
+        @"SLSBridgedSpaceSetAbsoluteLevelOperation": @"initWithSpaceID:level:",
+        @"SLSBridgedSpaceSetTransformOperation": @"initWithSpaceID:transform:options:",
+        @"SLSBridgedSpaceGetTransformOperation": @"initWithSpaceID:",
+        @"SLSBridgedSpaceSetAlphaOperation": @"initWithSpaceID:alpha:",
+        @"SLSBridgedSpaceGetAlphaOperation": @"initWithSpaceID:",
+        @"SLSBridgedShowSpacesOperation": @"initWithSpaces:",
+        @"SLSBridgedSpaceDestroyOperation": @"initWithSpaceID:",
+        @"SLSBridgedSpaceAddWindowsAndRemoveFromSpacesOperation": @"initWithSpaceID:windows:options:",
+        @"SLSBridgedRemoveWindowsFromSpacesOperation": @"initWithWindows:spaces:",
+    };
+    for (NSString *name in initializers) {
+        if (!operationClass(name, NSSelectorFromString(initializers[name]))) return name.UTF8String;
+    }
+    return NULL;
 }
 
 static NSArray *windowNumbers(const uint32_t *windows, size_t count) {
@@ -59,16 +87,16 @@ static NSArray *windowNumbers(const uint32_t *windows, size_t count) {
     return numbers;
 }
 
-bool kosmos_space_destroy(uint64_t space) {
+void kosmos_space_destroy(uint64_t space) {
     @try {
         Class cls = operationClass(@"SLSBridgedSpaceDestroyOperation", @selector(initWithSpaceID:));
-        return perform([[cls alloc] initWithSpaceID:space]) != nil;
-    } @catch (NSException *exception) { return false; }
+        submit([[cls alloc] initWithSpaceID:space]);
+    } @catch (NSException *exception) {}
 }
 
 static bool setAlpha(uint64_t space, float alpha) {
     Class cls = operationClass(@"SLSBridgedSpaceSetAlphaOperation", @selector(initWithSpaceID:alpha:));
-    return perform([[cls alloc] initWithSpaceID:space alpha:alpha]) != nil;
+    return submit([[cls alloc] initWithSpaceID:space alpha:alpha]);
 }
 
 static id readAlpha(uint64_t space) {
@@ -78,7 +106,7 @@ static id readAlpha(uint64_t space) {
 
 static bool setTransform(uint64_t space, CGAffineTransform transform) {
     Class cls = operationClass(@"SLSBridgedSpaceSetTransformOperation", @selector(initWithSpaceID:transform:options:));
-    return perform([[cls alloc] initWithSpaceID:space transform:transform options:0]) != nil;
+    return submit([[cls alloc] initWithSpaceID:space transform:transform options:0]);
 }
 
 static bool readTransform(uint64_t space, CGAffineTransform *transform) {
@@ -99,7 +127,7 @@ static uint64_t createSpace(int32_t absoluteLevel, CGAffineTransform wanted, flo
         if (![result respondsToSelector:@selector(spaceID)] || !(space = [result spaceID])) return 0;
 
         Class level = operationClass(@"SLSBridgedSpaceSetAbsoluteLevelOperation", @selector(initWithSpaceID:level:));
-        if (!perform([[level alloc] initWithSpaceID:space level:absoluteLevel])) goto fail;
+        if (!submit([[level alloc] initWithSpaceID:space level:absoluteLevel])) goto fail;
 
         CGAffineTransform actual;
         if (!setTransform(space, wanted) || !readTransform(space, &actual)
@@ -110,7 +138,7 @@ static uint64_t createSpace(int32_t absoluteLevel, CGAffineTransform wanted, flo
         if (![alpha respondsToSelector:@selector(floatValue)] || [alpha floatValue] != wantedAlpha) goto fail;
 
         Class show = operationClass(@"SLSBridgedShowSpacesOperation", @selector(initWithSpaces:));
-        if (!perform([[show alloc] initWithSpaces:@[@(space)]])) goto fail;
+        if (!submit([[show alloc] initWithSpaces:@[@(space)]])) goto fail;
         return space;
     } @catch (NSException *exception) {}
 fail:
@@ -130,30 +158,29 @@ uint64_t kosmos_float_space_create(int32_t level) {
     return createSpace(level, CGAffineTransformIdentity, 1);
 }
 
-bool kosmos_space_set_transform(uint64_t space, CGAffineTransform transform) {
-    @try { return setTransform(space, transform); } @catch (NSException *exception) { return false; }
+void kosmos_space_set_transform(uint64_t space, CGAffineTransform transform) {
+    @try { setTransform(space, transform); } @catch (NSException *exception) {}
 }
 
-bool kosmos_space_set_alpha(uint64_t space, float alpha) {
-    @try { return setAlpha(space, alpha); } @catch (NSException *exception) { return false; }
+void kosmos_space_set_alpha(uint64_t space, float alpha) {
+    @try { setAlpha(space, alpha); } @catch (NSException *exception) {}
 }
 
-bool kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive) {
-    if (!count) return true;
+void kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, bool exclusive) {
+    if (!count) return;
     @try {
         Class cls = operationClass(@"SLSBridgedSpaceAddWindowsAndRemoveFromSpacesOperation",
                                    @selector(initWithSpaceID:windows:options:));
-        return perform([[cls alloc] initWithSpaceID:space windows:windowNumbers(windows, count)
-                                             options:exclusive ? 7 : 0]) != nil;
-    } @catch (NSException *exception) { return false; }
+        submit([[cls alloc] initWithSpaceID:space windows:windowNumbers(windows, count) options:exclusive ? 7 : 0]);
+    } @catch (NSException *exception) {}
 }
 
-bool kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count) {
-    if (!count) return true;
+void kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count) {
+    if (!count) return;
     @try {
         Class cls = operationClass(@"SLSBridgedRemoveWindowsFromSpacesOperation", @selector(initWithWindows:spaces:));
-        return perform([[cls alloc] initWithWindows:windowNumbers(windows, count) spaces:@[@(space)]]) != nil;
-    } @catch (NSException *exception) { return false; }
+        submit([[cls alloc] initWithWindows:windowNumbers(windows, count) spaces:@[@(space)]]);
+    } @catch (NSException *exception) {}
 }
 
 bool kosmos_barrier(uint64_t space) {

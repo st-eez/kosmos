@@ -251,8 +251,8 @@ func barrier(cycles: Int) {
     print("holding Space \(space) created in \(String(format: "%.2f", elapsed(start))) ms, panel window \(window)")
     defer {
         var ids = [window]
-        _ = kosmos_remove_windows(space, &ids, 1)
-        _ = kosmos_space_destroy(space)
+        kosmos_remove_windows(space, &ids, 1)
+        kosmos_space_destroy(space)
         panel.terminate()
     }
 
@@ -262,14 +262,14 @@ func barrier(cycles: Int) {
         var opTimes: [Double] = [], barrierTimes: [Double] = []
         for _ in 0..<cycles {
             var t = ContinuousClock.now
-            _ = kosmos_add_windows(space, &ids, 1, false)
+            kosmos_add_windows(space, &ids, 1, false)
             opTimes.append(elapsed(t))
             if useBarrier { t = .now; _ = kosmos_barrier(space); barrierTimes.append(elapsed(t)) }
             if inSpace(window, space) { concealed += 1 }
             Thread.sleep(forTimeInterval: 0.02)
 
             t = .now
-            _ = kosmos_remove_windows(space, &ids, 1)
+            kosmos_remove_windows(space, &ids, 1)
             opTimes.append(elapsed(t))
             if useBarrier { t = .now; _ = kosmos_barrier(space); barrierTimes.append(elapsed(t)) }
             if !inSpace(window, space) { revealed += 1 }
@@ -349,7 +349,7 @@ func bar() {
     guard space != 0 else { print("holding Space not created"); return }
     let before = SkyLight.windows(in: space)
     print("live Space \(space): members \(before.map { "\($0)" } ?? "nil (read failed)")")
-    _ = kosmos_space_destroy(space)
+    kosmos_space_destroy(space)
     _ = kosmos_barrier(space)
     for delay in [0.0, 0.1, 1.0] {
         Thread.sleep(forTimeInterval: delay)
@@ -364,7 +364,7 @@ func bar() {
     _ = NSApplication.shared
     let space = kosmos_holding_create()
     guard space != 0 else { print("holding Space not created"); return }
-    _ = kosmos_space_destroy(space)
+    kosmos_space_destroy(space)
     _ = kosmos_barrier(space)
     let url = FileManager.default.temporaryDirectory.appending(path: "kosmos-gone-\(getpid()).record")
     defer { try? FileManager.default.removeItem(at: url) }
@@ -653,8 +653,8 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     func finish() -> Never {
         if space != 0 {
             var ids = tabWindows
-            _ = kosmos_remove_windows(space, &ids, Int(ids.count))
-            _ = kosmos_space_destroy(space)
+            kosmos_remove_windows(space, &ids, Int(ids.count))
+            kosmos_space_destroy(space)
         }
         child.terminate()
         exit(0)
@@ -677,8 +677,8 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     guard space != 0 else { print("holding Space not created"); return }
     var ids = [window]
     defer {
-        _ = kosmos_remove_windows(space, &ids, 1)
-        _ = kosmos_space_destroy(space)
+        kosmos_remove_windows(space, &ids, 1)
+        kosmos_space_destroy(space)
     }
     print("window \(window), ordinary Space \(desktop), holding Space \(space)")
     /// The window's ordinary Spaces and whether the holding Space has it, after one barrier,
@@ -1308,8 +1308,8 @@ final class FocusNotes: @unchecked Sendable {
         var ids = [a.windows[0]]
         defer {
             var every = a.windows
-            _ = kosmos_remove_windows(space, &every, every.count)
-            _ = kosmos_space_destroy(space)
+            kosmos_remove_windows(space, &every, every.count)
+            kosmos_space_destroy(space)
         }
         for round in 1...rounds {
             focus(a, a.windows[0], .raiseFirst)
@@ -1375,7 +1375,7 @@ final class FocusNotes: @unchecked Sendable {
             }
         }
     } else {
-        if space != 0 { _ = kosmos_space_destroy(space) }
+        if space != 0 { kosmos_space_destroy(space) }
         print("no holding Space or no ordinary Space; the concealed cases did not run")
     }
 
