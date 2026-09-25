@@ -17,32 +17,30 @@ struct RecoveryPlan: Equatable {
                      isOnAnySpace: (UInt32) -> Bool?, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
         var plan = RecoveryPlan()
         plan.withoutRow = Set(members.values.joined()).subtracting(alive)
+        // False when the window is stuck, since a removal would leave it on no Space.
         func place(_ window: UInt32) -> Bool {
-            guard let space = destination(window) else {
-                plan.stuck.append(window)
-                return false
+            switch isOnAnySpace(window) {
+            case true?:
+                return true
+            case false?:
+                if let space = destination(window) {
+                    plan.adds[space, default: []].append(window)
+                    return true
+                }
+            case nil:
+                break
             }
-            plan.adds[space, default: []].append(window)
-            return true
+            plan.stuck.append(window)
+            return false
         }
         for (space, windows) in members.sorted(by: { $0.key < $1.key }) {
-            for window in windows {
-                // Without another Space or a destination, a removal would leave the window on
-                // no Space.
-                switch isOnAnySpace(window) {
-                case true?: plan.removals[space, default: []].append(window)
-                case false?: if place(window) { plan.removals[space, default: []].append(window) }
-                case nil: plan.stuck.append(window)
-                }
+            for window in windows where place(window) {
+                plan.removals[space, default: []].append(window)
             }
         }
         let inMembers = Set(members.values.joined())
         for window in recorded where alive.contains(window) && !inMembers.contains(window) {
-            switch isOnAnySpace(window) {
-            case true?: break
-            case false?: _ = place(window)
-            case nil: plan.stuck.append(window)
-            }
+            _ = place(window)
         }
         return plan
     }
