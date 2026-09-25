@@ -779,10 +779,19 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     AeroSpace's monitor patterns by name.
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
     display in the direction at the edge of the workspace. `focus` then focuses that
-    display's workspace; `move` moves a tiled window there and follows it. With
+    display's workspace; `move` moves a tiled window there and follows it. A move is at
+    the edge when the window has no sibling in the direction and no container above its
+    own runs along the direction, where AeroSpace's `moveOut` reaches the workspace. With
     `--boundaries-action wrap-around-all-monitors` they go on from the last display to
-    the first. AeroSpace takes that action for `focus` only; Kosmos takes it for `move`
-    too, which is what Steve's `move || move-node-to-monitor --wrap-around` binding did.
+    the first, and a window with no other display in the direction stays. AeroSpace takes
+    that action for `focus` only; Kosmos takes it for `move` too, which is what Steve's
+    `move --boundaries-action fail || move-node-to-monitor --wrap-around` binding did.
+  - At the edge of the workspace, with `--boundaries workspace` or past the last display
+    without wrapping, `move` takes AeroSpace's default `--boundaries-action
+    create-implicit-container`, i3's rule, which puts the root into a new root along the
+    direction and the window beside it. A window already at the end of a root along the
+    direction stays. `stop` and `fail` leave the window in place, and both exit 0, as
+    every command that changes nothing does in Kosmos.
   - `profile <name>` applies a profile until the displays change or the config reloads,
     as `set-profile.sh` did.
 - A key window report of a window on the workspace of any display names a window on

@@ -38,7 +38,11 @@ public enum Command: Equatable, Sendable {
     case workspace(Workspace)
     case workspaceBackAndForth
     case focus(Direction, boundaries: Boundaries = .workspace)
-    case move(Direction, boundaries: Boundaries = .workspace)
+    /// `implicitContainer`: at the edge of the workspace, within its boundaries or past the
+    /// last display, the root goes into a new root along the direction first, AeroSpace's
+    /// default `--boundaries-action create-implicit-container`. `stop` and `fail` turn it
+    /// off, and the window stays.
+    case move(Direction, boundaries: Boundaries = .workspace, implicitContainer: Bool = true)
     case swap(Direction)
     case joinWith(Direction)
     /// Moves the focused window, or the window given with `--window-id`.
@@ -77,8 +81,11 @@ public enum Command: Equatable, Sendable {
             // AeroSpace's --boundaries, whose default is the workspace, and its
             // --boundaries-action, before or after the direction. AeroSpace wraps only focus;
             // Kosmos wraps a move too, as Steve's `move || move-node-to-monitor --wrap-around`
-            // binding did.
-            var across = false, wraps = false, directions: [String] = []
+            // binding did. Kosmos exits 0 for a command that changes nothing, so a move's
+            // `fail` is its `stop`.
+            let actions = name == "focus" ? ["stop", "wrap-around-all-monitors"]
+                : ["stop", "fail", "create-implicit-container", "wrap-around-all-monitors"]
+            var across = false, action: String?, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
                 switch word {
@@ -89,20 +96,21 @@ public enum Command: Equatable, Sendable {
                     default: return fail("\(name): --boundaries takes workspace or all-monitors-outer-frame")
                     }
                 case "--boundaries-action":
-                    switch words.popFirst() {
-                    case "stop": wraps = false
-                    case "wrap-around-all-monitors": wraps = true
-                    default: return fail("\(name): --boundaries-action takes stop or wrap-around-all-monitors")
+                    guard let value = words.popFirst(), actions.contains(value) else {
+                        return fail("\(name): --boundaries-action takes \(actions.joined(separator: ", "))")
                     }
+                    action = value
                 default:
                     directions.append(word)
                 }
             }
             guard directions.count == 1 else { return usage }
             guard let direction = direction(directions[0]) else { return fail("\(name): unknown direction \(directions[0])") }
+            let wraps = action == "wrap-around-all-monitors"
             if wraps, !across { return fail("\(name): wrap-around-all-monitors needs --boundaries all-monitors-outer-frame") }
             let boundaries: Boundaries = wraps ? .allMonitorsWrapping : across ? .allMonitors : .workspace
-            return .success(name == "focus" ? .focus(direction, boundaries: boundaries) : .move(direction, boundaries: boundaries))
+            if name == "focus" { return .success(.focus(direction, boundaries: boundaries)) }
+            return .success(.move(direction, boundaries: boundaries, implicitContainer: action != "stop" && action != "fail"))
         case "swap", "join-with":
             guard rest.count == 1 else { return usage }
             guard let direction = direction(rest[0]) else { return fail("\(name): unknown direction \(rest[0])") }

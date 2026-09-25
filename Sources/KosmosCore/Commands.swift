@@ -39,13 +39,16 @@ extension Workspace {
     /// In a container along the direction, it swaps with a sibling window or enters a
     /// sibling container beside the window it borders. Otherwise it leaves for the nearest
     /// ancestor along the direction, entering the container past its old branch if there is
-    /// one. With no such ancestor, the root is first wrapped in a new root along the
-    /// direction. Returns false at the edge of the workspace, where i3 would move the window
-    /// to the next display.
+    /// one. With no such ancestor the window is at the edge of the workspace, where
+    /// `implicitContainer` first wraps the root in a new root along the direction, as i3
+    /// and AeroSpace's default `--boundaries-action create-implicit-container` do. Returns
+    /// false at the edge otherwise, and at the end of a root along the direction, where a
+    /// move with `--boundaries all-monitors-outer-frame` goes on to the next display.
     @discardableResult
-    mutating func move(_ window: WindowID, _ direction: Direction) -> Bool {
+    mutating func move(_ window: WindowID, _ direction: Direction, implicitContainer: Bool = true) -> Bool {
         // A lone window has nowhere to go. Wrapping the root would only flip its orientation.
-        guard root.path(to: window) != nil, root.children.count > 1, moveTiled(window, direction) else { return false }
+        guard root.path(to: window) != nil, root.children.count > 1,
+              moveTiled(window, direction, implicitContainer: implicitContainer) else { return false }
         normalize()
         edits += 1
         check()
@@ -212,7 +215,7 @@ extension Workspace {
     }
 
     /// Returns false at the edge of the workspace, before changing anything.
-    private mutating func moveTiled(_ window: WindowID, _ direction: Direction) -> Bool {
+    private mutating func moveTiled(_ window: WindowID, _ direction: Direction, implicitContainer: Bool) -> Bool {
         var path = root.path(to: window)!
         let orientation = direction.orientation
         if root[path.dropLast()].orientation == orientation {
@@ -230,6 +233,7 @@ extension Workspace {
         // Leave for the nearest ancestor along the direction above the window's container.
         var depth = (0..<path.count - 1).last { root[path.prefix($0)].orientation == orientation }
         if depth == nil {
+            guard implicitContainer else { return false }
             wrapRoot(orientation)
             path.insert(0, at: 0)
             depth = 0

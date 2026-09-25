@@ -423,12 +423,19 @@ public struct Session: Sendable {
         case .focus(let direction, let boundaries) where boundaries != .workspace:
             return performOnFocused(command)
                 ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
-        case .move(let direction, let boundaries) where boundaries != .workspace:
-            if let plan = performOnFocused(command) { return plan }
+        case .move(let direction, let boundaries, let implicitContainer) where boundaries != .workspace:
+            // At the edge of the workspace the window crosses to the next display, as in
+            // AeroSpace. Past the last one it wraps, or takes the boundaries action. Wrapping
+            // with no other display in the direction comes back to this one, and the window
+            // stays.
+            if let plan = performOnFocused(.move(direction, implicitContainer: false)) { return plan }
             // A floating window has no edge to cross, as in AeroSpace.
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
-            return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
-                                              wrapAround: boundaries == .allMonitorsWrapping))
+            let wraps = boundaries == .allMonitorsWrapping
+            if Monitor.resolve(.direction(direction), from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wraps) == nil {
+                return implicitContainer ? performOnFocused(.move(direction)) : nil
+            }
+            return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true, wrapAround: wraps))
         case .focusMonitor(let target, let wrap):
             guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrap),
                   let name = shown[monitor.id], name != focusedWorkspace else { return nil }
@@ -456,8 +463,8 @@ public struct Session: Sendable {
         case .focus(let direction, _):
             guard let target = workspace.focus(direction, from: window) else { return nil }
             plan.focus = .window(target)
-        case .move(let direction, _):
-            guard workspace.move(window, direction) else { return nil }
+        case .move(let direction, _, let implicitContainer):
+            guard workspace.move(window, direction, implicitContainer: implicitContainer) else { return nil }
         case .swap(let direction):
             guard workspace.swap(window, direction) else { return nil }
         case .joinWith(let direction):

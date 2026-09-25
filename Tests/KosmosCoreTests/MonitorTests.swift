@@ -270,6 +270,28 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.perform(.layout(.toggleFloating))
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
     }
+
+    @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {
+        // Steve's alt-shift-up with windows side by side on the main panel: no display is
+        // above it, so the window wraps to the built-in display below, and the workspace
+        // keeps its layout.
+        var s = desk()
+        _ = s.add(10); _ = s.add(13); _ = s.add(12); _ = s.add(11)
+        #expect(s.workspaces["1"]!.tree == "h[10 11 12 13]")
+        s.adopt(11)
+        #expect(s.perform(.move(.up, boundaries: .allMonitorsWrapping)) != nil)
+        #expect(s.workspace(of: 11) == "8" && s.focusedWorkspace == "8")
+        #expect(s.workspaces["1"]!.tree == "h[10 12 13]")
+        // Past the last display without wrapping, AeroSpace's default action applies.
+        s.adopt(13)
+        #expect(s.perform(.move(.up, boundaries: .allMonitors)) != nil)
+        #expect(s.workspaces["1"]!.tree == "v[13 h[10 12]]")
+        // At the end of a container along the direction, with none above it along it.
+        s.adopt(10)
+        #expect(s.perform(.move(.left, boundaries: .allMonitors)) != nil)
+        #expect(s.workspace(of: 10) == "5" && s.focusedWorkspace == "5")
+        #expect(s.workspaces["1"]!.tree == "v[13 12]")
+    }
 }
 
 @Suite struct StrippingTests {
@@ -507,6 +529,10 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
              .move(.left, boundaries: .allMonitorsWrapping)),
             (["focus", "right", "--boundaries-action", "stop", "--boundaries", "all-monitors-outer-frame"],
              .focus(.right, boundaries: .allMonitors)),
+            (["move", "--boundaries-action", "fail", "up"], .move(.up, implicitContainer: false)),
+            (["move", "up", "--boundaries-action", "create-implicit-container"], .move(.up)),
+            (["move", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "stop", "right"],
+             .move(.right, boundaries: .allMonitors, implicitContainer: false)),
             (["focus-monitor", "left"], .focusMonitor(.direction(.left), wrapAround: false)),
             (["focus-monitor", "--wrap-around", "next"], .focusMonitor(.next, wrapAround: true)),
             (["focus-monitor", "2"], .focusMonitor(.number(2), wrapAround: false)),
@@ -524,7 +550,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     @Test func rejectsWhatTheMonitorCommandsDoNotTake() {
         for arguments in [["focus", "left", "--boundaries"], ["focus", "left", "--boundaries", "all-monitors"],
                           ["move", "left", "--boundaries-action", "wrap-around-all-monitors"],
-                          ["move", "left", "--boundaries", "all-monitors-outer-frame", "--boundaries-action", "fail"],
+                          ["focus", "left", "--boundaries-action", "create-implicit-container"],
+                          ["move", "left", "--boundaries-action", "wrap-around-the-workspace"],
                           ["focus-monitor"], ["focus-monitor", "left", "right"], ["focus-monitor", "--wrap-around", "2"],
                           ["focus-monitor", "asus-main"], ["focus-monitor", "0"], ["move-workspace-to-monitor", "left"], ["focus-monitor", "--focus-follows-window", "left"],
                           ["focus-monitor", "--window-id", "4", "left"], ["move-node-to-monitor", "--window-id"],

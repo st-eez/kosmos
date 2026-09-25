@@ -161,6 +161,24 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.perform(.fullscreen)?.frames.values.contains(display) == true)
 }
 
+@Test func moveAtTheEdgeOfTheWorkspaceTakesTheBoundariesAction() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    // `stop` and `fail` leave the window in place.
+    #expect(s.perform(.move(.up, implicitContainer: false)) == nil)
+    #expect(s.perform(.move(.up, boundaries: .allMonitors, implicitContainer: false)) == nil)
+    // With one display, wrapping comes back to it, and the window stays.
+    #expect(s.perform(.move(.up, boundaries: .allMonitorsWrapping)) == nil)
+    #expect(s.workspaces["1"]!.tree == "h[1 2]")
+    // By default, within the workspace or past the last display, the root goes into a new
+    // root along the direction.
+    #expect(s.perform(.move(.up)) != nil)
+    #expect(s.workspaces["1"]!.tree == "v[2 1]")
+    #expect(s.perform(.move(.left, boundaries: .allMonitors)) != nil)
+    #expect(s.workspaces["1"]!.tree == "h[2 1]")
+}
+
 @Test func commandsOnAnEmptyWorkspaceDoNothing() {
     var s = session()
     #expect(s.perform(.focus(.left)) == nil)
