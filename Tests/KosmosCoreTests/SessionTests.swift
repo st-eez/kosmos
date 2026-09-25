@@ -266,6 +266,21 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.setMinimum(9, CGSize(width: 10, height: 10)).isEmpty)   // unknown window
 }
 
+@Test func aWindowSeenBelowItsMinimumLosesItOnThatAxis() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    _ = s.setMinimum(2, CGSize(width: 900, height: 700))
+    #expect(s.sizeObserved(2, CGSize(width: 899, height: 700)).isEmpty)   // within the slack
+    #expect(s.sizeObserved(1, CGSize(width: 10, height: 10)).isEmpty)     // no minimum
+    // The user or the app sized it narrower: the width it kept was no limit of the app's.
+    let plan = s.sizeObserved(2, CGSize(width: 495, height: 800))
+    #expect(plan.frames[1] == CGRect(x: 0, y: 0, width: 500, height: 800))
+    #expect(plan.frames[2] == CGRect(x: 500, y: 0, width: 500, height: 800))
+    #expect(s.minimums[2] == CGSize(width: 0, height: 700))
+    _ = s.sizeObserved(2, CGSize(width: 495, height: 600))
+    #expect(s.minimums[2] == nil)
+}
+
 @Test func resizeStopsAtAnObservedMinimum() {
     var s = session()
     _ = s.add(1); _ = s.add(2)

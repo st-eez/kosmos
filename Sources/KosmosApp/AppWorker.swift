@@ -298,7 +298,7 @@ actor AppWorker {
                 continue
             }
             // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
-            // window still taller has a minimum (DESIGN.md, section 5.2).
+            // window still taller refused the height (DESIGN.md, section 5.2).
             if case .frame(let target) = entry.write, readBack.height > target.height + FrameLedger.slack {
                 let kept = readBack.height
                 set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))

@@ -214,6 +214,18 @@ off the main thread).
   restored a window that no read answered for and no creation report named while it
   stayed hidden, so before these reads it was never managed (live log, September 24,
   2026).
+- A known limit. A window on an ordinary Space that no display shows at launch, as one
+  behind a native fullscreen Space, is managed only once its Space is shown, since its
+  app's window list names only windows on shown Spaces. On 2026-09-24 Kosmos restarted at
+  23:50:33 while the main panel showed Moonlight's fullscreen Space. The launch sweep found
+  the ChatGPT, Helium and Activity Monitor windows on the ordinary Space behind it as
+  candidates, but no read returned their facts. Steve left fullscreen at 23:54:31, and the
+  sweep after that Space change managed all three within 0.6 s. yabai's search of an
+  app's elements by id, from a remote token, would admit them at launch. It finds only
+  windows some process has read from the list before, and a search that finds nothing
+  took 0.4 to 0.8 s (`kosmos-probe ax-search` at 174c067, since removed), so Kosmos leaves
+  the case to the next Space change. Launches behind a fullscreen Space often enough to
+  matter would call for it.
 
 ### 5.2 Geometry
 
@@ -231,15 +243,42 @@ off the main thread).
   probe window showed no such zone at a bottom edge with no display below, nor at a right
   edge another display adjoins. So a window left more than 2 pt taller than a frame write
   asked is written again through a height 40 pt shorter, then the target's, and only a
-  window still taller has a minimum.
-- A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
-  until the target changes.
+  window still taller refused the height.
+- A window whose frame reads back more than 2 pt larger than a write's target on an axis
+  refused the size. After its first refusal the target is written again whole 100 ms
+  later, and only a second refusal of the target records the size kept as the window's
+  minimum on that axis. Kosmos doesn't retry that size until the target changes. A first
+  refusal can pass. On 2026-09-24 `move-node-to-workspace` sent a 1900 pt wide Preview
+  window from the main panel to a hidden workspace on the left panel, shown 13 ms later.
+  Its 945 pt target read back 1900, and an Accessibility write of 945 seconds later
+  landed, so one refusal is no limit of the app's; recorded as a minimum, the width kept
+  the window over its neighbour until Kosmos restarted. An app can also apply a live
+  resize step queued before the button came up after Kosmos's write at the mouse up. The
+  mouse up forgets the windows it sends back or drops from the ledger, refusals too, so
+  that write's larger read back is a first refusal as well. The retry waits out the
+  100 ms, since the window's next change event can come inside a queued live resize step
+  or the display or Space change itself. A window the user holds again by then gets its
+  tile at that press's mouse up. A refusal read back while the window is concealed or
+  its workspace hidden says nothing of the app's limit either, as when it moves there,
+  its hidden workspace is laid out again, the displays change, or its reveal has not
+  landed yet, so it is a first refusal at most. A window on a hidden workspace gets no
+  retry, and showing the workspace forgets its refusal, so the write that shows the
+  window, sent before the reveal, is a first attempt, retried until the reveal lands. A
+  window a failed batch left concealed on a shown workspace is written every 100 ms while
+  it refuses, until a switch reveals it. A window moved on screen to another display, by
+  `move-node-to-workspace --focus-follows-window` or `move-node-to-monitor`, is neither
+  concealed nor revealed, so only the 100 ms retry keeps a size it ignores during the
+  move from counting. One that ignores the retry too records a minimum, until it is
+  seen smaller.
+- A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
+  Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
+  axis. Its workspace is laid out again then, or at the mouse up during a press.
 - WindowServer reports each move and resize as a change event (`WindowServerEvent.changed`
   lists its ids), and the inventory reads the window's frame again. A frame it reads for
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
   replaces the confirmed one, and a size other than the one the window kept at a refusal
-  ends that refusal, so the next layout writes the target again. A concealed window's
-  frame reads as off every display and is left out.
+  ends that refusal, so the next layout writes the target again, as a first attempt. A
+  concealed window's frame reads as off every display and is left out.
 - A tiled window the user resizes by its edges, as a change event reports it while the
   left button is down, goes back to its tile when the button comes up, which an `NSEvent`
   global monitor hears, as AeroSpace's GlobalObserver does. Omarchy leaves Hyprland's
@@ -248,11 +287,6 @@ off the main thread).
   key, as by a Command drag, or moved less than a lift takes (section 5.13). The ledger
   forgets the window first, so it gets a whole frame write. The resize command sizes
   tiles, and a floating window keeps the size the user gives it.
-- An app can apply a live resize step queued before the button came up after Kosmos's
-  write, and a width gets no retry. So a window sent back or dropped at a mouse up whose
-  write reads back larger records no minimum. Its ledger entry goes, and its tile is
-  written once more at its next change event with the button up, or after 100 ms; only
-  that write's read back can show a minimum.
 - The inventory applies a change event after reading the window's row off the main thread
   (section 5.1), by which time Kosmos's write may be confirmed and the button up. So
   Kosmos judges the change as of its arrival. It is a write's when it came before the
@@ -266,13 +300,11 @@ off the main thread).
   has ended by the time the change applies goes back to its tile, as the mouse up would
   have sent it. Only the last press that ended is kept, so a change from the press before
   it reads as one with the button up. Judged as it applied, the late echo of a hotkey's
-  write to the window the user holds the button in would lift it, and the late echo of the
-  write at a mouse up would write the tile again early and record a live resize step as a
-  minimum. A change that came before a write was sent counts as the write's too. The
-  write's change still records its row when it differs from the frame confirmed: the row
-  applies after the confirm and can hold the app's next step, as of a live resize, whose
-  own event then finds no difference. The pointer for the resize border check is read as
-  the change applies.
+  write to the window the user holds the button in would lift it. A change that came
+  before a write was sent counts as the write's too. The write's change still records its
+  row when it differs from the frame confirmed: the row applies after the confirm and can
+  hold the app's next step, as of a live resize, whose own event then finds no
+  difference. The pointer for the resize border check is read as the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -961,13 +993,36 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     which the left panel then showed in place of empty workspace 7, and the pointer stayed
     on the main panel; and Command-Tab from workspace 7 to Spotify on workspace 6, both on
     the left panel, left the pointer where it was, before this. Kosmos tells Command-Tab
-    from a click, on the window or the Dock, when it handles the activation: a key went
-    down within the last second, and after the last left or right mouse down and the last
-    pointer movement (`CGEventSource.secondsSinceLastEventType` in the combined session
-    state). With focus follows mouse the user seldom clicks, so a key press long ago would
-    otherwise pass for Command-Tab when an app activates itself. The read takes no event
-    tap, and the log gives the three times. A Command-Tab switcher held open for over a
-    second reads as a click.
+    from a click when it handles the activation: a key went down within the last second,
+    and after the last left or right mouse down and the last pointer movement
+    (`CGEventSource.secondsSinceLastEventType` in the combined session state). With focus
+    follows mouse the user seldom clicks, so a key press long ago would otherwise pass for
+    Command-Tab when an app activates itself. The read takes no event tap, and the log
+    gives the times. A Command-Tab switcher held open for over a second reads as a click.
+  - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
+    window it activates the same way. Left on the Dock, the pointer would focus every
+    window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and
+    the pointer stayed there. The activation counts as a Dock click when the last left
+    mouse down came within the last second, after the last key and right mouse down, and
+    landed on the Dock's window at the Dock's level (`ActivationInput.bringsPointer`). The
+    pointer may have moved since. With autohide on, the Dock's one window spans the whole
+    built-in display at level 20 (`CGWindowListCopyWindowInfo` on 2026-09-25), so its
+    frame says nothing. So as each left mouse down lands, Kosmos asks WindowServer's hit
+    test for the window under it (`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`),
+    and reads that window's row at each activation it handles. A press off every display,
+    as the focus path's synthesized one, names no window. The hit test runs at the press
+    because the Dock starts to hide once the pointer leaves it, which can be before the
+    app reports its window key. With the Dock hidden, the hit test passed through its
+    window and named the windows beneath, Finder's desktop at the display's bottom edge; a
+    click on a shown Dock's icon is unmeasured. A click on the Dock's menus, Mission
+    Control or Launchpad is left out, at other levels.
+  - A window Kosmos follows back to its place (section 5.5) brings the pointer by the
+    same test, read as Kosmos handles the return: a Dock click that unhides its app or
+    restores it from the Dock, and Command-Tab to a hidden app. macOS keys such a window
+    while it is still parked, so its key report is no activation Kosmos handles, and the
+    pointer stayed on the Dock before this. A key that takes a window out of native
+    fullscreen, or makes an app order a closed window in again, brings it too. Whether a
+    window restored from the Dock reports its return within the second is unmeasured.
   - A workspace switch command on the pointer's display leaves the pointer where it is:
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
     `move-node-to-workspace --focus-follows-window`.
@@ -980,8 +1035,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     `focusmonitor` puts it.
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
     leaves the pointer, so a click on the bar's workspaces, a script or a launcher running
-    `kosmos` never moves it. Neither does a click that Kosmos follows or adopts, a hover
-    focus, nor a layout, resize or `join-with` command.
+    `kosmos` never moves it. Neither does a click Kosmos follows or adopts, other than on
+    the Dock, a hover focus, nor a layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
     window, or the empty workspace's display. A tile's frame is the layout's after the
     change, the one Kosmos is writing, which the app's worker may not have applied yet;

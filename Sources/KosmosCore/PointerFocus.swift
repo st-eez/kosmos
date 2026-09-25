@@ -115,6 +115,35 @@ extension FocusFollowsMouse {
     }
 }
 
+/// How long before an app activation Kosmos adopts or follows the user's last input came, in
+/// seconds, as the session's event state gives it (`CGEventSource.secondsSinceLastEventType`).
+public struct ActivationInput: Equatable, Sendable {
+    public var key: Double
+    public var leftClick: Double
+    public var rightClick: Double
+    public var moved: Double
+
+    public init(key: Double, leftClick: Double, rightClick: Double, moved: Double) {
+        self.key = key
+        self.leftClick = leftClick
+        self.rightClick = rightClick
+        self.moved = moved
+    }
+
+    /// Whether mouse-follows-focus brings the pointer to the activated window: the user
+    /// picked an app away from the pointer (DESIGN.md, section 5.11). Either a key went down
+    /// in the last second, after the last click and the last pointer movement, as with
+    /// Command-Tab or a launcher's hotkey, or the last left mouse down, in the last second
+    /// and after the last key and right mouse down, landed on the Dock. The pointer may have
+    /// moved since the Dock click, on its way to the app. A click anywhere else, in the
+    /// window, on the bar or on a link that opens another app, leaves the pointer where it
+    /// is. A Command-Tab switcher held open for over a second reads as a click.
+    public func bringsPointer(onDock: Bool) -> Bool {
+        if key < 1, key < leftClick, key < rightClick, key < moved { return true }
+        return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
+    }
+}
+
 /// Where a command came from. Bar clicks, scripts and launchers send theirs through the CLI.
 public enum CommandSource: Sendable {
     case hotkey

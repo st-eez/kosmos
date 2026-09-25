@@ -340,4 +340,23 @@ private func desk() -> Session {
         #expect(s.focused == 10 && s.focusedWorkspace == "5")
         #expect(s.frames(of: s.focusedWorkspace)[10] == across.frames[10])
     }
+
+    @Test func commandTabAndADockClickBringThePointerToTheAppTheyPick() {
+        let never = 3600.0
+        // Command-Tab, or a launcher's hotkey, with the pointer at rest since.
+        #expect(ActivationInput(key: 0.2, leftClick: never, rightClick: never, moved: 4).bringsPointer(onDock: false))
+        // The pointer moved after the key, as when the app activated itself later.
+        #expect(!ActivationInput(key: 0.2, leftClick: never, rightClick: never, moved: 0.1).bringsPointer(onDock: true))
+        // Teams clicked in the Dock, and the pointer already on its way up.
+        let click = ActivationInput(key: 30, leftClick: 0.3, rightClick: never, moved: 0.05)
+        #expect(click.bringsPointer(onDock: true))
+        // The same click in a window, on a bar pill or on a link that opens another app.
+        #expect(!click.bringsPointer(onDock: false))
+        // A Dock click over a second ago, or a key or a right click since.
+        for input in [ActivationInput(key: 30, leftClick: 1.5, rightClick: never, moved: 1),
+                      ActivationInput(key: 0.1, leftClick: 0.3, rightClick: never, moved: 0.05),
+                      ActivationInput(key: 30, leftClick: 0.3, rightClick: 0.2, moved: 0.05)] {
+            #expect(!input.bringsPointer(onDock: true))
+        }
+    }
 }

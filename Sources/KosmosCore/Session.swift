@@ -54,7 +54,8 @@ public struct Session: Sendable {
     /// Parked windows whose workspace was hidden when they parked, so Kosmos had concealed
     /// them. Switches skip parked windows, so they stay concealed until they return.
     private var parkedConcealed: Set<WindowID> = []
-    /// The smallest size each window accepted, as frames read back after writes show.
+    /// The smallest size each window accepted, as frames read back after writes show, until
+    /// the window is seen smaller.
     private(set) var minimums: [WindowID: CGSize] = [:]
     /// Workspaces a profile left out, as they were: their trees, shares and focus order. A
     /// profile that lists one again gets it back with its windows still merged.
@@ -404,6 +405,21 @@ public struct Session: Sendable {
         let new = CGSize(width: max(old.width, size.width), height: max(old.height, size.height))
         guard new != old else { return Plan() }
         minimums[window] = new
+        var plan = Plan()
+        plan.frames = frames(of: name)
+        return plan
+    }
+
+    /// The window was seen at `size` with no write of Kosmos's, as the user or its app
+    /// resized it. Smaller than its minimum on an axis, past the slack, it has none on that
+    /// axis: the refusals that recorded it were not the app's limit. Returns the frames of
+    /// the window's workspace when a minimum went, else an empty plan.
+    public mutating func sizeObserved(_ window: WindowID, _ size: CGSize) -> Plan {
+        guard let name = home[window], let old = minimums[window] else { return Plan() }
+        let new = CGSize(width: size.width + FrameLedger.slack < old.width ? 0 : old.width,
+                         height: size.height + FrameLedger.slack < old.height ? 0 : old.height)
+        guard new != old else { return Plan() }
+        minimums[window] = new == .zero ? nil : new
         var plan = Plan()
         plan.frames = frames(of: name)
         return plan

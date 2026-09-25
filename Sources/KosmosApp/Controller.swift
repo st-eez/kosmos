@@ -64,13 +64,8 @@ final class Controller {
     /// never lifts them. They go back to their tiles when the button comes up.
     private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
     private var leftButton = LeftButton()
-    /// Windows written their tiles at a mouse up, dropped or sent back, until the write
-    /// reads back.
-    private var releasedWrites: Set<WindowID> = []
-    /// Windows whose write at a mouse up read back larger than the tile, as when the app
-    /// applied a live resize step after it. The tile is written once more when the app goes
-    /// quiet, and only that write can show a minimum (framesApplied).
-    private var writeAgain: Set<WindowID> = []
+    /// The window the last left mouse down landed on, for mouse-follows-focus, or 0.
+    private var clickedWindow = 0
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -131,7 +126,9 @@ final class Controller {
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let point = event.cgEvent?.location else { return }
-            MainActor.assumeIsolated { self?.leftMouseDown(at: point) }
+            // A global event has no window, so its location is on the screen.
+            let location = event.locationInWindow
+            MainActor.assumeIsolated { self?.leftMouseDown(at: point, location: location) }
         }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
@@ -353,8 +350,6 @@ final class Controller {
         closedByApp.remove(id)
         tabs.forget(id)
         placedHidden.remove(id)
-        releasedWrites.remove(id)
-        writeAgain.remove(id)
         ledger.forget(id)
         hiding.forgetHistory(of: id)
         execute(session.remove(id))
@@ -466,7 +461,9 @@ final class Controller {
         let stale = reports.isStale(stamp)
         var plan = session.unpark(windows, follow: stale ? nil : follow)
         if stale { plan.focus = intent }
-        execute(plan)
+        // A Dock click that unhides the app or restores the window, or Command-Tab to a
+        // hidden app, picks it away from the pointer, as an activation does (decide).
+        execute(plan, movePointer: mouseFollowsFocus && follow != nil && !stale && pickedAwayFromPointer())
     }
 
     /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus
@@ -541,11 +538,13 @@ final class Controller {
             return
         }
         ledger.observe(id, frame: frame)
-        guard let receivedAt else { return }
-        let button = leftButton.state(at: receivedAt)
+        // Seen smaller than its minimum, the window loses it. During a press, the mouse up
+        // lays its workspace out.
+        let smaller = session.sizeObserved(id, frame.size)
+        if !smaller.isEmpty { controllerLog.notice("\(id) seen at \(Int(frame.width))x\(Int(frame.height)), below its minimum") }
+        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
         guard button != .up else {
-            // The app went on with the user's live resize after the write at mouse up.
-            if writeAgain.contains(id) { writeTileAgain(id) }
+            if !smaller.isEmpty { execute(smaller) }
             return
         }
         if session.shownFloatingWindows.contains(id) {
@@ -560,7 +559,6 @@ final class Controller {
             controllerLog.info("\(id) changed during a press that has ended goes back to its tile")
             ledger.forget(id)
             execute(session.released([id]))
-            if ledger.isWriting(id) { releasedWrites.insert(id) }
             return
         }
         let press = mouseMoved[id]
@@ -591,13 +589,20 @@ final class Controller {
         leftMouseUp(at: nil)
     }
 
-    /// The left button went down at `point`. kosmos_make_key posts a synthesized mouse down
-    /// far past every display with no mouse up, so a press off every display is left out.
-    private func leftMouseDown(at point: CGPoint) {
+    /// The left button went down at `point`, which is `location` in AppKit's screen
+    /// coordinates. kosmos_make_key posts a synthesized mouse down far past every display with
+    /// no mouse up, so a press off every display is left out, and it names no window clicked.
+    /// With mouse-follows-focus, the window the press landed on is found as it lands: the
+    /// Dock, when autohide is on, starts to hide once the pointer leaves it, which can be
+    /// before the app it activates reports its window key (pickedAwayFromPointer).
+    private func leftMouseDown(at point: CGPoint, location: NSPoint) {
         var display: CGDirectDisplayID = 0, count: UInt32 = 0
         let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
         controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
-        if onDisplay { leftButton.pressed(at: .now) }
+        clickedWindow = 0
+        guard onDisplay else { return }
+        leftButton.pressed(at: .now)
+        if mouseFollowsFocus { clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0) }
     }
 
     /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
@@ -628,16 +633,15 @@ final class Controller {
             controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
             execute(session.released(moved))
         }
-        releasedWrites.formUnion(released.filter(ledger.isWriting))
     }
 
-    /// Writes the window's tile once more, after its write at a mouse up read back larger
-    /// (framesApplied): when the app's next change event arrives with the button up, or
-    /// 100 ms after the read back. A window the user holds again waits for that press's
-    /// mouse up.
+    /// Writes the window's tile once more, 100 ms after its write read back larger for the
+    /// first time (framesApplied). The window's next change event can come sooner, but inside
+    /// a live resize step still queued or the display or Space change itself. A window the
+    /// user holds again gets its tile at that press's mouse up, and one on a hidden workspace
+    /// when the workspace is shown.
     private func writeTileAgain(_ id: WindowID) {
-        guard writeAgain.remove(id) != nil, mouseMoved[id] == nil,
-              let name = session.workspace(of: id), session.isShown(name) else { return }
+        guard mouseMoved[id] == nil, let name = session.workspace(of: id), session.isShown(name) else { return }
         writeFrames(session.frames(of: name))
     }
 
@@ -699,28 +703,26 @@ final class Controller {
             returned([id], follow: id, at: report.received)
         case .framesApplied(let results):
             for result in results {
-                ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now)
-                let released = releasedWrites.remove(result.id) != nil
+                let asked = "asked \(Int(result.target.width))x\(Int(result.target.height)), kept \(Int(result.readBack.width))x\(Int(result.readBack.height))"
                 // A window that kept more than it was given, past the slack, refused the
-                // size: that is its minimum on that axis (DESIGN.md, section 5.2).
-                let wider = result.readBack.width > result.target.width + FrameLedger.slack
-                let taller = result.readBack.height > result.target.height + FrameLedger.slack
-                guard wider || taller else { continue }
-                if released {
-                    // The app may have applied a live resize step, queued before the
-                    // button came up, after the write.
-                    controllerLog.info("\(result.id) kept \(Int(result.readBack.width))x\(Int(result.readBack.height)) after the mouse up; its tile is written again")
-                    ledger.forget(result.id)
-                    writeAgain.insert(result.id)
-                    after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
-                    continue
+                // size. Written again, it shows its minimum on that axis if it refuses again
+                // (DESIGN.md, section 5.2). Concealed, as until its reveal lands, or on a
+                // hidden workspace, it refused once at most, and its retry waits for the
+                // reveal. The ceiling: a window a failed batch left concealed on a shown
+                // workspace is written every 100 ms while it refuses, until a switch reveals it.
+                if hiding.isConcealed(result.id) || session.workspace(of: result.id).map(session.isShown) != true {
+                    ledger.forgetLargerReadBack(result.id)
                 }
-                controllerLog.notice("""
-                    minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
-                    kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
-                    """)
-                execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
-                                                             height: taller ? result.readBack.height : 0)))
+                switch ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now) {
+                case .took:
+                    break
+                case .refused:
+                    controllerLog.info("\(result.id) \(asked, privacy: .public); its tile is written again")
+                    after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
+                case .minimum(let size):
+                    controllerLog.notice("minimum for \(result.id): \(asked, privacy: .public)")
+                    execute(session.setMinimum(result.id, size))
+                }
             }
         case .windowCreated, .windowDestroyed, .answering:
             break
@@ -803,16 +805,16 @@ final class Controller {
             // after the user's choice; the worker finds this one key already and records
             // nothing (tla/Kosmos.tla, Adopt).
             requestFocus(.window(window))
-            // Command-Tab to a window away from the pointer brings the pointer along; a click,
-            // on the window or the Dock, leaves it.
-            if mouseFollowsFocus, Self.keyPressedLast() { centerPointer() }
+            // Command-Tab or a Dock click to a window away from the pointer brings the pointer
+            // along; a click on the window leaves it.
+            if mouseFollowsFocus, pickedAwayFromPointer() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)
-            // Command-Tab or a launcher's hotkey names a window, and the pointer goes to it,
-            // on the pointer's own display too, unlike a workspace switch command.
+            // Command-Tab, a launcher's hotkey or a Dock click names a window, and the pointer
+            // goes to it, on the pointer's own display too, unlike a workspace switch command.
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast())
+            execute(plan, movePointer: mouseFollowsFocus && pickedAwayFromPointer())
         }
     }
 
@@ -861,6 +863,9 @@ final class Controller {
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
                          movePointer: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
+        // A size refused while hidden is no limit of the app's: the write that shows the
+        // window is a first attempt, retried until the reveal lands (DESIGN.md, section 5.2).
+        for id in plan.show { ledger.forgetLargerReadBack(id) }
         writeFrames(plan.frames)
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
@@ -1034,19 +1039,27 @@ final class Controller {
         CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
     }
 
-    /// Whether the keyboard made the activation being handled, as Command-Tab or a
-    /// launcher's hotkey does: a key went down in the last second, after the last click and
-    /// the last pointer movement. With focus follows mouse the user seldom clicks, so a key
-    /// press long ago would otherwise pass for a Command-Tab. A Command-Tab switcher held open
-    /// for over a second reads as a click.
-    private static func keyPressedLast() -> Bool {
-        let key = secondsSince(.keyDown), click = min(secondsSince(.leftMouseDown), secondsSince(.rightMouseDown))
-        let moved = secondsSince(.mouseMoved)
+    /// Whether the activation being handled brings the pointer (ActivationInput.bringsPointer).
+    private func pickedAwayFromPointer() -> Bool {
+        let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
+                                    rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
+        let dock = Self.isDock(clickedWindow)
         pointerLog.debug("""
-            activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago, \
-            pointer moved \(moved, format: .fixed(precision: 3)) s ago
+            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
+            \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
+            pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return key < 1 && key < click && key < moved
+        return input.bringsPointer(onDock: dock)
+    }
+
+    /// Whether the window is the Dock's own at the Dock's level, where its icons are, and not
+    /// its menus, Mission Control or Launchpad. The Dock's window can span its whole display,
+    /// as with autohide on, so its frame says nothing, while WindowServer's hit test passes
+    /// through its clear parts (leftMouseDown).
+    private static func isDock(_ window: Int) -> Bool {
+        guard window > 0, let row = SkyLight.rows([UInt32(window)]).first else { return false }
+        return row.level == CGWindowLevelForKey(.dockWindow)
+            && NSRunningApplication(processIdentifier: row.pid)?.bundleIdentifier == "com.apple.dock"
     }
 
     /// Whether a key or a mouse button went down in the last second.
