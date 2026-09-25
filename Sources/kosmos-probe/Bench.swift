@@ -1,26 +1,17 @@
-// The windows and readings script/bench-relayout.sh uses.
+// The windows and readings script/bench-relayout.sh uses (docs/geometry.md).
 //
 //   kosmos-probe bench-windows <count> [display]
-//                                   Windows for script/bench-relayout.sh, which runs this from
-//                                   a bundle so macOS takes it for a regular app from launch
-//                                   and a running Kosmos tiles them. Opens count standard
-//                                   windows, titled and resizable, on the display of that
-//                                   name as `kosmos state` gives it, else the main one, and
-//                                   never activates the app. Launch it with `open -g`, as the
-//                                   script does: run directly from a terminal, it became the
-//                                   front app as its first window opened (key-holder, on
-//                                   2026-09-25), and with no window it did not. Prints the
-//                                   windows' ids on one line, then `frame <id> <x> <y> <w>
-//                                   <h> <time>` at each new frame, with Kosmos's coordinates
-//                                   and the wall clock that bash's EPOCHREALTIME reads. Lines
-//                                   on stdin: `close <id>` closes a window, and `open` opens
-//                                   one where the last closed one was and prints `opened <id>
-//                                   <time>`. Quits at the end of stdin.
+//                                   Opens count windows on the display of that name, as
+//                                   `kosmos state` gives it, else the main one, and prints
+//                                   their ids, then `frame <id> <x> <y> <w> <h> <time>` at each
+//                                   new frame, in Kosmos's coordinates with EPOCHREALTIME's
+//                                   clock. On stdin, `close <id>` closes a window, and `open`
+//                                   opens one where it was and prints `opened <id> <time>`.
+//                                   Run it from a bundle with `open -g`, as the script does:
+//                                   run from a terminal, it becomes the front app.
 //   kosmos-probe eui [pid...]       AXEnhancedUserInterface of each running regular app, or of
-//                                   the apps given, as `<pid> <name>: on|off|unsupported`.
-//                                   While it is on, Chrome and Firefox animate each
-//                                   Accessibility move themselves; VoiceOver turns it on.
-//                                   Read only: one read per app, with a 0.5 s timeout. Needs
+//                                   the apps given. While it is on, Chrome and Firefox animate
+//                                   their own Accessibility moves. Read only. Needs
 //                                   Accessibility for the terminal.
 import AppKit
 
@@ -53,8 +44,6 @@ import AppKit
 /// The wall clock in seconds, to the microsecond, as bash's EPOCHREALTIME prints it.
 func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970) }
 
-/// The windows of `bench-windows`. Each prints its frame when it moves or resizes, once per
-/// new frame, with the origin at the top left of the main display, as Kosmos logs frames.
 @MainActor final class BenchWindows: NSObject, NSWindowDelegate {
     private var windows: [Int: NSWindow] = [:]
     private var printed: [Int: NSRect] = [:]

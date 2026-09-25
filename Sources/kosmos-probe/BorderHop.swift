@@ -1,20 +1,13 @@
-// A border that moves between displays with the focus (docs/borders.md).
+// A border that follows the focus between displays (docs/borders.md).
 //
 //   kosmos-probe border-hop [one|per-display] [hops]
-//                                   A border that hops between a window of a child app on
-//                                   the built-in display and one on a display that is neither
-//                                   the built-in nor the main one, 8 hops by default, as
-//                                   Kosmos's border follows the focus: one border window for
-//                                   both targets, or one for each display. Prints the main
-//                                   thread's time for each hop, each Space move, and each
-//                                   frame WindowServer reported for the border that was
-//                                   neither target's.
+//                                   A border hopping between a child app's windows on the
+//                                   built-in display and a display that is not the main one,
+//                                   with one border window or one for each display: the main
+//                                   thread's time per hop, Space moves and stray frames.
 //   kosmos-probe border-watch <window> [seconds]
-//                                   Passive: samples a window's bounds and Spaces, Kosmos's
-//                                   border window for one, every 1.5 ms for 60 s by default,
-//                                   and records what the built-in display shows of that
-//                                   window alone. Prints each change with the time the
-//                                   unified log uses.
+//                                   Passive: a window's bounds and Spaces every 1.5 ms, and
+//                                   what the built-in display shows of it, at log times.
 import AppKit
 import CKosmos
 import KosmosSkyLight
@@ -43,7 +36,7 @@ final class WindowSampler: @unchecked Sendable {
                     let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], window) as? [[String: Any]])?.first
                     let bounds = (info?[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
                     let sample = Sample(time: time, window: window, bounds: bounds ?? .null,
-                                        spaces: kosmos_window_spaces(window) as? [UInt64] ?? [])
+                                        spaces: SkyLight.spaces(of: window) ?? [])
                     lock.withLock { samples.append(sample) }
                 }
                 usleep(1500)
@@ -72,15 +65,16 @@ final class WindowSampler: @unchecked Sendable {
         print("needs the built-in display and another one, neither of them the main display")
         exit(1)
     }
-    let targets = BorderTargets(2)
-    let (a, b) = (targets.windows[0], targets.windows[1])
+    let targets = Child(["border-targets", "2"])
+    let windows = targets.readWindows()
+    let (a, b) = (windows[0], windows[1])
     for (id, frame) in [(a, NSRect(x: builtIn.visibleFrame.minX + 60, y: builtIn.visibleFrame.minY + 60, width: 900, height: 600)),
                         (b, NSRect(x: other.visibleFrame.minX + 120, y: other.visibleFrame.minY + 80, width: 1300, height: 820))] {
         targets.send("frame \(id) \(Int(frame.minX)) \(Int(frame.minY)) \(Int(frame.width)) \(Int(frame.height))")
         _ = targets.line()
     }
     pumpEvents(0.5)
-    func spaces(_ window: UInt32) -> [UInt64] { kosmos_window_spaces(window) as? [UInt64] ?? [] }
+    func spaces(_ window: UInt32) -> [UInt64] { SkyLight.spaces(of: window) ?? [] }
     let rows = Dictionary(SkyLight.rows([a, b], cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
     print("A \(a) on the built-in display, Spaces \(spaces(a)); B \(b) on \(other.localizedName), Spaces \(spaces(b))")
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
@@ -102,8 +96,8 @@ final class WindowSampler: @unchecked Sendable {
         let border = probe.id
         queue.async {
             let ordinary = Displays.current().ordinarySpaces
-            let targetSpaces = (kosmos_window_spaces(target) as? [UInt64] ?? []).filter(ordinary.contains)
-            let borderSpaces = kosmos_window_spaces(border) as? [UInt64] ?? []
+            let targetSpaces = (SkyLight.spaces(of: target) ?? []).filter(ordinary.contains)
+            let borderSpaces = SkyLight.spaces(of: border) ?? []
             guard let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) else { return }
             SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
             let time = CACurrentMediaTime()

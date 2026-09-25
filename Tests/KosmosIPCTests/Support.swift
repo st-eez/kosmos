@@ -17,7 +17,6 @@ final class Lines: Sendable {
     }
 }
 
-/// The commands the test servers answer.
 @MainActor func testCommands(_ args: [String]) async -> Response {
     switch args {
     case ["ping"]: Response(stdout: "pong")
@@ -26,7 +25,6 @@ final class Lines: Sendable {
     }
 }
 
-/// A new 0700 directory under the per-user temporary directory.
 func makeTemporaryDirectory() -> String {
     var template = Array((NSTemporaryDirectory() + "kosmos-ipc.XXXXXX").utf8CString)
     return String(cString: mkdtemp(&template)!)
@@ -49,7 +47,6 @@ struct TestServer {
         server = try IPCServer(socketPath: socketPath, allowedUID: allowedUID, log: { log.append($0) }, handler: handler)
     }
 
-    /// Stops the server and removes its directory.
     func stop() {
         server.stop()
         try? FileManager.default.removeItem(atPath: directory)
@@ -58,7 +55,6 @@ struct TestServer {
 
 struct TimedOut: Error {}
 
-/// Polls `condition` until it holds, for up to five seconds.
 func waitUntil(_ condition: () async -> Bool) async throws {
     let deadline = ContinuousClock.now + .seconds(5)
     while !(await condition()) {

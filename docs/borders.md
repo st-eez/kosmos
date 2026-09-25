@@ -45,7 +45,9 @@ state, and during a slide the frame the slide shows the window at.
   window's edge outward by half the width: with `width = 4`, 2 points. Before
   2026-09-25 it drew JankyBorders' point inside the edge too, over the window, and Steve
   found its 3 points thicker. The ring's inner corners are the window's: WindowServer's
-  corner radius for the window, read with its row (`SLSWindowIteratorGetCornerRadii`).
+  corner radius for the window, read with its row (`SLSWindowIteratorGetCornerRadii`). The
+  caller owns the array of radii despite the Get name: 50,000 reads that kept it grew the
+  probe by 3.9 MB, and as many that released it by nothing (`kosmos-probe borders`).
   Its outer corners are that radius plus half the width, concentric, as a layer's border
   draws its inner edge at the corner radius less the border's width (an offscreen render
   on macOS 27). Only the inventory's reads take the radius: it took a read of 2

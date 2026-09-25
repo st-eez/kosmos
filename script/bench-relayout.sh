@@ -1,63 +1,33 @@
 #!/usr/bin/env bash
-# Times relayouts of stub windows under the running Kosmos, to compare slides
-# (`animations = true`, the default, docs/geometry.md) with instant moves.
+# Times relayouts of stub windows under the running Kosmos, to compare slides with instant
+# moves. What the latencies and CPU times measure is in docs/geometry.md.
 #
 #   script/bench-relayout.sh <workspace> <reps> [window-id]
 #
-# The workspace must hold no windows. The script shows it and opens 3 windows of
-# `kosmos-probe bench-windows` on its display, from a bundle, so Kosmos manages them, opened
-# in the background, so the stub never takes the front. Kosmos then keys the middle one,
-# and the terminal has no keyboard focus until the run ends. Each rep runs the steps below
-# through the Kosmos socket and the stub's stdin, with no synthetic input, each followed by
-# a 0.6 s settle. Leave the mouse and keyboard alone during a run: with focus follows mouse
-# on, a pointer move can key another window, and the steps act on the key window. Before
-# it shows the workspace, the script records the workspace its display shows, such as 8 on
-# the built-in display, and the focused one. At the end, also when a run fails, the stub
-# quits, the display shows that workspace again and the focused one is focused again. The
-# summary names both.
+# The workspace must hold no windows. The script shows it, opens 3 stub windows there that
+# Kosmos manages, and runs each rep's steps through the Kosmos socket and the stub's stdin,
+# with no synthetic input. Leave the mouse and keyboard alone during a run: with focus
+# follows mouse on, a pointer move can key another window, and the steps act on the key
+# window. At the end, also when a run fails, the stub quits, and the display's workspace
+# and the focus go back to what they were.
 #
-# With a window id from `kosmos list-windows`, one real app's window joins the stub's:
-# `kosmos move-node-to-workspace --window-id` brings it onto the workspace, where it goes
-# leftmost, and takes it back to its own workspace at the end, also when a run fails.
-# Kosmos keys it during setup, which fronts its app. Ask Steve before moving one of his
-# windows. Only the stub reports its own frames, so the real window's latency is to its
-# final write in Kosmos's log, and its CPU is its app's main process, without the helper
-# processes that draw it.
+# With a window id from `kosmos list-windows`, that app's window joins the stub's for the
+# run and goes back to its own workspace at the end. Ask Steve before moving one of his
+# windows.
 #
 # Run it once per mode with the build under test, from this checkout. The script reads the
-# mode from `animations` in ~/.config/kosmos/kosmos.toml, so reload the config after an edit:
+# mode from `animations` in ~/.config/kosmos/kosmos.toml, so reload the config after an edit.
+# script/install.sh swaps the build in and keeps the installed copy, and --rollback swaps
+# that copy back:
 #
-#   script/bundle.sh
-#   launchctl bootout gui/$(id -u)/io.github.st-eez.kosmos   # quits the installed Kosmos
-#   open .build/dist/Kosmos.app
-#   script/bench-relayout.sh 9 20                           # animations on
+#   script/install.sh
+#   script/bench-relayout.sh 9 20        # animations on
 #   # add `animations = false` to the config
-#   .build/dist/bin/kosmos reload-config
+#   kosmos reload-config
 #   script/bench-relayout.sh 9 20
 #   # take the line out again
-#   .build/dist/bin/kosmos reload-config
-#   pkill -TERM -x Kosmos; while pgrep -qx Kosmos; do sleep 0.2; done
-#
-# SIGTERM quits Kosmos through AppKit, which ends every slide, brings its hidden windows back
-# and destroys the pool's Spaces. `open` makes Kosmos its own responsible process, so
-# macOS checks Kosmos's Accessibility grant, which a build signed with the same certificate
-# keeps (docs/INSTALL.md); started from the terminal, Kosmos would be checked against the
-# terminal's grant.
-#
-# Then take the copy under test out of LaunchServices, which `open` registered, and start the
-# installed Kosmos again as script/install.sh does with launch at login on: registering the
-# agent again starts it through launchd. SMAppService submitted the agent, and its plist
-# names the program as BundleProgram, so it goes back through SMAppService rather than
-# launchctl bootstrap.
-#
-#   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/.build/dist/Kosmos.app"
-#   /Applications/Kosmos.app/Contents/MacOS/Kosmos launch-at-login status   # enabled
-#   /Applications/Kosmos.app/Contents/MacOS/Kosmos launch-at-login off
-#   /Applications/Kosmos.app/Contents/MacOS/Kosmos launch-at-login on
-#   launchctl print gui/$(id -u)/io.github.st-eez.kosmos | grep -E 'state =|program'
-#
-# If registering fails, `open /Applications/Kosmos.app` runs Kosmos without crash restarts,
-# and launchd starts the agent again at the next login.
+#   kosmos reload-config
+#   script/install.sh --rollback
 #
 # Each run writes .build/bench/<time>-animate-<mode>/ and prints its summary:
 #   steps.tsv      rep, step, when it was sent, when it answered, when the next query
@@ -70,26 +40,6 @@
 #   writes.tsv     per step and window, from Kosmos's log: step number, rep, step, window,
 #                  ms to its final write
 #   summary.txt    what the script prints at the end
-#
-# Latency is to the last frame change the stub saw for the step, which is the final frame
-# Kosmos wrote, and to the log line of each window's final write, which Kosmos logs after
-# reading the frame back; the log's times have millisecond steps. With animations on the
-# window takes its final frame at once and shows at it when its slide ends, 0.38 s after
-# the write, or for a pop 0.41 s after its write lands. Kosmos logs each slide's display
-# frames and when its write landed, each display link's callbacks and their time, and the
-# row reads that followed the writes, and the summary gives them. The next response is a
-# `list-workspaces` query sent as soon as the step's command answers, while the relayout
-# runs; Kosmos answers it on the main actor, which every slide's display frames also reach.
-# CPU time comes from `ps -o time=`, user and system together in 10 ms steps, for Kosmos,
-# the stub, WindowManager.app, which performs every bridged Space operation, a slide's
-# transforms included, WindowServer and the real window's app: fine for a run's total,
-# which the summary divides by the relayouts. WindowServer's time includes every other
-# app's drawing, so the summary also gives each process's time over 10 s of rest with the
-# windows tiled, scaled to the run's length. The stub prints a line per frame change, a
-# cost both modes share. Kosmos logs the Accessibility time of each final write, and the
-# summary gives it per relayout. The summary also records each app's AXEnhancedUserInterface
-# (`kosmos-probe eui`), which makes Chrome and Firefox animate Accessibility moves
-# themselves; reading it needs Accessibility for the terminal.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
