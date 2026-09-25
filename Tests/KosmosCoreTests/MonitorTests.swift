@@ -628,6 +628,28 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.frames(of: "6")[60] == frames[60])
     }
 
+    @Test func windowsReturnToAMergedWorkspaceThatChangedInItsOwnOrder() {
+        // A return to a tree that changed depends on the returns before it. Each set of ids
+        // would iterate a Set in an order of its own.
+        for offset in stride(from: WindowID(0), to: 160, by: 10) {
+            let (w1, w2, w3, w4) = (offset + 1, offset + 2, offset + 3, offset + 4)
+            let display = Monitor(id: 1, frame: screen, gaps: deskGaps)
+            var s = Session(names: ["a", "b"], monitors: [display])
+            _ = s.perform(.workspace(.named("b")))
+            for window in [w1, w2, w3, w4] { _ = s.add(window) }
+            s.adopt(w3)
+            _ = s.perform(.resize(.width, by: -1000))
+            #expect(s.frames(of: "b")[w3]?.width == 1)
+            _ = s.park([w3, w2])
+            s.reconfigure(names: ["a"], monitors: [display], assigned: [:], merge: ["b": "a"])
+            // Meanwhile 4 closes, and 3 and 2 return.
+            _ = s.remove(w4)
+            _ = s.unpark([w3, w2], follow: nil)
+            s.reconfigure(names: ["a", "b"], monitors: [display], assigned: [:], merge: [:])
+            #expect(s.workspaces["b"]!.tree == "h[\(w1) \(w3) \(w2)]", "offset \(offset)")
+        }
+    }
+
     @Test func aTabSelectedWhileItsWorkspaceIsMergedReturnsInItsPlace() {
         var s = desk()
         _ = s.add(60, to: "6"); _ = s.add(62, to: "6")

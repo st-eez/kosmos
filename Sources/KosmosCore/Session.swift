@@ -143,8 +143,8 @@ public struct Session: Sendable {
         lifted = []
         let focusedBefore = focusedDisplay
         for name in newNames where workspaces[name] == nil {
-            let area = newMonitors.first { $0.id == newAssigned[name] }?.area ?? newMonitors[0].area
-            workspaces[name] = mergedAway.removeValue(forKey: name).map { restored($0, as: name, in: area) } ?? Workspace()
+            let monitor = newMonitors.first { $0.id == newAssigned[name] } ?? newMonitors[0]
+            workspaces[name] = mergedAway.removeValue(forKey: name).map { restored($0, as: name, on: monitor) } ?? Workspace()
         }
         for name in names where !newNames.contains(name) {
             let target = merge[name].flatMap { newNames.contains($0) ? $0 : nil } ?? newNames[0]
@@ -171,22 +171,25 @@ public struct Session: Sendable {
 
     /// A workspace a profile left out, `saved` as it was, back with the windows still merged
     /// out of it. Each takes the state it has now: parked or not, tiled or floating. The
-    /// others, which the user moved or closed meanwhile, leave it. `area` is where it is
-    /// laid out, for windows returning to a tree that changed.
-    private mutating func restored(_ saved: Workspace, as name: String, in area: CGRect) -> Workspace {
+    /// others, which the user moved or closed meanwhile, leave it. `monitor` is where it is
+    /// laid out, for windows returning to a tree that changed. The windows return in the
+    /// saved order: a return to a changed tree depends on the ones before it.
+    private mutating func restored(_ saved: Workspace, as name: String, on monitor: Monitor) -> Workspace {
         var workspace = saved
-        let returning = Set(merged.filter { $0.value == name }.keys)
-        for window in saved.root.windows + saved.floating + saved.parked.map(\.window) where !returning.contains(window) {
+        let windows = saved.root.windows + saved.floating + saved.parked.map(\.window)
+        for window in windows where merged[window] != name {
             workspace.remove(window)
         }
-        for window in returning {
+        for window in windows where merged[window] == name {
             let current = workspaces[home[window]!]!
             let parked = current.parked.first { $0.window == window }
             let floating = parked?.floating ?? current.floating.contains(window)
             _ = workspaces[home[window]!]!.remove(window)
-            if workspace.parked.contains(where: { $0.window == window }) { workspace.unpark([window], in: area, gaps: Gaps()) }
+            if workspace.parked.contains(where: { $0.window == window }) {
+                workspace.unpark([window], in: monitor.area, gaps: monitor.gaps)
+            }
             if floating, !workspace.floating.contains(window) { workspace.float(window) }
-            if !floating, workspace.floating.contains(window) { workspace.tile(window, in: area, gaps: Gaps()) }
+            if !floating, workspace.floating.contains(window) { workspace.tile(window, in: monitor.area, gaps: monitor.gaps) }
             if parked != nil { workspace.park(window) }
             home[window] = name
             merged[window] = nil
