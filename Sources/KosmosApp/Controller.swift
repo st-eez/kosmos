@@ -36,13 +36,16 @@ final class Controller {
     /// Switches between native tabs, and the tabs that hold no place.
     private var tabSwitches = TabSwitches()
     private var tabs = TabGroups()
-    /// The last key report of a window with no place, decided again if a tab switch gives
-    /// that window a place: macOS can report the new tab key before the switch pairs.
+    /// The last key report of a window with no place, decided again when that window takes
+    /// one: at its admission, as an app keys a window before Kosmos admits it, or at a tab
+    /// switch, as macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
-    /// Tabs a switch placed on a hidden workspace, until the batch that conceals them
-    /// completes, their workspace is shown, or another tab replaces them. macOS keyed such a
-    /// tab by the user's or the app's choice, so its report counts as one of a concealed
-    /// window, and the tab deselected before it did not depart: it is followed at once.
+    /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until the
+    /// batch that conceals them completes, their workspace is shown, or another tab replaces
+    /// them. macOS keyed such a window by the user's or the app's choice, so its report
+    /// counts as one of a concealed window whose key window before it stayed: an app keys a
+    /// window it opens, and the window key before a tab is the tab deselected. It is
+    /// followed at once.
     private var placedHidden: Set<WindowID> = []
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
     /// request against, which the focus queue decides when the request runs.
@@ -344,7 +347,8 @@ final class Controller {
     /// group too. Already minimized, in native fullscreen or hidden with its app, as at
     /// launch or as a tab that lost its group, it waits parked for its return, with no frame
     /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
-    /// own, not when the app unhides.
+    /// own, not when the app unhides. A window its app keyed first becomes the focus, and
+    /// Kosmos follows it to a hidden workspace (AdmissionFocus).
     private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
@@ -364,9 +368,24 @@ final class Controller {
             plan.frames = session.park([id]).frames
             plan.hide.removeAll { $0 == id }
         }
-        // Reported key before it had a place, as at launch: that report was dropped.
-        if inventory.focused == id, session.workspace(of: id).map(session.isShown) == true { session.adopt(id) }
+        // Reported key before it had a place, as at launch or by an app launching. The
+        // report, which waited for the place, is decided now.
+        let report = unplacedKey.flatMap { $0.key == .window(id) ? $0 : nil }
+        if report != nil { unplacedKey = nil }
+        let focus = AdmissionFocus.decide(keyed: key == .window(id), shown: session.workspace(of: id).map(session.isShown) == true,
+                                          parked: session.isParked(id), atLaunch: inventory.wasThereAtLaunch(id),
+                                          locked: sessionLocked)
+        switch focus {
+        case .adopt: session.adopt(id)
+        case .placedHidden: placedHidden.insert(id)
+        case .follow, .none: break
+        }
         execute(plan, floatingCheck: floats)
+        // The follow's switch reveals the window the plan conceals.
+        if focus == .follow, var report {
+            report.concealed = true
+            decidePlaced(report, keyLeft: .stayed)
+        }
     }
 
     /// The window is gone for good.
@@ -459,12 +478,11 @@ final class Controller {
         // app's choice, followed if the place is on a hidden workspace; the window key
         // before it is the tab deselected, which did not depart. A tab in native fullscreen
         // is key in its own Space, as any parked window.
-        if let report = unplacedKey, report.key == .window(new), !session.isParked(new) {
+        if var report = unplacedKey, report.key == .window(new), !session.isParked(new) {
             unplacedKey = nil
             placedHidden.remove(new)
-            decidePlaced(KeyReport(key: report.key, received: report.received, pid: report.pid, previous: report.previous,
-                                   concealed: session.workspace(of: new).map { !session.isShown($0) } ?? false, miss: report.miss),
-                         keyLeft: .stayed)
+            report.concealed = session.workspace(of: new).map { !session.isShown($0) } ?? false
+            decidePlaced(report, keyLeft: .stayed)
         }
         return true
     }
@@ -800,7 +818,7 @@ final class Controller {
         /// The window key before it, when that was another window.
         let previous: WindowID?
         /// The reported window was concealed at the report's stamp.
-        let concealed: Bool
+        var concealed: Bool
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss
     }

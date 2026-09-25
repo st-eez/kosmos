@@ -497,6 +497,26 @@ off the main thread).
     app's notification of the same change does. Then it is the window before that one:
     otherwise the read follows the re-key the notification declined (tla/README.md,
     change 24).
+  - A window the front app keyed before Kosmos admitted it, as a launching app keys its
+    first window, is the user's choice too, and its report waits for the window's place
+    (`AdmissionFocus`). On a shown workspace the window becomes the focus. On a hidden one,
+    which only a rule names for a new window, the report is decided as one of a concealed
+    window whose key window before it stayed, since an app keys a window it opens, and
+    Kosmos follows it there, as Hyprland does for a `workspace` window rule without
+    `silent` (section 5.13). A report that comes after the admission and before the
+    window's conceal completes is followed the same way. After that, Kosmos requests its
+    focus intent again, and a later report loses to it, as a tab's does (section 5.5). A
+    command received after the report wins, as over a Command-Tab. A window its app opens
+    in the background has no key window report, and Kosmos stays put. Nor does it follow a
+    window parked at admission, one admitted while the session is locked, or one there
+    when Kosmos launched (section 5.13). On 2026-09-25 at 10:25:31 Steve launched Chrome
+    from workspace 8, and a rule put its first window on workspace 4, which no display
+    showed. The log has no key window report from Chrome, and Accessibility answered for
+    the window 854 ms after WindowServer made it a candidate, within the launch retries:
+    Chrome keyed the window before its worker's observer was registered, and its
+    activation read got no answer while it launched. Kosmos concealed the window, keyed
+    Claude on workspace 8 again, and Steve pressed alt-4 himself. A worker now reports the
+    front app's focused window when it starts (section 5.2).
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
     window key before it. A report of another window replaces it, and a held report whose
@@ -1154,6 +1174,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     follows mouse the user seldom clicks, so a key press long ago would otherwise pass for
     Command-Tab when an app activates itself. The read takes no event tap, and the log
     gives the times. A Command-Tab switcher held open for over a second reads as a click.
+    A launched app's window that Kosmos follows to a rule's workspace (section 5.13) is
+    judged the same way when Kosmos follows it, so an app that opens its window more than a
+    second after the launcher's hotkey leaves the pointer where it is. Judging the input
+    as of the key window report would need the report's stamp in the read.
   - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
     window it activates the same way. Left on the Dock, the pointer would focus every
     window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and
@@ -1343,6 +1367,18 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - A new window joins the workspace a rule names, else the focused workspace. A window that
   was there when Kosmos launched joins the workspace shown on the display under its
   center, so each keeps its display. AeroSpace does the same (MacWindow.swift).
+- When the front app keyed the new window, as when the user launched or activated the app,
+  and the rule's workspace is hidden, Kosmos shows that workspace on its display, focuses
+  the window, and moves the pointer as for a Command-Tab to a concealed window (sections
+  5.4 and 5.11). Hyprland's `workspace` window rule does the same: the window opens on
+  that workspace and Hyprland switches to it, unless the rule adds `silent` (Hyprland
+  wiki, Window Rules). A window its app opens in the background changes no workspace.
+  Kosmos's launch sweep follows no window. The key window it finds becomes the focus if
+  its workspace is shown, and a follow during the sweep would change the workspace a
+  display shows while the sweep still places windows by the display under them, so where
+  a window lands would depend on the order apps answer Accessibility. The cost: after a
+  relaunch, a key window that a rule puts on a hidden workspace is concealed, and Kosmos
+  keys the focused workspace's window.
 - A window a rule floats joins its workspace's floating windows and never the tree, so it
   keeps the frame its app gave it and no tile moves, on a hidden workspace and at launch
   too. Kosmos logs that frame at admission. A new Finder window on the left panel had come
