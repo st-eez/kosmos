@@ -120,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller?.turnOnPrivateFocus()
             let (applied, messages) = reloadConfig(atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
+        case _ where arguments.first == "list-bindings":
+            return listBindings(arguments)
         default:
             switch Command.parse(arguments) {
             case .success(.mode(let name)): return switchMode(to: name)
@@ -132,6 +134,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = controller.run(arguments, received: received)
             return result.code == 0 ? Response(stdout: result.text) : Response(exitCode: result.code, stderr: "kosmos: " + result.text)
         }
+    }
+
+    /// The loaded bindings for launchers (DESIGN.md, section 5.12): mode main first, then the
+    /// other modes by name, each in file order.
+    private func listBindings(_ arguments: [String]) -> Response {
+        guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
+        let modes = hotkeys.modes.sorted { ($0.key == "main" ? 0 : 1, $0.key) < ($1.key == "main" ? 0 : 1, $1.key) }
+        return KosmosIPC.listBindings(arguments, modes.flatMap { mode, bindings in
+            bindings.map { binding in
+                ListedBinding(mode: mode, key: binding.key, command: binding.arguments.joined(separator: " "),
+                              description: binding.command.summary, category: binding.command.category.rawValue)
+            }
+        })
     }
 
     private func switchMode(to name: String) -> Response {
