@@ -9,6 +9,9 @@ public struct Config: Equatable, Sendable {
     /// The modifiers that start a modifier drag, or nil when modifier drags are off
     /// (docs/modifier-drags.md).
     public var mouseModifier: KeyCombo.Modifiers? = .alt
+    /// Slide windows to the frames a relayout gives them, and pop new windows in
+    /// (docs/geometry.md).
+    public var animations = true
     public var workspaces: [String] = []
     /// Display matchers by the name the rest of the config uses for them.
     public var monitors: [String: MonitorMatch] = [:]

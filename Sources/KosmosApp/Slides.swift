@@ -7,425 +7,309 @@ import os
 
 private let slideLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "slide")
 
-/// The slide trial behind `KOSMOS_ANIMATE=slide` (docs/geometry.md). A window a relayout
-/// moves joins a Space of the pool, shown in place at level 1, and keeps its ordinary Space.
-/// Its final frame goes through the ordinary frame path once, and the Space's transform shows
-/// it at the frame it showed at, eased to identity; then the window leaves the Space. A
-/// window admitted after launch onto a shown workspace pops in the same way. One display link
-/// on the main actor steps every slide, and reads off the main thread follow each write until
-/// it lands (Onscreen).
+/// Slides windows to the frames a relayout writes, and pops a new window in
+/// (docs/geometry.md). A window that slides joins a Space of the pool, shown in place at
+/// level 1, and keeps its ordinary Space. Its frame goes through the ordinary frame path once,
+/// and the Space's transform shows it where it showed, eased to its frame (SlidingWindow);
+/// then the window leaves the Space. A display link per display steps the windows sliding on
+/// that display, and reads off the main thread follow each write until it lands (Onscreen).
 @MainActor
 final class Slides {
-    /// `KOSMOS_ANIMATE=slide` in the environment, read once at launch.
-    static let enabled = ProcessInfo.processInfo.environment["KOSMOS_ANIMATE"] == "slide"
+    /// How a write slides: from `from`, where WindowServer has the window, which is nil while
+    /// a write of Kosmos's still moves it; stepped by `display`'s link; popping in when the
+    /// window is new.
+    struct Motion {
+        var from: CGRect?
+        var display: DisplayID
+        var pop = false
+    }
+
     /// One level above the desktop Space's, 0, where a window alone in a shown Space is drawn
     /// with the Space's transform and alpha (kosmos-probe space-anim, branch spaceanim).
-    static let level: Int32 = 1
-    /// The Spaces created at launch. A relayout that moves more windows than the pool has free
-    /// grows it to `limit`, and the windows past the free ones jump that time. Not measured:
-    /// Steve's workspaces hold a few windows each.
-    private static let initialPool = 8
-    private var limit = 16
-    /// How long a new window waits, transparent, for its write to land before it pops in
-    /// where it is.
-    private static let popWait = 0.25
-    /// How long after its write a slide that is over holds its window at the target while the
-    /// write has not landed, so the window does not show at its old frame and then jump again.
-    /// Past it the slide ends where WindowServer has the window. The worker's calls time out
-    /// after 1 s.
-    private static let landingWait = 1.0
-
-    private struct Entry {
-        let space: UInt64
-        let pop: Bool
-        var target: CGRect
-        /// Nil while a pop waits for its write to land.
-        var slide: Slide?
-        /// The write the landing reads follow, so the landing of an older one is left out.
-        var ticket: Int
-        /// When the newest write was queued and when it landed, on CACurrentMediaTime's clock.
-        var sent: Double
-        var landed: Double?
-        /// The newest write did not land within `landingWait`.
-        var gaveUp = false
-        /// When the window last showed where the slide had it: the display frame it was
-        /// stepped for.
-        var shownAt: Double
-        var frames = 0
-    }
+    private static let level: Int32 = 1
+    /// The Spaces made at the first turn on. A window that finds none free jumps.
+    private static let poolSize = 8
 
     private let hiding: Hiding
     /// Called after each display frame's steps and after each slide ends, so the borders
     /// follow where the windows show (docs/borders.md).
     var onChange: (@MainActor () -> Void)?
-    private var entries: [WindowID: Entry] = [:]
     private let onscreen = Onscreen()
+    /// Spaces of the pool that hold no window.
     private var free: [UInt64] = []
-    /// Spaces created or being created.
-    private var pool = 0
-    private var tickets = 0
-    private var link: CADisplayLink?
-    /// The display link's callbacks since it started, and their time, for the log.
-    private var callbacks = 0, callbackTime = 0.0, slowestCallback = 0.0
+    private var links: [DisplayID: Link] = [:]
+
+    /// A display's link, with its callbacks since it started and their time, for the log.
+    private struct Link {
+        let link: CADisplayLink
+        var callbacks = 0, time = 0.0, slowest = 0.0
+    }
 
     init(hiding: Hiding) {
         self.hiding = hiding
-        grow(Self.initialPool)
+        hiding.createAnimationSpaces(Self.poolSize, level: Self.level) { [weak self] spaces in
+            self?.free += spaces
+            slideLog.info("\(spaces.count) of \(Self.poolSize) animation Spaces created")
+        }
     }
 
-    /// Takes the frame writes about to go to the workers, before they are queued, so each
-    /// sliding window joins its Space before its app takes the frame. `sliding`: the windows
-    /// whose writes slide (Controller.animated). `from`: where WindowServer has each of them
-    /// that is not sliding yet. `popping`: a window just admitted. A window with no free
-    /// Space, or while the guardian is not ready to recover it, jumps. A write that does not
-    /// slide, as a drag's, ends the window's slide to another frame at once.
-    func writing(_ writes: [WindowID: CGRect], sliding: Set<WindowID>, from: [WindowID: CGRect], popping: WindowID?) {
-        var slid = 0, jumped = 0, popped = false
-        for (id, target) in writes {
-            if sliding.contains(id) {
-                guard begin(id, to: target, from: from[id], pop: id == popping) else {
-                    jumped += 1
-                    continue
+    /// Takes the frame writes about to go to the workers, before they are queued, so a window
+    /// joins its Space before its app takes the frame. `sliding` holds the writes that slide
+    /// (Controller.motions). A new slide jumps while the guardian is not ready, with no Space
+    /// free, or with nowhere known to start from. A write that does not slide ends the
+    /// window's slide at once, unless it is to the slide's target (SlidingWindow.wrote).
+    func writing(_ targets: [WindowID: CGRect], sliding: [WindowID: Motion]) {
+        let now = CACurrentMediaTime()
+        var ended: [(WindowID, SlidingWindow)] = []
+        var slid = 0, jumped = 0, took = 0
+        let known = onscreen.state.withLock { state in
+            var known: Set<WindowID> = []
+            for (id, target) in targets {
+                guard var window = state.windows[id] else { continue }
+                known.insert(id)
+                if window.wrote(target, sliding: sliding[id] != nil, at: now) {
+                    state.windows[id] = window
+                    took += 1
+                    if sliding[id] != nil { slid += 1 }
+                } else if let window = Onscreen.remove(id, from: &state) {
+                    ended.append((id, window))
                 }
-                slid += 1
-                popped = popped || id == popping
-            } else if let entry = entries[id], entry.target != target {
-                end(id, "by a write that does not slide")
             }
+            return known
         }
+        for (id, window) in ended { finished(id, window, "by a write that does not slide") }
+        var popped = false
+        for (id, target) in targets where !known.contains(id) {
+            guard let motion = sliding[id], motion.from != target || motion.pop else { continue }
+            guard let from = motion.from, begin(id, from: from, to: target, motion, at: now) else {
+                jumped += 1
+                continue
+            }
+            (slid, took, popped) = (slid + 1, took + 1, popped || motion.pop)
+        }
+        if !ended.isEmpty { stopIdleLinks() }
+        if took > 0 { onscreen.follow() }
         if slid + jumped > 0 {
             slideLog.info("relayout: \(slid) windows slide\(popped ? ", 1 of them popping" : "", privacy: .public), \(jumped) jump, \(self.free.count) Spaces free")
         }
     }
 
-    /// Ends at once the slide of each window `shown` rejects: concealed, parked, closed, or on
-    /// a workspace no longer shown.
-    func keep(_ shown: (WindowID) -> Bool) {
-        for id in Array(entries.keys) where !shown(id) { end(id, "as it left the screen") }
-    }
-
-    /// Where a sliding window shows, as of the last display frame stepped, and at what alpha,
-    /// or nil for a window that is not sliding. A new window that waits for its write to land
-    /// shows nowhere yet, at alpha 0, and a slide that is over holds its window at the target.
-    func shown(_ id: WindowID) -> (frame: CGRect, alpha: Double)? {
-        guard let entry = entries[id] else { return nil }
-        guard let slide = entry.slide else { return (entry.target.scaled(Slide.popScale), 0) }
-        return slide.isOver(at: entry.shownAt) ? (slide.to, 1) : (slide.shown(at: entry.shownAt), slide.alpha(at: entry.shownAt))
-    }
-
-    /// Ends every slide, for quit, so recovery finds the pool's Spaces empty.
-    func endAll() {
-        for id in Array(entries.keys) { end(id, "at quit") }
-        stopLink()
-    }
-
-    /// Ends the window's slide: its Space goes back to identity and alpha 1, and the window
-    /// leaves it and shows at its own frame. `why` says why a slide ended before it was over.
-    func end(_ id: WindowID, _ why: String? = nil) {
-        guard let entry = entries.removeValue(forKey: id) else { return }
-        onscreen.state.withLock { state in
-            state.windows[id] = nil
-            kosmos_space_set_transform(entry.space, .identity)
-            if entry.pop { kosmos_space_set_alpha(entry.space, 1) }
-            var ids = [id]
-            kosmos_remove_windows(entry.space, &ids, 1)
-        }
-        free.append(entry.space)
-        onChange?()
-        // script/bench-relayout.sh counts these lines.
-        let landed = entry.landed.map { String(format: "landed %.1f ms after its write", ($0 - entry.sent) * 1000) } ?? "did not land"
-        if let why {
-            slideLog.info("\(id) slide ended \(why, privacy: .public) after \(entry.frames) frames, \(landed, privacy: .public)")
-        } else {
-            slideLog.info("\(id) \(entry.pop ? "popped" : "slid", privacy: .public) in \(entry.frames) frames, \(landed, privacy: .public)")
-        }
-    }
-
-    /// Starts the window's slide to `target` from `from`, or from where a slide under way
-    /// shows it now. A pop waiting for its write waits on for the new one. False when the
-    /// window jumps.
-    private func begin(_ id: WindowID, to target: CGRect, from: CGRect?, pop: Bool) -> Bool {
+    /// The worker read the window's frame back after writing `target` (SlidingWindow.confirmed).
+    func confirmed(_ id: WindowID, target: CGRect, readBack: CGRect) {
         let now = CACurrentMediaTime()
-        tickets += 1
-        let ticket = tickets
-        if var entry = entries[id] {
-            entry.slide = entry.slide?.retargeted(to: target, at: entry.shownAt)
-            (entry.target, entry.ticket, entry.sent, entry.landed, entry.gaveUp) = (target, ticket, now, nil, false)
-            entries[id] = entry
-            let waiting = entry.slide == nil
-            onscreen.state.withLock { state in
-                guard var window = state.windows[id] else { return }
-                if waiting {
-                    window.shown = target.scaled(Slide.popScale)
-                    kosmos_space_set_transform(window.space, Slide.transform(showing: window.shown, at: window.actual))
-                }
-                window.awaiting = Onscreen.Awaiting(target: target, before: window.actual, ticket: ticket, changedAt: now,
-                                                    deadline: now + (waiting ? Self.popWait : Self.landingWait))
-                state.windows[id] = window
-            }
-            follow()
-            endLate(id, ticket)
-            return true
+        onscreen.state.withLock { $0.windows[id]?.confirmed(target: target, readBack: readBack, at: now) }
+    }
+
+    /// Ends at once the slide of each window `visible` rejects, as one concealed, parked,
+    /// closed or on a workspace no longer shown, before a batch conceals it, and of each
+    /// window on a display of `fullscreen`.
+    func keep(_ visible: (WindowID) -> Bool, fullscreen: Set<DisplayID>) {
+        let displays = onscreen.state.withLock { $0.windows.mapValues(\.display) }
+        for (id, display) in displays where !visible(id) || fullscreen.contains(display) { end(id, "as it left the screen") }
+    }
+
+    /// Where a sliding window shows as of the last display frame its link stepped, and at
+    /// what alpha, or nil for a window that is not sliding. A new window that waits for its
+    /// write to land shows at alpha 0, and a slide that is over holds its window at its end.
+    func shown(_ id: WindowID) -> (frame: CGRect, alpha: Double)? {
+        onscreen.state.withLock { state in state.windows[id].map { ($0.shown, $0.alpha) } }
+    }
+
+    /// Ends the window's slide at once, and it shows at its own frame. `why` goes to the log.
+    func end(_ id: WindowID, _ why: String) {
+        guard let window = onscreen.state.withLock({ Onscreen.remove(id, from: &$0) }) else { return }
+        finished(id, window, why)
+        stopIdleLinks()
+    }
+
+    /// Ends every slide and stops every display link, one whose display went too, so the next
+    /// slide starts a link on a display that has a screen.
+    func endAll(_ why: String) {
+        let all = onscreen.state.withLock { state in
+            Array(state.windows.keys).compactMap { id in Onscreen.remove(id, from: &state).map { (id, $0) } }
         }
-        guard let from, from != target, hiding.guardianReady else { return false }
+        for (id, window) in all { finished(id, window, why) }
+        for display in Array(links.keys) { stopLink(display) }
+    }
+
+    /// Starts a slide: the window joins a free Space, whose alpha a pop sets to 0 first, so
+    /// the window shows nothing until it pops in. False when it jumps instead.
+    private func begin(_ id: WindowID, from: CGRect, to target: CGRect, _ motion: Motion, at now: Double) -> Bool {
+        guard hiding.guardianReady else { return false }
         guard let space = free.popLast() else {
-            grow(limit)
+            slideLog.notice("\(id) jumps: no animation Space is free")
             return false
         }
-        let shown = pop ? target.scaled(Slide.popScale) : from
+        guard startLink(on: motion.display) else {
+            free.append(space)
+            return false
+        }
+        let window = SlidingWindow(space: space, display: motion.display, from: from, to: target, pop: motion.pop, at: now)
         onscreen.state.withLock { state in
-            // A pop's Space turns transparent before the window joins it, so the window shows
-            // nothing until it pops in.
-            if pop {
+            if motion.pop {
                 kosmos_space_set_alpha(space, 0)
-                kosmos_space_set_transform(space, Slide.transform(showing: shown, at: from))
+                window.show()
             }
             var ids = [id]
             kosmos_add_windows(space, &ids, 1, false)
-            state.windows[id] = Onscreen.Window(
-                space: space, shown: shown, alpha: pop ? 0 : 1, actual: from,
-                awaiting: Onscreen.Awaiting(target: target, before: from, ticket: ticket, changedAt: now,
-                                            deadline: now + (pop ? Self.popWait : Self.landingWait)))
+            state.windows[id] = window
         }
-        entries[id] = Entry(space: space, pop: pop, target: target, slide: pop ? nil : .move(from: from, to: target, at: now),
-                            ticket: ticket, sent: now, shownAt: now)
-        follow()
-        startLink()
-        endLate(id, ticket)
         return true
     }
 
-    /// Ends the slide for write `ticket` once no slide can still run, should the display link
-    /// stop stepping it, as it might when its display goes: a move holds its window for
-    /// `landingWait` at most, and a pop starts within `popWait` and lasts `popDuration`.
-    private func endLate(_ id: WindowID, _ ticket: Int) {
-        let late = Self.landingWait + Self.popWait + Slide.popDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + late) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.entries[id]?.ticket == ticket else { return }
-                self.end(id, "late, past every slide's end")
-            }
+    /// Frees the Space of a window whose slide ended, and logs the slide. `why` says why it
+    /// ended before it was done.
+    private func finished(_ id: WindowID, _ window: SlidingWindow, _ why: String? = nil) {
+        free.append(window.space)
+        onChange?()
+        // script/bench-relayout.sh counts these lines.
+        let landed = window.landed.map { String(format: "landed %.1f ms after its write", ($0 - window.sent) * 1000) } ?? "did not land"
+        if let why {
+            slideLog.info("\(id) slide ended \(why, privacy: .public) after \(window.frames) frames, \(landed, privacy: .public)")
+        } else {
+            slideLog.info("\(id) \(window.pop ? "popped" : "slid", privacy: .public) in \(window.frames) frames, \(landed, privacy: .public)")
         }
     }
 
-    /// A write landed, or its wait ran out: a move ends at the frame WindowServer has, and a
-    /// pop starts there.
-    private func landed(_ landings: [Onscreen.Landing]) {
-        for landing in landings {
-            guard var entry = entries[landing.id], entry.ticket == landing.ticket else { continue }
-            if landing.timedOut {
-                entry.gaveUp = true
-            } else {
-                entry.landed = landing.at
-                entry.slide?.to = landing.frame
-            }
-            if entry.slide == nil {
-                let now = CACurrentMediaTime()
-                entry.slide = .pop(to: landing.frame, at: now)
-                entry.shownAt = now
-            }
-            entries[landing.id] = entry
-        }
-    }
-
-    /// One display frame: each slide shows its window where it has it at the time the frame
-    /// shows, and a slide that is over ends, or holds its window at the target until its
-    /// write lands.
-    private func frame(_ link: CADisplayLink) {
+    /// One frame of `display`: each window sliding there shows where its slide has it at the
+    /// time the frame shows, and a slide that is done ends.
+    private func frame(_ link: CADisplayLink, on display: DisplayID) {
         let began = CACurrentMediaTime()
         let at = link.targetTimestamp
-        var over: [WindowID] = [], steps: [(id: WindowID, shown: CGRect, alpha: Float)] = []
-        for (id, entry) in entries {
-            guard let slide = entry.slide else { continue }
-            if slide.isOver(at: at) {
-                if entry.landed == nil, !entry.gaveUp {
-                    steps.append((id, slide.to, 1))
-                    entries[id]!.shownAt = at
-                } else {
-                    over.append(id)
+        let done = onscreen.state.withLock { state in
+            var done: [(WindowID, SlidingWindow)] = []
+            for (id, var window) in state.windows where window.display == display {
+                let (shown, alpha) = (window.shown, window.alpha)
+                if window.step(at: at) {
+                    if let window = Onscreen.remove(id, from: &state) { done.append((id, window)) }
+                    continue
                 }
-                continue
+                if window.shown != shown { window.show() }
+                if window.alpha != alpha { kosmos_space_set_alpha(window.space, Float(window.alpha)) }
+                state.windows[id] = window
             }
-            steps.append((id, slide.shown(at: at), Float(slide.alpha(at: at))))
-            entries[id]!.shownAt = at
-            entries[id]!.frames += 1
+            return done
         }
-        let due = steps
-        onscreen.state.withLock { state in
-            for step in due {
-                // A window held at its target needs no new transform: the landing reads send
-                // one at each new frame.
-                guard var window = state.windows[step.id], window.shown != step.shown || window.alpha != step.alpha else { continue }
-                window.shown = step.shown
-                kosmos_space_set_transform(window.space, Slide.transform(showing: step.shown, at: window.actual))
-                if step.alpha != window.alpha {
-                    kosmos_space_set_alpha(window.space, step.alpha)
-                    window.alpha = step.alpha
-                }
-                state.windows[step.id] = window
-            }
-        }
-        for id in over { end(id) }
-        if over.isEmpty { onChange?() }
+        for (id, window) in done { finished(id, window) }
+        if done.isEmpty { onChange?() }
         let spent = CACurrentMediaTime() - began
-        callbacks += 1
-        callbackTime += spent
-        slowestCallback = max(slowestCallback, spent)
-        if entries.isEmpty { stopLink() }
+        links[display]?.callbacks += 1
+        links[display]?.time += spent
+        if let slowest = links[display]?.slowest, spent > slowest { links[display]?.slowest = spent }
+        if !done.isEmpty { stopIdleLinks() }
     }
 
-    /// Steps the slides at the frames of the fastest display, so no display misses a step.
-    private func startLink() {
-        guard link == nil else { return }
-        guard let screen = NSScreen.screens.max(by: { $0.maximumFramesPerSecond < $1.maximumFramesPerSecond }) else {
-            return endAll()
-        }
+    /// Starts `display`'s link unless it runs, at the display's own rate. False when no
+    /// screen has that display.
+    private func startLink(on display: DisplayID) -> Bool {
+        guard links[display] == nil else { return true }
+        let number = NSDeviceDescriptionKey("NSScreenNumber")
+        guard let screen = NSScreen.screens.first(where: { ($0.deviceDescription[number] as? NSNumber)?.uint32Value == display })
+        else { return false }
         // The link keeps its target.
-        let link = screen.displayLink(target: LinkTarget { [weak self] in self?.frame($0) }, selector: #selector(LinkTarget.frame))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        let link = screen.displayLink(target: LinkTarget { [weak self] in self?.frame($0, on: display) },
+                                      selector: #selector(LinkTarget.frame))
+        let rate = Float(screen.maximumFramesPerSecond)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
         link.add(to: .main, forMode: .common)
-        self.link = link
-        (callbacks, callbackTime, slowestCallback) = (0, 0, 0)
+        links[display] = Link(link: link)
+        return true
     }
 
-    private func stopLink() {
-        guard let link else { return }
-        link.invalidate()
-        self.link = nil
+    /// Stops the links of the displays no window slides on.
+    private func stopIdleLinks() {
+        let sliding = onscreen.state.withLock { Set($0.windows.values.map(\.display)) }
+        for display in Array(links.keys) where !sliding.contains(display) { stopLink(display) }
+    }
+
+    private func stopLink(_ display: DisplayID) {
+        guard let entry = links.removeValue(forKey: display) else { return }
+        entry.link.invalidate()
         // script/bench-relayout.sh counts this line.
         slideLog.info("""
-            slide frames: \(self.callbacks) callbacks, \(self.callbackTime * 1000, format: .fixed(precision: 2)) ms in them, \
-            \(self.slowestCallback * 1000, format: .fixed(precision: 2)) ms at most
+            slide frames: \(entry.callbacks) callbacks, \(entry.time * 1000, format: .fixed(precision: 2)) ms in them, \
+            \(entry.slowest * 1000, format: .fixed(precision: 2)) ms at most, display \(display)
             """)
-    }
-
-    /// Starts the landing reads unless they run.
-    private func follow() {
-        let onscreen = self.onscreen
-        let idle = onscreen.state.withLock { state in
-            defer { state.following = true }
-            return !state.following
-        }
-        guard idle else { return }
-        onscreen.queue.async {
-            onscreen.follow { [weak self] landings in
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.landed(landings) } }
-            }
-        }
-    }
-
-    /// Creates up to `count` more Spaces, within the limit. When the record cannot take them
-    /// or they cannot be created, the pool stays as it is.
-    private func grow(_ count: Int) {
-        let count = min(count, limit - pool)
-        guard count > 0 else { return }
-        pool += count
-        hiding.createAnimationSpaces(count, level: Self.level) { [weak self] spaces in
-            guard let self else { return }
-            free += spaces
-            if spaces.count < count {
-                pool -= count - spaces.count
-                limit = pool
-            }
-            slideLog.info("\(spaces.count) of \(count) animation Spaces created, \(self.pool) in the pool")
-        }
     }
 }
 
-/// What the display link and the landing reads share: where each sliding window shows and
-/// where WindowServer has it. Both send a window's transform under the lock, so the last one
-/// sent is for the newest frame.
+extension SlidingWindow {
+    /// Sends the transform that shows the window at `shown` from `actual`. The display links
+    /// and the reads send it under Onscreen's lock, so the last one sent is for the newest
+    /// frame.
+    fileprivate func show() {
+        kosmos_space_set_transform(space, Slide.transform(showing: shown, at: actual))
+    }
+}
+
+/// The sliding windows, which the display links and the reads share, and the reads.
 private final class Onscreen: Sendable {
-    struct Window: Sendable {
-        let space: UInt64
-        var shown: CGRect
-        var alpha: Float
-        /// The window's frame as WindowServer last had it.
-        var actual: CGRect
-        var awaiting: Awaiting?
-    }
-
-    /// A write that has not landed yet.
-    struct Awaiting: Sendable {
-        let target: CGRect
-        /// The window's frame when the write was queued.
-        let before: CGRect
-        let ticket: Int
-        /// When the window's frame last changed, or the write was queued.
-        var changedAt: Double
-        let deadline: Double
-    }
-
-    struct Landing: Sendable {
-        let id: UInt32
-        let frame: CGRect
-        let ticket: Int
-        let at: Double
-        /// The deadline came first.
-        let timedOut: Bool
-    }
-
     struct State: Sendable {
-        var windows: [UInt32: Window] = [:]
+        var windows: [WindowID: SlidingWindow] = [:]
         var following = false
     }
 
     let state = Mutex(State())
-    let queue = DispatchQueue(label: "kosmos.slide", qos: .userInteractive)
-    /// How long a new frame other than the target must stay before it counts as landed: at
-    /// the target's origin, as an app that rounds or refuses its size leaves it, and
-    /// elsewhere, as an app that places the window itself does. A size, position and size
-    /// written in turn can land in more than one commit, and a write a newer one replaces
-    /// can land first, at another origin. Not measured.
-    private static let settle = 0.025, settleElsewhere = 0.1
+    private let queue = DispatchQueue(label: "kosmos.slide", qos: .userInteractive)
+    /// Reads come every 0.1 ms while a window's write was queued or read back, or its frame
+    /// changed, within this long, and every 1 ms otherwise (docs/geometry.md).
+    private static let fastFor = 0.02
 
-    /// Reads the rows of the windows whose writes have not landed every 0.1 ms, as Hiding
-    /// reads a batch's Spaces, until none is left. At each new frame WindowServer gives a
-    /// window, its transform keeps it where it shows. A write lands with the app's next
-    /// commit, 9 ms after it at the median and 15 ms at most in `kosmos-probe space-anim demo`
-    /// (branch spaceanim), where a transform lands within about 0.4 ms. A window has landed
-    /// once it has the target, or has kept a new frame for `settle`, or at its deadline,
-    /// which it reports as timed out. `landed` gets each with that frame.
-    func follow(_ landed: @Sendable ([Landing]) -> Void) {
-        while true {
-            let ids = state.withLock { state in
-                let ids = state.windows.compactMap { $0.value.awaiting == nil ? nil : $0.key }
-                if ids.isEmpty { state.following = false }
-                return ids
-            }
-            guard !ids.isEmpty else { return }
-            let rows = Dictionary(SkyLight.rows(ids).map { ($0.id, $0.frame) }) { first, _ in first }
-            let now = CACurrentMediaTime()
-            let landings = state.withLock { state in
-                var landings: [Landing] = []
-                for id in ids {
-                    guard var window = state.windows[id], var awaiting = window.awaiting else { continue }
-                    // Closed: the Controller ends its slide.
-                    guard let frame = rows[id] else {
-                        state.windows[id]!.awaiting = nil
-                        continue
-                    }
-                    if frame != window.actual {
-                        window.actual = frame
-                        awaiting.changedAt = now
-                        kosmos_space_set_transform(window.space, Slide.transform(showing: window.shown, at: frame))
-                    }
-                    let settled = frame != awaiting.before
-                        && now - awaiting.changedAt >= (frame.origin == awaiting.target.origin ? Self.settle : Self.settleElsewhere)
-                    if frame == awaiting.target || settled || now >= awaiting.deadline {
-                        window.awaiting = nil
-                        landings.append(Landing(id: id, frame: frame, ticket: awaiting.ticket, at: now,
-                                                timedOut: frame != awaiting.target && !settled))
-                    } else {
-                        window.awaiting = awaiting
-                    }
-                    state.windows[id] = window
-                }
-                return landings
-            }
-            if !landings.isEmpty { landed(landings) }
-            usleep(100)
+    /// Takes the window out of `state` and out of its Space, back at identity and alpha 1,
+    /// so it shows at its own frame. `state` comes from the lock.
+    static func remove(_ id: WindowID, from state: inout State) -> SlidingWindow? {
+        guard let window = state.windows.removeValue(forKey: id) else { return nil }
+        kosmos_space_set_transform(window.space, .identity)
+        if window.alpha != 1 { kosmos_space_set_alpha(window.space, 1) }
+        var ids = [id]
+        kosmos_remove_windows(window.space, &ids, 1)
+        return window
+    }
+
+    /// Starts the reads unless they run.
+    func follow() {
+        let idle = state.withLock { state in
+            defer { state.following = true }
+            return !state.following
         }
+        if idle { queue.async { self.read() } }
+    }
+
+    /// Reads the rows of the windows whose writes have not landed, as Hiding reads a batch's
+    /// Spaces, until none is left. At each new frame WindowServer gives a window, its
+    /// transform keeps it where it shows. A row missing from a read tells nothing.
+    private func read() {
+        let began = CACurrentMediaTime()
+        var ids: [WindowID] = []
+        var reads = 0, fast = 0
+        while true {
+            let now = CACurrentMediaTime()
+            let soon = state.withLock { state -> Bool? in
+                ids.removeAll(keepingCapacity: true)
+                var soon = false
+                for (id, window) in state.windows where window.isAwaiting(at: now) {
+                    ids.append(id)
+                    soon = soon || now - window.changedAt < Self.fastFor
+                }
+                if ids.isEmpty { state.following = false }
+                return ids.isEmpty ? nil : soon
+            }
+            guard let soon else { break }
+            let rows = SkyLight.rows(ids)
+            let read = CACurrentMediaTime()
+            state.withLock { state in
+                for row in rows {
+                    guard var window = state.windows[row.id], window.isAwaiting(at: read) else { continue }
+                    if window.observed(row.frame, at: read) { window.show() }
+                    state.windows[row.id] = window
+                }
+            }
+            reads += 1
+            if soon { fast += 1 }
+            usleep(soon ? 100 : 1000)
+        }
+        // script/bench-relayout.sh counts these lines.
+        slideLog.info("slide reads: \(reads), \(fast) of them 0.1 ms apart, over \((CACurrentMediaTime() - began) * 1000, format: .fixed(precision: 1)) ms")
     }
 }
 

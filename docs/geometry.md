@@ -102,53 +102,75 @@
   fails, has none of its windows managed, where before it was managed without
   notifications. None has been seen; the log after the launch retries names the failing
   step.
-- Slide trial, behind `KOSMOS_ANIMATE=slide` (`Slides.swift`, `KosmosCore/Slide.swift`), to
-  match Omarchy: a window a relayout moves slides to its frame over 0.38 s along
-  easeOutQuint, cubic-bezier(0.23, 1, 0.32, 1), and a window opened after launch onto a
-  shown workspace pops in from 87% of its size about its center and alpha 0 over 0.41 s.
-  Switches and closes do not animate. The windows that slide are a plan's writes to
-  windows on screen on a shown workspace, other than one the user holds or presses on; a
-  reveal, a hidden workspace, a drag's own writes, the 100 ms retry and floating windows
-  brought home jump.
+- Slides (`Slides.swift`, `KosmosCore/Slide.swift`), on unless the config sets
+  `animations = false` ([config.md](config.md)), match Omarchy: a window a relayout moves
+  slides to its frame over 0.38 s along easeOutQuint, cubic-bezier(0.23, 1, 0.32, 1), and a
+  window opened after launch onto a shown workspace pops in from 87% of its size about its
+  center and alpha 0 over 0.41 s. Switches and closes do not animate. The windows that
+  slide are a plan's writes to windows on screen on a shown workspace, other than one the
+  user holds or presses on, of an app whose worker is not backed off, on a display that
+  holds no native fullscreen window. A reveal, a hidden workspace, a drag's own writes,
+  the 100 ms retry and floating windows brought home jump, and so does a backed off app's
+  window, whose write waits for the app while its transform would hold it where it showed.
   - The window joins a Space of a pool, shown in place at level 1, one above the desktop
     Space's, and keeps its ordinary Space. Its frame goes through the ledger and its worker
-    once, as any write. The Space's transform shows it where it showed, then eases to
-    identity, and one display link on the main actor, at the fastest display's rate, steps
-    every slide; at the end the Space goes back to identity and the window leaves it. A
-    transform lands within about 0.4 ms, where an Accessibility write lands with the app's
-    next commit, 9 ms later at the median and 15 ms at most, so the two cannot land together
-    (kosmos-probe space-anim and its demo, branch spaceanim). A transform sent before the
-    write lands, with the write, or with a barrier between, showed the window displaced
-    backwards for 5 to 17 ms in 10 of 10 swaps. So the transform follows the frame instead:
-    reads of the window's row every 0.1 ms, off the main thread, set the transform for each
-    new frame WindowServer gives it, which in the demo left the window at its new place for
-    one read of 10 swaps. A window has landed once it has its target, or has kept another
-    new frame for 25 ms at the target's origin, as an app that rounds or refuses its size
-    leaves it, or for 100 ms elsewhere, and the slide ends at the landed frame. A slide that
-    is over holds its window at the target until the write lands, for 1 s after the write
-    at most, the Accessibility timeout.
+    once, as any write. The Space's transform shows it where it showed, then eases to its
+    frame. A display link per display, at that display's rate, steps the windows sliding on
+    it, and stops once none is left; at the end the Space goes back to identity and the
+    window leaves it.
+  - A transform lands within about 0.4 ms, where an Accessibility write lands with the
+    app's next commit, 9 ms later at the median and 15 ms at most, so the two cannot land
+    together (kosmos-probe space-anim and its demo, branch spaceanim). A transform sent
+    before the write lands, with the write, or with a barrier between, showed the window
+    displaced backwards for 5 to 17 ms in 10 of 10 swaps. So the transform follows the
+    frame instead: reads of the window's row off the main thread set the transform for
+    each new frame WindowServer gives it. In the demo, reads every 0.1 ms left the window
+    at its new place for one read of 10 swaps. The reads come every 0.1 ms within 20 ms of
+    a window's write, its read back or a new frame, which covers the landings measured, and
+    every 1 ms after, a rate no probe measured; a row a read misses tells nothing.
+  - A write lands once WindowServer has the frame the worker read back after it, and the
+    slide ends at that frame, so a window that rounds its size ends where it is, and one
+    that refuses the move lands at once and slides back. A slide that is over holds its
+    window at its end until the write lands, for 1 s after the write at most, the
+    Accessibility timeout, and the reads follow the write that long.
   - A new relayout mid-slide continues from where the window shows, at the alpha it has.
-    A write that does not slide, to another frame, ends the slide at once, as does a
-    change of the window's frame during a press, a modifier drag taking it, and a window
-    concealed, parked, closed or on a workspace no longer shown, before its batch
-    conceals it.
+    A write that does not slide ends the slide at once when it is to another frame, and is
+    followed as the slide's own when it is to the same one, as the 100 ms retry after a
+    refused size. A change of the window's frame during a press, a modifier drag taking
+    it, and a window concealed, parked, closed, on a workspace no longer shown or on a
+    display that gains a native fullscreen window end the slide at once, before a batch
+    conceals the window. So does a reload, a display change, a wake or an unlock, which
+    also stops every display link: a link stops firing when its display goes, and the next
+    slide starts one on a display that has a screen.
   - A new window's Space turns transparent before the window joins it, so the window
-    vanishes from where its app opened it until its write lands, for 0.25 s at most, and
-    then pops in.
+    vanishes from where its app opened it until its write lands, then pops in where it
+    landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
+    in at its target, and the reads follow it until it lands. A window its app opens on its
+    own tile pops in too.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while the guardian is ready, and each Space of the pool is
-    recorded before any window enters it ([hiding.md](hiding.md)). Kosmos makes 8 at
-    launch and up to 16 when a relayout moves more windows than are free; the windows past
-    the free ones jump. A slide the display link stops stepping, as it might when its
-    display goes, ends 1.66 s after its write, when no slide can still run. Quit ends every
-    slide, then recovery destroys the Spaces.
+    recorded before any window enters it ([hiding.md](hiding.md)). Kosmos makes 8 when
+    animations first turn on, and a window that finds none free jumps and is logged.
+    Turning animations off ends every slide and keeps the Spaces. Quit ends every slide,
+    then recovery destroys the Spaces.
+  - A Space of the pool shows over whatever Space its display shows, so a slide on a
+    display showing a native fullscreen Space would draw over the fullscreen app. The
+    ceiling: a display that holds a native fullscreen window, as the inventory last read
+    its frame, slides nothing, also while it shows its desktop Space. Reading each
+    display's current Space would tell the two apart.
   - Limits, unmeasured: a resize scales the window's old content, so it stretches until
     the slide ends; a sliding window draws above every window of the desktop Space,
     floating windows included, and two sliding windows, whose Spaces share one level,
     stack in an order no probe read; a Space at level 1 was measured on the built-in
     display only; the reads stop once the write lands, so a later change the app makes on
     its own shows displaced until the slide ends; and a slide's bridged operations go from
-    the main thread and the slide queue while the bridge queue sends its batches. `script/bench-relayout.sh`
-    times the CPU of Kosmos, the app, WindowManager and WindowServer with the trial on and
-    off.
+    the main thread and the slide queue while the bridge queue sends its batches.
+    `script/bench-relayout.sh` times the CPU of Kosmos, the app, WindowManager and
+    WindowServer with animations on and off, and counts the reads.
+  - Open until the live test: `kill -9` of Kosmos mid-slide and mid-pop, after which the
+    guardian's recovery should show the window at its own frame and alpha 1, out of the
+    pool's Space; a display unplugged or the lid closed mid-slide, after which the next
+    slide should run; a relayout on a display showing a native fullscreen Space, which
+    should jump; and whether a write that lands during the 1 ms reads shows its window
+    displaced for a display frame.

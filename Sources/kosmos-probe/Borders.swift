@@ -467,7 +467,7 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
     @objc func frame(_ link: CADisplayLink) {
         let began = CACurrentMediaTime()
         for entry in slides {
-            let shown = appKitRect(entry.slide.shown(at: link.targetTimestamp))
+            let shown = appKitRect(entry.slide.shown(at: link.targetTimestamp).frame)
             if inPlace {
                 let origin = entry.border.window.frame.origin
                 CATransaction.begin()
@@ -632,4 +632,32 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     for border in borders.values { border.window.orderOut(nil) }
     targets.quit()
     exit(0)
+}
+
+/// A process's CPU time in ms, or nil when the kernel refuses to read it, as for another
+/// user's process. rusage counts in mach time units.
+func rusageCPU(_ pid: pid_t) -> Double? {
+    var info = rusage_info_v4()
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
+    }
+    guard result == 0 else { return nil }
+    var timebase = mach_timebase_info_data_t()
+    mach_timebase_info(&timebase)
+    return Double(info.ri_user_time + info.ri_system_time) * Double(timebase.numer) / Double(timebase.denom) / 1e6
+}
+
+/// A process's CPU time in ms as ps prints it, "minutes:seconds.hundredths", for WindowServer,
+/// which runs as another user.
+func psCPU(_ pid: pid_t) -> Double? {
+    let ps = Process()
+    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+    ps.arguments = ["-o", "time=", "-p", "\(pid)"]
+    let pipe = Pipe()
+    ps.standardOutput = pipe
+    guard (try? ps.run()) != nil else { return nil }
+    let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    ps.waitUntilExit()
+    let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":").compactMap { Double($0) }
+    return parts.isEmpty ? nil : parts.reduce(0) { $0 * 60 + $1 } * 1000
 }

@@ -138,6 +138,12 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(load("mouse-modifier = true").diagnostics == ["3:18: error: mouse-modifier: expected a string, found a boolean"])
     }
 
+    @Test func animations() throws {
+        #expect(try #require(load("").config).animations)
+        #expect(try !#require(load("animations = false").config).animations)
+        #expect(load("animations = 'off'").diagnostics == ["3:14: error: animations: expected true or false, found a string"])
+    }
+
     @Test func unknownKeysSuggestTheNearestKey() {
         #expect(load("mouse-follow-focus = true\n[gaps]\ninnr = 1\n[[rules]]").diagnostics == [
             "3:1: error: mouse-follow-focus: unknown key; did you mean 'mouse-follows-focus'?",

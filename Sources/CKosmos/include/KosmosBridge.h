@@ -13,8 +13,8 @@
 // partial Space destroyed.
 uint64_t kosmos_holding_create(void);
 // Creates an auxiliary Space at the absolute level, in place (identity transform) and
-// opaque (alpha 1), then shown, as the slide trial's Spaces are (Slides.swift). Returns 0 on
-// failure, with any partial Space destroyed.
+// opaque (alpha 1), then shown, as the Spaces windows slide in are (Slides.swift). Returns 0
+// on failure, with any partial Space destroyed.
 uint64_t kosmos_float_space_create(int32_t level);
 // Sets a Space's transform. WindowServer applies it to each window the Space shows in that
 // window's own coordinates, origin at its top left and y down, mapping where a point shows to

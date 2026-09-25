@@ -25,8 +25,8 @@ public enum Recovery {
     }
 
     /// `keepingAnimationSpaces`: the running Kosmos's recovery, after a batch that failed,
-    /// leaves the slide trial's Spaces to it, recorded. After Kosmos exits, and at its startup
-    /// and quit, they go too.
+    /// leaves the Spaces windows slide in to it, recorded. After Kosmos exits, and at its
+    /// startup and quit, they go too.
     public static func run(file: RecordFile, keepingAnimationSpaces keeping: Bool = false) -> Outcome {
         guard let record = file.read() else { return .nothingRecorded }
         guard let windowServer = ProcessIdentity.windowServer() else { return .windowServerUnknown }
@@ -44,11 +44,9 @@ public enum Recovery {
         }
         // An operation Kosmos sent just before it died may still be landing. A Space that no
         // longer exists holds nothing and leaves the record. Windows of other processes stay
-        // where they are (SpaceMembers), except in an animation Space, where every window
-        // came in through Kosmos.
+        // where they are, except in an animation Space (SpaceMembers).
         let recorded = record.spaces + animation
-        let read = { (spaces: [UInt64]) in Self.members(spaces, of: record, animation: Set(animation)) }
-        let (members, gone) = settledMembers(recorded, read: read)
+        let (members, gone) = settledMembers(recorded, of: record)
         let liveSpaces = recorded.filter { !gone.contains($0) }
         let alive = Set(SkyLight.rows(Array(Set(members.values.joined()).union(record.windows.map(\.id)))).map(\.id))
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
@@ -71,7 +69,7 @@ public enum Recovery {
         }
 
         let handled = Set(plan.adds.values.joined()).union(plan.removals.values.joined())
-        let after = read(liveSpaces)
+        let after = SpaceMembers.read(liveSpaces, of: record)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
@@ -107,27 +105,16 @@ public enum Recovery {
         return .restored(windows: handled.count, spaces: destroyed)
     }
 
-    /// The windows to take out of each Space of `spaces` that exists: the ones `record`
-    /// concealed, and every window in a Space of `animation`. Spaces that are gone are listed
-    /// apart.
-    private static func members(_ spaces: [UInt64], of record: RecoveryRecord, animation: Set<UInt64>) -> SpaceMembers {
-        var read = SpaceMembers.read(spaces.filter { !animation.contains($0) }, of: record)
-        let listed = SpaceMembers.listed(spaces.filter(animation.contains))
-        read.members.merge(listed.members) { concealed, _ in concealed }
-        read.gone.formUnion(listed.gone)
-        return read
-    }
-
-    /// The windows `read` finds in each existing Space of `spaces` once two reads 100 ms
-    /// apart agree, for at most about 1 s; past that, the newest read, which the check after
-    /// the adds and removals backs up. Spaces that are gone are listed apart.
-    private static func settledMembers(_ spaces: [UInt64], read: ([UInt64]) -> SpaceMembers)
+    /// The windows to take out of each existing Space of `spaces` (SpaceMembers.read) once
+    /// two reads 100 ms apart agree, for at most about 1 s; past that, the newest read, which
+    /// the check after the adds and removals backs up. Spaces that are gone are listed apart.
+    private static func settledMembers(_ spaces: [UInt64], of record: RecoveryRecord)
         -> (members: [UInt64: [UInt32]], gone: Set<UInt64>) {
-        var previous = read(spaces)
+        var previous = SpaceMembers.read(spaces, of: record)
         let existing = spaces.filter { !previous.gone.contains($0) }
         for _ in 0..<10 {
             usleep(100_000)
-            let current = read(existing)
+            let current = SpaceMembers.read(existing, of: record)
             if current.members == previous.members { break }
             previous.members = current.members
         }

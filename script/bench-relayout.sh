@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Times relayouts of stub windows under the running Kosmos, to compare the slide trial
-# (KOSMOS_ANIMATE=slide, docs/geometry.md) with instant moves.
+# Times relayouts of stub windows under the running Kosmos, to compare slides
+# (`animations = true`, the default, docs/geometry.md) with instant moves.
 #
 #   script/bench-relayout.sh <workspace> <reps> [window-id]
 #
@@ -24,24 +24,27 @@
 # final write in Kosmos's log, and its CPU is its app's main process, without the helper
 # processes that draw it.
 #
-# Run it once per mode with the trial build, from this checkout:
+# Run it once per mode with the build under test, from this checkout. The script reads the
+# mode from `animations` in ~/.config/kosmos/kosmos.toml, so reload the config after an edit:
 #
 #   script/bundle.sh
 #   launchctl bootout gui/$(id -u)/io.github.st-eez.kosmos   # quits the installed Kosmos
 #   open .build/dist/Kosmos.app
+#   script/bench-relayout.sh 9 20                           # animations on
+#   # add `animations = false` to the config
+#   .build/dist/bin/kosmos reload-config
 #   script/bench-relayout.sh 9 20
-#   pkill -TERM -x Kosmos; while pgrep -qx Kosmos; do sleep 0.2; done
-#   open --env KOSMOS_ANIMATE=slide .build/dist/Kosmos.app
-#   script/bench-relayout.sh 9 20
+#   # take the line out again
+#   .build/dist/bin/kosmos reload-config
 #   pkill -TERM -x Kosmos; while pgrep -qx Kosmos; do sleep 0.2; done
 #
 # SIGTERM quits Kosmos through AppKit, which ends every slide, brings its hidden windows back
-# and destroys the slide trial's Spaces. `open` makes Kosmos its own responsible process, so
+# and destroys the pool's Spaces. `open` makes Kosmos its own responsible process, so
 # macOS checks Kosmos's Accessibility grant, which a build signed with the same certificate
 # keeps (docs/INSTALL.md); started from the terminal, Kosmos would be checked against the
 # terminal's grant.
 #
-# Then take the trial copy out of LaunchServices, which `open` registered, and start the
+# Then take the copy under test out of LaunchServices, which `open` registered, and start the
 # installed Kosmos again as script/install.sh does with launch at login on: registering the
 # agent again starts it through launchd. SMAppService submitted the agent, and its plist
 # names the program as BundleProgram, so it goes back through SMAppService rather than
@@ -70,21 +73,21 @@
 #
 # Latency is to the last frame change the stub saw for the step, which is the final frame
 # Kosmos wrote, and to the log line of each window's final write, which Kosmos logs after
-# reading the frame back; the log's times have millisecond steps. With the slide trial the
+# reading the frame back; the log's times have millisecond steps. With animations on the
 # window takes its final frame at once and shows at it when its slide ends, 0.38 s after
 # the write, or for a pop 0.41 s after its write lands. Kosmos logs each slide's display
-# frames and when its write landed, and the display link's callbacks and their time, and
-# the summary gives both. The next response is a `list-workspaces` query sent as soon as
-# the step's command answers, while the relayout runs; Kosmos answers it on the main actor,
-# which every slide's display frames also reach. CPU time comes from `kosmos-probe cpu`:
-# proc_pid_rusage for Kosmos, the stub, WindowManager.app, which performs every bridged
-# Space operation, a slide's transforms included, and the real window's app, and `ps -o
-# time=` for WindowServer, which counts 10 ms steps: fine for a run's total, which the
-# summary divides by the relayouts. WindowServer's time includes every other app's drawing,
-# so the summary also gives each process's time over 10 s of rest with the windows tiled,
-# scaled to the run's length. The stub prints a line per frame change, a cost both modes
-# share. Kosmos logs the Accessibility sets and time of each final write, and the summary
-# gives them per relayout. The summary also records each app's AXEnhancedUserInterface
+# frames and when its write landed, each display link's callbacks and their time, and the
+# row reads that followed the writes, and the summary gives them. The next response is a
+# `list-workspaces` query sent as soon as the step's command answers, while the relayout
+# runs; Kosmos answers it on the main actor, which every slide's display frames also reach.
+# CPU time comes from `ps -o time=`, user and system together in 10 ms steps, for Kosmos,
+# the stub, WindowManager.app, which performs every bridged Space operation, a slide's
+# transforms included, WindowServer and the real window's app: fine for a run's total,
+# which the summary divides by the relayouts. WindowServer's time includes every other
+# app's drawing, so the summary also gives each process's time over 10 s of rest with the
+# windows tiled, scaled to the run's length. The stub prints a line per frame change, a
+# cost both modes share. Kosmos logs the Accessibility time of each final write, and the
+# summary gives it per relayout. The summary also records each app's AXEnhancedUserInterface
 # (`kosmos-probe eui`), which makes Chrome and Firefox animate Accessibility moves
 # themselves; reading it needs Accessibility for the terminal.
 set -euo pipefail
@@ -137,8 +140,8 @@ if [[ $(wc -w <<< "$wm_pid") -ne 1 ]]; then
     exit 1
 fi
 kosmos_path=$(ps -o comm= -p "$kosmos_pid")
-mode=$(ps -E -ww -o command= -p "$kosmos_pid" | tr ' ' '\n' | sed -n 's/^KOSMOS_ANIMATE=//p')
-mode=${mode:-unset}
+mode=on
+if grep -Eq '^[[:space:]]*animations[[:space:]]*=[[:space:]]*false' ~/.config/kosmos/kosmos.toml 2>/dev/null; then mode=off; fi
 
 swift build -c release --product kosmos-probe
 bin=$(swift build -c release --show-bin-path)
@@ -290,7 +293,11 @@ rightmost() {
         END { for (id in x) if (best == "" || x[id] > x[best]) best = id; print best }' "$dir/stub.out"
 }
 # Each process's CPU time in ms: Kosmos, the stub, WindowManager, WindowServer, the real app.
-cpus() { "$bin/kosmos-probe" cpu "$kosmos_pid" "$stub_pid" "$wm_pid" "$server_pid" ${real_pid:+"$real_pid"}; }
+cpus() {
+    for pid in "$kosmos_pid" "$stub_pid" "$wm_pid" "$server_pid" ${real_pid:+"$real_pid"}; do
+        ps -o time= -p "$pid" | awk -F: '{ printf "%.0f\n", ($1 * 60 + $2) * 1000 }'
+    done | paste -sd ' ' -
+}
 eui=$("$bin/kosmos-probe" eui "$stub_pid" ${real_pid:+"$real_pid"} | paste -sd ';' - | sed 's/;/; /g' || true)
 
 read -ra idle_before < <(cpus)
@@ -377,23 +384,23 @@ percentiles() {
             printf "median %.1f ms, p95 %.1f ms (n %d)\n", v[int((NR + 1) / 2)], v[p], NR
         }'
 }
-# Kosmos's writes and slides, from its log: each final write's time, sets and AX time; each
-# slide of a bench window, its display frames and how long its write took to land, or
-# whether it ended early or did not land; and the display link's callbacks and their time.
-# The log gives local times, to the millisecond.
+# Kosmos's writes and slides, from its log: each final write's time and AX time; each slide
+# of a bench window, its display frames and how long its write took to land, or whether it
+# ended early or did not land; the display links' callbacks and their time; and the row
+# reads that followed the writes. The log gives local times, to the millisecond.
 midnight=$(date -j -f '%Y-%m-%d %H:%M:%S' "$day 00:00:00" +%s)
 : > "$dir/landed.txt"
-read -r writes write_sets write_ax slides pops slide_frames unlanded ended callbacks callback_ms callback_max < <(awk -F'\t' \
+read -r writes write_ax slides pops slide_frames unlanded ended callbacks callback_ms callback_max reads fast_reads < <(awk -F'\t' \
     -v ids="$all_ids${real:+$real }" -v day="$day" -v midnight="$midnight" -v landed="$dir/landed.txt" \
     -v per_window="$dir/writes.tsv" '
     FNR == NR { if (FNR > 1) { n++; rep[n] = $1; step[n] = $2; sent[n] = $3 + 0 }; next }
-    match($0, /[0-9]+ written in [0-9]+ sets, AX time [0-9.]+ ms/) {
+    match($0, /[0-9]+ written, AX time [0-9.]+ ms/) {
         split(substr($0, RSTART), w, " ")
         if (!index(ids, " " w[1] " ")) next
         split($2, c, ":")
         t = midnight + ($1 == day ? 0 : 86400) + c[1] * 3600 + c[2] * 60 + c[3]
         while (j < n && t >= sent[j + 1]) j++
-        writes++; sets += w[4]; ax += w[8]
+        writes++; ax += w[5]
         if (j) last[j SUBSEP w[1]] = t
     }
     match($0, /[0-9]+ (slid|popped) in [0-9]+ frames, (landed [0-9.]+ ms after its write|did not land)/) {
@@ -412,12 +419,17 @@ read -r writes write_sets write_ax slides pops slide_frames unlanded ended callb
         calls += w[3]; ms += w[5]
         if (w[9] + 0 > most) most = w[9] + 0
     }
+    match($0, /slide reads: [0-9]+, [0-9]+ of them/) {
+        split(substr($0, RSTART), w, " ")
+        reads += w[3] + 0; fast += w[4]
+    }
     END {
         for (key in last) {
             split(key, k, SUBSEP)
             printf "%d\t%s\t%s\t%s\t%.1f\n", k[1], rep[k[1]], step[k[1]], k[2], (last[key] - sent[k[1]]) * 1000 > per_window
         }
-        print writes + 0, sets + 0, ax + 0, slides + 0, pops + 0, frames + 0, unlanded + 0, ended + 0, calls + 0, ms + 0, most + 0
+        print writes + 0, ax + 0, slides + 0, pops + 0, frames + 0, unlanded + 0, ended + 0, calls + 0, ms + 0, most + 0,
+            reads + 0, fast + 0
     }' "$dir/steps.tsv" FS=' ' "$dir/kosmos.log")
 touch "$dir/writes.tsv"
 relayouts=$((reps * ${#steps[@]}))
@@ -430,7 +442,7 @@ cpu_line() {
         'BEGIN { printf "  %-13s %.2f ms per relayout, %.2f ms per relayout at rest\n", name, (a - b) / n, (ra - rb) / rest * wall / n }'
 }
 {
-    echo "$(date '+%Y-%m-%d %H:%M'), $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo ' with changes'): $kosmos_path, KOSMOS_ANIMATE=$mode"
+    echo "$(date '+%Y-%m-%d %H:%M'), $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo ' with changes'): $kosmos_path, animations $mode"
     echo "workspace $workspace on $display_name, which showed ${shown_before:-none} before, with ${focused_before:-none} focused; both come back as the script exits"
     echo "$count stub windows${real:+ and $real_app window $real}, $reps reps of ${#steps[@]} steps: $relayouts relayouts in $(per "$wall" 1) s"
     echo "AXEnhancedUserInterface: ${eui:-unread}"
@@ -443,11 +455,12 @@ cpu_line() {
     echo "command response:                         $(awk -F'\t' '$3 != "-" { print $3 }' "$dir/relayouts.tsv" | percentiles)"
     echo "next command response:                    $(cut -f4 "$dir/relayouts.tsv" | percentiles)"
     echo "relayouts that moved no window: $(awk -F'\t' '$5 == "-"' "$dir/relayouts.tsv" | wc -l | xargs), commands that failed: $(awk -F'\t' 'NR > 1 && $6 != 0' "$dir/steps.tsv" | wc -l | xargs)"
-    echo "per relayout: $(per "$(awk -F'\t' '{ s += $7 } END { print s + 0 }' "$dir/relayouts.tsv")" "$relayouts") frame changes the stub took, $(per "$writes" "$relayouts") final writes, $(per "$write_sets" "$relayouts") Accessibility sets, $(per "$write_ax" "$relayouts") ms of AX time"
+    echo "per relayout: $(per "$(awk -F'\t' '{ s += $7 } END { print s + 0 }' "$dir/relayouts.tsv")" "$relayouts") frame changes the stub took, $(per "$writes" "$relayouts") final writes, $(per "$write_ax" "$relayouts") ms of AX time"
     echo "slides: $slides, $pops of them pops, $(per "$slide_frames" "$((slides > 0 ? slides : 1))") display frames each; $ended ended early, $unlanded did not land"
     echo "write landed after, in a slide: $(percentiles < "$dir/landed.txt")"
     echo "display link: $(per "$callbacks" "$relayouts") callbacks and $(per "$callback_ms" "$relayouts") ms of main thread per relayout, $callback_max ms at most"
-    echo "CPU (kosmos-probe cpu; WindowServer from ps -o time=):"
+    echo "row reads following the writes: $(per "$reads" "$relayouts") per relayout, $(per "$fast_reads" "$relayouts") of them 0.1 ms apart"
+    echo "CPU (ps -o time=):"
     cpu_line Kosmos 0
     cpu_line stub 1
     cpu_line WindowManager 2

@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         server?.stop()
-        // Slides end first, so recovery finds the slide trial's Spaces empty.
+        // Slides end first, so recovery finds the pool's Spaces empty.
         controller?.endSlides()
         // Through Hiding when it exists, so batches still queued land first.
         let outcome = hiding?.recoverNow() ?? record.map { Recovery.run(file: $0) }
@@ -244,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.mouseFollowsFocus = config.mouseFollowsFocus
         controller.focusFollowsMouse = config.focusFollowsMouse
         controller.mouseModifier = config.mouseModifier
+        controller.animations = config.animations
         controller.borders = config.borders
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in

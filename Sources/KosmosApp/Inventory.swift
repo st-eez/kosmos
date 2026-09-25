@@ -70,7 +70,7 @@ final class Inventory {
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out a pairing window after it left, for none of the
+    /// A managed window still ordered out at its look (ClosedAndKept.Looks), for none of the
     /// reasons with their own reports: its app closed it and kept it, as NSWindowController
     /// does, or deselected its native tab. With when the inventory saw it ordered out.
     var onKeptOrderedOut: (@MainActor (UInt32, ContinuousClock.Instant) -> Void)?
@@ -148,6 +148,8 @@ final class Inventory {
     /// `reads` too, so every result reaches the main actor in read order (docs/inventory.md).
     private var pending: [PendingEvent] = []
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
+    /// Managed windows seen ordered out, until their look (ClosedAndKept.Looks).
+    private var looks = ClosedAndKept.Looks()
 
     /// WindowServer tracking needs no permission and starts at once.
     func start() {
@@ -305,16 +307,10 @@ final class Inventory {
         return !row.orderedIn
     }
 
-    /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
-    /// probe), and a minimize, a hide and native fullscreen have their own reports. It is
-    /// looked at again a pairing window later, when a native tab switch has paired, and the
-    /// controller decides whether it waits more (ClosedAndKept).
-    private func checkOrderedOut(_ id: UInt32) {
-        let orderedOut = ContinuousClock.now
-        Task { [weak self] in
-            try? await Task.sleep(for: TabSwitches.window)
-            guard let self, self.isKeptOrderedOut(id) else { return }
-            self.onKeptOrderedOut?(id, orderedOut)
+    /// A read was applied: the windows whose look is due are looked at (ClosedAndKept.Looks).
+    private func readApplied() {
+        for (id, orderedOut) in looks.readApplied(eventsWaiting: !pending.isEmpty) where isKeptOrderedOut(id) {
+            onKeptOrderedOut?(id, orderedOut)
         }
     }
 
@@ -425,6 +421,7 @@ final class Inventory {
             guard case .read(let id, _) = event else { return nil }
             return id
         })
+        looks.readAsked()
         reads.async {
             let rows = SkyLight.rows(Array(ids))
             DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
@@ -432,6 +429,7 @@ final class Inventory {
     }
 
     private func applyReads(_ events: [PendingEvent], _ rows: [WindowRow]) {
+        defer { readApplied() }
         let rows = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
         for event in events {
             switch event {
@@ -488,7 +486,9 @@ final class Inventory {
                              at: .now, locked: sessionLocked) {
             onOrderChange?(row.id, row.pid, row.orderedIn, row.frame, .now)
         }
-        if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { checkOrderedOut(row.id) }
+        // Perhaps closed and kept by its app. Concealing a window leaves it ordered in (the
+        // reveal probe), and a minimize, a hide and native fullscreen have their own reports.
+        if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { looks.orderedOut(row.id, at: .now) }
         // Shown now, as the second window an app launched hidden restored, with no report of
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
@@ -605,6 +605,7 @@ final class Inventory {
         touchedDuringSweep = []
         flushReads()
         let tracked = Array(windows.keys) + arrivedWhileLocked.keys
+        looks.readAsked()
         reads.async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
@@ -622,6 +623,7 @@ final class Inventory {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
         defer { if sweepAgain { sweepAgain = false; sweep() } }
+        defer { readApplied() }
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
@@ -675,7 +677,7 @@ final class Inventory {
             heldOrder.swept()
             // No window counted as closed and kept since the lock: check each one still out,
             // now that the switches the lock held have paired.
-            for (id, row) in windows where !row.orderedIn && isManaged(id) { checkOrderedOut(id) }
+            for (id, row) in windows where !row.orderedIn && isManaged(id) { looks.orderedOut(id, at: .now) }
         }
     }
 

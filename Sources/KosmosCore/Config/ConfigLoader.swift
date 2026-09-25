@@ -83,7 +83,8 @@ private struct ConfigDecoder {
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
             "config-version", "include", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
-            "mouse-modifier", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "mode", "rule", "profile",
+            "mouse-modifier", "animations", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "mode", "rule",
+            "profile",
         ])
         var config = Config()
 
@@ -111,6 +112,9 @@ private struct ConfigDecoder {
             } catch {
                 fail(error.message, at: entry.value.position, path.key(entry.key))
             }
+        }
+        if let entry = root["animations"] {
+            config.animations = boolean(entry.value, path.key(entry.key)) ?? true
         }
         if let entry = root["monitors"] {
             config.monitors = monitors(entry.value, path.key(entry.key))
