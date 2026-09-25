@@ -65,17 +65,17 @@
     session. A switch's two halves came 0.2 ms apart (`kosmos-probe tabs`), and a read took
     about 1.4 ms at the desk ([inventory.md](inventory.md)), so when the halves fall in two
     reads, the second is asked for before the first is applied, and the look waits for
-    it. Whether halves ever fell in two reads is unmeasured: Kosmos logs order changes at
-    debug level, and the live logs of September 23 to 25 kept info level, where the five
-    pairings, four Terminal tab switches and the misfire below, have no times for their
-    halves. A half that reached Kosmos only after the other's read was applied would come
+    it. A half that reached Kosmos only after the other's read was applied would come
     after the look, and the deselected tab would park as closed and kept, then give its
     place to the new tab when the switch pairs, after one reflow and focus change too many.
-  - So the log measures it at info level. Each pairing's line gives how far apart Kosmos
-    applied the two halves and which came first; each look says whether a tab half had
-    come and how long after the order-out the look was; and a switch that pairs after its
-    deselected tab parked says so. A day of Ghostty and Finder tabs sets the pairing
-    window and whether the look needs a wait; until then the pairing window stays 250 ms.
+  - Open: how far apart Kosmos applies a switch's two halves, which sets the pairing
+    window and whether the look needs a wait. Kosmos logged order changes at debug level,
+    and the live logs of September 23 to 25 kept info level, so their five pairings, four
+    Terminal tab switches and a Terminal window leaving fullscreen that paired with
+    another's toolbar windows, have no times for their halves. Kosmos now logs each
+    candidate window's order change at info level, and says when a switch pairs after its
+    deselected tab parked as closed and kept. A day of Ghostty and Finder tabs settles it,
+    and the log goes then; until then the pairing window stays 250 ms.
   - A minimize and a hide have reports of their own, taken to come before the order-out:
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize

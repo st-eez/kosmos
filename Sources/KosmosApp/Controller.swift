@@ -444,8 +444,10 @@ final class Controller {
     /// returns to its place, and Kosmos follows it. A reopened Settings window returns
     /// 250 ms late for that.
     private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
+        // Temporary: measures the tab pairing window (docs/tree.md); remove once a day of Ghostty and Finder tabs has set it.
+        controllerLog.info("\(id) ordered \(orderedIn ? "in" : "out", privacy: .public), app \(self.inventory.appIdentity(pid).name ?? String(pid), privacy: .public)")
         if let change = tabSwitches.ordered(id, in: orderedIn, frame: frame, app: pid, at: at),
-           tabSwitched(from: change.old, to: change.new, frame: frame, halves: (change.gap, change.newFirst)) {
+           tabSwitched(from: change.old, to: change.new, frame: frame) {
             return
         }
         guard orderedIn, tabs.hidden.contains(id) || closedByApp.contains(id) else { return }
@@ -462,19 +464,15 @@ final class Controller {
     /// The selected tab changed from `old` to `new`: `new` takes the place of `old`, with no
     /// reflow and no follow, and `old` waits out of the session as a hidden member
     /// (docs/tree.md). A tab not admitted yet takes the place once it is. False
-    /// when `old` holds no place. `frame` is the tabs' frame. `halves`: how far apart Kosmos
-    /// applied the switch's two halves, and whether the order-in came first, logged to
-    /// measure the pairing window; nil at the new tab's admission.
-    private func tabSwitched(from deselected: WindowID, to new: WindowID, frame: CGRect?,
-                             halves: (gap: Duration, newFirst: Bool)? = nil) -> Bool {
-        let paired = halves.map { ", halves applied \(Self.ms($0.gap)) ms apart, the order-\($0.newFirst ? "in" : "out") first" }
+    /// when `old` holds no place. `frame` is the tabs' frame.
+    private func tabSwitched(from deselected: WindowID, to new: WindowID, frame: CGRect?) -> Bool {
         let old: WindowID
         switch tabs.switched(from: deselected, to: new, admitted: owner[new] != nil,
                              placed: { self.session.workspace(of: $0) != nil },
                              sharesFrame: { frame != nil && self.inventory.windows[$0]?.frame == frame }) {
         case .none: return false
         case .pending:
-            controllerLog.info("tab \(new) takes the place of \(deselected) once admitted\(paired ?? "", privacy: .public)")
+            controllerLog.info("tab \(new) takes the place of \(deselected) once admitted")
             return true
         case .replace(let holder): old = holder
         }
@@ -487,10 +485,7 @@ final class Controller {
         guard let plan = session.replace(old, with: new) else { return false }
         placedHidden[old] = nil
         if plan.hide.contains(new) { placedHidden[new] = .tab }
-        controllerLog.info("""
-            tab \(new) replaces \(old)\(paired ?? " at its admission", privacy: .public)\
-            \(parked ? ", after \(old) parked as closed and kept" : "", privacy: .public)
-            """)
+        controllerLog.info("tab \(new) replaces \(old)\(parked ? ", after \(old) parked as closed and kept" : "", privacy: .public)")
         tabs.replaced(old, with: new)
         // Parked as closed by its app, as a window Merge All Windows made a tab.
         closedByApp.remove(new)
@@ -526,28 +521,15 @@ final class Controller {
     /// drags it parks too, where it stood. `orderedOut`: when the inventory saw it ordered
     /// out.
     private func keptOrderedOut(_ id: WindowID, orderedOut: ContinuousClock.Instant) {
-        // Each look logs whether a tab half came, to measure the pairing window; the tab
-        // line gives its time.
-        let looked = Self.ms(ContinuousClock.now - orderedOut)
-        if tabs.hidden.contains(id) {
-            controllerLog.info("\(id) looked at \(looked, privacy: .public) ms after its order-out: a tab half came, and it is a deselected tab")
-            return
-        }
         guard session.workspace(of: id) != nil, !session.isParked(id) || session.lifted.contains(id) else { return }
-        let claimed = tabs.isClaimed(id)
-        if let wait = ClosedAndKept.hold(orderedOut: orderedOut, claimed: claimed,
+        if let wait = ClosedAndKept.hold(orderedOut: orderedOut, claimed: tabs.isClaimed(id),
                                          spacesChanged: inventory.spacesChangedAt, at: .now) {
-            controllerLog.info("""
-                \(id) looked at \(looked, privacy: .public) ms after its order-out: \
-                \(claimed ? "a tab half came, and its new tab awaits admission" : "no tab half, and Spaces changed lately", privacy: .public); \
-                looked at again in \(Self.ms(wait), privacy: .public) ms
-                """)
             after(wait) { controller in
                 if controller.inventory.isKeptOrderedOut(id) { controller.keptOrderedOut(id, orderedOut: orderedOut) }
             }
             return
         }
-        controllerLog.info("\(id) closed and kept by its app: parked \(looked, privacy: .public) ms after it was seen ordered out, with no tab half")
+        controllerLog.info("\(id) closed and kept by its app: parked \(Self.ms(ContinuousClock.now - orderedOut), privacy: .public) ms after it was seen ordered out")
         closedByApp.insert(id)
         depart([id], remaining: owner[id].map { inventory.otherWindows(of: $0, besides: id) } ?? [])
     }

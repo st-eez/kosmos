@@ -33,16 +33,15 @@ public struct TabSwitches: Sendable {
 
     /// A window of `app` with `frame` was ordered in, or ordered out or destroyed. Returns
     /// the switch it completes: `old`, the tab ordered out or destroyed, and `new`, the tab
-    /// ordered in, with how long after the first half the second came, and whether the first
-    /// was the order-in.
-    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, frame: CGRect, app: Int32, at now: ContinuousClock.Instant)
-        -> (old: WindowID, new: WindowID, gap: Duration, newFirst: Bool)? {
+    /// ordered in.
+    public mutating func ordered(_ window: WindowID, in orderedIn: Bool, frame: CGRect, app: Int32,
+                                 at now: ContinuousClock.Instant) -> (old: WindowID, new: WindowID)? {
         // A window's newer change replaces its older one: a window back is no switch.
         var changes = (unpaired[app] ?? []).filter { now - $0.at <= Self.window && $0.window != window }
         defer { unpaired[app] = changes.isEmpty ? nil : changes }
         if let index = changes.lastIndex(where: { $0.orderedIn != orderedIn && $0.frame == frame }) {
             let prior = changes.remove(at: index)
-            return orderedIn ? (prior.window, window, now - prior.at, false) : (window, prior.window, now - prior.at, true)
+            return orderedIn ? (prior.window, window) : (window, prior.window)
         }
         changes.append(Change(window: window, orderedIn: orderedIn, frame: frame, at: now))
         return nil
