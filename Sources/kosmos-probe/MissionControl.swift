@@ -5,9 +5,18 @@
 // A concealed window keeps its ordinary Space, and Mission Control shows it as an empty
 // placeholder with its app's icon. The probe opens four windows in an accessory app, which
 // Kosmos leaves alone, and conceals two of them in a holding Space as Kosmos does. It
-// watches the Dock's Exposé notifications as yabai does (src/mission_control.c), and
-// WindowServer event 1204, which yabai reads for Mission Control before macOS 12. Each
-// prints with the wall clock time.
+// watches the Exposé notifications as yabai does (src/mission_control.c), on the Dock, where
+// yabai watches them, and on WindowManager.app, which draws Mission Control on macOS 27 and
+// contains the same names. It also watches WindowServer event 1204, which yabai reads for
+// Mission Control before macOS 12. Each prints with the wall clock time.
+//
+// On the first run, with the Dock alone, no signal arrived while Mission Control opened
+// twice, and at cleanup the holding Space held two windows of WindowManager's, which names
+// its placeholders "App Icon Window" at layer 17. So the probe also prints two controls, which
+// never strip: AXMenuOpened, which the Dock posts for a right click on one of its icons and
+// which proves the observer path, and AXWindowCreated. It also prints each WindowServer event
+// 1325 and 1326 that adds a window to the holding Space or removes one from it, with the
+// window's app and level.
 //
 //   none      strips nothing: the concealed windows keep their ordinary Space throughout.
 //   on-enter  strips them at the first enter signal of either kind and gives their ordinary
@@ -22,6 +31,7 @@
 // Needs Accessibility for the terminal; the probe never asks for it.
 import AppKit
 import CKosmos
+import KosmosSkyLight
 
 private enum Strip: String {
     case never = "none"
@@ -29,10 +39,11 @@ private enum Strip: String {
     case always
 }
 
-/// The Dock's Exposé notifications, as yabai names them. The Dock of macOS 27 (26A428)
-/// contains the same four names.
+/// The Exposé notifications, as yabai names them. The Dock and WindowManager.app of macOS 27
+/// (26A428) contain the same four names.
 private let enterNotifications = ["AXExposeShowAllWindows", "AXExposeShowFrontWindows", "AXExposeShowDesktop"]
 private let exitNotification = "AXExposeExit"
+private let controlNotifications = [kAXMenuOpenedNotification, kAXWindowCreatedNotification]
 
 /// How long, in milliseconds, an operation's result is read before the probe gives up on it.
 private let landingBound = 2000.0
@@ -58,9 +69,8 @@ private let landingBound = 2000.0
         }
     }
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
-    guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
-        print("the Dock is not running")
-        exit(1)
+    let watched = ["com.apple.dock", "com.apple.WindowManager"].compactMap {
+        NSRunningApplication.runningApplications(withBundleIdentifier: $0).first
     }
     // Bridged operations need an AppKit client, and the notifications arrive in its event loop.
     let app = NSApplication.shared
@@ -89,7 +99,8 @@ private let landingBound = 2000.0
           + stub.windows.map { "\(stub.label($0)) \($0) \(windows.contains($0) ? "concealed" : "shown")" }.joined(separator: ", "))
     print("concealed: \(concealed.membership())")
     probe = MissionControlProbe(strip: strip, stub: stub, concealed: concealed)
-    probe!.watch(dock: dock.processIdentifier)
+    for app in watched { probe!.watch(app) }
+    probe!.watchHoldingSpace()
     probe!.handleSignals()
     print("open Mission Control, App Exposé and Show Desktop; Ctrl-C ends the probe")
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { probe?.finish("\(seconds) s passed") }
@@ -152,7 +163,8 @@ private struct Concealed: Sendable {
     private let concealed: Concealed
     /// Runs the operations in order, off the main thread, as Kosmos's bridge queue does.
     private let bridge = DispatchQueue(label: "kosmos-probe.mission-control")
-    private var observer: AXObserver?
+    private var observers: [AXObserver] = []
+    private var names: [pid_t: String] = [:]
     private var signalSources: [DispatchSourceSignal] = []
     /// The uptime of the first enter signal since the last exit.
     private var opened: Double?
@@ -162,24 +174,49 @@ private struct Concealed: Sendable {
         (self.strip, self.stub, self.concealed) = (strip, stub, concealed)
     }
 
-    func watch(dock: pid_t) {
+    func watch(_ app: NSRunningApplication) {
+        let pid = app.processIdentifier, name = app.localizedName ?? "pid \(pid)"
+        names[pid] = name
         var created: AXObserver?
-        guard AXObserverCreate(dock, { _, _, notification, _ in
+        guard AXObserverCreate(pid, { _, element, notification, _ in
             let at = uptime()
-            MainActor.assumeIsolated { probe?.notice(notification as String, at: at) }
-        }, &created) == .success, let observer = created else { finish("no Accessibility observer for the Dock") }
-        let element = AXUIElementCreateApplication(dock)
-        for name in enterNotifications + [exitNotification] {
-            let result = AXObserverAddNotification(observer, element, name as CFString, nil)
-            print("\(name): \(result == .success ? "registered" : "not registered, AXError \(result.rawValue)")")
+            var pid: pid_t = 0
+            AXUIElementGetPid(element, &pid)
+            MainActor.assumeIsolated { probe?.notice(notification as String, from: pid, at: at) }
+        }, &created) == .success, let observer = created else { finish("no Accessibility observer for \(name)") }
+        let element = AXUIElementCreateApplication(pid)
+        for notification in enterNotifications + [exitNotification] + controlNotifications {
+            let result = AXObserverAddNotification(observer, element, notification as CFString, nil)
+            print("\(name) \(notification): \(result == .success ? "registered" : "not registered, AXError \(result.rawValue)")")
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        self.observer = observer
+        observers.append(observer)
+    }
+
+    /// Prints each window that joins or leaves the holding Space.
+    func watchHoldingSpace() {
         let result = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { _, _, _, _, _ in
             let at = uptime()
-            DispatchQueue.main.async { MainActor.assumeIsolated { probe?.notice("WindowServer event 1204", at: at) } }
+            DispatchQueue.main.async { MainActor.assumeIsolated { probe?.notice("WindowServer event 1204", from: 0, at: at) } }
         }, 1204, nil)
         print("WindowServer event 1204: \(result == .success ? "registered" : "not registered, CGError \(result.rawValue)")")
+        for id: UInt32 in [1325, 1326] {
+            SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+                let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+                guard bytes.count >= 12 else { return }
+                let space = bytes.loadUnaligned(fromByteOffset: 0, as: UInt64.self)
+                let window = bytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                DispatchQueue.main.async { MainActor.assumeIsolated { probe?.membershipChanged(id, window, space) } }
+            }, id, nil)
+        }
+    }
+
+    func membershipChanged(_ id: UInt32, _ window: UInt32, _ space: UInt64) {
+        guard space == concealed.space else { return }
+        let row = SkyLight.rows([window]).first
+        let app = row.map { NSRunningApplication(processIdentifier: $0.pid)?.localizedName ?? "pid \($0.pid)" } ?? "gone"
+        print("\(wallClock.string(from: Date())) WindowServer event \(id): window \(window) (\(app), level \(row.map { "\($0.level)" } ?? "unread")) "
+              + (id == 1325 ? "joined" : "left") + " the holding Space")
     }
 
     /// Ctrl-C, a kill and a closed terminal clean up as the timeout does.
@@ -193,11 +230,14 @@ private struct Concealed: Sendable {
         }
     }
 
-    /// An enter or exit signal that arrived at the uptime `at`.
-    func notice(_ name: String, at: Double) {
+    /// A notification from the process `pid`, or WindowServer's when 0, that arrived at the
+    /// uptime `at`.
+    func notice(_ notification: String, from pid: pid_t, at: Double) {
         let stamp = wallClock.string(from: Date())
+        let name = pid == 0 ? notification : "\(names[pid] ?? "pid \(pid)") \(notification)"
+        if controlNotifications.contains(notification) { return print(stamp + " " + name + " (control)") }
         let concealed = self.concealed
-        if name == exitNotification {
+        if notification == exitNotification {
             print(stamp + " " + name + (opened.map { String(format: ", %.0f ms after the first enter signal", at - $0) } ?? ", with no enter signal before it"))
             opened = nil
             guard stripped else { return }

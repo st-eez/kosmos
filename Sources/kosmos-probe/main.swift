@@ -91,7 +91,7 @@
 //   kosmos-probe mission-control [none|on-enter|always] [seconds]
 //                                   Can concealed windows be kept out of Mission Control by
 //                                   stripping their ordinary Space only while it is open?
-//                                   Prints the Dock's Exposé notifications and when each
+//                                   Prints the Exposé notifications and when each
 //                                   strip and restore landed (MissionControl.swift).
 import AppKit
 import CKosmos
