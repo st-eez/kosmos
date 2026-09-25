@@ -41,14 +41,13 @@
   overlapping holders, only the first enable and the last release sent one. AppKit's
   password field turns it on with EnableSecureEventInput, which AppKit imports from
   HIToolbox (`dyld_info -imports`, macOS 27), so a holder that crashes or is killed
-  releases it too. Kosmos
-  registers both on its own connection, then reads `IsSecureEventInputEnabled` and names
-  the holder from the session dictionary. Nothing polls. The handler runs on the main
-  actor when an event arrives, never inside a switch, though it can run right after one:
-  an app that holds Secure Input only while it is active, such as Terminal with Secure
-  Keyboard Entry, turns it off and on as a switch leaves or enters its workspace, and the
-  status item image changes with it. Checks on app activation or focus reports would
-  miss a password field focused inside the active app.
+  releases it too. Kosmos registers both on its own connection, then reads
+  `IsSecureEventInputEnabled` and names the holder from the session dictionary. Nothing
+  polls. The handler runs on the main actor when an event arrives, never inside a switch,
+  though it can run right after one: an app that holds Secure Input only while it is
+  active, such as Terminal with Secure Keyboard Entry, turns it off and on as a switch
+  leaves or enters its workspace, and the status item image changes with it. Checks on app
+  activation or focus reports would miss a password field focused inside the active app.
 - The events follow the session's state. With two holders, the second enable and a
   release while the other remains send no event, so the named holder can be stale until
   Secure Input turns off and on again.

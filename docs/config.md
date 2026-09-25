@@ -19,7 +19,7 @@
   so identical monitors, whose vendor, model and numeric serial are the same, should get
   their own serials. Steve's twin VG279QE5A panels share one EDID UUID (dotfiles
   `aerospace/apply-profile.sh`), and CGDisplaySerialNumber, the EDID's numeric serial, is
-  zero on both. At his desk on September 25, 2026, `kosmos-probe displays` read
+  zero on both. At Steve's desk on September 25, 2026, `kosmos-probe displays` read
   `T9LMTF156633` and `T9LMTF156643` for them, from framebuffers `dispext0` and `dispext1`,
   and three distinct display UUIDs, so the twins also get their own bar numbers and current
   Spaces. The built-in display's framebuffer has no serial. When CoreDisplay stops naming

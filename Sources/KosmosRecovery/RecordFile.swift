@@ -1,7 +1,7 @@
 import Foundation
 
-/// Two slots in a file mapped shared, never synced: the page cache keeps the record when the
-/// process dies (docs/hiding.md).
+/// Two slots in a file mapped shared, never synced, since the page cache keeps the record when
+/// the process dies (docs/hiding.md).
 public final class RecordFile {
     static let slotSize = 4096
     /// generation (8), CRC32 of length and payload (4), payload length (4).

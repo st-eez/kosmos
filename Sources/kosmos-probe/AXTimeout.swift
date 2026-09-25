@@ -1,4 +1,4 @@
-// Accessibility reads of an app that is launching, answering and hung (docs/overview.md).
+// Accessibility reads of an app that is launching, answering and hung (docs/geometry.md).
 //
 //   kosmos-probe ax-timeout         What Accessibility returns, and how long it takes, for a
 //                                   child with no window that is launching, answering and

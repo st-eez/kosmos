@@ -10,8 +10,8 @@ struct RecoveryPlan: Equatable {
     /// added, and its add never lands.
     var withoutRow: Set<UInt32> = []
 
-    /// Each member is planned whether or not `alive`, a read of rows, found it: removing a
-    /// window that is gone does nothing, and left out, it would keep the record for good.
+    /// Each member is planned whether or not `alive`, a read of rows, found it, since removing
+    /// a window that is gone does nothing, and left out, it would keep the record for good.
     /// `isOnAnySpace` counts native fullscreen Spaces, and is nil when the Spaces do not read.
     static func make(members: [UInt64: [UInt32]], recorded: [UInt32], alive: Set<UInt32>,
                      isOnAnySpace: (UInt32) -> Bool?, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
@@ -47,7 +47,7 @@ struct RecoveryPlan: Equatable {
 
     var windows: Set<UInt32> { Set(removalsBySpace.values.joined()).union(adds.values.joined()).union(stuck) }
 
-    /// An added window leaves its recorded Space only once its add landed: removed from its
+    /// An added window leaves its recorded Space only once its add landed. Removed from its
     /// only Space, it would land on the active Space, which can be a native fullscreen one.
     /// A member with no row leaves regardless, or a closed one would keep the record for good.
     func removals(landed: (UInt32) -> Bool) -> [UInt64: [UInt32]] {

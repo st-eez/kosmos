@@ -8,7 +8,7 @@
 #include <CoreGraphics/CGAffineTransform.h>
 
 // The first bridged operation class this macOS lacks, or NULL. The operations below that
-// change a Space return nothing: WindowManager.app performs them later, and a read shows it.
+// change a Space return nothing. WindowManager.app performs them later, and a read shows it.
 const char *kosmos_bridge_missing(void);
 // Returns 0 on failure, with any partial Space destroyed.
 uint64_t kosmos_holding_create(void);
