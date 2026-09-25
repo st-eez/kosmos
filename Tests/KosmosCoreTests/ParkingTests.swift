@@ -229,6 +229,66 @@ func unparkInAnyOrderRestoresTheTree(parking: [WindowID], unparking: [WindowID])
     #expect(workspace.focusedWindow == 1)
 }
 
+// MARK: Park reasons (docs/tree.md)
+
+@Test func aWindowHiddenWithItsAppKeepsThatReasonTillTheUnhide() {
+    var s = Session(names: ["1", "2"], display: screen)
+    _ = s.add(1); _ = s.add(2); _ = s.add(3, to: "2")
+    _ = s.park([1, 3], because: .appHidden)
+    // Minimized or in native fullscreen while hidden, it still returns with its app.
+    #expect(s.park([1], because: .minimized).isEmpty)
+    #expect(s.park([3], because: .fullscreen).isEmpty)
+    #expect(s.parked(because: .appHidden) == [1, 3])
+    _ = s.unpark(s.parked(because: .appHidden), follow: nil)
+    #expect(!s.isParked(1) && !s.isParked(3))
+    #expect(s.parkReason(of: 1) == nil && s.parkReason(of: 3) == nil)
+}
+
+@Test func aFullscreenWindowSitsOutItsAppsHideAndUnhide() {
+    var s = Session(names: ["1"], display: screen)
+    _ = s.add(1); _ = s.add(2)
+    _ = s.park([1], because: .fullscreen)
+    _ = s.park([1], because: .appHidden)
+    #expect(s.parkReason(of: 1) == .fullscreen)
+    #expect(s.parked(because: .appHidden).isEmpty)
+    _ = s.unpark([1], follow: 1)   // it leaves fullscreen
+    #expect(!s.isParked(1) && s.parkReason(of: 1) == nil)
+}
+
+@Test func aWindowClosedAndKeptTakesTheReasonHeardAfterItsLook() {
+    var s = Session(names: ["1"], display: screen)
+    _ = s.add(1); _ = s.add(2); _ = s.add(3)
+    _ = s.park([1, 2, 3], because: .closedByApp)
+    #expect(s.park([1], because: .minimized).isEmpty)
+    #expect(s.park([2], because: .fullscreen).isEmpty)
+    #expect(s.parkReason(of: 1) == .minimized && s.parkReason(of: 2) == .fullscreen)
+    _ = s.reopen(3, to: nil, floating: false)
+    #expect(!s.isParked(3) && s.parkReason(of: 3) == nil)
+    _ = s.remove(1)
+    #expect(s.parkReason(of: 1) == nil)
+}
+
+@Test func aSelectedTabTakesTheParkReasonOfTheTabItReplaces() {
+    var s = Session(names: ["1"], display: screen)
+    _ = s.add(1); _ = s.add(2); _ = s.add(8)
+    _ = s.park([2], because: .fullscreen)
+    _ = s.replace(2, with: 7)
+    #expect(s.parkReason(of: 7) == .fullscreen && s.parkReason(of: 2) == nil)
+    // A window Merge All Windows parked as closed and kept leaves its own place.
+    _ = s.park([8], because: .closedByApp)
+    _ = s.replace(7, with: 8)
+    #expect(s.parked(because: .fullscreen) == [8] && s.parked(because: .closedByApp).isEmpty)
+}
+
+@Test func aLiftedWindowTakesAReasonWhenItParks() {
+    var s = Session(names: ["1"], display: screen)
+    _ = s.add(1); _ = s.add(2)
+    _ = s.lift(1)
+    #expect(s.isParked(1) && s.parkReason(of: 1) == nil)
+    _ = s.park([1], because: .appHidden)
+    #expect(s.lifted.isEmpty && s.parkReason(of: 1) == .appHidden)
+}
+
 // MARK: Floating and tiling
 
 @Test func floatAndTileReturnsToPlace() {

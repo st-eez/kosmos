@@ -75,7 +75,7 @@ extension Controller {
                                                appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {
             if reason == .fullscreen { fullscreenParked.insert(id) }
             if reason == .appHidden { hiddenApps[pid, default: []].append(id) }
-            plan.frames = session.park([id]).frames
+            plan.frames = session.park([id], because: reason).frames
             plan.hide.removeAll { $0 == id }
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
@@ -105,11 +105,12 @@ extension Controller {
             // order-out: it changes reason.
             if closedByApp.remove(id) != nil {
                 fullscreenParked.insert(id)
+                _ = session.park([id], because: .fullscreen)
                 return
             }
             guard !session.isParked(id) || session.lifted.contains(id) else { return }
             fullscreenParked.insert(id)
-            execute(session.park([id]))
+            execute(session.park([id], because: .fullscreen))
         } else if fullscreenParked.remove(id) != nil {
             // macOS restores the frame it had; write the tile's frame again all the same.
             ledger.forget(id)
@@ -204,7 +205,7 @@ extension Controller {
         }
         controllerLog.info("\(id) closed and kept by its app: parked \((ContinuousClock.now - orderedOut).milliseconds, format: .fixed(precision: 3)) ms after it was seen ordered out")
         closedByApp.insert(id)
-        depart([id], remaining: owner[id].map { inventory.otherWindows(of: $0, besides: id) } ?? [])
+        depart([id], because: .closedByApp, remaining: owner[id].map { inventory.otherWindows(of: $0, besides: id) } ?? [])
     }
 
     /// A command received after the return wins, and its focus is requested again, as macOS
@@ -219,9 +220,9 @@ extension Controller {
 
     /// When the key window left too and macOS has a window to key, the focus waits for its
     /// report of the next key window, up to the departure bound (tla/Kosmos.tla, Depart).
-    private func depart(_ windows: [WindowID], remaining: [DepartureFocus.OtherWindow]? = nil) {
+    private func depart(_ windows: [WindowID], because reason: ParkReason, remaining: [DepartureFocus.OtherWindow]? = nil) {
         let focusLeft = session.focused.map(windows.contains) == true
-        execute(session.park(windows))
+        execute(session.park(windows, because: reason))
         switch DepartureFocus.decide(focusLeft: focusLeft, key: key, departing: windows, left: inventory.leftScreen,
                                      remaining: remaining) {
         case .none:
@@ -244,7 +245,7 @@ extension Controller {
         }.map(\.key)
         guard !windows.isEmpty else { return }
         hiddenApps[pid, default: []] += windows
-        depart(windows)
+        depart(windows, because: .appHidden)
     }
 
     private func appUnhidden(_ pid: pid_t, at received: ContinuousClock.Instant) {
@@ -270,7 +271,7 @@ extension Controller {
             // Parked as closed and kept if its order-out was looked at first: it is minimized
             // instead.
             closedByApp.remove(id)
-            depart([id])
+            depart([id], because: .minimized)
         case .minimized(let id, false):
             returned([id], follow: id, at: report.received)
         case .framesApplied(let results):

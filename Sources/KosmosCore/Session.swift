@@ -1,10 +1,12 @@
 import CoreGraphics
 
-/// Why a window Kosmos admits waits parked (docs/tree.md).
+/// Why a window waits parked (docs/tree.md).
 public enum ParkReason: Equatable, Sendable {
     case fullscreen
     case minimized
     case appHidden
+    /// Its app ordered it out and kept it.
+    case closedByApp
 
     /// Fullscreen comes first: a fullscreen window of a hidden app returns when it leaves
     /// fullscreen, and a minimized window stays minimized when its app unhides.
@@ -50,6 +52,8 @@ public struct Session: Sendable {
     /// Parked windows Kosmos concealed, their workspace hidden when they parked. Switches skip
     /// parked windows, so these stay concealed until they return.
     var parkedConcealed: Set<WindowID> = []
+    /// Every parked window has one, except a lifted one.
+    var parkReasons: [WindowID: ParkReason] = [:]
     /// The smallest size each window took, as read backs show, until it is seen smaller.
     var minimums: [WindowID: CGSize] = [:]
     /// Workspaces a profile left out, as they were, for a later profile that lists them.
@@ -123,7 +127,14 @@ public struct Session: Sendable {
             }
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
+        for window in lifted where parkReasons[window] != nil { problems.append("lifted window \(window) has a park reason") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
+        for window in parkReasons.keys where !isParked(window) { problems.append("window \(window) with a park reason is not parked") }
+        for name in names {
+            for entry in workspaces[name]!.parked where parkReasons[entry.window] == nil && !lifted.contains(entry.window) {
+                problems.append("parked window \(entry.window) has no reason")
+            }
+        }
         for (window, origin) in mergedFrom {
             if home[window] == nil { problems.append("merged window \(window) belongs to no workspace") }
             if mergedAway[origin]?.contains(window) != true { problems.append("merged window \(window) is not in \(origin)") }
@@ -195,6 +206,7 @@ public struct Session: Sendable {
         minimums[window] = nil
         mergedFrom[window] = nil
         parkedConcealed.remove(window)
+        parkReasons[window] = nil
         lifted.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
@@ -203,8 +215,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// `new`, the tab just selected, takes `old`'s place and a tiled `old`'s minimum
-    /// (docs/tree.md). Nil when `old` holds no place.
+    /// `new`, the tab just selected, takes `old`'s place with its park reason, and a tiled
+    /// `old`'s minimum (docs/tree.md). Nil when `old` holds no place.
     public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
@@ -217,6 +229,7 @@ public struct Session: Sendable {
             changed.insert(current)
         }
         if lifted.remove(old) != nil { lifted.insert(new) }
+        parkReasons[new] = parkReasons.removeValue(forKey: old)
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
         home[new] = name
@@ -232,15 +245,22 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The plan asks for no focus: macOS keys another window itself, and a request would pull
-    /// the screen out of a native fullscreen Space (docs/tree.md).
-    public mutating func park(_ windows: [WindowID]) -> Plan {
+    /// A parked window keeps its reason, except one closed and kept: a minimize or native
+    /// fullscreen heard after the look explains its order-out (docs/tree.md). The plan asks for
+    /// no focus: macOS keys another window itself, and a request would pull the screen out of
+    /// a native fullscreen Space.
+    public mutating func park(_ windows: [WindowID], because reason: ParkReason) -> Plan {
         defer { check() }
         var changed: Set<String> = []
         for window in windows {
-            guard let name = home[window], lifted.remove(window) != nil || workspaces[name]!.park(window) else { continue }
-            changed.insert(name)
-            if !isShown(name) { parkedConcealed.insert(window) }
+            guard let name = home[window] else { continue }
+            if lifted.remove(window) != nil || workspaces[name]!.park(window) {
+                changed.insert(name)
+                if !isShown(name) { parkedConcealed.insert(window) }
+            } else if parkReasons[window] != .closedByApp {
+                continue
+            }
+            parkReasons[window] = reason
         }
         return Plan(frames: frames(of: changed))
     }
@@ -270,6 +290,7 @@ public struct Session: Sendable {
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
+        for window in returning { parkReasons[window] = nil }
         return plan
     }
 
@@ -296,6 +317,12 @@ public struct Session: Sendable {
     public func isParked(_ window: WindowID) -> Bool {
         guard let name = home[window] else { return false }
         return workspaces[name]!.parked.contains { $0.window == window }
+    }
+
+    public func parkReason(of window: WindowID) -> ParkReason? { parkReasons[window] }
+
+    public func parked(because reason: ParkReason) -> [WindowID] {
+        names.flatMap { workspaces[$0]!.parked.map(\.window) }.filter { parkReasons[$0] == reason }
     }
 
     public mutating func setMinimum(_ window: WindowID, _ size: CGSize) -> Plan {

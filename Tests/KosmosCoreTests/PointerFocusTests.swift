@@ -96,7 +96,7 @@ private func session() -> Session {
     _ = s.add(1)
     _ = s.add(2, floating: true)
     _ = s.add(3)
-    _ = s.park([3])
+    _ = s.park([3], because: .fullscreen)
     _ = s.add(4, to: "2")
     s.adopt(1)
     return s

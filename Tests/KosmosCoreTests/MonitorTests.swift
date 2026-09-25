@@ -247,7 +247,7 @@ import Testing
         var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(12, floating: true); _ = s.add(13, floating: true)
         _ = s.add(50, to: "5"); _ = s.add(51, to: "5", floating: true)
-        _ = s.park([13])
+        _ = s.park([13], because: .minimized)
         let between = CGRect(x: 760, y: 300, width: 400, height: 400)
         let frames: [WindowID: CGRect] = [12: CGRect(x: 0, y: 300, width: 400, height: 400), 13: between, 51: between]
         // A parked window and another workspace's floating window count nowhere, whatever
@@ -305,7 +305,7 @@ import Testing
         // main panel, keeps its Space, and so does 50, another app's.
         #expect(s.stripped([20, 50, 60], latest: latest) == [60])
         // Once 10 is minimized, nothing of the app shows, and nothing is stripped.
-        _ = s.park([10])
+        _ = s.park([10], because: .minimized)
         #expect(s.stripped([20, 60], latest: latest).isEmpty)
         let one = Session(names: ["1", "2"], display: Desk.main.frame)
         #expect(one.stripped([1, 2], latest: { _ in 1 }).isEmpty)
@@ -337,7 +337,7 @@ import Testing
     @Test func aWindowReturningToAnotherDisplayIsFollowedThere() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
-        _ = s.park([50])
+        _ = s.park([50], because: .minimized)
         let plan = s.unpark([50], follow: 50)
         #expect(s.focusedWorkspace == "5")
         #expect(plan.show.isEmpty && plan.hide.isEmpty)
@@ -397,7 +397,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
                            floating: Int.random(in: 0..<4, using: &random) == 0))
             nextWindow += 1
         case 4: if let window { carryOut(s.remove(window)); concealed.remove(window); written[window] = nil }
-        case 5: if let window { carryOut(s.park([window])) }
+        case 5: if let window { carryOut(s.park([window], because: step.isMultiple(of: 2) ? .closedByApp : .fullscreen)) }
         case 6: if let window { carryOut(s.unpark([window], follow: Bool.random(using: &random) ? window : nil)) }
         case 7: if let window, let home = s.workspace(of: window), s.isShown(home) { s.adopt(window) }
         case 8: if let window, let home = s.workspace(of: window), !s.isShown(home), !s.isParked(window) { carryOut(s.follow(window)) }
