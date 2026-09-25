@@ -80,6 +80,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
+| Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
 
 The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
 on its own and never delays another app.
@@ -152,14 +153,22 @@ off the main thread).
   reorder, order change or Space change, or at the next sweep, which logs the change as
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
   level change is unmeasured, as the probe keeps its window invisible.
-- Open item: every switch posts 815 about twice for each watched window, including windows
-  the switch never touched. Kosmos watches only the windows it tracks, those of regular
-  apps. In 40 switches (`kosmos-probe events`, 2026-09-24) they got 278 of 815 and 41 of
-  808: Activity Monitor's, Ghostty's, Helium's and ChatGPT's windows. The probe watches
-  every window, so it also counted JankyBorders' (279 and 41) and Wispr Flow's (83), which
-  Kosmos never gets. Each event reads its window's row synchronously on the main thread,
-  about 0.8 ms a switch (33 of about 66 busy main thread samples). One query for every
-  window named in a run loop turn would cut that if it ever matters.
+- An event that names a window is answered with the window's row, read from WindowServer,
+  and a read during a switch waits for WindowServer to commit the switch's Space
+  transaction. Every switch posts 815 about twice for each watched window, including
+  windows it never touched: on the laptop Kosmos's windows got 278 of 815 and 41 of 808 in
+  40 switches, and at Steve's desk (three displays, six managed windows) 360 of 815 and 20
+  of 807, 9.5 events a switch, with no Space event (`kosmos-probe events`, 2026-09-24; the
+  probe watches every window, so its totals also count JankyBorders' and Wispr Flow's,
+  which Kosmos never gets). At the desk each read took about 1.4 ms, against about 0.1 ms
+  on the laptop alone, and the reads blocked the main actor for about 13 ms a switch (525
+  main thread samples in 40 switches). So the events of one main run loop turn wait
+  together: one query on a serial queue off the main thread reads every window they name,
+  and the main actor applies the events in the order they came when the rows return. A
+  destroyed window and an app's exit wait in the same order, a sweep reads on the same
+  queue after the events already waiting, and the lock rules are checked as each event
+  applies. A window an event names, and each known window of an app that exits, counts as
+  changed during a running sweep from the moment the event arrives.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
@@ -244,6 +253,26 @@ off the main thread).
   write reads back larger records no minimum. Its ledger entry goes, and its tile is
   written once more at its next change event with the button up, or after 100 ms; only
   that write's read back can show a minimum.
+- The inventory applies a change event after reading the window's row off the main thread
+  (section 5.1), by which time Kosmos's write may be confirmed and the button up. So
+  Kosmos judges the change as of its arrival. It is a write's when it came before the
+  write's read back confirmed it, even after a mouse up made the ledger forget the window,
+  and it is the user's when it came during a press, from the left button's down to its up
+  as `NSEvent` global monitors hear them. A mouse down off every display is left out,
+  since the focus path's key record (section 3) is a mouse down far off every display with
+  no mouse up, and a lock or a resync forgets the presses. A mouse up can come between a
+  change and its apply, and it sends back or drops only the windows the press had moved by
+  then, each with a write the change counts as. So a tiled window changed in a press that
+  has ended by the time the change applies goes back to its tile, as the mouse up would
+  have sent it. Only the last press that ended is kept, so a change from the press before
+  it reads as one with the button up. Judged as it applied, the late echo of a hotkey's
+  write to the window the user holds the button in would lift it, and the late echo of the
+  write at a mouse up would write the tile again early and record a live resize step as a
+  minimum. A change that came before a write was sent counts as the write's too. The
+  write's change still records its row when it differs from the frame confirmed: the row
+  applies after the confirm and can hold the app's next step, as of a live resize, whose
+  own event then finds no difference. The pointer for the resize border check is read as
+  the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -311,8 +340,10 @@ off the main thread).
   10.25 ms, and 3 such waits, so the switch time is the same
   within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
   but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
-  10 ms stalls until 248f668 removed it. Half of the about 66 left are the 815 reads in
-  section 5.1. On a quiet machine, 53dc6af took 1.81 ms at the median, 2.21 ms at p90 and
+  10 ms stalls until 248f668 removed it. Half of the about 66 left were the 815 reads,
+  which now run off the main thread (section 5.1). Before that, switches at Steve's desk
+  took 4.66 ms from keypress to the end at the median and 17 ms at p90, timed under the
+  sampler. On a quiet machine, 53dc6af took 1.81 ms at the median, 2.21 ms at p90 and
   2.50 ms at most, and the completion waited at most 0.39 ms.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
@@ -868,10 +899,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   movement with a button down is a drag event, which the monitor does not receive, nor
   while a tiled window is lifted (section 5.13): the pointer is the user's during a drag.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
-  keyboard moves focus to another window or moves the focused window, and either no
-  workspace is switched or the focus is on another display than the pointer (KosmosCore's
-  `Command.movesPointer`). Omarchy on the development Mac centers the pointer only when
-  focus moves between windows of one workspace, and Steve's AeroSpace config chained
+  keyboard moves focus to another window or moves the focused window. A workspace switch
+  command moves it only when the focus is on another display than the pointer
+  (KosmosCore's `Command.movesPointer`), and a keyboard activation of a window always
+  does. Omarchy on the development Mac centers the pointer only when focus moves between
+  windows of one workspace, and Steve's AeroSpace config chained
   `move-mouse window-lazy-center` onto hotkey bindings only.
   - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
     another display shows, centers the pointer on the window it focuses.
@@ -879,32 +911,34 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     focused window, and `move-node-to-workspace` without `--focus-follows-window` centers
     it on the window focused next. With focus follows mouse, a pointer left behind would
     focus the neighbour on the next bump.
-  - Command-Tab to a window of a shown workspace centers the pointer on it. Kosmos tells
-    Command-Tab from a click, on the window or the Dock, when it handles the activation:
-    a key went down within the last second, and after the last left or right mouse down
-    and the last pointer movement (`CGEventSource.secondsSinceLastEventType` in the
-    combined session state). With focus follows mouse the user seldom clicks, so a key
-    press long ago would otherwise pass for Command-Tab when an app activates itself. The
-    read takes no event tap, and the log gives the three times. A Command-Tab switcher held
-    open for over a second reads as a click.
-  - A workspace switch on the pointer's display leaves the pointer where it is:
-    `workspace` by name, `next` or `prev`, `workspace-back-and-forth`,
-    `move-node-to-workspace --focus-follows-window`, and Command-Tab that Kosmos follows
-    into a hidden workspace.
+  - Command-Tab, or a launcher's hotkey that activates an app, centers the pointer on the
+    window it activates, on a shown workspace or one Kosmos follows it into, on the
+    pointer's display too: it names a window, as `focus` does, where a workspace switch
+    names a workspace. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6,
+    which the left panel then showed in place of empty workspace 7, and the pointer stayed
+    on the main panel; and Command-Tab from workspace 7 to Spotify on workspace 6, both on
+    the left panel, left the pointer where it was, before this. Kosmos tells Command-Tab
+    from a click, on the window or the Dock, when it handles the activation: a key went
+    down within the last second, and after the last left or right mouse down and the last
+    pointer movement (`CGEventSource.secondsSinceLastEventType` in the combined session
+    state). With focus follows mouse the user seldom clicks, so a key press long ago would
+    otherwise pass for Command-Tab when an app activates itself. The read takes no event
+    tap, and the log gives the three times. A Command-Tab switcher held open for over a
+    second reads as a click.
+  - A workspace switch command on the pointer's display leaves the pointer where it is:
+    `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
+    `move-node-to-workspace --focus-follows-window`.
   - A keyboard focus change that lands on another display than the pointer brings the
     pointer, whether or not that display's workspace switched: alt-N, alt-shift-N and
-    `workspace-back-and-forth` to a workspace another display shows or hides, and
-    Command-Tab or a launcher's hotkey into a workspace another display hides. Left
-    behind, the pointer sits over a tile of its own display that the next bump would
-    focus. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which the
-    left panel then showed in place of empty workspace 7, and the pointer stayed on the
-    main panel. The focus is on the display of the focused workspace
-    (`Session.focusIsOnAnotherDisplay`). When that workspace is empty, the pointer goes to
-    the display's center, as Hyprland's `focusmonitor` puts it.
+    `workspace-back-and-forth` to a workspace another display shows or hides. Left behind,
+    the pointer sits over a tile of its own display that the next bump would focus. The
+    focus is on the display of the focused workspace (`Session.focusIsOnAnotherDisplay`).
+    When that workspace is empty, the pointer goes to the display's center, as Hyprland's
+    `focusmonitor` puts it.
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
-    leaves the pointer, so a click on the bar's workspaces, a script or a launcher never
-    moves it. Neither does a click that Kosmos follows or adopts, a hover focus, nor a
-    layout, resize or `join-with` command.
+    leaves the pointer, so a click on the bar's workspaces, a script or a launcher running
+    `kosmos` never moves it. Neither does a click that Kosmos follows or adopts, a hover
+    focus, nor a layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
     window, or the empty workspace's display. A tile's frame is the layout's after the
     change, the one Kosmos is writing, which the app's worker may not have applied yet;

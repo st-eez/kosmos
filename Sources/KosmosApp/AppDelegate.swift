@@ -295,7 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the inventory sweeps and the Controller resyncs (DESIGN.md, section 5.1).
     private func lockChanged(_ locked: Bool) {
         inventory.sessionLocked = locked
-        guard !locked else { return }
+        guard !locked else {
+            controller?.forgetPresses()
+            return
+        }
         inventory.sweep()
         applyDisplays()
     }
