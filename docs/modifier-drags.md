@@ -59,7 +59,7 @@ pointer gets none of the drag's events.
   drag lags, coalescing the movements comes back with that measurement.
 - The press focuses the window, as a command stamped when the tap saw it, as Hyprland's
   `dragBegin` focuses the window it grabs. Nothing moves until the pointer is more than
-  10 pt from the press, as for the title-bar lift (`Session.liftDistance`); from then on
+  10 pt from the press, as for the title-bar lift (`TitleBarDrag.liftDistance`); from then on
   the window catches up with the pointer and follows it. Omarchy leaves
   `binds:drag_threshold` at 0, so Hyprland lifts at the press.
 - The left button lifts a tiled window as a title-bar drag does ([displays.md](displays.md)): the other

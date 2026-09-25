@@ -27,14 +27,10 @@ extension Monitor {
         monitors.sorted { ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id) }
     }
 
-    /// The display `target` names, seen from `current`, or nil when there is none, as past
-    /// the last display without `wrapAround`. `monitors` is in `arranged` order.
-    ///
-    /// A direction looks along the displays side by side with `current` for left and right,
-    /// or stacked with it for up and down, as AeroSpace's `findRelativeMonitor` does: two
-    /// displays are side by side when their vertical extents overlap. AeroSpace orders a
-    /// column left to right too; this orders it top to bottom, so a display below and to
-    /// the left of another is still below it.
+    /// `monitors` is in `arranged` order. A direction looks along the displays beside or
+    /// stacked with `current`, as AeroSpace's `findRelativeMonitor` does, and orders a column
+    /// top to bottom, where AeroSpace goes left to right, so a display below and to the left of
+    /// another is still below it.
     static func resolve(_ target: Command.MonitorTarget, from current: Monitor, in monitors: [Monitor],
                         wrapAround: Bool) -> Monitor? {
         func step(_ line: [Monitor], by offset: Int) -> Monitor? {

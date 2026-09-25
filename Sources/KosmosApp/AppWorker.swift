@@ -56,7 +56,7 @@ actor AppWorker {
     private var elements: [UInt32: AXUIElement] = [:]
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
-    private var backoff = AXBackoff<ContinuousClock.Instant>()
+    private var backoff = AXBackoff()
     /// `backoff.backedOff`, for the main actor (Controller.motions).
     private nonisolated let backedOff = Atomic(false)
     private var askTimer: CFRunLoopTimer?

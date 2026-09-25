@@ -41,10 +41,9 @@ public struct KeyCombo: Hashable, Sendable {
         }
     }
 
-    /// The physical key this combination names. `layout` maps each character the current
-    /// keyboard layout types without modifiers to its key code. A character the layout lacks
-    /// falls back to its place on a US keyboard, so `alt-1` on a French layout is the key
-    /// labelled 1 and &.
+    /// `layout` maps each character the current keyboard layout types without modifiers to its
+    /// key code. A character it lacks keeps its US keyboard place, so `alt-1` on a French layout
+    /// is the key labelled 1 and &.
     public func physicalKey(layout: [Character: UInt16]) -> PhysicalKey {
         let code = switch key {
         case .character(let character): layout[character] ?? usKeyCodes[character]!

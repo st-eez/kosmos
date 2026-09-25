@@ -2,7 +2,6 @@ import Carbon
 import Testing
 @testable import KosmosCore
 
-/// A keyboard layout macOS ships, read with the function Hotkeys applies to the current one.
 /// Text Input Sources calls must run on the main thread.
 @MainActor
 func installedLayout(_ id: String) throws -> [Character: UInt16] {
@@ -22,7 +21,6 @@ func installedLayout(_ id: String) throws -> [Character: UInt16] {
     @Test(arguments: [
         ("com.apple.keylayout.US", ["1": 18, "0": 29, "-": 27, "=": 24, "/": 44, "h": 4]),
         // French and Czech type digits only with Shift, and only the keypad types them bare.
-        // They stay out of the table, so alt-1 falls back to the number row.
         ("com.apple.keylayout.French", ["1": nil, "0": nil, "/": nil, "-": 24, "§": 22, "a": 12, "q": 0]),
         ("com.apple.keylayout.Czech", ["1": nil, "0": nil, "-": 44, "=": 27, "z": 16, "y": 6]),
         // German types = only with Shift, or bare on the keypad.

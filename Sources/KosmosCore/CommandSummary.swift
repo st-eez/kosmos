@@ -1,12 +1,9 @@
 import CoreGraphics
 
-// What `kosmos list-bindings` says about a command, so a launcher's keybinding list reads
-// the loaded bindings instead of keeping its own copy (docs/integrations.md).
+// What `kosmos list-bindings` says about a command (docs/integrations.md).
 
 extension Command {
-    /// A group for launchers, by what the command acts on: Focus, Move, Workspace, Monitor,
-    /// Layout, Resize, Profile or Other. Moving a window to a workspace or a monitor goes with
-    /// the other workspace or monitor commands.
+    /// A group for launchers, by what the command acts on.
     public var category: String {
         switch self {
         case .focus: "Focus"
@@ -20,8 +17,7 @@ extension Command {
         }
     }
 
-    /// A short description for people, such as "Focus left, across monitors". It leaves out a
-    /// window given with `--window-id`, which no binding names.
+    /// It leaves out a window given with `--window-id`, which no binding names.
     public var summary: String {
         switch self {
         case .workspace(let target):

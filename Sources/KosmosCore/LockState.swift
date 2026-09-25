@@ -1,5 +1,4 @@
-/// Whether the login session is locked or switched out, from what macOS reports
-/// (docs/inventory.md). Either locks it, and it unlocks only when neither holds.
+/// Whether the login session is locked or switched out (docs/inventory.md).
 public struct LockState: Equatable, Sendable {
     public enum Signal: Equatable, Sendable {
         /// loginwindow's com.apple.screenIsLocked and com.apple.screenIsUnlocked.
@@ -20,7 +19,6 @@ public struct LockState: Equatable, Sendable {
 
     public init() {}
 
-    /// Applies a signal. Returns the change it made, or nil.
     public mutating func apply(_ signal: Signal) -> Change? {
         let wasLocked = isLocked
         switch signal {

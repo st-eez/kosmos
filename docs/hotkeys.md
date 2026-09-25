@@ -1,9 +1,17 @@
 # Hotkeys and Secure Input
 
 - Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
-  at 8 µs per call. WindowServer matches the keys itself, so a keystroke that is no
-  binding never reaches Kosmos, and Carbon sends no key repeats, so a binding fires once
-  per press.
+  at 8 µs per call, and a key whose command changed stays registered, since Kosmos looks
+  up the command when the key is pressed. WindowServer matches the keys itself, so a
+  keystroke that is no binding never reaches Kosmos, and Carbon sends no key repeats, so a
+  binding fires once per press.
+- Each binding names a physical key on the current keyboard layout: a key named by a
+  character is the one that types it unshifted, else its key on a US keyboard. So two
+  bindings of a mode can name one key; the first registers, and the log names the other
+  as left out. On a French layout 6 needs Shift, so `alt-6` takes the key a US keyboard
+  has 6 on, which types §, the key `alt-sectionSign` names. Keypad keys stay out of the
+  layout's table: on French and Czech layouts only the keypad types a digit unshifted, so
+  `alt-1` names the number row key, which a laptop has.
 - Each hotkey is registered exclusive. Another app's exclusive hotkey on the same
   combination makes the registration fail, and Kosmos reports it; a shared registration
   would give the key to both apps.

@@ -5,7 +5,6 @@ import Testing
 private let left = CGRect(x: 10, y: 35, width: 945, height: 1035)
 private let right = CGRect(x: 965, y: 35, width: 945, height: 1035)
 private let narrow = CGRect(x: 1438, y: 35, width: 472, height: 1035)
-/// Where an app opened a new window.
 private let opened = CGRect(x: 600, y: 300, width: 480, height: 300)
 
 private func bezier(_ p1: Double, _ p2: Double, _ u: Double) -> Double {
@@ -16,7 +15,6 @@ private func close(_ a: CGRect, _ b: CGRect) -> Bool {
     abs(a.minX - b.minX) < 1e-6 && abs(a.minY - b.minY) < 1e-6 && abs(a.width - b.width) < 1e-6 && abs(a.height - b.height) < 1e-6
 }
 
-/// easeOutQuint is the point of cubic-bezier(0.23, 1, 0.32, 1) whose x is t.
 @Test func easeFollowsOmarchysCurve() {
     #expect(Slide.ease(0) == 0)
     #expect(Slide.ease(1) == 1)
@@ -25,11 +23,9 @@ private func close(_ a: CGRect, _ b: CGRect) -> Bool {
     }
     let samples = stride(from: 0.0, through: 1, by: 0.01).map(Slide.ease)
     #expect(zip(samples, samples.dropFirst()).allSatisfy { $0 <= $1 })
-    #expect(Slide.ease(0.2) > 0.6)   // most of the way early, as easeOutQuint is
+    #expect(Slide.ease(0.2) > 0.6)
 }
 
-/// Each corner of where the window shows maps to the same corner of the window, in the
-/// window's own coordinates.
 @Test(arguments: [(left, left), (right, left), (left, narrow), (narrow.scaled(0.87), narrow)])
 func transformShowsTheWindowAtTheShownFrame(shown: CGRect, actual: CGRect) {
     let transform = Slide.transform(showing: shown, at: actual)
@@ -61,7 +57,6 @@ func transformShowsTheWindowAtTheShownFrame(shown: CGRect, actual: CGRect) {
     #expect(abs(slide.shown(at: Slide.popDuration).alpha - 1) < 1e-9)
 }
 
-/// A relayout mid-slide continues from where the window shows, at the alpha it has there.
 @Test func retargetingContinuesFromTheShownFrame() {
     let pop = Slide.pop(to: narrow, at: 0)
     let moved = pop.retargeted(to: right, at: 0.05)
@@ -76,8 +71,6 @@ private func move() -> SlidingWindow {
     SlidingWindow(space: 7, display: 1, from: left, to: right, pop: false, at: 0)
 }
 
-/// A write lands once WindowServer has the frame the worker read back, whichever of the two
-/// comes first, and the reads follow each frame WindowServer gives the window until then.
 @Test func aWriteLandsAtTheFrameReadBack() {
     var window = SlidingWindow(space: 7, display: 1, from: left, to: narrow, pop: false, at: 0)
     let resized = CGRect(origin: left.origin, size: narrow.size)
@@ -95,8 +88,6 @@ private func move() -> SlidingWindow {
     #expect(readFirst.landed == 0.012)
 }
 
-/// A slide that is over holds the window at its end until the write lands, for the landing
-/// wait at most, and then it ends.
 @Test func aSlideOverHoldsItsEndUntilTheWriteLands() {
     var window = move()
     var done = window.step(at: 0.1)
@@ -117,8 +108,6 @@ private func move() -> SlidingWindow {
     #expect(done)
 }
 
-/// A window that refuses the move reads back where it was, which WindowServer has already: it
-/// lands at once and slides back there, with no wait.
 @Test func aRefusedMoveLandsAtOnce() {
     var window = move()
     _ = window.step(at: 0.01)
@@ -131,7 +120,6 @@ private func move() -> SlidingWindow {
     #expect(done)
 }
 
-/// A new window stays transparent until its write lands, then pops in where it landed.
 @Test func aPopWaitsForItsWriteThenPopsWhereItLanded() {
     var window = SlidingWindow(space: 7, display: 1, from: opened, to: narrow, pop: true, at: 0)
     var done = window.step(at: 0.01)
@@ -146,8 +134,6 @@ private func move() -> SlidingWindow {
     #expect(done)
 }
 
-/// A pop whose write has not landed after the pop wait, as a launching app's, pops in at its
-/// target, and the reads follow the write until the landing wait.
 @Test func aLatePopStartsAtItsTargetAndFollowsTheWrite() {
     var window = SlidingWindow(space: 7, display: 1, from: opened, to: narrow, pop: true, at: 0)
     var done = window.step(at: SlidingWindow.popWait - 0.01)
@@ -161,10 +147,7 @@ private func move() -> SlidingWindow {
     #expect(done)
 }
 
-/// A write to the slide's target that does not slide, as the retry after a refused size, is
-/// followed again; one to another target ends the slide. A read back of an older write is
-/// left out.
-@Test func writesDuringASlide() {
+@Test func aWriteThatDoesNotSlideIsFollowedOnlyToTheSameTarget() {
     var window = move()
     window.confirmed(target: right, readBack: right, at: 0.01)
     _ = window.observed(right, at: 0.012)
@@ -180,9 +163,7 @@ private func move() -> SlidingWindow {
     #expect(!took)
 }
 
-/// WindowServer taking the newest write's target, or the frame read back after it, is the
-/// write landing, which can come after the read back while the user drags another window.
-/// Any other frame is the user's.
+/// The write can land after its read back, as while the user drags another window.
 @Test func onlyTheNewestWritesFramesAreTheWrite() {
     var window = move()
     #expect(window.isWrite(right) && !window.isWrite(left))

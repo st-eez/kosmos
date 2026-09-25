@@ -16,8 +16,8 @@ public struct SourcePosition: Hashable, Comparable, Sendable {
     }
 }
 
-/// A problem found while loading a config file. `description` reads like a compiler message,
-/// `12:5: error: gaps.inner: ...`, so a caller prints it after the file name and a colon.
+/// `description` reads like a compiler message, `12:5: error: gaps.inner: ...`, so a caller
+/// prints it after the file name and a colon.
 public struct Diagnostic: Error, Equatable, Sendable, CustomStringConvertible {
     public enum Severity: String, Sendable {
         case error
@@ -47,8 +47,8 @@ public struct Diagnostic: Error, Equatable, Sendable, CustomStringConvertible {
     }
 }
 
-/// A key path under construction, rendered the way TOML writes it: bare keys joined by dots,
-/// other keys quoted, and array elements as `[index]`, counted from 0.
+/// A key path as TOML writes it: bare keys joined by dots, other keys quoted, and array
+/// elements as `[index]`, counted from 0.
 struct ValuePath: CustomStringConvertible {
     private(set) var description = ""
 
@@ -71,8 +71,7 @@ func isBareKeyScalar(_ c: Unicode.Scalar) -> Bool {
 }
 
 /// "; did you mean 'x'?" for the candidate closest to `word`, or an empty string when none is
-/// close. rift suggests keys the same way. Case does not count, and ties go to the
-/// alphabetically first candidate so the message is stable.
+/// close. Ties go to the alphabetically first candidate, so the message is stable.
 func suggestion(for word: String, from candidates: some Sequence<String>) -> String {
     let scored = candidates.map { ($0, editDistance(word.lowercased(), $0.lowercased())) }
     guard let (best, distance) = scored.min(by: { ($0.1, $0.0) < ($1.1, $1.0) }),
@@ -81,8 +80,8 @@ func suggestion(for word: String, from candidates: some Sequence<String>) -> Str
     return "; did you mean '\(best)'?"
 }
 
-/// The number of insertions, deletions, substitutions and swaps of neighbors that turn `a`
-/// into `b` (optimal string alignment distance), so `ecs` is one edit from `esc`.
+/// The optimal string alignment distance, which counts a swap of neighbors as one edit, so
+/// `ecs` is one edit from `esc`.
 func editDistance(_ a: String, _ b: String) -> Int {
     let a = Array(a), b = Array(b)
     var rows = [[Int]](repeating: [Int](repeating: 0, count: b.count + 1), count: a.count + 1)

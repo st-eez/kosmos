@@ -35,7 +35,8 @@
     notification (tla/README.md, change 22, `split-open-readfollows`). Whether the window
     was hidden is judged at the report's stamp: the bridge queue notes when it sends each
     window's conceal and reveal, because a switch can reveal or conceal the window before
-    the report is classified (change 19). That excludes the report right
+    the report is classified (change 19). Only each window's last change is kept: a report
+    is classified within milliseconds of its stamp. That excludes the report right
     after the key window left, when it closed or minimized or its app hid. macOS then keys
     another window itself, sometimes a concealed one, and Kosmos keeps its workspace and
     focuses it again. The window key before the report left the screen within the last second if

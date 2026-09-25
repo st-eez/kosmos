@@ -1,8 +1,7 @@
 import Testing
 @testable import KosmosCore
 
-/// Each mode's bindings from `[mode.*.binding]` tables, through the loader, so every command
-/// is one the parser accepts.
+/// Through the loader, so every command is one the parser accepts.
 private func modes(_ tables: String) throws -> [String: [Binding]] {
     let result = Config.load("config-version = 1\nworkspaces = ['1']\n" + tables)
     #expect(result.diagnostics.isEmpty)
@@ -40,9 +39,7 @@ private func modes(_ tables: String) throws -> [String: [Binding]] {
         let changes = resize.changes(from: main.bindings.keys)
         #expect(changes.unregister == [PhysicalKey(code: 15, modifiers: .alt)])
         #expect(changes.register == [PhysicalKey(code: 53, modifiers: [])])
-        // alt-h stays registered; the new table supplies its new command.
         #expect(resize.bindings[PhysicalKey(code: 4, modifiers: .alt)]?.arguments == ["resize", "width", "-50"])
-        // The same table twice changes nothing.
         let none = main.changes(from: main.bindings.keys)
         #expect(none.unregister.isEmpty && none.register.isEmpty)
     }
@@ -62,8 +59,6 @@ private func modes(_ tables: String) throws -> [String: [Binding]] {
     }
 
     @Test func failedRegistrationsAreRetried() throws {
-        // Changes are computed against what is registered, so a key that failed to register
-        // last time is registered again.
         let bindings = try #require(try modes("[mode.main.binding]\nalt-h = 'focus left'")["main"])
         #expect(HotkeyTable(bindings, layout: [:]).changes(from: []).register == [PhysicalKey(code: 4, modifiers: .alt)])
     }

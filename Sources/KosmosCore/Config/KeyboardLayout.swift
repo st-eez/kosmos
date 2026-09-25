@@ -1,10 +1,8 @@
 import CoreServices
 
-/// The key code of each character a keyboard layout types without modifiers, the table
-/// `KeyCombo.physicalKey(layout:)` reads. Where several keys type a character, the lowest key
-/// code wins. Keypad keys are skipped: on layouts where the digits need Shift, such as French
-/// and Czech, only the keypad types a digit unshifted, and `alt-1` must fall back to the
-/// number row instead of naming a key a laptop lacks.
+/// The key code of each character the layout types without modifiers, the lowest code where
+/// several keys type one. Keypad keys stay out: on French and Czech layouts only the keypad
+/// types a digit unshifted, and `alt-1` must fall back to the number row, which a laptop has.
 public func keyboardLayout(_ layout: UnsafePointer<UCKeyboardLayout>, keyboardType: UInt32) -> [Character: UInt16] {
     var codes: [Character: UInt16] = [:]
     for code in UInt16(0)..<128 where !keypadCodes.contains(code) {

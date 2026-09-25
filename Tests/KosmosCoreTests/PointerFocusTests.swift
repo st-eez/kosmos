@@ -8,7 +8,7 @@ private let mainPanel = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, he
 
 /// A movement: the window under the pointer, the pointer's x, left of 0 on the left panel,
 /// and whether Control is held.
-private typealias Movement = (window: UInt32, x: CGFloat, control: Bool)
+private typealias Movement = (window: WindowID, x: CGFloat, control: Bool)
 
 private func gate() -> PointerGate {
     var gate = PointerGate()
@@ -132,7 +132,7 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(skip(1, key: .window(1)) == .focused)
         // Focused, but a panel or dialog is key: entering the window keys it again.
         #expect(skip(1, key: .window(50)) == nil)
-        #expect(skip(1, key: KeyWindow.none) == nil)
+        #expect(skip(1, key: .emptyWorkspace) == nil)
     }
 
     @Test func ignoredAppsOffAndStale() {

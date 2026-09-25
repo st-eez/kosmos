@@ -101,8 +101,6 @@ func unparkRebuildsCollapsedContainer(window: WindowID) {
     #expect(workspace.sameTree(as: original), "\(workspace.detailed)")
 }
 
-/// Every order of parking three windows, each followed by every order of unparking them
-/// one at a time, gives back the same tree and sizes.
 @Test(arguments: permutations([2, 4, 5]), permutations([2, 4, 5]))
 func unparkInAnyOrderRestoresTheTree(parking: [WindowID], unparking: [WindowID]) {
     var workspace = Workspace("h[1:2 v[2 h[3 4:3]]:3 5:1]")
