@@ -607,7 +607,7 @@ final class Controller {
     /// window dropped, as Hyprland's KeybindManager ends a drag in ensureMouseBindState before
     /// a bind fires (DESIGN.md, sections 5.13 and 5.14). A modifier drag ends the same way;
     /// the tap goes on taking the rest of its press, which changes nothing, and ends a drag
-    /// whose mouse up it missed (DragTap.endIfReleased).
+    /// whose press is over (DragTap.endIfReleased).
     func endDrag() {
         dragTap?.endIfReleased()
         if modifierDrag != nil {

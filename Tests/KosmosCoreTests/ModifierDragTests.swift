@@ -12,6 +12,15 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
     return gate
 }
 
+/// HID with each button down and one press of it counted: the press the gate saw goes on.
+private func held(_ button: DragButton) -> DragGate.ButtonState { DragGate.ButtonState(down: true, presses: 1) }
+
+extension DragGate {
+    fileprivate mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags, at point: CGPoint) -> Outcome {
+        pressed(button, over: window, flags: flags, at: point, hid: held)
+    }
+}
+
 @Suite struct DragGateTests {
     private let point = CGPoint(x: 100, y: 100)
 
@@ -72,21 +81,51 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
         #expect(gate.dragged(to: .zero).take && gate.released(.left, at: .zero).ended?.grab == grab)
     }
 
-    @Test func aPressWithNoMouseUpHeardEndsTheDragWhereThePointerLastMoved() {
+    @Test func aPressOfTheDragsButtonEndsTheDragWhereThePointerLastMoved() {
         var gate = gate()
         let right = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
         _ = gate.dragged(to: CGPoint(x: 50, y: 0))
-        // WindowServer had the tap off as the right button came up. A left press passes to
-        // the app, with its mouse up.
-        #expect(gate.pressed(.left, over: 10, flags: [], at: point) == DragGate.Outcome())
-        #expect(gate.released(.left, at: point) == DragGate.Outcome())
-        // The next right press ends the drag and is decided afresh: this one passes, and one
-        // with the modifier begins another.
+        // Its mouse up went unheard. The next right press ends the drag and is decided afresh:
+        // this one passes, and one with the modifier begins another.
         let press = gate.pressed(.right, over: 10, flags: [], at: point)
         #expect(press == DragGate.Outcome(ended: DragGate.End(grab: right, point: CGPoint(x: 50, y: 0))))
         let first = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
         let again = gate.pressed(.right, over: 10, flags: .maskAlternate, at: point)
         #expect(again.ended == DragGate.End(grab: first, point: .zero) && again.began?.start == point && again.take)
+    }
+
+    @Test func aDragEndsOnceHIDReadsItsPressOver() {
+        var gate = gate()
+        let grab = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
+        _ = gate.dragged(to: CGPoint(x: 50, y: 0))
+        // As the tap turns on again, at a hotkey, a lock or a resync, the drag goes on while
+        // HID reads its press on.
+        #expect(gate.endIfReleased(hid: held, at: .zero) == DragGate.Outcome() && gate.grab == grab)
+        // Its mouse up passed while WindowServer had the tap off. The drag ends where the
+        // pointer is, or where it last moved when the pointer cannot be read.
+        let up = { (_: DragButton) in DragGate.ButtonState(down: false, presses: 1) }
+        #expect(gate.endIfReleased(hid: up, at: nil) == DragGate.Outcome(ended: DragGate.End(grab: grab, point: CGPoint(x: 50, y: 0))))
+        // The button came up and went down again while the tap was off: it reads down, with
+        // a newer press counted. The new press's movements and mouse up pass.
+        let next = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
+        let again = { (_: DragButton) in DragGate.ButtonState(down: true, presses: 2) }
+        #expect(gate.endIfReleased(hid: again, at: .zero) == DragGate.Outcome(ended: DragGate.End(grab: next, point: .zero)))
+        #expect(gate.dragged(to: point) == DragGate.Outcome() && gate.released(.left, at: point) == DragGate.Outcome())
+    }
+
+    @Test func theOtherButtonsPressEndsADragWhosePressIsOver() {
+        var gate = gate()
+        let right = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
+        // The right button came up while WindowServer had the tap off. A left press ends the
+        // drag where it lands and passes to the app, with its mouse up.
+        let rightUp = { (button: DragButton) in DragGate.ButtonState(down: button == .left, presses: 1) }
+        let press = gate.pressed(.left, over: 10, flags: [], at: point, hid: rightUp)
+        #expect(press == DragGate.Outcome(ended: DragGate.End(grab: right, point: point)))
+        #expect(gate.released(.left, at: point) == DragGate.Outcome())
+        // With the modifier, it begins a drag of its own.
+        _ = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero)
+        let left = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point, hid: rightUp)
+        #expect(left.ended?.grab.button == .right && left.began?.button == .left && left.take)
     }
 
     @Test func aDragWhosePressTimedOutPassesTheRestOfIt() {

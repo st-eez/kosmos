@@ -1432,11 +1432,22 @@ pointer gets none of the drag's events.
   When the event it passed was the drag's press, the app has the press, so the drag ends
   and the rest of the press passes too (`DragGate.timedOut`); this rests on WindowServer
   handing the tap one event at a time and reporting the timeout right after the event it
-  gave up on, which no live test can provoke. A drag whose mouse up passed is ended when
-  its button reads up: as the tap turns on again, at the other button's press, and at a
-  hotkey, lock, resync or config load. A press of the drag's own button ends it too, where
-  the pointer last moved. A hotkey during a drag whose button is still down ends Kosmos's
-  drag at once, and the tap takes the rest of the press, which changes nothing.
+  gave up on, which no live test can provoke. A drag whose press is over by other means
+  ends where the pointer is (`DragGate.endIfReleased`): HID's state reads its button up,
+  or counts a press of it newer than the drag's (`CGEventSourceCounterForEventType`, read
+  as the tap saw the drag's press). The tap asks as it turns on again and at the other
+  button's press, and Kosmos at a hotkey, lock, resync or config load. A press of the
+  drag's own button ends it too, where the pointer last moved. A hotkey during a drag
+  whose press goes on ends Kosmos's drag at once, and the tap takes the rest of the
+  press, which changes nothing.
+- HID's state (`kCGEventSourceStateHIDSystemState`) holds the presses of the mouse and
+  trackpad. The combined session state holds those other processes post as well, which
+  would read as presses newer than the drag's, and on Steve's Mac on 2026-09-25 it
+  counted 15019 left downs and 15141 left ups, where HID counted 15059 of each. A drag
+  begun by a press another process posts into the session reads as over at the first
+  check. A press HID counted before the tap saw the drag's own counts as the drag's: the
+  tap sees it next unless WindowServer turns the tap off first, and no public call says
+  which press HID counted when.
 - Each movement goes to the main actor in order, and AppWorker merges the frame writes an
   app has not taken yet. The debug log gives each movement's lag from the tap; if a fast
   drag lags, coalescing the movements comes back with that measurement.

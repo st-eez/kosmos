@@ -51,6 +51,17 @@ public struct DragGate: Sendable {
         public var passedOver: WindowID?
     }
 
+    /// A mouse button as HID reads it now.
+    public struct ButtonState: Equatable, Sendable {
+        public var down: Bool
+        /// The presses of the button HID has counted.
+        public var presses: UInt32
+
+        public init(down: Bool, presses: UInt32) {
+            (self.down, self.presses) = (down, presses)
+        }
+    }
+
     /// The modifiers a press must hold, exactly, or nil while modifier drags are off.
     public var modifiers: KeyCombo.Modifiers?
     /// The windows a press may take: the tiled and floating windows of the shown workspaces.
@@ -59,6 +70,8 @@ public struct DragGate: Sendable {
     /// as the focus path's key record is one (Controller.leftMouseDown).
     public var monitors: [Monitor] = []
     public private(set) var grab: Grab?
+    /// The presses of the drag's button HID had counted when the tap saw the drag's press.
+    private var presses: UInt32 = 0
     /// Where the pointer last moved during the drag.
     private var last = CGPoint.zero
     /// The drag's press is the last event the gate decided (`timedOut`).
@@ -66,20 +79,25 @@ public struct DragGate: Sendable {
 
     public init() {}
 
-    public mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags,
-                                 at point: CGPoint) -> Outcome {
+    /// A press of `button` over `window`. `hid` reads a button as HID has it now.
+    public mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags, at point: CGPoint,
+                                 hid: (DragButton) -> ButtonState) -> Outcome {
         pressWasLast = false
         // The focus path's key record, a left down off every display with no mouse up, passes
         // and changes nothing, during a drag too.
         guard monitors.contains(where: { $0.frame.contains(point) }) else { return Outcome() }
         var outcome = Outcome()
-        if let grab {
-            guard grab.button == button else { return outcome }
+        if let grab, grab.button == button {
             // The drag's button went down again, so its mouse up went unheard, as while
             // WindowServer had the tap off. The drag ends where the pointer last moved, and
             // this press is decided afresh.
             outcome.ended = End(grab: grab, point: last)
             self.grab = nil
+        } else if grab != nil {
+            // The other button's press passes while the drag's own press goes on, and is
+            // decided afresh once that press is over.
+            outcome = endIfReleased(hid: hid, at: point)
+            guard grab == nil else { return outcome }
         }
         guard let modifiers, KeyCombo.Modifiers(flags) == modifiers else { return outcome }
         guard windows.contains(window) else {
@@ -87,10 +105,25 @@ public struct DragGate: Sendable {
             return outcome
         }
         let grab = Grab(button: button, window: window, start: point)
-        (self.grab, last, pressWasLast) = (grab, point, true)
+        (self.grab, presses, last, pressWasLast) = (grab, hid(button).presses, point, true)
         outcome.take = true
         outcome.began = grab
         return outcome
+    }
+
+    /// Ends the drag if its press is over by now, as when its mouse up passed while
+    /// WindowServer had the tap off: `hid` reads its button up, or with a newer press
+    /// counted. The drag ends at `point`, or where the pointer last moved when nil.
+    ///
+    /// Ceiling: a press HID counted before the tap saw the drag's own counts as the drag's.
+    /// The tap sees it next, as a press of the drag's button, unless WindowServer turns the
+    /// tap off first. Nothing public tells which press HID counted when.
+    public mutating func endIfReleased(hid: (DragButton) -> ButtonState, at point: CGPoint?) -> Outcome {
+        guard let grab else { return Outcome() }
+        let state = hid(grab.button)
+        guard !state.down || state.presses != presses else { return Outcome() }
+        self.grab = nil
+        return Outcome(ended: End(grab: grab, point: point ?? last))
     }
 
     /// A movement with a button down, whichever button macOS names: with both down it can

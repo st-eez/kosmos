@@ -63,17 +63,21 @@ final class DragTap: Sendable {
         gate.withLock { $0.monitors = monitors }
     }
 
-    /// Ends the gate's drag if its button is up by now, as when its mouse up passed while
-    /// WindowServer had the tap off, where the pointer is. A drag whose button is still down
-    /// goes on to its mouse up, which the tap takes.
+    /// Ends the gate's drag if its press is over by now, where the pointer is
+    /// (DragGate.endIfReleased). A drag whose press is still held goes on to its mouse up,
+    /// which the tap takes.
     func endIfReleased() {
-        let outcome = gate.withLock { gate -> DragGate.Outcome? in
-            guard let grab = gate.grab,
-                  !CGEventSource.buttonState(.combinedSessionState, button: grab.button == .left ? .left : .right)
-            else { return nil }
-            return gate.released(grab.button, at: CGEvent(source: nil)?.location ?? grab.start)
-        }
-        if let outcome { post(outcome) }
+        let pointer = CGEvent(source: nil)?.location
+        post(gate.withLock { $0.endIfReleased(hid: Self.hid, at: pointer) })
+    }
+
+    /// A mouse button as HID reads it now. HID's state holds the presses of the mouse and
+    /// trackpad; the combined session state holds those other processes post as well, which
+    /// would read as presses newer than the drag's (DESIGN.md, section 5.14).
+    private static func hid(_ button: DragButton) -> DragGate.ButtonState {
+        let (mouse, down): (CGMouseButton, CGEventType) = button == .left ? (.left, .leftMouseDown) : (.right, .rightMouseDown)
+        return DragGate.ButtonState(down: CGEventSource.buttonState(.hidSystemState, button: mouse),
+                                    presses: CGEventSource.counterForEventType(.hidSystemState, eventType: down))
     }
 
     /// Whether Kosmos takes the event, so the app under the pointer never gets it.
@@ -81,10 +85,10 @@ final class DragTap: Sendable {
         let outcome: DragGate.Outcome
         switch type {
         case .leftMouseDown, .rightMouseDown:
-            // The other button's press during a drag whose own button is up already.
-            endIfReleased()
             let window = WindowID(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer))
-            outcome = gate.withLock { $0.pressed(type == .leftMouseDown ? .left : .right, over: window, flags: event.flags, at: event.location) }
+            outcome = gate.withLock {
+                $0.pressed(type == .leftMouseDown ? .left : .right, over: window, flags: event.flags, at: event.location, hid: Self.hid)
+            }
         case .leftMouseDragged, .rightMouseDragged:
             outcome = gate.withLock { $0.dragged(to: event.location) }
         case .leftMouseUp, .rightMouseUp:
@@ -104,7 +108,7 @@ final class DragTap: Sendable {
     /// WindowServer turns off a tap whose thread falls behind, passes on the event it waited
     /// for, and passes every event until the tap is on again. A drag whose press it passed
     /// ends, so the app gets the rest of that press (DragGate.timedOut), and a drag whose
-    /// mouse up passed meanwhile ends where the pointer is.
+    /// press is over by now ends where the pointer is.
     private func turnOnAgain(_ type: CGEventType) {
         dragLog.notice("drag tap turned off by WindowServer (\(type.rawValue)); turning it on again")
         guard let port else { return }
