@@ -67,3 +67,25 @@ struct RecoveryPlan: Equatable {
         remainingMembers == 0 && !windows.contains(where: isOnNoSpace)
     }
 }
+
+extension RecoveryRecord {
+    /// The record an incomplete recovery keeps for another attempt: every window, and each
+    /// Space not read as `gone`. While `keeping`, the Spaces windows slide in stay as they are.
+    func keptAfterIncomplete(gone: Set<UInt64>, keepingAnimationSpaces keeping: Bool) -> RecoveryRecord {
+        var kept = self
+        kept.spaces.removeAll(where: gone.contains)
+        if !keeping { kept.animationSpaces.removeAll(where: gone.contains) }
+        return kept
+    }
+
+    /// The record a complete recovery keeps: no window, and each Space `left` after its
+    /// destroy, for the next recovery to destroy again. While `keeping`, the Spaces windows
+    /// slide in stay as they are. Nil when no Space is left, which clears the record.
+    func keptAfterRestore(left: Set<UInt64>, keepingAnimationSpaces keeping: Bool) -> RecoveryRecord? {
+        var kept = self
+        kept.windows = []
+        kept.spaces.removeAll { !left.contains($0) }
+        if !keeping { kept.animationSpaces.removeAll { !left.contains($0) } }
+        return kept.spaces.isEmpty && kept.animationSpaces.isEmpty ? nil : kept
+    }
+}

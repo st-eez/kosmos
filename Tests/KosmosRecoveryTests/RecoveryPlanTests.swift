@@ -113,3 +113,34 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
     // A read that misses the new window it just found failed, as a failed query reads nothing.
     #expect(full.pruned(alive: [], keeping: [3, 4], seen: [4]) == nil)
 }
+
+/// Holding Spaces 9 and 10 and animation Spaces 12 and 13, with one window.
+private let kept = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 5, start: 6),
+                                  spaces: [9, 10], windows: [.init(id: 1, owner: app, originalSpace: 5)],
+                                  animationSpaces: [12, 13])
+
+@Test func anIncompleteRecoveryKeepsEveryWindowAndEachSpaceNotGone() {
+    let after = kept.keptAfterIncomplete(gone: [10, 13], keepingAnimationSpaces: false)
+    #expect(after.windows == kept.windows)
+    #expect(after.spaces == [9])
+    #expect(after.animationSpaces == [12])
+}
+
+@Test func aCompleteRecoveryKeepsOnlyTheSpacesLeftAfterTheirDestroy() {
+    let after = kept.keptAfterRestore(left: [10, 12], keepingAnimationSpaces: false)
+    #expect(after?.windows == [])
+    #expect(after?.spaces == [10])
+    #expect(after?.animationSpaces == [12])
+}
+
+@Test func aCompleteRecoveryWithNoSpaceLeftClearsTheRecord() {
+    #expect(kept.keptAfterRestore(left: [], keepingAnimationSpaces: false) == nil)
+}
+
+/// The running Kosmos's recovery leaves the Spaces windows slide in to it, gone or not.
+@Test func whileKeepingThemTheAnimationSpacesStayRecorded() {
+    #expect(kept.keptAfterIncomplete(gone: [10, 13], keepingAnimationSpaces: true).animationSpaces == [12, 13])
+    let after = kept.keptAfterRestore(left: [], keepingAnimationSpaces: true)
+    #expect(after?.spaces == [])
+    #expect(after?.animationSpaces == [12, 13])
+}

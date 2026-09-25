@@ -48,11 +48,15 @@ public enum Recovery {
         let recorded = record.spaces + animation
         let (members, gone) = settledMembers(recorded, of: record)
         let liveSpaces = recorded.filter { !gone.contains($0) }
-        let alive = Set(SkyLight.rows(Array(Set(members.values.joined()).union(record.windows.map(\.id)))).map(\.id))
+        // One snapshot of the displays and one read of the rows, so a display change during
+        // recovery cannot mix destinations.
+        let displays = Displays.current()
+        let named = Set(members.values.joined()).union(record.windows.map(\.id))
+        let frames = Dictionary(SkyLight.rows(Array(named)).map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
-        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), alive: alive,
+        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), alive: Set(frames.keys),
                                      hasOrdinarySpace: { !spaces(of: $0).isEmpty },
-                                     destination: { destinationSpace(for: $0, original: original[$0]) })
+                                     destination: { destination(for: frames[$0], original: original[$0], in: displays) })
 
         // Adds land before any removal is sent: a window removed from its only Space lands
         // on whichever Space is active, which can be a native fullscreen one.
@@ -61,7 +65,7 @@ public enum Recovery {
             kosmos_add_windows(destination, &ids, ids.count, true)
             _ = kosmos_barrier(destination)
         }
-        for (space, windows) in plan.removals(landed: Displays.current().isInOrdinarySpace) {
+        for (space, windows) in plan.removals(landed: displays.isInOrdinarySpace) {
             var ids = windows
             kosmos_remove_windows(space, &ids, ids.count)
             _ = kosmos_barrier(space)
@@ -70,15 +74,12 @@ public enum Recovery {
         let handled = Set(plan.adds.values.joined()).union(plan.removals.values.joined())
         let after = SpaceMembers.read(liveSpaces, of: record)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
-        let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }
+        let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))
+        let onNoSpace = { (window: UInt32) in alive.contains(window) && spaces(of: window).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
             let withoutSpace = plan.windows.filter(onNoSpace).count
             recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
-            // The record keeps the Spaces that still exist, and every window.
-            var kept = record
-            kept.spaces = record.spaces.filter { !gone.contains($0) && !after.gone.contains($0) }
-            if !keeping { kept.animationSpaces = animation.filter { !gone.contains($0) && !after.gone.contains($0) } }
-            file.publish(kept)
+            file.publish(record.keptAfterIncomplete(gone: gone.union(after.gone), keepingAnimationSpaces: keeping))
             return .incomplete(remaining: remaining + withoutSpace)
         }
         // A destroy's return says only that it was sent, and whether it takes away a Space
@@ -90,14 +91,11 @@ public enum Recovery {
             _ = kosmos_barrier(space)
             return (kosmos_space_windows(space) as? [UInt32]) != nil
         }
-        var kept = record
-        (kept.spaces, kept.windows) = (left.filter(record.spaces.contains), [])
-        if !keeping { kept.animationSpaces = left.filter(animation.contains) }
         if !left.isEmpty { recoveryLog.error("\(left.count) Spaces still exist after their destroy; keeping them in the record") }
-        if kept.spaces.isEmpty && kept.animationSpaces.isEmpty {
-            file.clear()
-        } else {
+        if let kept = record.keptAfterRestore(left: Set(left), keepingAnimationSpaces: keeping) {
             file.publish(kept)
+        } else {
+            file.clear()
         }
         let destroyed = liveSpaces.count - left.count
         recoveryLog.notice("restored \(handled.count) windows, destroyed \(destroyed) Spaces")
@@ -124,14 +122,10 @@ public enum Recovery {
         kosmos_window_spaces(window) as? [UInt64] ?? []
     }
 
-    /// The current ordinary Space of the display under the window, else the Space a reveal
-    /// would use; nil only when there is none.
-    private static func destinationSpace(for window: UInt32, original: UInt64?) -> UInt64? {
-        let displays = Displays.current()
-        if let frame = SkyLight.rows([window]).first?.frame,
-           let space = displays.currentSpace(at: CGPoint(x: frame.midX, y: frame.midY)) {
-            return space
-        }
+    /// The current ordinary Space of the display under `frame`, else the Space a reveal would
+    /// use; nil only when there is none.
+    private static func destination(for frame: CGRect?, original: UInt64?, in displays: Displays) -> UInt64? {
+        if let frame, let space = displays.currentSpace(at: CGPoint(x: frame.midX, y: frame.midY)) { return space }
         return displays.ordinarySpace(original: original)
     }
 }
