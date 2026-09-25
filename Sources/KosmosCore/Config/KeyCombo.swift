@@ -91,8 +91,8 @@ public struct PhysicalKey: Hashable, Sendable {
 
 private let modifierNames: [String: KeyCombo.Modifiers] = ["cmd": .cmd, "ctrl": .ctrl, "alt": .alt, "shift": .shift]
 
-/// Keys named by the character they type. Letters and digits name themselves; punctuation has
-/// the names AeroSpace uses.
+/// Keys named by the character they type. Letters and digits name themselves
+/// (docs/hotkeys.md).
 private let characterKeys: [String: Character] = {
     var keys: [String: Character] = [
         "minus": "-", "equal": "=", "leftSquareBracket": "[", "rightSquareBracket": "]", "backslash": "\\",
