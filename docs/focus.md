@@ -113,8 +113,9 @@
     observer thread, and the worker's word that the raise is done from the worker's, so
     the report can come after its record is forgotten and read as the user's choice of the
     raised window. The spec runs the app's callbacks for the raise before the worker's
-    read. Besides this race, an app reported the window it had focused already after 6 of
-    40 such raises ([overview.md, section 2](overview.md#2-what-the-fork-measured)); read as the user's, that report takes focus back to the
+    read. Forgetting the record only once the observer has handled the notifications the
+    app sent before it answered the worker's read would close this. Besides this race, an
+    app reported the window it had focused already after 6 of 40 such raises ([overview.md, section 2](overview.md#2-what-the-fork-measured)); read as the user's, that report takes focus back to the
     window only when a newer request came between the raise and the report.
   - The key window closes or minimizes, and macOS reports no next key window. Kosmos counts
     the departure for a second from when it heard of it (DepartureLog), so a Command-Tab
@@ -263,11 +264,15 @@
   waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
   a newer command, and Kosmos followed it there (tla/README.md, change 19,
   `split-user-timeout`). A raise that outlasts the 5 s counts as made, so its echo is
-  still recognized. Only a raise the app refuses or fails at once is dropped.
+  still recognized, and its app is backed off ([geometry.md](geometry.md)). Only a raise
+  the app refuses or fails at once is dropped. No measurement chose the 5 s.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the
   public path on the app's worker: make the window the app's main window, raise it, then
-  activate the app. A background accessory app with no window, as Kosmos is, made another
-  app the front process in 10 of 10 trials with each of `activate`, yielding and then
+  activate the app. Each step can wait out the timeout on a slow app, so each first checks
+  that the request is still current: a request stale before its record does nothing, and
+  one that goes stale after it stops and keeps the record for any report its steps cause.
+  A background accessory app with no window, as Kosmos is, made another app the front
+  process in 10 of 10 trials with each of `activate`, yielding and then
   `activate(from:)` itself, and `activate(from:)` the front app, and Finder in 10 of 10
   with each (`kosmos-probe keying`, September 24, 2026). An empty workspace has no public
   path: its window is Kosmos's own, and an accessory app that activated itself became the
