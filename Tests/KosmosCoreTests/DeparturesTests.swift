@@ -314,10 +314,9 @@ private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false, sibli
 }
 
 @Test func aWindowWhoseAppHasAnotherWindowOrderedOutWaitsForATabSwitch() {
-    // Activity Monitor's only window, closed, has none and parks at once. Closing the
-    // selected Ghostty tab orders it out while the next tab is still ordered out, and that
-    // tab's order-in may still be on its way to the main actor, so the look waits the
-    // pairing window.
+    // Activity Monitor's only window, closed, parks at once. Closing the selected Ghostty
+    // tab orders it out while the next tab is still ordered out, and that tab's order-in
+    // may still be on its way to the main actor, so the look waits the pairing window.
     #expect(judged(t0) == t0)
     #expect(judged(t0, sibling: true) == t0 + TabSwitches.window)
     // A native fullscreen transition waits longer.

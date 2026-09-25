@@ -173,8 +173,8 @@ public enum ClosedAndKept {
     /// within 0.2 ms of each other (kosmos-probe tabs), so a switch whose halves came in
     /// separate reads has paired by then, and a close is looked at when the read that saw
     /// its order-out is applied. A half whose event reaches the main queue only after the
-    /// other half's read came back is neither, and `hold` waits for it while the app has
-    /// another window ordered out.
+    /// other half's read came back is neither a read under way nor an event waiting, and
+    /// `hold` waits for it while the app has another window ordered out.
     public struct Looks: Sendable {
         private var waiting: [(window: WindowID, orderedOut: ContinuousClock.Instant)] = []
         private var reads = 0
