@@ -132,6 +132,12 @@
 //                                   on stdin: `close <id>` closes a window, and `open` opens
 //                                   one where the last closed one was and prints `opened <id>
 //                                   <time>`. Quits at the end of stdin.
+//   kosmos-probe eui [pid...]       AXEnhancedUserInterface of each running regular app, or of
+//                                   the apps given, as `<pid> <name>: on|off|unsupported`.
+//                                   While it is on, Chrome and Firefox animate each
+//                                   Accessibility move themselves; VoiceOver turns it on.
+//                                   Read only: one read per app, with a 0.5 s timeout. Needs
+//                                   Accessibility for the terminal.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -170,8 +176,9 @@ case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
 case "bench-windows" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
     benchWindows(Int(arguments.dropFirst().first!)!, on: arguments.dropFirst(2).first)
+case "eui": enhancedUserInterface(arguments.dropFirst().compactMap { pid_t($0) })
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...]")
     exit(2)
 }
 
@@ -1685,5 +1692,24 @@ func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970)
         guard printed[id] != frame else { return }
         printed[id] = frame
         print("frame \(id) \(Int(frame.minX)) \(Int(top - frame.maxY)) \(Int(frame.width)) \(Int(frame.height)) \(epochNow())")
+    }
+}
+
+@MainActor func enhancedUserInterface(_ pids: [pid_t]) {
+    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+    let apps = pids.isEmpty
+        ? NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        : pids.compactMap { NSRunningApplication(processIdentifier: $0) }
+    for app in apps {
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(element, 0.5)
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, "AXEnhancedUserInterface" as CFString, &value)
+        let state = switch error {
+        case .success: (value as? Bool).map { $0 ? "on" : "off" } ?? "not a boolean"
+        case .attributeUnsupported, .noValue: "unsupported"
+        default: "no answer, error \(error.rawValue)"
+        }
+        print("\(app.processIdentifier) \(app.localizedName ?? "?"): \(state)")
     }
 }
