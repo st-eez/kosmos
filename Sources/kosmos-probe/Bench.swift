@@ -22,11 +22,6 @@
 //                                   Accessibility move themselves; VoiceOver turns it on.
 //                                   Read only: one read per app, with a 0.5 s timeout. Needs
 //                                   Accessibility for the terminal.
-//   kosmos-probe cpu <pid...>       Each process's CPU time in ms, user and system together,
-//                                   on one line in the order given: from proc_pid_rusage for
-//                                   the user's own processes, WindowManager.app among them,
-//                                   and from ps, to 10 ms, for WindowServer, which runs as
-//                                   another user and refuses it; `-` when neither reads it.
 import AppKit
 
 @MainActor func benchWindows(_ count: Int, on display: String?) -> Never {
@@ -117,35 +112,4 @@ func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970)
         }
         print("\(app.processIdentifier) \(app.localizedName ?? "?"): \(state)")
     }
-}
-
-func cpu(_ pids: [pid_t]) {
-    print(pids.map { pid in (rusageCPU(pid) ?? psCPU(pid)).map { String(format: "%.2f", $0) } ?? "-" }.joined(separator: " "))
-}
-
-/// A process's CPU time in ms, or nil when the kernel refuses to read it, as for another
-/// user's process. rusage counts in mach time units.
-func rusageCPU(_ pid: pid_t) -> Double? {
-    var info = rusage_info_v4()
-    let result = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
-    }
-    guard result == 0 else { return nil }
-    var timebase = mach_timebase_info_data_t()
-    mach_timebase_info(&timebase)
-    return Double(info.ri_user_time + info.ri_system_time) * Double(timebase.numer) / Double(timebase.denom) / 1e6
-}
-
-/// A process's CPU time in ms as ps prints it, "minutes:seconds.hundredths".
-func psCPU(_ pid: pid_t) -> Double? {
-    let ps = Process()
-    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-    ps.arguments = ["-o", "time=", "-p", "\(pid)"]
-    let pipe = Pipe()
-    ps.standardOutput = pipe
-    guard (try? ps.run()) != nil else { return nil }
-    let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    ps.waitUntilExit()
-    let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":").compactMap { Double($0) }
-    return parts.isEmpty ? nil : parts.reduce(0) { $0 * 60 + $1 } * 1000
 }
