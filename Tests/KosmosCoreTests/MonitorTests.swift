@@ -836,13 +836,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             assigned = profile.assigned.filter { _, id in connected.contains { $0.id == id } }
             let before = s.monitors
             s.reconfigure(names: profile.names, monitors: connected, assigned: assigned, merge: profile.merge)
-            concealed = Set(s.names.filter { !s.isShown($0) }.flatMap { s.windows(of: $0) })
-                .union(concealed.filter { s.isParked($0) })
-            // As Controller.resync: the shown workspaces are laid out, and the hidden ones too
-            // when the displays changed.
-            for name in s.names where s.isShown(name) || s.monitors != before {
-                written.merge(s.frames(of: name)) { _, new in new }
-            }
+            carryOut(s.resyncPlan(layingOutHidden: s.monitors != before))
         }
 
         let shown = s.shownWorkspaces

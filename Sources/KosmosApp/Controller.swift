@@ -342,15 +342,9 @@ final class Controller {
         // echo in flight at the lock was dropped with the other reports while locked.
         reports.forgetRequests()
         reports.commandExecuted(receivedAt: .now)
-        var plan = Session.Plan()
         // A concealed window left on a display that is gone would come back off screen from
         // recovery, so after a display change hidden workspaces are laid out on theirs now.
-        for name in session.names where displaysChanged || session.isShown(name) {
-            plan.frames.merge(session.frames(of: name)) { current, _ in current }
-        }
-        let shown = session.shownWorkspaces
-        plan.show = shown.flatMap { session.windows(of: $0) }
-        plan.hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
+        var plan = session.resyncPlan(layingOutHidden: displaysChanged)
         plan.focus = intent
         execute(plan)
     }
@@ -1063,8 +1057,8 @@ final class Controller {
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
-            show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
-            hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
+            let resync = session.resyncPlan(layingOutHidden: false)
+            (show, hide) = (resync.show, resync.hide)
             needsResync = false
         }
         if show.isEmpty && hide.isEmpty {

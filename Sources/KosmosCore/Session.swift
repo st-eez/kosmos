@@ -33,6 +33,10 @@ public struct Session: Sendable {
 
         public init() {}
 
+        init(frames: [WindowID: CGRect]) {
+            self.frames = frames
+        }
+
         public var isEmpty: Bool { show.isEmpty && hide.isEmpty && frames.isEmpty && focus == nil }
     }
 
@@ -253,6 +257,20 @@ public struct Session: Sendable {
         return workspace.frames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
+    /// A window has one workspace, so the workspaces' frames never share a key.
+    public func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
+        names.reduce(into: [:]) { frames, name in frames.merge(self.frames(of: name)) { current, _ in current } }
+    }
+
+    /// Lays out the shown workspaces, and the hidden ones too when `layingOutHidden`, reveals
+    /// the shown workspaces' windows and conceals the hidden ones'. It asks for no focus.
+    public func resyncPlan(layingOutHidden: Bool) -> Plan {
+        var plan = Plan(frames: frames(of: names.filter { layingOutHidden || isShown($0) }))
+        plan.show = shownWorkspaces.flatMap(windows(of:))
+        plan.hide = names.filter { !isShown($0) }.flatMap(windows(of:))
+        return plan
+    }
+
     // MARK: Windows arriving and leaving
 
     /// A managed window joins a workspace: the one a rule names, else the one shown on the
@@ -267,8 +285,7 @@ public struct Session: Sendable {
         // A workspace with windows always has a focused one, as in i3; reports refine it.
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
-        var plan = Plan()
-        plan.frames = frames(of: target)
+        var plan = Plan(frames: frames(of: target))
         if !isShown(target) { plan.hide = [window] }
         return plan
     }
@@ -281,8 +298,7 @@ public struct Session: Sendable {
         lifted.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
-        var plan = Plan()
-        plan.frames = frames(of: name)
+        var plan = Plan(frames: frames(of: name))
         if wasFocused { plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace }
         return plan
     }
@@ -318,8 +334,7 @@ public struct Session: Sendable {
             mergedAway[origin]?.replace(old, with: new)
         }
         parkedConcealed.remove(old)
-        var plan = Plan()
-        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        var plan = Plan(frames: frames(of: changed))
         if !isShown(name), !isParked(new) { plan.hide = [new] }
         return plan
     }
@@ -337,9 +352,7 @@ public struct Session: Sendable {
             changed.insert(name)
             if !isShown(name) { parkedConcealed.insert(window) }
         }
-        var plan = Plan()
-        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
-        return plan
+        return Plan(frames: frames(of: changed))
     }
 
     /// Parked windows return to their own workspaces at their saved positions, and Kosmos
@@ -367,7 +380,7 @@ public struct Session: Sendable {
             workspaces[focusedWorkspace]!.focus(window)
             plan.focus = .window(window)
         }
-        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        plan.frames.merge(frames(of: changed)) { current, _ in current }
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
@@ -413,9 +426,7 @@ public struct Session: Sendable {
         let new = CGSize(width: max(old.width, size.width), height: max(old.height, size.height))
         guard new != old else { return Plan() }
         minimums[window] = new
-        var plan = Plan()
-        plan.frames = frames(of: name)
-        return plan
+        return Plan(frames: frames(of: name))
     }
 
     /// The window was seen at `size` with no write of Kosmos's, as the user or its app
@@ -428,9 +439,7 @@ public struct Session: Sendable {
                          height: size.height + FrameLedger.slack < old.height ? 0 : old.height)
         guard new != old else { return Plan() }
         minimums[window] = new == .zero ? nil : new
-        var plan = Plan()
-        plan.frames = frames(of: name)
-        return plan
+        return Plan(frames: frames(of: name))
     }
 
     // MARK: Focus reports
@@ -626,8 +635,7 @@ public struct Session: Sendable {
         if !following, wasFocused || name == focusedWorkspace {
             plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
         }
-        plan.frames.merge(frames(of: source)) { current, _ in current }
-        plan.frames.merge(frames(of: name)) { current, _ in current }
+        plan.frames.merge(frames(of: [source, name])) { current, _ in current }
         return plan
     }
 
@@ -665,9 +673,7 @@ public struct Session: Sendable {
         guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { return nil }
         workspaces[name]!.park(window)
         lifted.insert(window)
-        var plan = Plan()
-        plan.frames = frames(of: name)
-        return plan
+        return Plan(frames: frames(of: name))
     }
 
     /// Whether the pointer is where macOS resizes a window at `frame`: within 6 pt of its
@@ -715,7 +721,7 @@ public struct Session: Sendable {
             changed.insert(name)
         }
         lifted = []
-        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
+        plan.frames = frames(of: changed)
         return plan
     }
 
@@ -735,9 +741,7 @@ public struct Session: Sendable {
             guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { continue }
             changed.insert(name)
         }
-        var plan = Plan()
-        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
-        return plan
+        return Plan(frames: frames(of: changed))
     }
 
     /// How far, in points, a drag goes before it lifts a tiled window, and before a
@@ -788,9 +792,7 @@ public struct Session: Sendable {
             }
         }
         guard changed else { return nil }
-        var plan = Plan()
-        plan.frames = frames(of: name)
-        return plan
+        return Plan(frames: frames(of: name))
     }
 
     /// The frame of a modifier drag's floating window resized `delta` from where the button
