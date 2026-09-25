@@ -50,8 +50,9 @@ final class Hiding {
 
     func isConcealedOrConcealing(_ window: UInt32) -> Bool { concealed.contains(window) || batchesConcealing[window] != nil }
 
-    /// Windows slide through the pool's Spaces only while the guardian would recover them.
-    var guardianReady: Bool { guardian.isReady }
+    /// Windows are concealed, and slide through the pool's Spaces, only while this macOS has
+    /// every bridged operation and the guardian would recover them.
+    var canConceal: Bool { canHide && guardian.isReady }
 
     func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
         let store = self.store
@@ -81,7 +82,7 @@ final class Hiding {
     /// `stripping` lose their ordinary Space only if this batch conceals them.
     func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32], stripping: Set<UInt32>,
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
-        let canConceal = canHide && guardian.isReady
+        let canConceal = canConceal
         let hide = canConceal ? hide : []
         for window in hide { batchesConcealing[window, default: 0] += 1 }
         let store = self.store

@@ -169,11 +169,11 @@
     own tile pops in too.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
-  - A window slides only while the guardian is ready, and each Space of the pool is
-    recorded before any window enters it ([hiding.md](hiding.md)). Kosmos makes 8 when
-    animations first turn on, and a window that finds none free jumps and is logged.
-    Turning animations off ends every slide and keeps the Spaces. Quit ends every slide,
-    then recovery destroys the Spaces.
+  - A window slides only while Kosmos can conceal, with the guardian ready and every
+    bridged operation present, and each Space of the pool is recorded before any window
+    enters it ([hiding.md](hiding.md)). Kosmos makes 8 when animations first turn on, and
+    a window that finds none free jumps and is logged. Turning animations off ends every
+    slide and keeps the Spaces. Quit ends every slide, then recovery destroys the Spaces.
   - A slide's Space goes back to the pool once a barrier and a read of its windows, off
     the main thread, show its window out of it. A Space that still lists the window, as
     after a removal that did not land, or whose read fails, leaves the pool and is logged,

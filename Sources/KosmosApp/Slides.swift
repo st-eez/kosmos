@@ -123,7 +123,7 @@ final class Slides {
 
     /// False when the window jumps. A pop's Space turns transparent before the window joins it.
     private func begin(_ id: WindowID, from: CGRect, to target: CGRect, _ motion: Motion, at now: Double) -> Bool {
-        guard hiding.guardianReady else { return false }
+        guard hiding.canConceal else { return false }
         guard let space = free.popLast() else {
             slideLog.notice("\(id) jumps: no animation Space is free")
             return false
