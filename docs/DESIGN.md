@@ -36,6 +36,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read can confirm a switch, where the fork polled |
 | Live on 2026-09-24, 40 alternating switches per run between two workspaces of one window each. Reading the holding Space directly every 0.1 ms confirmed each batch at a median of 2.10, 2.18 and 2.95 ms in three runs (p90 3.66, 4.83 and 3.44 ms; at most 4.62, 9.79 and 3.86 ms), and all 120 confirmed before the barrier was due. The barrier alone confirmed at 3.31 and 3.44 ms median in two runs (p90 4.72 and 5.24 ms; at most 11.08 and 10.59 ms). Switches over 8.3 ms from keypress to the end: 10 of 120 with the reads, 21 of 80 with the barrier alone | Direct reads confirm a switch; the barrier backs them up after 10 ms |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
+| Keying a window of another app costs about 94 ms of CPU outside Kosmos: BiomeAgent 29 ms, spotlightknowledged.updater 15, MenuBarAgent 15, duetexpertd 14, WindowManager 6, ContextStoreAgent 6 and the activated app 8, plus 12 for BetterTouchTool on the development Mac. Five stub apps were keyed back and forth through the focus path, 384 activations against 96 in 73 s each, and the cost is the difference between the two; WindowServer's share was lost in the noise of the desktop in use. The focus call took 4.4 ms at the median and 16.6 ms at p95 (`kosmos-probe sweep` and `script/sweep.sh`, commit 3223999 on the hover branch) | Accepted for focus follows mouse, which focuses the window the pointer enters at once (section 5.11) |
 | An AX call to a hung app returns kAXErrorCannotComplete 5 ms after its messaging timeout, and with none set macOS 27 waits 1.5 s. An app still launching fails with the same error in under 9 ms and answers about 60 ms after it starts. An answered read takes 13 µs (`kosmos-probe ax-timeout`) | Time out every call at 1 s, and back an app off only after a call that waited out the timeout |
 
 ## 3. Primitive decisions
@@ -684,33 +685,116 @@ off the main thread).
 Kosmos replaces AutoRaise for hover focus. AutoRaise needed a local patch to key the
 hovered window instead of the app's most recent one; Kosmos's focus path already does.
 
-- The window under the pointer becomes key as soon as the pointer enters it, through the
-  same exact-window path as a focus command, as Hyprland's `follow_mouse = 1` does.
-  Tiled windows never overlap, so only focus moves; a floating window is also raised.
-- Instant focus has one cost on macOS that it lacks on Linux: focusing another app's
-  window activates the app, and activations cost macOS's app usage daemons CPU (section
-  2). Sweeping the pointer across several windows activates each of them. AutoRaise waits
-  for the pointer to rest on a window for about 100 ms to avoid that. Kosmos starts
-  without a delay, measures a sweep's CPU and daemon activity, and adds the shortest dwell
-  that the measurement justifies, if any.
-- The pointer must move at least 2 pt to count, holding Control pauses it, and chosen apps
-  are ignored: the settings an AutoRaise user has today.
-- Kosmos finds the window under the pointer in its own model: floating windows first, then
-  the shown workspace's tiled frames, which never overlap. Moving the pointer queries no
-  window list.
-- Pointer movement arrives through a listen-only event tap on its own thread, so a pointer
-  at rest costs nothing. AutoRaise polls 20 times a second.
-- Nothing is raised while a mouse button is down, while the front app is in native
-  fullscreen (AeroSpace's focus follows mouse raised tiled windows over fullscreen video),
-  over a window Kosmos does not manage (menus, the bar, panels), or during Mission Control.
-- A hover focus counts as a command: the session adopts the window, and its focus
-  request's echo is consumed like any other.
-- The pointer follows focus the other way too. A command that focuses a window moves the
-  pointer to its center unless the pointer is already inside it, and so does Command-Tab
-  to a window that is not under the pointer. A click always happens under the pointer, so
-  it never moves it.
-- `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
-  the command `focus-follows-mouse on|off|toggle` switches it at run time.
+- The window under the pointer takes focus as soon as the pointer enters it, through the
+  same exact-window focus request as a focus command, as Hyprland's `follow_mouse = 1`
+  does.
+- Focusing another app's window activates the app, which costs macOS about 94 ms of CPU
+  outside Kosmos (section 2), so a pointer swept across windows of several apps activates
+  each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
+  few windows on its way. AutoRaise waited for the pointer to rest in a window (`delay=2`
+  at `pollMillis=50`, 50 to 100 ms). The delay is one constant, `Controller.dwell`, set
+  to zero; at 50 ms a window takes focus only once the pointer has stayed in it that long.
+- Pointer movement arrives through a listen-only event tap on its own thread, at the
+  annotated session location, for mouse moved events only. A pointer at rest costs
+  nothing, and the tap is off while focus follows mouse is. AutoRaise polls 20 times a
+  second.
+- Each event names the window under the pointer as WindowServer's own hit test found it
+  (`kCGMouseEventWindowUnderMousePointer`, filled in at the annotated location), so moving
+  the pointer queries no window list, and the stacking of overlapping floating windows is
+  WindowServer's answer. A hit test of the model's frames would need a stacking order the
+  model does not keep. The tap's callback passes a movement on to the main actor only when
+  it enters another window than the last movement passed on, with Control up (KosmosCore's
+  PointerGate).
+- The main actor focuses the window only when all of these hold (KosmosCore's
+  `FocusFollowsMouse.skip`, whose reason for skipping is logged):
+  - It is a tiled or floating window of the shown workspace. Menus, the bar, panels and
+    dialogs, the Dock, Mission Control's windows, Kosmos's own windows and the windows of a
+    workspace a switch is hiding leave focus where it is.
+  - Its app is not ignored.
+  - macOS does not show a native fullscreen window's Space, the gate every focus request
+    other than a command passes (section 5.4). On a fullscreen Space the only window under
+    the pointer is the fullscreen one, which is parked, so the pointer focuses neither over
+    nor into native fullscreen. AeroSpace's focus follows mouse raised tiled windows over
+    fullscreen video.
+  - It is not the focus intent and key already. When a panel or dialog took key from the
+    focus intent, the pointer coming back into the intent keys it again.
+  - No command was received after the movement.
+- A hover focus counts as a command stamped when the tap saw the movement: reports of the
+  user's activations before it are stale, and its request's echo is consumed like any
+  other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`
+  configs passed (commit ae9e5c1). With the hover unstamped, TLC found a click made before
+  the hover but reported after it adopted, and focus left the window the pointer was in.
+  The spec on this branch does not model hover yet.
+- Holding Control pauses focus follows mouse, as AutoRaise's `disableKey` did. Control is
+  read from each movement's flags, so the tap takes no keyboard events. A movement with
+  Control held changes nothing, so after Control is released the next movement focuses
+  the window under the pointer. Nothing is focused while a mouse button is down, because a
+  movement with a button down is a drag event, which the tap does not receive.
+- The pointer follows focus the other way too, with `mouse-follows-focus`. A command that
+  focuses a window moves the pointer to its center unless the pointer is already over it,
+  and so does Command-Tab to a window away from the pointer. A click happens over the
+  window or its resize region, a few points past the frame, which counts as over it, so a
+  click never moves the pointer. A hover focus never moves the pointer.
+- Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
+  the next movement as the place the pointer landed and passes nothing on, whether or not
+  the move posts an event of its own. A movement the tap passed on before a command is
+  stale. The ceiling: a movement made before the move that reaches the tap after it is
+  taken as the landing place, and the movement after it then enters the window Kosmos
+  focused, which at most requests that window again.
+- On macOS 27, creating a listen-only tap for mouse moved events alone made macOS ask a
+  process with neither Accessibility nor Input Monitoring for Input Monitoring ("would
+  like to receive keystrokes from any application"), and that tap received nothing, while
+  the same tap under the terminal's grants received about 5,800 movements in the same
+  minutes. Apps with Accessibility alone run listen-only taps: AltTab at the annotated
+  location (`src/events/WindowAttentionEvents.swift`, whose tap creation fails without
+  Accessibility) and Loop for mouse movement (`PassiveEventMonitor.swift`). Whether
+  Kosmos's grant is enough is open until a live test settles it. The tap is created only
+  when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
+  granted when it creates the tap, whether the tap is enabled when it turns on, and when
+  the first event arrives.
+- Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
+  `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead, and only PointerTap's
+  event source changes; the gate and everything after it stay. AeroSpace's and Amethyst's
+  focus follows mouse and Rectangle's drag snapping use such monitors, and their code asks
+  only for Accessibility. AppKit installs the monitor as a handler on HIToolbox's event
+  monitor target (AppKit's imports and disassembly on macOS 27), which Carbon's
+  documentation of `GetEventMonitorTarget` describes as WindowServer copying user input
+  events sent to other processes into this one's event queue, so it is no event tap.
+  NSEvent's header requires Accessibility for key events and names nothing for mouse
+  events. Against the tap it gives up two things:
+  - Delivery is on the main thread, so every movement wakes the main actor and queues with
+    hotkey events. The gate still runs first, and only a movement into another window does
+    more.
+  - The event may not name the window under the pointer; whether its `cgEvent` carries the
+    annotated field is for the live test. If not, `NSWindow.windowNumber(at:
+    belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point, including
+    other apps' windows, at one WindowServer call per movement. The monitor's points have a
+    bottom left origin and are flipped first.
+
+  The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
+  and Control still comes from each event's modifier flags. An active tap is the other way
+  out: Rectangle, skhd and yabai create default taps with Accessibility, and it keeps the
+  tap's thread and field, but every pointer event would wait on Kosmos's callback, which
+  section 3 rejects for the keyboard.
+- `focus-follows-mouse = true` turns it on, and `focus-follows-mouse-ignore-apps` lists
+  apps by bundle identifier or name, as AutoRaise's `ignoreApps` did; Steve's AutoRaise
+  ignored Google Chrome for Testing. The command `focus-follows-mouse on|off|toggle`
+  switches it until the next config load.
+- Left out:
+  - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
+    AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
+    minimum distance from where the pointer last counted, in PointerGate, brings it back.
+  - A pause key other than Control, and a delay setting, until a user needs one.
+  - Open menus. Moving the pointer off an open menu onto a window focuses that window and
+    closes the menu, and with no delay a short overshoot does it. If the live test shows
+    it, one SkyLight window list read per window entered, for a window at the pop-up menu
+    level on screen, would keep the menu open.
+  - A raise of a background app's window. The key record keys it and leaves the stacking
+    order alone (section 5.4), until the worker's raise after the key record lands. The
+    window under the pointer is on top at the pointer already, so only the parts of a
+    floating window that other windows cover stay behind them.
+  - Several displays. The fullscreen gate is display blind, so while a native fullscreen
+    window on another display is key, the pointer focuses nothing.
 
 ### 5.12 Other tools
 
