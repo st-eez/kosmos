@@ -10,9 +10,10 @@ public enum ReportVerdict: Equatable, Sendable {
     /// Kosmos's own focus request coming back.
     case echo
     /// Request the current focus intent again: the report is older than the latest command,
-    /// or it names a visible window of another workspace during a switch.
+    /// or it names a visible window of a workspace no display shows, during a switch.
     case reassert
-    /// A window on the current workspace becomes the focus intent.
+    /// A window on a workspace a display shows becomes the focus intent, and its display
+    /// the focused one (DESIGN.md, section 5.13).
     case adopt(UInt32)
     /// The user reached a hidden window, with Command-Tab or by opening it: switch to its
     /// workspace.
@@ -152,34 +153,35 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// - Parameters:
-    ///   - onCurrentWorkspace: the window belongs to the workspace Kosmos shows.
+    ///   - onShownWorkspace: the window belongs to a workspace a display shows.
     ///   - concealed: the window was concealed when it became key, so only the user could
     ///     have reached it, with Command-Tab or by opening it.
     ///   - recovered: a batch failed, and recovery showed the windows of hidden workspaces,
-    ///     so a click reaches them too. Otherwise a visible window of another workspace is
-    ///     key only during a switch.
+    ///     so a click reaches them too. Otherwise a visible window of a workspace no display
+    ///     shows is key only during a switch.
     ///   - miss: what `miss` said of the report.
-    ///   - keyLeft: whether the window key before this report has just left the screen. If
+    ///   - keyLeft: whether the window key before this report has just left the screen, read
+    ///     only when the verdict depends on it, as it can read WindowServer. If
     ///     it has, macOS keyed this window itself, so it is not a Command-Tab to follow;
     ///     Kosmos keeps its workspace and focuses it again (tla/Kosmos.tla, KeyLeft).
-    public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp, onCurrentWorkspace: Bool,
+    public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp, onShownWorkspace: Bool,
                                   concealed: Bool, recovered: Bool = false, miss: Miss = .none,
-                                  keyLeft: Departure) -> ReportVerdict {
+                                  keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if consumeEcho(key, receivedAt: stamp) { return .echo }
         if isStale(stamp) { return .reassert }
         // No key window: if the key window left, its departure focuses when this came
         // first.
-        guard case .window(let id) = key else { return keyLeft == .left ? .reassert : .ignore }
+        guard case .window(let id) = key else { return keyLeft() == .left ? .reassert : .ignore }
         // A miss is no one's choice: request the focus again, and after one retry accept the
-        // key window, which Kosmos can adopt only on the shown workspace.
+        // key window, which Kosmos can adopt only on a shown workspace.
         switch miss {
         case .retry: return .reassert
-        case .accept: return onCurrentWorkspace ? .adopt(id) : .ignore
+        case .accept: return onShownWorkspace ? .adopt(id) : .ignore
         case .none: break
         }
-        if onCurrentWorkspace { return .adopt(id) }
+        if onShownWorkspace { return .adopt(id) }
         guard concealed || recovered else { return .reassert }
-        switch keyLeft {
+        switch keyLeft() {
         case .left: return .reassert
         case .stayed: return .follow(id)
         case .unknown: return .undecided

@@ -108,6 +108,19 @@ import Testing
     #expect(nested.tree == "v[h[1 2] 3]")
 }
 
+@Test func moveWithoutImplicitContainerStopsWhereNoContainerAboveRunsAlong() {
+    let edges: [(String, WindowID, Direction)] = [("h[1 2 3]", 1, .up), ("h[1 v[2 3]]", 3, .down), ("v[h[1 2] 3]", 1, .left)]
+    for (tree, window, direction) in edges {
+        var workspace = Workspace(tree)
+        #expect(workspace.move(window, direction, implicitContainer: false) == false, "\(tree) \(window) \(direction)")
+        #expect(workspace.tree == tree)
+    }
+    // A container above that runs along the direction still takes the window.
+    var workspace = Workspace("h[1 v[2 3]]")
+    #expect(workspace.move(3, .right, implicitContainer: false) == true)
+    #expect(workspace.tree == "h[1 2 3]")
+}
+
 @Test func moveEntersSiblingContainerBesideFocusedChild() {
     var workspace = Workspace("h[1 v[2 3] 4]")
     workspace.focus(2)

@@ -23,6 +23,18 @@ private let holding: UInt64 = 100
     #expect(ledger.entries.isEmpty)
 }
 
+/// With several displays, windows concealed now can be stripped of their ordinary Space; a
+/// window concealed before keeps what it had (DESIGN.md, sections 5.3 and 5.13).
+@Test func onlyWindowsConcealedNowAreStripped() {
+    var ledger = ConcealLedger(entries: [3: holding])
+    let batch = ledger.batch(show: [], hide: [1, 2, 3], stripping: [2, 3], into: holding, hasOrdinarySpace: { _ in true })
+    #expect(batch.fresh == [1, 2])
+    #expect(batch.strip == [2])
+    #expect(batch.mustBeIn == [1: holding, 2: holding, 3: holding])
+    ledger.commit(batch, into: holding)
+    #expect(ledger.entries == [1: holding, 2: holding, 3: holding])
+}
+
 @Test func concealingAConcealedWindowChangesNothing() {
     var ledger = ConcealLedger(entries: [2: holding])
     let batch = ledger.batch(show: [], hide: [2], into: holding, hasOrdinarySpace: { _ in true })

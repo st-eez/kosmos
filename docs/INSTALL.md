@@ -93,11 +93,11 @@ and if AeroSpace is running, it only observes until it is started again.
    config for a rollback.
 3. Quit AeroSpace.
 4. Stop the helpers Kosmos replaces. A display profile watcher that rewrites AeroSpace's
-   config when monitors change gives way once Kosmos switches its own profiles when
-   displays change (DESIGN.md, section 5.12). AutoRaise gives way to Kosmos's
-   `focus-follows-mouse` (section 5.11); with both on, each moves focus. For a helper
-   run by a LaunchAgent, `launchctl bootout gui/$(id -u)
-   ~/Library/LaunchAgents/<helper>.plist` stops it and keeps the plist for a rollback.
+   config when monitors change gives way to Kosmos's profiles, which follow the displays
+   (DESIGN.md, section 5.13). AutoRaise gives way to Kosmos's `focus-follows-mouse`
+   (section 5.11); with both on, each moves focus. For a helper run by a LaunchAgent,
+   `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/<helper>.plist` stops it and
+   keeps the plist for a rollback.
 5. Open `/Applications/Kosmos.app` and grant Accessibility when it asks.
 6. Turn on Launch at Login in the Kosmos menu.
 7. Keep the status bar's AeroSpace code next to its Kosmos code until the switch is final.

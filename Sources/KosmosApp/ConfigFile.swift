@@ -49,19 +49,28 @@ enum ConfigFile {
         return loaded
     }
 
-    /// The displays as the config's monitor matchers see them.
+    /// The connected displays, as the config's monitor matchers and the session see them.
+    /// Empty while NSScreen lists none, as it can in the middle of a change.
     static func displays() -> [Display] {
-        NSScreen.screens.map { screen in
-            Display(name: screen.localizedName, serial: DisplayIdentity.serial(of: screen.displayID),
-                    isBuiltIn: CGDisplayIsBuiltin(screen.displayID) != 0)
+        guard let primary = NSScreen.screens.first else { return [] }
+        // AppKit's origin is the primary display's bottom left; Accessibility's is its top left.
+        func flipped(_ rect: NSRect) -> CGRect {
+            CGRect(x: rect.minX, y: primary.frame.height - rect.maxY, width: rect.width, height: rect.height)
+        }
+        return NSScreen.screens.map { screen in
+            Display(id: screen.displayID, name: screen.localizedName, serial: DisplayIdentity.serial(of: screen.displayID),
+                    isBuiltIn: CGDisplayIsBuiltin(screen.displayID) != 0, frame: flipped(screen.frame),
+                    area: flipped(screen.visibleFrame))
         }
     }
 
-    static func gaps(_ config: Config, on display: Display) -> Gaps {
-        let outer = config.outerGaps(on: display)
-        return Gaps(inner: CGFloat(config.gaps.inner),
-                    outer: Insets(top: CGFloat(outer.top), left: CGFloat(outer.left),
-                                  bottom: CGFloat(outer.bottom), right: CGFloat(outer.right)))
+    /// Each display by SketchyBar's number for it (BarSnapshot.displayNumber).
+    static func barDisplays(_ displays: [Display]) -> [DisplayID: BarSnapshot.Display] {
+        let active = DisplayIdentity.active().count, managed = DisplayIdentity.managed()
+        return Dictionary(uniqueKeysWithValues: displays.map { display in
+            let number = BarSnapshot.displayNumber(uuid: DisplayIdentity.uuid(of: display.id), active: active, managed: managed)
+            return (display.id, BarSnapshot.Display(id: number, name: display.name))
+        })
     }
 }
 

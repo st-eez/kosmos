@@ -68,6 +68,10 @@ public struct FrameLedger: Sendable {
         confirmed[id] = frame
     }
 
+    /// Whether a target sent for the window is not confirmed yet: a change of its frame now
+    /// can be that write's.
+    public func isWriting(_ id: UInt32) -> Bool { pending[id] != nil }
+
     public mutating func forget(_ id: UInt32) {
         confirmed[id] = nil
         pending[id] = nil
