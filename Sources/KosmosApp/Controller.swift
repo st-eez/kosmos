@@ -54,6 +54,9 @@ final class Controller {
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
+    /// Tiled windows the user moved or resized with the left button, put back in their tiles
+    /// when it comes up.
+    private var mouseMoved: Set<WindowID> = []
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -89,6 +92,9 @@ final class Controller {
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
         inventory.onFrameChange = { [weak self] id, frame, changed in self?.frameChanged(id, to: frame, changed: changed) }
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            Task { @MainActor in self?.leftMouseUp() }
+        }
     }
 
     /// Applies a config reload, an unlock, a wake or a display change: the profile's
@@ -408,18 +414,52 @@ final class Controller {
         }
     }
 
-    /// A floating window of a shown workspace moved or resized. The frame ledger records
-    /// where it is, since the floating check compares its targets with it. Dragged onto a
-    /// display showing another workspace, the window joins that workspace, so the check
-    /// leaves it there (Session.dragged). A change while a write of Kosmos's is in flight is
-    /// that write's. A drag needs a WindowServer change event, `changed`, and the left
-    /// button down on the key window, as AeroSpace's isManipulatedWithMouse checks, so macOS
-    /// moving the windows of a display that leaves is none, and neither is a reveal's Space
-    /// change (DESIGN.md, section 5.13).
+    /// A tiled or floating window of a shown workspace moved or resized. The frame ledger
+    /// records where it is, so the next layout and the floating check write their targets
+    /// again. A change while a write of Kosmos's is in flight is that write's, and a
+    /// concealed window's frame, which reads as off every display, is not where it returns.
+    /// A change that a WindowServer change event, `changed`, reports with the left button
+    /// down is the user's: a tiled window goes back to its tile when the button comes up
+    /// (leftMouseUp), and a floating key window dragged onto a display showing another
+    /// workspace joins that workspace, as AeroSpace's isManipulatedWithMouse and
+    /// moveWithMouse have it. macOS moving the windows of a display that leaves, and a
+    /// reveal's Space change, are no drag (DESIGN.md, sections 5.2 and 5.13).
     private func frameChanged(_ id: WindowID, to frame: CGRect, changed: Bool) {
-        guard managing, !sessionLocked, !ledger.isWriting(id), session.shownFloatingWindows.contains(id) else { return }
+        guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
+              let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
-        guard changed, key == .window(id), NSEvent.pressedMouseButtons == 1, let plan = session.dragged(id, to: frame) else { return }
+        guard changed, NSEvent.pressedMouseButtons == 1 else { return }
+        if !session.shownFloatingWindows.contains(id) {
+            mouseMoved.insert(id)
+        } else if key == .window(id) {
+            rebind(id, draggedTo: frame)
+        }
+    }
+
+    /// The left button came up. The workspaces of tiled windows the user moved or resized
+    /// with it are laid out again, which puts those windows back in their tiles, as AeroSpace
+    /// lays out at a left mouse up (GlobalObserver.swift). A floating key window is checked
+    /// for a drag once more, where WindowServer has it now, in case its moves were not
+    /// reported while the button was down.
+    private func leftMouseUp() {
+        guard managing, !sessionLocked else { return }
+        if case .window(let id)? = key, session.shownFloatingWindows.contains(id), !ledger.isWriting(id),
+           let frame = SkyLight.rows([id]).first?.frame {
+            rebind(id, draggedTo: frame)
+        }
+        guard !mouseMoved.isEmpty else { return }
+        let names = Set(mouseMoved.compactMap { session.workspace(of: $0) }.filter { session.isShown($0) })
+        controllerLog.info("left mouse up: \(self.mouseMoved.count) tiled windows moved with the mouse, workspaces \(names.sorted().joined(separator: " "), privacy: .public) laid out again")
+        mouseMoved = []
+        var plan = Session.Plan()
+        for name in names { plan.frames.merge(session.frames(of: name)) { current, _ in current } }
+        execute(plan)
+    }
+
+    /// A floating window the user dragged to `frame` joins the workspace shown there, if
+    /// another display shows it (Session.dragged).
+    private func rebind(_ id: WindowID, draggedTo frame: CGRect) {
+        guard let plan = session.dragged(id, to: frame) else { return }
         controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
         execute(plan)
     }

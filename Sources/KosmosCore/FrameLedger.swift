@@ -63,9 +63,12 @@ public struct FrameLedger: Sendable {
         }
     }
 
-    /// Records a frame observed without a write of Kosmos's, such as a user resize.
+    /// Records a frame observed without a write of Kosmos's, such as a user resize. A size
+    /// other than the one the window kept when it refused its target ends that refusal, so
+    /// the target's size is written again.
     public mutating func observe(_ id: UInt32, frame: CGRect) {
         confirmed[id] = frame
+        if let refusal = refused[id], refusal.kept != frame.size { refused[id] = nil }
     }
 
     /// Whether a target sent for the window is not confirmed yet: a change of its frame now
