@@ -28,7 +28,7 @@ public enum Fit: Equatable, Sendable {
     case minimum(CGSize)
 }
 
-/// Decides which windows need a frame write (DESIGN.md, section 5.2). It remembers the frame
+/// Decides which windows need a frame write (docs/geometry.md). It remembers the frame
 /// last read back from each window, the target sent and not yet confirmed, and sizes an app
 /// refused.
 public struct FrameLedger: Sendable {

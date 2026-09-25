@@ -4,7 +4,7 @@ import KosmosRecovery
 import KosmosSkyLight
 
 /// The config file at ~/.config/kosmos/kosmos.toml and what it resolves to on the connected
-/// displays (DESIGN.md, section 5.8).
+/// displays (docs/config.md).
 enum ConfigFile {
     static var url: URL {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/kosmos/kosmos.toml")

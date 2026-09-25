@@ -34,7 +34,8 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-dead_strip_dylibs"])]
         ),
         .executableTarget(name: "kosmos-guardian", dependencies: ["KosmosRecovery"]),
-        // Measurements of private behaviour that the design depends on (DESIGN.md, section 6).
+        // Measurements of private behaviour that the design depends on
+        // (docs/overview.md, section 6).
         .executableTarget(name: "kosmos-probe", dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
         .testTarget(name: "KosmosIPCTests", dependencies: ["KosmosIPC"]),

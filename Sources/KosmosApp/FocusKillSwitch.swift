@@ -3,7 +3,7 @@ import os
 
 private let switchLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
 
-/// Turns the private focus path off (DESIGN.md, section 5.4). Two bytes in a file mapped
+/// Turns the private focus path off (docs/focus.md). Two bytes in a file mapped
 /// shared outlive the process, as the recovery record does: the first is set while a private
 /// call runs, so a crash inside it is found at the next launch, and the second keeps the path
 /// off, across restarts, until `kosmos reload-config`. Setting and clearing the first is two

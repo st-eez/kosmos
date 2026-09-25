@@ -233,7 +233,7 @@ extension Workspace {
         return true
     }
 
-    /// The broken invariants: those of DESIGN 5.5, plus consistent focus stamps,
+    /// The broken invariants: those of docs/tree.md, plus consistent focus stamps,
     /// fullscreen window and restore hints. Empty when the workspace is sound. Every
     /// mutation checks it in debug builds.
     func validate() -> [String] {

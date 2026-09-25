@@ -6,7 +6,7 @@ import os
 private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "inventory")
 
 /// Every window of a regular app, tracked from WindowServer events. Only WindowServer
-/// evidence or app exit removes a window (DESIGN.md, section 5.1). Whether a window could be
+/// evidence or app exit removes a window (docs/inventory.md). Whether a window could be
 /// tiled is a property of its row: apps such as Helium change a window's level while it
 /// lives, and dropping it would lose it until the next sweep.
 ///
@@ -40,7 +40,7 @@ final class Inventory {
     /// Focus, minimize and frame reports, after the inventory has seen them.
     var onReport: (@MainActor (AXReport) -> Void)?
     /// While the session is locked or switched out, no window is admitted or removed and no
-    /// sweep runs; the sweep after the unlock catches up (DESIGN.md, section 5.1). Updates to
+    /// sweep runs; the sweep after the unlock catches up (docs/inventory.md). Updates to
     /// known windows still apply. Order changes are held with their times and reported at
     /// the unlock (HeldOrder). The Controller reads it too.
     var sessionLocked = false {
@@ -139,8 +139,7 @@ final class Inventory {
         case appExited(pid_t)
     }
     /// Window events waiting for the next read, in the order they came. Sweeps read on
-    /// `reads` too, so every result reaches the main actor in read order (DESIGN.md, section
-    /// 5.1).
+    /// `reads` too, so every result reaches the main actor in read order (docs/inventory.md).
     private var pending: [PendingEvent] = []
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
 
@@ -172,7 +171,7 @@ final class Inventory {
             }
         }
         // Events drive the inventory. Launch, a Space change, an unlock and a wake sweep as a
-        // backstop, as yabai and rift do; there is no timer (DESIGN.md, section 5.1).
+        // backstop, as yabai and rift do; there is no timer (docs/inventory.md).
         sweep()
     }
 
@@ -262,7 +261,7 @@ final class Inventory {
     /// launched hidden, restored a window that no read answered for and no creation report
     /// named while it stayed hidden (live log, September 24, 2026): its unhide, a focus
     /// report naming the window, its order-in or Space change, and the sweep after a Space
-    /// change read it again (DESIGN.md, section 5.1).
+    /// change read it again (docs/inventory.md).
     private func readIfUnknown(_ ids: some Sequence<UInt32>) {
         var unknown: [pid_t: [UInt32]] = [:]
         for id in ids {
@@ -333,7 +332,7 @@ final class Inventory {
         onAppHidden?(pid, hidden, received)
     }
 
-    /// Nil info means the app did not answer; what was known stays (DESIGN.md, section 5.1).
+    /// Nil info means the app did not answer; what was known stays (docs/inventory.md).
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
         guard let info, let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)

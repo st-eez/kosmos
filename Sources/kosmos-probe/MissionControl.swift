@@ -1,5 +1,5 @@
 // kosmos-probe mission-control [seconds]: which Mission Control signals reach a process on
-// macOS 27 (DESIGN.md, section 5.3)? It registers the four Exposé notifications yabai
+// macOS 27 (docs/hiding.md)? It registers the four Exposé notifications yabai
 // watches (src/mission_control.c) on the Dock, where yabai watches them, and on
 // WindowManager.app, which holds Mission Control's classes on macOS 27, and prints what each
 // registration returned. It also registers WindowServer event 1204, which yabai reads for

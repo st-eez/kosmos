@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Why a window waits parked when Kosmos admits it, as at launch (DESIGN.md, section 5.5).
+/// Why a window waits parked when Kosmos admits it, as at launch (docs/tree.md).
 public enum ParkReason: Equatable, Sendable {
     case fullscreen
     case minimized
@@ -16,9 +16,9 @@ public enum ParkReason: Equatable, Sendable {
     }
 }
 
-/// Every workspace, the displays that show them, and the one with the focus (DESIGN.md,
-/// sections 4.3 and 5.13). A change returns a Plan that the app carries out; the Session
-/// never talks to macOS.
+/// Every workspace, the displays that show them, and the one with the focus
+/// (docs/overview.md, section 4.3, and docs/displays.md). A change returns a Plan that the app
+/// carries out; the Session never talks to macOS.
 public struct Session: Sendable {
     /// What the app does after a change.
     public struct Plan: Equatable, Sendable {
@@ -67,7 +67,7 @@ public struct Session: Sendable {
     /// workspace out, for when it shows one again.
     private var shownBefore: [DisplayID: String] = [:]
     /// Tiled windows the user is dragging by the title bar, parked where they stood until
-    /// the left button comes up (DESIGN.md, section 5.13).
+    /// the left button comes up (docs/displays.md).
     public private(set) var lifted: Set<WindowID> = []
 
     /// `assigned` maps workspaces to the ids of `monitors`. The first workspace has the focus.
@@ -124,7 +124,7 @@ public struct Session: Sendable {
     }
 
     /// Takes the displays and the profile's workspaces after a display or profile change
-    /// (DESIGN.md, section 5.13). The windows of a workspace that `names` leaves out move to
+    /// (docs/displays.md). The windows of a workspace that `names` leaves out move to
     /// the end of the workspace `merge` names for it, else of the first, and come back when a
     /// later profile lists their workspace, unless they moved since. The focused workspace
     /// keeps the focus, on its display, and every other display keeps its workspace if it may
@@ -256,8 +256,8 @@ public struct Session: Sendable {
     // MARK: Windows arriving and leaving
 
     /// A managed window joins a workspace: the one a rule names, else the one shown on the
-    /// display under `point`, the window's center, else the focused one (DESIGN.md, section
-    /// 5.13). A window a rule floats joins the floating windows and never the tree, so it
+    /// display under `point`, the window's center, else the focused one (docs/displays.md).
+    /// A window a rule floats joins the floating windows and never the tree, so it
     /// keeps the frame its app gave it, and the plan moves no tile.
     public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil,
                              floating: Bool = false) -> Plan {
@@ -289,7 +289,7 @@ public struct Session: Sendable {
 
     /// Native tabs share one place. `new`, the tab just selected, takes the place of `old`,
     /// the tab it replaces, with its share, focus and workspace, and `old` leaves the
-    /// session (DESIGN.md, section 5.5). A tab Kosmos already placed as a window of its
+    /// session (docs/tree.md). A tab Kosmos already placed as a window of its
     /// own, tiled or parked, as after Merge All Windows, leaves that place. A parked `old`,
     /// as the tab in native fullscreen, leaves `new` parked in its stead. `new` inherits the
     /// minimum of a tiled `old`, as tabs share a size, so a switch does not reflow to learn
@@ -344,7 +344,7 @@ public struct Session: Sendable {
 
     /// Parked windows return to their own workspaces at their saved positions, and Kosmos
     /// follows `follow` there when its workspace is not the focused one, as it does for
-    /// Command-Tab (DESIGN.md, section 5.5). Following nothing, the focused workspace keeps
+    /// Command-Tab (docs/tree.md). Following nothing, the focused workspace keeps
     /// its focus, and an empty one focuses a window returning to it. The other returning
     /// windows of hidden workspaces are concealed again, and those Kosmos concealed that
     /// return to a shown workspace are revealed.
@@ -378,7 +378,7 @@ public struct Session: Sendable {
     /// the app, else the one focused most recently (`fallback`). A managed keyed window that
     /// did not hide with the app is not followed from the unhide: a minimized one whose Dock
     /// thumbnail unhid the app follows by its own return, and a fullscreen one keeps macOS
-    /// on its Space (DESIGN.md, section 5.5).
+    /// on its Space (docs/tree.md).
     public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?) -> WindowID? {
         guard let keyed, home[keyed] != nil else { return fallback }
         return windows.contains(keyed) ? keyed : nil
@@ -422,7 +422,7 @@ public struct Session: Sendable {
     // MARK: Focus reports
 
     /// The user focused a window a display shows: that display becomes the focused one
-    /// (DESIGN.md, section 5.13).
+    /// (docs/displays.md).
     public mutating func adopt(_ window: WindowID) {
         guard let name = home[window] else { return }
         workspaces[name]!.focus(window)
@@ -618,7 +618,7 @@ public struct Session: Sendable {
     /// several displays, those whose app's most recently used window, as `latest` gives it,
     /// is on a shown workspace of another display. macOS would key such a window on the
     /// current display over that one, the AeroSpace fork's np3 failure. Every other window
-    /// keeps its ordinary Space, as on one display (DESIGN.md, sections 5.3 and 5.13).
+    /// keeps its ordinary Space, as on one display (docs/hiding.md and docs/displays.md).
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
         guard monitors.count > 1 else { return [] }
         return Set(hide.filter { window in
@@ -632,7 +632,7 @@ public struct Session: Sendable {
     /// a display showing another workspace, it joins that workspace, and the focus goes with
     /// it if it had it, as AeroSpace's moveWithMouse binds it. The plan asks for no focus:
     /// the window is key. Nil when it stays, its center on its own workspace's display or on
-    /// none (DESIGN.md, section 5.13).
+    /// none (docs/displays.md).
     public mutating func dragged(_ window: WindowID, to frame: CGRect) -> Plan? {
         guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window),
               let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return nil }
@@ -643,7 +643,7 @@ public struct Session: Sendable {
 
     /// The user started to drag a tiled window of a shown workspace by its title bar: it
     /// parks where it stood until `drop`. The plan has no frame for it. Nil when the window
-    /// is not tiled on a shown workspace (DESIGN.md, section 5.13).
+    /// is not tiled on a shown workspace (docs/displays.md).
     public mutating func lift(_ window: WindowID) -> Plan? {
         guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { return nil }
         workspaces[name]!.park(window)
@@ -666,7 +666,7 @@ public struct Session: Sendable {
     /// The left button came up at `point` with windows lifted. Each tiles on the workspace
     /// shown on the display under the pointer, beside the tile under it or the closest one,
     /// and takes the focus; off every display, or over one showing no workspace, it goes
-    /// back to where it stood (DESIGN.md, section 5.13).
+    /// back to where it stood (docs/displays.md).
     public mutating func drop(at point: CGPoint) -> Plan {
         var plan = Plan()
         var changed: Set<String> = []
@@ -711,7 +711,7 @@ public struct Session: Sendable {
     /// The user let go of the left button after moving or resizing tiled windows of shown
     /// workspaces without lifting them, as by their edges. Each goes back to its tile, as
     /// Omarchy leaves Hyprland's `resize_on_border` off so a tile's edge resizes nothing. The
-    /// plan has their workspaces' frames (DESIGN.md, section 5.2).
+    /// plan has their workspaces' frames (docs/geometry.md).
     public func released(_ windows: Set<WindowID>) -> Plan {
         var changed: Set<String> = []
         for window in windows {
@@ -725,12 +725,12 @@ public struct Session: Sendable {
 
     /// How far, in points, a drag goes before it lifts a tiled window, and before a
     /// modifier drag moves or resizes anything, so a click that jitters changes nothing
-    /// (DESIGN.md, sections 5.13 and 5.14).
+    /// (docs/displays.md and docs/modifier-drags.md).
     public static let liftDistance: CGFloat = 10
 
     /// A modifier drag of `grab.window`, a tiled or floating window of a shown workspace
-    /// that WindowServer has at `frame`, or nil for any other window (DESIGN.md, section
-    /// 5.14). A resize moves the edges on the sides of the window's center the press was on,
+    /// that WindowServer has at `frame`, or nil for any other window (docs/modifier-drags.md).
+    /// A resize moves the edges on the sides of the window's center the press was on,
     /// left or right and top or bottom, as Hyprland's DragController picks the corner. A tile
     /// with no neighbour on that side moves its edge on the other side, as Hyprland's dwindle
     /// layout does for a window at the display's edge, and one with neighbours on neither
@@ -808,8 +808,7 @@ public struct Session: Sendable {
     /// another workspace: onto their workspace's display, at the same place relative to the
     /// display areas, as AeroSpace's layoutFloatingWindow moves them. Any change can leave a
     /// floating window there: a move to another display, a rule, a display change. A window
-    /// whose center is on no display, as a concealed one, is left where it is (DESIGN.md,
-    /// section 5.13).
+    /// whose center is on no display, as a concealed one, is left where it is (docs/displays.md).
     /// - Parameter frames: where the windows are now.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]

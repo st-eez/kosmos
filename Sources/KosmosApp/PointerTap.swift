@@ -5,7 +5,7 @@ import os
 
 let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "pointer")
 
-/// Pointer movement for focus follows mouse (DESIGN.md, section 5.11), from a listen-only
+/// Pointer movement for focus follows mouse (docs/focus-follows-mouse.md), from a listen-only
 /// event tap on its own thread. The tap is off while focus follows mouse is, and a pointer
 /// at rest sends no events, so neither costs anything.
 ///
@@ -15,7 +15,7 @@ let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "pointer
 /// display with Control up goes on to the main actor. Only mouse moved events are tapped: a movement
 /// with a button down is a drag, so nothing is focused while a button is down.
 ///
-/// Creating the tap may ask for Input Monitoring (DESIGN.md, section 5.11).
+/// Creating the tap may ask for Input Monitoring (docs/focus-follows-mouse.md).
 final class PointerTap: Sendable {
     private let executor = RunLoopExecutor(name: "kosmos.pointer")
     /// Set once in `init`.

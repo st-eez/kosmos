@@ -4,7 +4,7 @@ import os
 
 private let lockLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "lock")
 
-/// Follows the screen lock, fast user switching and wake (DESIGN.md, section 5.1).
+/// Follows the screen lock, fast user switching and wake (docs/inventory.md).
 /// loginwindow posts com.apple.screenIsLocked and com.apple.screenIsUnlocked; the macOS 27
 /// (26A428) loginwindow binary still names both, and alt-tab and rift listen for them.
 /// NSWorkspace reports session switches. The session dictionary gives the state at launch,
@@ -88,7 +88,7 @@ final class LockWatch: NSObject {
 
     /// Whether the screen is locked and whether this session has the console. Unlocked, the
     /// dictionary on this Mac has no lock key at all, and a missing key reads as unlocked.
-    /// Whether the key is there while locked is open (DESIGN.md, section 5.1): each read logs
+    /// Whether the key is there while locked is open (docs/inventory.md): each read logs
     /// the lock and console keys, so a lock test settles it.
     private static func read() -> LockState.Signal {
         let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]

@@ -24,7 +24,7 @@ private let holding: UInt64 = 100
 }
 
 /// With several displays, windows concealed now can be stripped of their ordinary Space; a
-/// window concealed before keeps what it had (DESIGN.md, sections 5.3 and 5.13).
+/// window concealed before keeps what it had (docs/hiding.md and docs/displays.md).
 @Test func onlyWindowsConcealedNowAreStripped() {
     var ledger = ConcealLedger(entries: [3: holding])
     let batch = ledger.batch(show: [], hide: [1, 2, 3], stripping: [2, 3], into: holding, hasOrdinarySpace: { _ in true })

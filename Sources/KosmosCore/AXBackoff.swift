@@ -1,5 +1,5 @@
 /// When an app's Accessibility worker calls the app, and when it asks the app again every
-/// 0.5 s (DESIGN.md, section 5.2). A call that waits out the timeout backs the app off, and
+/// 0.5 s (docs/geometry.md). A call that waits out the timeout backs the app off, and
 /// no call goes to it. An answer to the probe lets calls go again. Asking stops only once the
 /// calls after that answer, which start the worker or write the frames held meanwhile, got
 /// answers too, and the worker has started.

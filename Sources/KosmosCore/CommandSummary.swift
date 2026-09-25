@@ -1,7 +1,7 @@
 import CoreGraphics
 
 // What `kosmos list-bindings` says about a command, so a launcher's keybinding list reads
-// the loaded bindings instead of keeping its own copy (DESIGN.md, section 5.12).
+// the loaded bindings instead of keeping its own copy (docs/integrations.md).
 
 extension Command {
     /// A group for launchers, by what the command acts on: Focus, Move, Workspace, Monitor,

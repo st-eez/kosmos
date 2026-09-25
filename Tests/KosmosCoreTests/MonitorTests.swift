@@ -2,7 +2,7 @@ import CoreGraphics
 import Testing
 @testable import KosmosCore
 
-// Steve's desk (DESIGN.md, section 5.13): the left panel, the main panel at the origin, and
+// Steve's desk (docs/displays.md): the left panel, the main panel at the origin, and
 // the built-in display below, with 10 point outer gaps.
 private let gaps = Gaps(outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
 private let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), gaps: gaps)
@@ -733,7 +733,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 
 /// Runs random commands, focus changes, arrivals, departures, drags and display changes
 /// on three displays, carries out each plan's reveals and conceals on a model of the
-/// screen, and checks after each step what DESIGN.md section 5.13 promises: every display
+/// screen, and checks after each step what docs/displays.md promises: every display
 /// shows at most one workspace, one it may show; the focused workspace is shown; every
 /// window is in the workspace it belongs to; a window is concealed exactly when its
 /// workspace is hidden, unless it is parked; every tiled window of a shown workspace lies

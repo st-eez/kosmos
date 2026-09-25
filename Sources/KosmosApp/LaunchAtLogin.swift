@@ -2,7 +2,7 @@ import Foundation
 import ServiceManagement
 
 /// Launch at login through the LaunchAgent in Contents/Library/LaunchAgents, whose
-/// `KeepAlive` restarts Kosmos after a crash (DESIGN.md, section 4.1).
+/// `KeepAlive` restarts Kosmos after a crash (docs/overview.md, section 4.1).
 ///
 /// Registering starts the agent at once. While another Kosmos holds the instance lock, the
 /// agent's copy exits successfully and launchd leaves it stopped until the next login, so a
