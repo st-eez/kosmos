@@ -238,26 +238,33 @@ final class FocusNotes: @unchecked Sendable {
 }
 
 @MainActor func keying(rounds: Int, finder: Bool) {
-    let rounds = max(rounds, 1)
-    _ = NSApplication.shared   // the concealed case's bridged operations need an AppKit client
+    _ = NSApplication.shared   // the concealed cases' bridged operations need an AppKit client
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
-    func wait(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
     // Focus goes back to this app and window at the end.
     let before = NSWorkspace.shared.frontmostApplication?.processIdentifier
     let beforeWindow = before.flatMap(focusedWindow(of:))
-    // A1 and A2 overlap, A3 sits apart, and B1 covers parts of A1 and A2.
-    let a = KeyStub("A", ["0,0", "60,40", "300,0"])
-    let b = KeyStub("B", ["30,20"])
-    let notes = FocusNotes()
-    notes.watch(a.pid)
-    notes.watch(b.pid)
+    let keying = Keying(rounds: max(rounds, 1))
     defer {
-        a.child.terminate()
-        b.child.terminate()
+        keying.a.child.terminate()
+        keying.b.child.terminate()
         if let before, let beforeWindow { _ = kosmos_make_key(before, beforeWindow) }
     }
-    wait(0.5)
+    keying.wait(0.5)
+    keying.orders()
+    keying.selfActivation()
+    // S has no window, as Kosmos has none.
+    let s = KeyStub("S", [])
+    defer { s.child.terminate() }
+    keying.activations(from: s, finder: finder)
+    keying.invisibleWindow(of: s)
+    keying.concealed(frontingFrom: s)
+    print("\nsummary: a hit keys the target window in the app that holds it; a miss leaves another window key")
+    for line in keying.summary { print("  " + line) }
+}
 
+/// What the phases of `keying` share: stubs A and B, the focus notes, how a window is keyed and
+/// how the result is read, and each phase's summary.
+@MainActor final class Keying {
     enum Order: String, CaseIterable {
         case recordOnly = "record only"
         case raiseFirst = "AXRaise, then record"
@@ -267,6 +274,23 @@ final class FocusNotes: @unchecked Sendable {
         case postRaise = "record, then AXRaise while front and focused"
         case raiseOnly = "AXRaise alone"
     }
+
+    let rounds: Int
+    // A1 and A2 overlap, A3 sits apart, and B1 covers parts of A1 and A2.
+    let a = KeyStub("A", ["0,0", "60,40", "300,0"])
+    let b = KeyStub("B", ["30,20"])
+    let notes = FocusNotes()
+    /// Each phase's results, printed at the end.
+    var summary: [String] = []
+
+    init(rounds: Int) {
+        self.rounds = rounds
+        notes.watch(a.pid)
+        notes.watch(b.pid)
+    }
+
+    func wait(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
+
     /// Keys the window as `order` says and waits 0.3 s. Returns when the raise started, and
     /// how long it took.
     @discardableResult
@@ -292,13 +316,16 @@ final class FocusNotes: @unchecked Sendable {
         wait(0.3)
         return raise
     }
+
     func front(_ stub: KeyStub) -> Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == stub.pid }
+
     func onTop(_ window: UInt32, over others: [UInt32]) -> Bool {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let order = list.compactMap { ($0[kCGWindowNumber as String] as? Int).map(UInt32.init) }
         guard let index = order.firstIndex(of: window) else { return false }
         return others.allSatisfy { (order.firstIndex(of: $0) ?? .max) > index }
     }
+
     /// The focus notes since `mark`, as offsets from the raise when there was one.
     func notesSince(_ mark: Int, raisedAt: ContinuousClock.Instant?) -> String {
         let stubs = [a, b]
@@ -311,139 +338,174 @@ final class FocusNotes: @unchecked Sendable {
         return text.isEmpty ? "none" : text.joined(separator: ", ")
     }
 
-    typealias Target = (stub: KeyStub, window: UInt32)
-    let cases: [(name: String, setup: [Target], target: Target, covers: [UInt32])] = [
-        ("same app, stacked: A2 key, then A1", [(a, a.windows[1])], (a, a.windows[0]), [a.windows[1]]),
-        ("same app, side by side: A1 key, then A3", [(a, a.windows[0])], (a, a.windows[2]), []),
-        ("other app: A1 key, then B1", [(a, a.windows[0])], (b, b.windows[0]), [a.windows[0], a.windows[1]]),
-        ("back into A after A2 was key: A2, B1, then A1", [(a, a.windows[1]), (b, b.windows[0])], (a, a.windows[0]),
-         [a.windows[1], b.windows[0]]),
-    ]
-    var hits: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
-    var raiseTimes: [Double] = []
-    for round in 1...rounds {
+    /// Each case's target keyed in each order, after Kosmos's order keyed the case's setup.
+    func orders() {
+        typealias Target = (stub: KeyStub, window: UInt32)
+        let cases: [(name: String, setup: [Target], target: Target, covers: [UInt32])] = [
+            ("same app, stacked: A2 key, then A1", [(a, a.windows[1])], (a, a.windows[0]), [a.windows[1]]),
+            ("same app, side by side: A1 key, then A3", [(a, a.windows[0])], (a, a.windows[2]), []),
+            ("other app: A1 key, then B1", [(a, a.windows[0])], (b, b.windows[0]), [a.windows[0], a.windows[1]]),
+            ("back into A after A2 was key: A2, B1, then A1", [(a, a.windows[1]), (b, b.windows[0])], (a, a.windows[0]),
+             [a.windows[1], b.windows[0]]),
+        ]
+        var hits: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
+        var raiseTimes: [Double] = []
+        for round in 1...rounds {
+            for test in cases {
+                for order in Order.allCases {
+                    // A case whose setup did not key is skipped.
+                    for step in test.setup { focus(step.stub, step.window, .raiseFirst) }
+                    let last = test.setup.last!
+                    guard front(last.stub), last.stub.appKey() == last.window else {
+                        print("round \(round), \(test.name), \(order.rawValue): setup did not key \(last.stub.label(last.window)), skipped")
+                        continue
+                    }
+                    let mark = notes.entries.count
+                    let raise = focus(test.target.stub, test.target.window, order)
+                    if let raise { raiseTimes.append(raise.ms) }
+                    let isFront = front(test.target.stub)
+                    let appKey = test.target.stub.appKey()
+                    let axFocused = focusedWindow(of: test.target.stub.pid)
+                    let isKey = isFront && appKey == test.target.window
+                    let isOnTop = onTop(test.target.window, over: test.covers)
+                    let row = "\(test.name) | \(order.rawValue)"
+                    trials[row, default: 0] += 1
+                    if isKey { hits[row, default: 0] += 1 }
+                    if isOnTop { raised[row, default: 0] += 1 }
+                    let raiseTime = raise.map { String(format: ", AXRaise %.2f ms", $0.ms) } ?? ""
+                    print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(isFront ? "yes" : "no"), "
+                          + "app key \(test.target.stub.label(appKey)), AX focused \(test.target.stub.label(axFocused))), "
+                          + "\(isOnTop ? "on top" : "not on top")\(raiseTime); focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
+                }
+            }
+        }
         for test in cases {
             for order in Order.allCases {
-                // Kosmos's order sets up each case; a case whose setup did not key is skipped.
-                for step in test.setup { focus(step.stub, step.window, .raiseFirst) }
-                let last = test.setup.last!
-                guard front(last.stub), last.stub.appKey() == last.window else {
-                    print("round \(round), \(test.name), \(order.rawValue): setup did not key \(last.stub.label(last.window)), skipped")
-                    continue
-                }
-                let mark = notes.entries.count
-                let raise = focus(test.target.stub, test.target.window, order)
-                if let raise { raiseTimes.append(raise.ms) }
-                let isFront = front(test.target.stub)
-                let appKey = test.target.stub.appKey()
-                let axFocused = focusedWindow(of: test.target.stub.pid)
-                let isKey = isFront && appKey == test.target.window
-                let isOnTop = onTop(test.target.window, over: test.covers)
                 let row = "\(test.name) | \(order.rawValue)"
-                trials[row, default: 0] += 1
-                if isKey { hits[row, default: 0] += 1 }
-                if isOnTop { raised[row, default: 0] += 1 }
-                let raiseTime = raise.map { String(format: ", AXRaise %.2f ms", $0.ms) } ?? ""
-                print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(isFront ? "yes" : "no"), "
-                      + "app key \(test.target.stub.label(appKey)), AX focused \(test.target.stub.label(axFocused))), "
-                      + "\(isOnTop ? "on top" : "not on top")\(raiseTime); focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
+                let hit = hits[row] ?? 0, runs = trials[row] ?? 0
+                summary.append("\(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs)")
             }
         }
-    }
-
-    // An accessory app in the background activating itself, as Kosmos does for an empty
-    // workspace on the public path.
-    var selfActivated = 0, selfTrials = 0
-    for round in 1...rounds {
-        focus(a, a.windows[0], .raiseFirst)
-        guard front(a) else {
-            print("round \(round), self-activation: setup did not front A, skipped")
-            continue
-        }
-        let returned = b.activateItself()
-        wait(0.3)
-        let isFront = front(b)
-        selfTrials += 1
-        if isFront { selfActivated += 1 }
-        print("round \(round), B activating itself from the background: activate returned \(returned), "
-              + "B \(isFront ? "is" : "is NOT") the front app 0.3 s later")
-    }
-
-    // A background app with no window, as Kosmos is, activating another app: the public path
-    // does that for every target. Then the private front with no key window, which the
-    // private path uses for an empty workspace. B is front before each try.
-    let s = KeyStub("S", [])
-    defer { s.child.terminate() }
-    let finderPid = finder ? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier : nil
-    var targets: [(name: String, pid: pid_t)] = [("A", a.pid)]
-    if let finderPid { targets.append(("Finder", finderPid)) }
-    var fronted: [String: Int] = [:], tries: [String: Int] = [:]
-    func frontPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
-    // nil is the private front with no key window.
-    let ways: [ActivationWay?] = ActivationWay.allCases + [nil]
-    for round in 1...rounds {
-        for target in targets {
-            for way in ways {
-                focus(b, b.windows[0], .raiseFirst)
-                let label = way.map { "S \($0.label)" } ?? "kosmos_front_without_windows"
-                guard front(b) else {
-                    print("round \(round), \(target.name) by \(label): setup did not front B, skipped")
-                    continue
-                }
-                let returned = way.map { s.activate(target.pid, $0) } ?? kosmos_front_without_windows(target.pid)
-                wait(0.3)
-                let isFront = frontPid() == target.pid
-                let key = target.pid == a.pid ? a.label(a.appKey()) : focusedWindow(of: target.pid).map(String.init) ?? "none"
-                let row = "\(target.name) by \(label)"
-                tries[row, default: 0] += 1
-                if isFront { fronted[row, default: 0] += 1 }
-                print("round \(round), \(row): returned \(returned), \(target.name) \(isFront ? "is" : "is NOT") front 0.3 s later, "
-                      + "its key window \(key)")
-            }
+        if !raiseTimes.isEmpty {
+            summary.append(String(format: "AXRaise: median %.2f ms, max %.2f ms over %d raises", percentile(raiseTimes, 0.5),
+                                  percentile(raiseTimes, 1), raiseTimes.count))
         }
     }
 
-    // Kosmos keying a window of its own for an empty workspace: S's invisible window, keyed
-    // by the private path from S's own background thread and from another process. B is
-    // front before each try.
-    let invisible = s.openInvisibleWindow()
-    var ownKeyed: [String: Int] = [:], ownTries: [String: Int] = [:]
-    let ownWays: [(label: String, key: () -> Bool)] = [
-        ("S keying its invisible window itself", { s.keyOwnWindow(invisible) }),
-        ("the probe keying S's invisible window", { kosmos_make_key(s.pid, invisible) }),
-    ]
-    for round in 1...rounds where invisible != 0 {
-        for way in ownWays {
-            focus(b, b.windows[0], .raiseFirst)
-            guard front(b) else {
-                print("round \(round), \(way.label): setup did not front B, skipped")
+    /// B, an accessory app in the background, activating itself, as Kosmos does for an empty
+    /// workspace on the public path.
+    func selfActivation() {
+        var selfActivated = 0, selfTrials = 0
+        for round in 1...rounds {
+            focus(a, a.windows[0], .raiseFirst)
+            guard front(a) else {
+                print("round \(round), self-activation: setup did not front A, skipped")
                 continue
             }
-            let returned = way.key()
+            let returned = b.activateItself()
             wait(0.3)
-            let isFront = front(s), appKey = s.appKey()
-            ownTries[way.label, default: 0] += 1
-            if isFront && appKey == invisible { ownKeyed[way.label, default: 0] += 1 }
-            print("round \(round), \(way.label): returned \(returned), S \(isFront ? "is" : "is NOT") front 0.3 s later, "
-                  + "its key window \(appKey.map { $0 == invisible ? "the invisible one" : String($0) } ?? "none"), "
-                  + "B \(front(b) ? "still front" : "not front")")
+            let isFront = front(b)
+            selfTrials += 1
+            if isFront { selfActivated += 1 }
+            print("round \(round), B activating itself from the background: activate returned \(returned), "
+                  + "B \(isFront ? "is" : "is NOT") the front app 0.3 s later")
+        }
+        summary.append("a background accessory app activating itself became front in \(selfActivated) of \(selfTrials)")
+    }
+
+    /// `s`, with no window, activating another app, as the public path does for every target,
+    /// then the private front with no key window, which the private path uses for an empty
+    /// workspace. B is front before each try.
+    func activations(from s: KeyStub, finder: Bool) {
+        let finderPid = finder ? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier : nil
+        var targets: [(name: String, pid: pid_t)] = [("A", a.pid)]
+        if let finderPid { targets.append(("Finder", finderPid)) }
+        var fronted: [String: Int] = [:], tries: [String: Int] = [:]
+        func frontPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+        // nil is the private front with no key window.
+        let ways: [ActivationWay?] = ActivationWay.allCases + [nil]
+        for round in 1...rounds {
+            for target in targets {
+                for way in ways {
+                    focus(b, b.windows[0], .raiseFirst)
+                    let label = way.map { "S \($0.label)" } ?? "kosmos_front_without_windows"
+                    guard front(b) else {
+                        print("round \(round), \(target.name) by \(label): setup did not front B, skipped")
+                        continue
+                    }
+                    let returned = way.map { s.activate(target.pid, $0) } ?? kosmos_front_without_windows(target.pid)
+                    wait(0.3)
+                    let isFront = frontPid() == target.pid
+                    let key = target.pid == a.pid ? a.label(a.appKey()) : focusedWindow(of: target.pid).map(String.init) ?? "none"
+                    let row = "\(target.name) by \(label)"
+                    tries[row, default: 0] += 1
+                    if isFront { fronted[row, default: 0] += 1 }
+                    print("round \(round), \(row): returned \(returned), \(target.name) \(isFront ? "is" : "is NOT") front 0.3 s later, "
+                          + "its key window \(key)")
+                }
+            }
+        }
+        for row in tries.keys.sorted() {
+            summary.append("\(row): front in \(fronted[row] ?? 0) of \(tries[row] ?? 0)")
         }
     }
-    if invisible == 0 { print("S opened no invisible window; its case did not run") }
 
-    // A key window concealed in a holding Space and revealed again, as a switch away and back
-    // does. The focus queue skips a request when the app is front and names the target as
-    // focused; it would skip wrongly if the app named it while holding no key window.
-    var wrongSkips = 0, concealTrials = 0, rekeyed = 0
-    var concealedKeys: [String: Int] = [:], concealedTries: [String: Int] = [:]
-    let space = kosmos_holding_create()
-    if let desktop = Displays.current().ordinarySpace(original: nil), space != 0 {
-        var ids = [a.windows[0]]
+    /// Kosmos keying a window of its own for an empty workspace: `s`'s invisible window, keyed
+    /// by the private path from `s`'s own background thread and from another process. B is
+    /// front before each try.
+    func invisibleWindow(of s: KeyStub) {
+        let invisible = s.openInvisibleWindow()
+        var ownKeyed: [String: Int] = [:], ownTries: [String: Int] = [:]
+        let ownWays: [(label: String, key: () -> Bool)] = [
+            ("S keying its invisible window itself", { s.keyOwnWindow(invisible) }),
+            ("the probe keying S's invisible window", { kosmos_make_key(s.pid, invisible) }),
+        ]
+        for round in 1...rounds where invisible != 0 {
+            for way in ownWays {
+                focus(b, b.windows[0], .raiseFirst)
+                guard front(b) else {
+                    print("round \(round), \(way.label): setup did not front B, skipped")
+                    continue
+                }
+                let returned = way.key()
+                wait(0.3)
+                let isFront = front(s), appKey = s.appKey()
+                ownTries[way.label, default: 0] += 1
+                if isFront && appKey == invisible { ownKeyed[way.label, default: 0] += 1 }
+                print("round \(round), \(way.label): returned \(returned), S \(isFront ? "is" : "is NOT") front 0.3 s later, "
+                      + "its key window \(appKey.map { $0 == invisible ? "the invisible one" : String($0) } ?? "none"), "
+                      + "B \(front(b) ? "still front" : "not front")")
+            }
+        }
+        if invisible == 0 { print("S opened no invisible window; its case did not run") }
+        for way in ownWays {
+            summary.append("\(way.label): S front with it key in \(ownKeyed[way.label] ?? 0) of \(ownTries[way.label] ?? 0)")
+        }
+    }
+
+    /// The cases with A's windows in a holding Space: a key window concealed and revealed, then
+    /// every window of A concealed while `s` fronts A.
+    func concealed(frontingFrom s: KeyStub) {
+        let space = kosmos_holding_create()
+        guard let desktop = Displays.current().ordinarySpace(original: nil), space != 0 else {
+            if space != 0 { kosmos_space_destroy(space) }
+            return print("no holding Space or no ordinary Space; the concealed cases did not run")
+        }
         defer {
             var every = a.windows
             kosmos_remove_windows(space, &every, every.count)
             kosmos_space_destroy(space)
         }
+        concealedAndRevealed(in: space, desktop: desktop)
+        everyWindowConcealed(in: space, desktop: desktop, frontingFrom: s)
+    }
+
+    /// A key window concealed and revealed again, as a switch away and back does. The focus
+    /// queue skips a request when the app is front and names the target as focused; it would
+    /// skip wrongly if the app named it while holding no key window.
+    private func concealedAndRevealed(in space: UInt64, desktop: UInt64) {
+        var wrongSkips = 0, concealTrials = 0, rekeyed = 0
+        var ids = [a.windows[0]]
         for round in 1...rounds {
             focus(a, a.windows[0], .raiseFirst)
             guard front(a), a.appKey() == a.windows[0] else {
@@ -473,11 +535,15 @@ final class FocusNotes: @unchecked Sendable {
                   + "\(wrong ? ", WRONGLY" : ""); Kosmos's order then \(keyedAgain ? "keyed A1" : "did NOT key A1"); "
                   + "focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
         }
+        summary.append("concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
+                       + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
+    }
 
-        // An app whose every window is concealed, fronted as an empty workspace fronts Finder,
-        // by S's activate and by the private front with no key window: whether it keys a
-        // concealed window, with the windows kept in their ordinary Space or not. B is front
-        // before each try.
+    /// An app whose every window is concealed, fronted as an empty workspace fronts Finder, by
+    /// `s`'s activate and by the private front with no key window: whether it keys a concealed
+    /// window, with the windows kept in their ordinary Space or not. B is front before each try.
+    private func everyWindowConcealed(in space: UInt64, desktop: UInt64, frontingFrom s: KeyStub) {
+        var concealedKeys: [String: Int] = [:], concealedTries: [String: Int] = [:]
         for round in 1...rounds {
             for exclusive in [false, true] {
                 for way in [ActivationWay.plain, nil] as [ActivationWay?] {
@@ -507,33 +573,9 @@ final class FocusNotes: @unchecked Sendable {
                 }
             }
         }
-    } else {
-        if space != 0 { kosmos_space_destroy(space) }
-        print("no holding Space or no ordinary Space; the concealed cases did not run")
-    }
-
-    print("\nsummary: a hit keys the target window in the app that holds it; a miss leaves another window key")
-    for test in cases {
-        for order in Order.allCases {
-            let row = "\(test.name) | \(order.rawValue)"
-            let hit = hits[row] ?? 0, runs = trials[row] ?? 0
-            print("  \(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs)")
+        for row in concealedTries.keys.sorted() {
+            summary.append("\(row): A keyed a concealed window in \(concealedKeys[row] ?? 0) of \(concealedTries[row] ?? 0)")
         }
-    }
-    print("  a background accessory app activating itself became front in \(selfActivated) of \(selfTrials)")
-    for row in tries.keys.sorted() {
-        print("  \(row): front in \(fronted[row] ?? 0) of \(tries[row] ?? 0)")
-    }
-    for way in ownWays {
-        print("  \(way.label): S front with it key in \(ownKeyed[way.label] ?? 0) of \(ownTries[way.label] ?? 0)")
-    }
-    print("  concealed and revealed: the already key check skipped wrongly in \(wrongSkips) of \(concealTrials); "
-          + "Kosmos's order keyed A1 again in \(rekeyed) of \(concealTrials)")
-    for row in concealedTries.keys.sorted() {
-        print("  \(row): A keyed a concealed window in \(concealedKeys[row] ?? 0) of \(concealedTries[row] ?? 0)")
-    }
-    if !raiseTimes.isEmpty {
-        print(String(format: "  AXRaise: median %.2f ms, max %.2f ms over %d raises", percentile(raiseTimes, 0.5), percentile(raiseTimes, 1), raiseTimes.count))
     }
 }
 
