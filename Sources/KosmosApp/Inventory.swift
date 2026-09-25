@@ -87,6 +87,9 @@ final class Inventory {
     /// WindowServer ordered a managed window above or below others, as its app raising it
     /// does, which leaves its border below it (docs/borders.md).
     var onReordered: (@MainActor (UInt32) -> Void)?
+    /// WindowServer reported another level or corner radius for a managed window, which its
+    /// border takes (docs/borders.md).
+    var onStyleChange: (@MainActor () -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -493,6 +496,7 @@ final class Inventory {
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
         if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, old.frame, row.frame, changed) }
+        if let old, old.level != row.level || old.cornerRadius != row.cornerRadius, isManaged(row.id) { onStyleChange?() }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""

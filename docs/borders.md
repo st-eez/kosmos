@@ -72,7 +72,9 @@ frame the slide shows the window at.
   over. So at each 808 for a managed window the inventory calls `onReordered`, and Kosmos
   orders that window's border above it again: 0.024 ms at the median over 100 orders.
   Ordering the border posted no event for the target, so the two never feed each other.
-  The border's window level is its target's.
+  The border's window level is its target's. Setting another level can move the border
+  within the stacking order, so when the target's row shows another level, Kosmos orders
+  the border above the target again.
 - WindowServer's hit test passes through a border: `NSWindow.windowNumber(at:)`, the
   window a mouse down at a point would hit, named the target at a point 0.5 points inside
   its edge under the ring, and at a point 1 point outside it, in the target's resize
@@ -93,8 +95,8 @@ frame the slide shows the window at.
   the app's and Kosmos's own. It trails the window by the event's way to Kosmos and the
   read of the row, as JankyBorders trails it by its event's way.
   The Controller shows the borders again after each change of the model (`publishState`),
-  each batch's completion, each change of a window's frame or of whether it is ordered
-  in, and each slide frame; nothing polls. A border that is the same as shown costs no
+  each batch's completion, each change of a window's frame, level or corner radius or of
+  whether it is ordered in, and each slide frame; nothing polls. A border that is the same as shown costs no
   AppKit call, and a move at the same size calls `setFrameOrigin`, 0.014 ms at the median
   against 0.158 ms for a resize (the probe, 200 of each).
 - The border shows on the display that holds the largest part of its window, cut to that

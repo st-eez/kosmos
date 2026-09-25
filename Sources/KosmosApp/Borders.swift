@@ -79,8 +79,10 @@ final class Borders {
             let window = windows[target], fresh = window == nil
             let border = window ?? spare.popLast() ?? BorderWindow()
             windows[target] = border
+            // Setting another level can move the border within the stacking order.
+            let leveled = border.level.rawValue != Int(next.level)
             let displayChanged = border.show(next)
-            if fresh { border.order(.above, relativeTo: Int(target)) }
+            if fresh || leveled { border.order(.above, relativeTo: Int(target)) }
             if fresh || displayChanged { pin(border, to: target) }
         }
     }

@@ -158,6 +158,7 @@ final class Controller {
             self?.updateBorders()
         }
         inventory.onReordered = { [weak self] id in self?.borderWindows.raise(id) }
+        inventory.onStyleChange = { [weak self] in self?.updateBorders() }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
