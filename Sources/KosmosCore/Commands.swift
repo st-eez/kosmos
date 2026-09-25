@@ -140,6 +140,74 @@ extension Workspace {
         let children = root[parent].children
         let usable = usableLength(of: parent, in: rect, gaps: gaps)
         guard children.count > 1, usable > 0 else { return false }
+        return change(by: amount, along: orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
+            let old = children[index].weight
+            let new = old + points / usable
+            let scale = (1 - new) / (1 - old)
+            guard new > 0, scale > 0 else { return false }
+            for sibling in children.indices {
+                workspace.root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
+            }
+            return true
+        }
+    }
+
+    /// Moves the window's edge on the `direction` side by `amount` points, outward when
+    /// positive, as a resize by that edge with the mouse does in AeroSpace
+    /// (resizeWithMouse.swift). The nearest container along the direction with children
+    /// beyond the window's branch on that side gives the branch the space, taking it from
+    /// those children in proportion to their shares, so the other edge stays. Each
+    /// container along the direction between that one and the window gives the space to
+    /// the window's branch alone, and its other children keep their lengths. It stops at
+    /// the limits `resize` keeps. False when no container has children beyond the window,
+    /// as at the workspace's edge, or when nothing could change.
+    @discardableResult
+    mutating func moveEdge(_ window: WindowID, _ direction: Direction, by amount: CGFloat, in rect: CGRect, gaps: Gaps,
+                           minimums: [WindowID: CGSize]) -> Bool {
+        guard let path = root.path(to: window) else { return false }
+        let levels = (0..<path.count).filter { root[path.prefix($0)].orientation == direction.orientation }
+        guard let depth = levels.last(where: { level in
+            direction.isForward ? path[level] < root[path.prefix(level)].children.count - 1 : path[level] > 0
+        }) else { return false }
+        let inner = levels.filter { $0 > depth }
+        let usable = Dictionary(uniqueKeysWithValues: ([depth] + inner).map { ($0, usableLength(of: path.prefix($0), in: rect, gaps: gaps)) })
+        guard usable[depth]! > 0 else { return false }
+        let before = root
+        return change(by: amount, along: direction.orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
+            let parent = path.prefix(depth), index = path[depth]
+            let children = before[parent].children
+            let beyond = direction.isForward ? Array(index + 1 ..< children.count) : Array(0 ..< index)
+            let share = points / usable[depth]!
+            let held = beyond.reduce(0) { $0 + children[$1].weight }
+            let new = children[index].weight + share
+            let scale = (held - share) / held
+            guard new > 0, scale > 0 else { return false }
+            workspace.root[parent].children[index].weight = new
+            for sibling in beyond { workspace.root[parent].children[sibling].weight = children[sibling].weight * scale }
+            for level in inner {
+                let parent = path.prefix(level), index = path[level]
+                let children = before[parent].children
+                let length = usable[level]!, grown = length + points
+                guard grown > 0 else { return false }
+                var others = 0.0
+                for sibling in children.indices where sibling != index {
+                    workspace.root[parent].children[sibling].weight = children[sibling].weight * length / grown
+                    others += children[sibling].weight * length / grown
+                }
+                guard others < 1 else { return false }
+                workspace.root[parent].children[index].weight = 1 - others
+            }
+            return true
+        }
+    }
+
+    /// Makes the change `apply` makes for `amount` points along `orientation`, else the most
+    /// whole points toward `amount` that keep every window along the orientation at its
+    /// entry in `minimums`, or at one point without one. A window already under its limit
+    /// may stay there. `apply` returns false when the points leave a share at or below zero.
+    /// False when nothing could change.
+    private mutating func change(by amount: CGFloat, along orientation: Orientation, in rect: CGRect, gaps: Gaps,
+                                 minimums: [WindowID: CGSize], _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
         let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height
         func limit(_ id: WindowID) -> CGFloat {
             let minimum = minimums[id].map { orientation == .horizontal ? $0.width : $0.height } ?? 0
@@ -148,31 +216,24 @@ extension Workspace {
         let before = tileFrames(in: rect, gaps: gaps)
         // The workspace after a change of `points`, or nil when that takes a window below
         // its limit.
-        func resized(by points: CGFloat) -> Workspace? {
-            let old = children[index].weight
-            let new = old + points / usable
-            let scale = (1 - new) / (1 - old)
-            guard new > 0, scale > 0 else { return nil }
-            var resized = self
-            for sibling in children.indices {
-                resized.root[parent].children[sibling].weight = sibling == index ? new : children[sibling].weight * scale
-            }
-            resized.normalize()
-            let kept = resized.tileFrames(in: rect, gaps: gaps).allSatisfy { id, frame in
+        func changed(by points: CGFloat) -> Workspace? {
+            var changed = self
+            guard apply(&changed, points) else { return nil }
+            changed.normalize()
+            let kept = changed.tileFrames(in: rect, gaps: gaps).allSatisfy { id, frame in
                 length(frame) >= min(limit(id), length(before[id]!))
             }
-            return kept ? resized : nil
+            return kept ? changed : nil
         }
-        var result = resized(by: amount)
+        var result = changed(by: amount)
         if result == nil {
-            // The most whole points toward `amount` that keep every window at its limit.
             let sign: CGFloat = amount < 0 ? -1 : 1
             var fits: CGFloat = 0, fails = abs(amount).rounded(.up)
             while fails - fits > 1 {
                 let middle = ((fits + fails) / 2).rounded(.down)
-                if resized(by: middle * sign) != nil { fits = middle } else { fails = middle }
+                if changed(by: middle * sign) != nil { fits = middle } else { fails = middle }
             }
-            result = fits > 0 ? resized(by: fits * sign) : nil
+            result = fits > 0 ? changed(by: fits * sign) : nil
         }
         guard let result else { return false }
         self = result

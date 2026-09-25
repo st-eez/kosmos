@@ -10,7 +10,7 @@ private let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "skylig
 public enum WindowServerEvent: Sendable {
     case created(UInt32)
     case destroyed(UInt32)
-    case changed(UInt32)   // ordered in or out, moved, resized or reordered
+    case changed(UInt32)   // moved (806), resized (807), reordered (808), ordered in (815) or out (816)
     case spaceMembership(UInt32)
     case spacesChanged     // a Space was created or destroyed, or the active Space changed
     case frontAppChanged
