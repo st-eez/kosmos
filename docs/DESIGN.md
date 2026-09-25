@@ -58,6 +58,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Bar | Each state snapshot goes to SketchyBar's Mach port as one event, and the bar never queries | Shell hooks on every switch |
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
+| Modifier drags | An active event tap for the left and right buttons at the annotated session location, each event decided on the tap's thread from WindowServer's hit test | `NSEvent` global monitors, which cannot keep an event from the app. A hit test of the model's frames, which knows no stacking order and would take a click on a panel over a tile |
 
 ## 4. Architecture
 
@@ -982,7 +983,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   Control held changes nothing, so after Control is released the next movement focuses
   the window under the pointer. Nothing is focused while a mouse button is down, because a
   movement with a button down is a drag event, which the tap does not receive, nor while
-  a tiled window is lifted (section 5.13): the pointer is the user's during a drag.
+  a tiled window is lifted (section 5.13) or a modifier drag is on (section 5.14): the
+  pointer is the user's during a drag.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
   keyboard moves focus to another window or moves the focused window. A workspace switch
   command moves it only when the focus is on another display than the pointer
@@ -1052,7 +1054,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     change, the one Kosmos is writing, which the app's worker may not have applied yet;
     AeroSpace's binding slept 50 ms before it read the frame. A floating window's is the
     last frame the inventory heard. So the move reads nothing from WindowServer and runs on
-    the main actor. While a window is lifted the pointer stays (section 5.13).
+    the main actor. While a window is lifted or a modifier drag is on, the pointer stays
+    (sections 5.13 and 5.14).
 - Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
   the next movement as the place the pointer landed and passes nothing on, whether or not
   the move posts an event of its own. A movement the tap passed on before a command is
@@ -1319,6 +1322,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     it stood, as it does when a lock, a wake or a display change cuts the drag short. A
     window minimized, hidden, closed or put in native fullscreen while dragged parks
     there.
+  - A modifier drag with the left button lifts and drops a tiled window the same way
+    (section 5.14).
 - A concealed window keeps its ordinary Space, as on one display, unless its app's most
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display (section
@@ -1362,6 +1367,97 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     BetterDisplay, which decides whether a placement step stays;
   - where a concealed window lands when a display leaves and recovery then runs: every
     workspace is laid out on the displays left, and each window should come back on one.
+
+### 5.14 Modifier drags
+
+With the modifier held, Option by default, the left button moves the window under the
+pointer and the right button resizes it, as Omarchy binds Super with Hyprland's
+`mouse:272` and `mouse:273` (Hyprland 0.56.2, `DragController.cpp`). The app under the
+pointer gets none of the drag's events.
+
+- The events come from an active event tap on its own thread, for the left and right
+  buttons' down, dragged and up events, at the annotated session location. WindowServer
+  has named the window under the pointer there with its own hit test
+  (`kCGMouseEventWindowUnderMousePointer`, as for focus follows mouse, section 5.11), so
+  deciding a press reads no window list. KosmosCore's DragGate decides each event on the
+  tap's thread, under a lock the main actor holds only to hand it the modifiers and the
+  windows, so no event waits on the main actor. Section 3 turns down a keyboard tap
+  because every keystroke would wait on the manager. This tap costs each button event one
+  round trip to its thread, which answers at once, and it takes no movement without a
+  button down.
+- A press is taken when its modifiers are exactly the configured ones, Caps Lock and Fn
+  aside, and the window under it is a tiled or floating window of a shown workspace
+  (`DragGate.windows`, renewed with each published state). Every other press passes
+  untouched: on the Dock, where Option and the right button give Force Quit, the menu bar,
+  SketchyBar, the desktop, a dialog or panel, a native fullscreen window or a window of
+  Kosmos's own. The log names each modifier press passed on for its window.
+- Kosmos takes the press, the drag's movements and that button's mouse up whatever the
+  modifiers are by then, and a press of the other button during the drag with its own
+  mouse up. WindowServer turns off a tap that falls behind, and Kosmos turns it on again.
+  A mouse up that passed meanwhile ends the drag at the button's next press, where the
+  pointer last moved; a hotkey ends it at once.
+- Movements coalesce. The tap tells the main actor once and keeps the latest point until
+  the main actor takes it, so a busy main actor gets fewer points, each the newest.
+- The press focuses the window, as a command stamped when the tap saw it, as Hyprland's
+  `dragBegin` focuses the window it grabs. Nothing moves until the pointer is more than
+  10 pt from the press, as for the title-bar lift (`Session.liftDistance`); from then on
+  the window catches up with the pointer and follows it. A press that moves less only
+  focuses the window. Omarchy leaves `binds:drag_threshold` at 0, so Hyprland lifts at
+  the press.
+- The left button lifts a tiled window as a title-bar drag does (section 5.13): the other
+  windows fill its space, it drops at the mouse up by the same dwindle rule, and a hotkey
+  drops it first. Kosmos writes the lifted window's position at each movement, keeping
+  the point the press grabbed under the pointer, where Hyprland centers a lifted tile on
+  the pointer. A floating window moves freely, and one whose center crosses onto a
+  display showing another workspace joins that workspace, as in a title-bar drag.
+- The right button on a tiled window moves the tile's edges on the sides of the window's
+  center the press was on, left or right and top or bottom, as Hyprland's DragController
+  picks the grabbed corner. A tile with no neighbour on that side moves its edge on the
+  other side, as Hyprland's dwindle `resizeTarget` does with `smart_resizing` on
+  (Omarchy's setting) for a window at the display's edge, and an axis with neighbours on
+  neither side moves nothing. Each edge goes where the pointer takes it from the tile's
+  edge at the press, through `Workspace.moveEdge`, which takes the space from the
+  neighbour across the edge alone, as i3's resize with the mouse and Hyprland's two node
+  splits do, and stops at the minimums `resize` keeps. An edge stopped at a limit follows
+  the pointer back.
+- The right button on a floating window moves the edges at the corner nearest the press
+  and keeps the others, never below the window's recorded minimum or 20 pt, Hyprland's
+  `MIN_WINDOW_SIZE`.
+- Each movement writes frames and does nothing else. A plan carried out per movement
+  would read every shown floating window's frame from WindowServer (section 5.13), and
+  that check leaves the dragged window where the drag puts it. The bar hears of a resize
+  at the mouse up.
+- `mouse-modifier` names the modifiers as bindings do, joined by `-`, and `off` turns
+  modifier drags off. Kosmos makes the tap when they first turn on while it manages
+  windows. Turned off at a reload, the tap stays and begins no drag, so each button event
+  still visits it until Kosmos quits; stopping the tap once no press is held would end
+  that.
+- An active tap filters events, which macOS allows a process with Accessibility
+  (`CGPreflightPostEventAccess`); yabai, skhd and Rectangle make theirs with
+  Accessibility alone. Input Monitoring gates listen-only taps (section 5.11), so Kosmos
+  does not expect macOS to ask for it here, but macOS 27 asked a process with neither
+  grant for Input Monitoring at a listen-only mouse tap, and whether an active one with
+  Accessibility asks is for the live test. Kosmos makes the tap only after the
+  Accessibility grant and logs both grants as it does. A refused tap is logged, and
+  modifier drags stay off.
+- Open until the live test:
+  - whether WindowServer takes an active tap at the annotated location and fills in the
+    window under the pointer for button events there. If not, a tap at the session
+    location with a hit test per modifier press (`SLSFindWindowAndOwner`, as yabai's
+    `window_manager_find_window_at_point`) stands in for the field;
+  - whether a taken press still activates its app; Kosmos focuses the window either way;
+  - how smoothly apps follow a position write per movement.
+- Left out:
+  - Snapping, which Omarchy leaves off, `general:resize_corner` and keeping a floating
+    window's aspect ratio, until a config asks for them.
+  - Resizing tiles on a workspace with a fullscreen window, which resizes nothing: the
+    fullscreen window covers them. Hyprland ends fullscreen once a drag passes its
+    threshold; `toggleFullscreen` at the lift distance would do the same.
+  - A floating window's minimum before its app shows one. Shrunk past it by its left or
+    top edge, the window's right or bottom edge moves out, since the app keeps its size
+    and the position was written for the size asked. A minimum the ledger records clamps
+    it from then on.
+  - Omarchy's Super and scroll wheel bindings, which switch workspaces.
 
 ## 6. Verification
 
@@ -1412,6 +1508,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 
 ## 8. Left out of the first version
 
-Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles with the mouse
-(section 5.2), an embedded scripting language, window title matchers, marks, persistence
-across restarts, and one macOS Space per workspace.
+Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles by their edges
+(section 5.2; a modifier drag resizes them, section 5.14), an embedded scripting language,
+window title matchers, marks, persistence across restarts, and one macOS Space per
+workspace.
