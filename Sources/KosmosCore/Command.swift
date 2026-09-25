@@ -77,7 +77,8 @@ public enum Command: Equatable, Sendable {
             // AeroSpace's --boundaries, whose default is the workspace, and its
             // --boundaries-action, before or after the direction. AeroSpace wraps only focus;
             // Kosmos wraps a move too, as Steve's `move || move-node-to-monitor --wrap-around`
-            // binding did.
+            // binding did. A move takes only the wrap; no binding needs AeroSpace's `stop` or
+            // `fail` for one.
             var across = false, wraps = false, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
@@ -90,9 +91,10 @@ public enum Command: Equatable, Sendable {
                     }
                 case "--boundaries-action":
                     switch words.popFirst() {
-                    case "stop": wraps = false
+                    case "stop" where name == "focus": wraps = false
                     case "wrap-around-all-monitors": wraps = true
-                    default: return fail("\(name): --boundaries-action takes stop or wrap-around-all-monitors")
+                    default:
+                        return fail("\(name): --boundaries-action takes \(name == "focus" ? "stop or " : "")wrap-around-all-monitors")
                     }
                 default:
                     directions.append(word)

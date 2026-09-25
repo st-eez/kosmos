@@ -424,6 +424,8 @@ public struct Session: Sendable {
             return performOnFocused(command)
                 ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
         case .move(let direction, let boundaries) where boundaries != .workspace:
+            // At the edge of the workspace the window crosses to the next display, as in
+            // AeroSpace.
             if let plan = performOnFocused(command) { return plan }
             // A floating window has no edge to cross, as in AeroSpace.
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
@@ -456,8 +458,8 @@ public struct Session: Sendable {
         case .focus(let direction, _):
             guard let target = workspace.focus(direction, from: window) else { return nil }
             plan.focus = .window(target)
-        case .move(let direction, _):
-            guard workspace.move(window, direction) else { return nil }
+        case .move(let direction, let boundaries):
+            guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }
         case .swap(let direction):
             guard workspace.swap(window, direction) else { return nil }
         case .joinWith(let direction):
