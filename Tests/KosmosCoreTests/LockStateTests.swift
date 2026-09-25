@@ -12,7 +12,7 @@ private func changes(_ signals: [LockState.Signal]) -> [LockState.Change?] {
 }
 
 @Test func anUnlockWhileSwitchedOutStaysLocked() {
-    // The screen can lock while the session is switched out; both must clear, in either order.
+    // The screen can lock while the session is switched out.
     #expect(changes([.switchedOut, .screenLocked, .screenUnlocked, .switchedIn])
         == [.locked, nil, nil, .unlocked])
     #expect(changes([.switchedOut, .screenLocked, .switchedIn, .screenUnlocked])

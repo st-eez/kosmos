@@ -5,7 +5,6 @@ import Testing
     var history = ConcealHistory()
     history.changed([3], concealed: true, at: t0 + .milliseconds(10))
     history.changed([3], concealed: false, at: t0 + .milliseconds(30))
-    // Command-Tab at 20; the switch to window 3's workspace revealed it at 30.
     #expect(history.wasConcealed(3, at: t0 + .milliseconds(20), now: false))
     #expect(!history.wasConcealed(3, at: t0 + .milliseconds(30), now: false))
 }

@@ -1,7 +1,6 @@
 import Testing
 @testable import KosmosCore
 
-/// A request for a window of app 1 at `at`, answered by app 1 reporting `reported`.
 private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, reported: WindowID = 9) -> Bool {
     let tripped = misses.willRequest(5, pid: 1, at: at)
     misses.reported(.window(reported), pid: 1, receivedAt: at + .milliseconds(1), echo: false)
@@ -13,7 +12,6 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
     for request in 0..<FocusMisses.limit {
         #expect(!miss(&misses, at: t0 + .milliseconds(request * 10)))
     }
-    // The fifth miss is judged when the sixth request is made.
     let tripped = misses.willRequest(5, pid: 1, at: t0 + .milliseconds(100))
     #expect(tripped)
 }
@@ -21,7 +19,6 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
 @Test func aMissAndItsRetryCountOnce() {
     var misses = FocusMisses()
     for attempt in 0..<FocusMisses.limit {
-        // The request keys window 9, and so does its retry.
         let request = misses.willRequest(5, pid: 1, at: t0 + .milliseconds(attempt * 10))
         misses.reported(.window(9), pid: 1, receivedAt: t0 + .milliseconds(attempt * 10 + 1), echo: false)
         let retry = misses.willRequest(5, pid: 1, at: t0 + .milliseconds(attempt * 10 + 2), retry: true)
@@ -44,7 +41,6 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
 @Test func aLateEchoAfterAStaleActivationReadIsAHit() {
     var misses = FocusMisses()
     for request in 0..<10 {
-        // The activation read names the window that was key before; the key change follows.
         _ = misses.willRequest(5, pid: 1, at: t0 + .milliseconds(request * 10))
         misses.reported(.window(9), pid: 1, receivedAt: t0 + .milliseconds(request * 10 + 1), echo: false)
         misses.reported(.window(5), pid: 1, receivedAt: t0 + .milliseconds(request * 10 + 2), echo: true)
@@ -55,8 +51,6 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
 }
 
 @Test func echoesArrivingAfterTheNextRequestKeepTheCountDown() {
-    // Holding a focus key across windows of one app: each echo lands after the next request,
-    // and that request's activation read still names the window keyed before it.
     var misses = FocusMisses()
     var tripped = false
     for request in 1..<20 {
@@ -78,9 +72,8 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
 }
 
 @Test func aReportOfTheRequestedWindowIsNeverAMiss() {
-    // The raise before the key record can report the window before the record lands, and
-    // the activation read reports it again after that first report was taken as the echo.
-    // Whatever the classifier made of it, a report naming the requested window is no miss.
+    // The raise can report the window before the key record lands, and the activation read
+    // reports it again after that report was taken as the echo.
     var misses = FocusMisses()
     var tripped = false
     for request in 0..<10 {
@@ -121,8 +114,7 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
 }
 
 @Test func aClickOnAnotherWindowAfterTheRequestedOneWasKeyIsNoMiss() {
-    // A background report consumed the echo, so the activation's report of window 5 is no
-    // echo; the user then clicks window 9 of the same app.
+    // A background report consumed the echo of window 5.
     var misses = FocusMisses()
     for request in 0..<10 {
         _ = misses.willRequest(5, pid: 1, at: t0 + .milliseconds(request * 10))

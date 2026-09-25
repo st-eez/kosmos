@@ -35,7 +35,8 @@
     notification (tla/README.md, change 22, `split-open-readfollows`). Whether the window
     was hidden is judged at the report's stamp: the bridge queue notes when it sends each
     window's conceal and reveal, because a switch can reveal or conceal the window before
-    the report is classified (change 19). That excludes the report right
+    the report is classified (change 19). Only each window's last change is kept: a report
+    is classified within milliseconds of its stamp. That excludes the report right
     after the key window left, when it closed or minimized or its app hid. macOS then keys
     another window itself, sometimes a concealed one, and Kosmos keeps its workspace and
     focuses it again. The window key before the report left the screen within the last second if
@@ -251,8 +252,7 @@
     trials raised first and posted a down and up record pair. Kosmos's own sequence, the
     down record alone to a background app, keyed the named window in every trial ([overview.md, section 2](overview.md#2-what-the-fork-measured)).
     The public path chose the wrong window in 9 of 9 trials, so a false trip costs more
-    than a few late wrong windows
-    (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
+    than a few late wrong windows (autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
 - AXRaise runs on the app's worker, inside the front app, where only it keys a window, and
