@@ -2,8 +2,8 @@ import CoreGraphics
 
 /// The config's `borders`: Kosmos draws a border around each tiled and floating window on
 /// screen, as Omarchy's Hyprland does and JankyBorders did (docs/borders.md). The defaults
-/// draw a line of width 4, 2 points outside the window's edge, in the macOS accent color
-/// around the focused window alone.
+/// draw a 2 point ring outside the focused window's edge (`width` 4) in the macOS accent
+/// color, and none around the others.
 public struct BorderSettings: Equatable, Sendable {
     /// JankyBorders' `width`: its line is centered on the window's edge, below the window,
     /// which covers the inner half. The border is the outer half, from the window's edge

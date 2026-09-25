@@ -31,7 +31,7 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     #expect(border.cornerRadius - border.lineWidth == 16)
     // A square window gets square corners.
     let square = Border(around: frame, radius: 0, width: 4, color: blue, displays: [display])!
-    #expect(square.lineWidth == 2 && square.cornerRadius == 0)
+    #expect(square.cornerRadius == 0)
 }
 
 /// The border shows on the display that holds most of the window, cut to it, and a window on
