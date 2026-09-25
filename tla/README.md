@@ -437,3 +437,27 @@ change that removed it:
     raise, and once the raise has returned and it has read the app's focused window, tells
     the main actor, which forgets the record if no report used it. The app's callbacks for
     the raise have run by then, as they have before its activation read.
+24. **Departures and a second display in the split model.** `split-leave` and
+    `split-displays` found five more:
+    - The fold of the split model lost the check that the user leaves or brings back a
+      window only after Kosmos has every report: a quantifier took it into its scope. It is
+      back.
+    - After the key window closed or minimized with no window keyed next, the model counted
+      Kosmos as the front app, so the worker dropped its raise inside the app, which had
+      stayed front, and nothing was focused. The app whose window closed or minimized now
+      stays front while no window is key (`bare`).
+    - The key window left and macOS keyed a concealed window of another app. That app's
+      notification found the window before it gone, and Kosmos kept its workspace. The
+      activation read of the same change came next, took the notification's window for the
+      one before it, and Kosmos followed macOS's re-key, as in `leave-follow`. A report that
+      repeats the window Kosmos last heard of now has the window before that one.
+    - Kosmos's evidence that the key window left lasts a second, and the split model judges
+      it by the key window Kosmos last heard of. With no report of a next key window, a
+      Command-Tab within that second reads as macOS's own key change, as a click during a
+      minimize's animation does above. The spec lets the second pass once Kosmos has every
+      report (`Age`), and exempts input inside it (`lastEarly`).
+    - On two displays the user clicked the window Kosmos's older raise was about to key, on
+      the display the focus had just left. The worker had read the app's focused window
+      before the click and recorded after it, and the click's callback ran after the record,
+      so the click read as the raise's echo. The exemption of change 22 (`lastRaced`) now
+      starts at the worker's read.

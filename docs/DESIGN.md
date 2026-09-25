@@ -317,7 +317,11 @@ off the main thread).
     itself, sometimes a concealed one, and Kosmos keeps its workspace and focuses it
     again. The window key before the report left the screen within the last second if
     WindowServer ordered it out or destroyed it, Accessibility reported it minimized, or
-    NSWorkspace reported its app hidden.
+    NSWorkspace reported its app hidden. The window key before a report is the one Kosmos
+    last heard of, unless the report repeats that window, as an activation read after its
+    app's notification of the same change does. Then it is the window before that one:
+    otherwise the read follows the re-key the notification declined (tla/README.md,
+    change 24).
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
     window key before it. A newer report of another window replaces it; one stamped
@@ -357,9 +361,9 @@ off the main thread).
     window in the milliseconds it is being concealed, which costs one switch back, or lose
     a Command-Tab to a hidden window. Notifications follow so that a window opened inside
     the front app brings Kosmos to it, which admits this race.
-  - The user keys a window of an app whose raise Kosmos decided before the app performs
-    it. A change to the raised window reads as the raise's echo, and after a change to
-    another window the raise keys its window again over the user's.
+  - The user keys a window of an app between the worker's read before a raise and the
+    app performing that raise. A change to the raised window reads as the raise's echo,
+    and after a change to another window the raise keys its window again over the user's.
 - Skip activation when the target is already key, checked by the focus queue when the
   request runs: the target's app is the front process and its focused window, read on the
   app's worker, is the target. The key window last reported can be older than a request
@@ -404,7 +408,7 @@ off the main thread).
   - TLC checks the split path with RaiseKeys and RaiseReports as `kosmos-probe keying`
     measured, either app busy with the 30 ms timeout nondeterministic, background apps
     opening windows, a window opened inside the front app, two displays, and the key
-    window on top of its app at rest (tla/README.md, changes 15 to 23).
+    window on top of its app at rest (tla/README.md, changes 15 to 24).
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
@@ -436,7 +440,8 @@ off the main thread).
   minimize. A window keyed during the animation, by Kosmos or the user, is taken to leave
   macOS nothing to key when it ends (not measured; the departures probe asks). A click
   or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
-  its workspace.
+  its workspace. So does one within the second after the key window left with no report
+  of a next key window.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
   - A crash guard. A byte in a file mapped shared is set during each private call and
