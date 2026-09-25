@@ -71,8 +71,8 @@ private func settings(enabled: Bool = true) -> FocusFollowsMouse {
 
 private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings(), key: KeyWindow? = .window(1),
                   app: (bundleID: String?, name: String?)? = ("com.mitchellh.ghostty", "Ghostty"),
-                  stale: Bool = false, fullscreenShown: Bool = false) -> PointerSkip? {
-    settings.skip(window, in: session(), key: key, app: app, stale: stale, fullscreenShown: fullscreenShown)
+                  stale: Bool = false) -> PointerSkip? {
+    settings.skip(window, in: session(), key: key, app: app, stale: stale)
 }
 
 @Suite struct FocusFollowsMouseTests {
@@ -94,11 +94,31 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(skip(1, key: KeyWindow.none) == nil)
     }
 
-    @Test func ignoredAppsOffStaleAndFullscreen() {
+    @Test func ignoredAppsOffAndStale() {
         #expect(skip(2, app: ("com.numi.Numi", "Numi")) == .ignoredApp)
         #expect(skip(2, settings(enabled: false)) == .off)
         #expect(skip(2, stale: true) == .stale)
-        #expect(skip(2, fullscreenShown: true) == .fullscreen)
+    }
+
+    @Test func withSeveralDisplaysOnlyTheDisplayInFullscreenIsLeftAlone() {
+        // The main display shows workspace 1 and has the focus; the left one shows 5.
+        let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+        let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        var s = Session(names: ["1", "2", "5", "6"], monitors: [main, left], assigned: ["1": 2, "2": 2, "5": 1, "6": 1])
+        _ = s.add(10)
+        _ = s.add(11)
+        _ = s.add(20, to: "2")
+        _ = s.add(50, to: "5")
+        _ = s.add(60, to: "6")
+        #expect(s.isVisible(10) && s.isVisible(11) && s.isVisible(50))
+        #expect(!s.isVisible(20) && !s.isVisible(60))   // hidden workspaces
+        // Window 11 went native fullscreen on the main display and is key there. The
+        // pointer on the left display still focuses window 50; on the main display it finds
+        // only window 11, which is parked.
+        _ = s.park([11])
+        let settings = settings()
+        #expect(settings.skip(50, in: s, key: .window(11), app: nil, stale: false) == nil)
+        #expect(settings.skip(11, in: s, key: .window(11), app: nil, stale: false) == .notTiled)
     }
 
     @Test func ignoresAppsByBundleIdentifierOrName() {
