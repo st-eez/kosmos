@@ -196,9 +196,8 @@ extension Workspace {
         }
     }
 
-    /// The change for `amount` points, else the most whole points toward it that keep every
-    /// window at its minimum, or at one point without one. A window under its limit already
-    /// may stay there. `apply` returns false for a share at or below zero.
+    /// The change for `amount` points, else the most whole points toward it that keep the
+    /// limits of docs/tree.md. `apply` returns false for a share at or below zero.
     private mutating func change(by amount: CGFloat, along orientation: Orientation, in rect: CGRect, gaps: Gaps,
                                  minimums: [WindowID: CGSize], _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
         let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height

@@ -1,6 +1,5 @@
-/// When each window was last concealed or revealed, so a report is judged by whether its
-/// window was hidden at the report's stamp (docs/focus.md; tla/README.md, change 19). Only
-/// the last change is kept: a report is classified within milliseconds of its stamp.
+/// When each window was last concealed or revealed, to judge a report by whether its window
+/// was hidden at the report's stamp (docs/focus.md; tla/README.md, change 19).
 public struct ConcealHistory: Sendable {
     private var last: [WindowID: (concealed: Bool, at: ContinuousClock.Instant)] = [:]
 

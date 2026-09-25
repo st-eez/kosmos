@@ -84,8 +84,9 @@
     to another window of that app awaits its echo, is a miss of that request, not the
     user's choice: the app kept its key window, or keyed another one itself before
     reporting the requested one. Preview re-keyed its main window within about 40 ms of a
-    hover keying its second window (live, 2026-09-24 at 23:56). The missed request never
-    comes back, so it leaves the expected echoes. Kosmos requests the focus again, once
+    hover keying its second window (live, 2026-09-24 at 23:56). The missed request, the
+    oldest to the app as the focus queue runs requests in order, never comes back, so it
+    leaves the expected echoes. Kosmos requests the focus again, once
     for each requested window; if that misses too, it leaves the key window where macOS
     put it. A report that echoes a request is no miss: an app can report the window again
     after the raise that follows its key record (below). A report that repeats the held
@@ -138,7 +139,7 @@
   window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
-  WorkerRaise, FocusDecide, WorkerPost). Each side records the echo, through the main
+  WorkerRaise, FocusDecide as `queueKeys`, WorkerPost). Each side records the echo, through the main
   queue, right before its own call that changes the key window, never at the request and
   never for the other side's call (tla/README.md, changes 16 and 18).
   The queue checks the generation, reads whether the target's app is front, hands the app's

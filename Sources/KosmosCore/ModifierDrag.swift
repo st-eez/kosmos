@@ -97,11 +97,8 @@ public struct DragGate: Sendable {
         return outcome
     }
 
-    /// A press can end unheard, as while WindowServer had the tap off. A nil `point` ends the
-    /// drag where the pointer last moved.
-    ///
-    /// Ceiling: a press HID counted before the tap saw the drag's own counts as the drag's,
-    /// and nothing public tells which press HID counted when (docs/modifier-drags.md).
+    /// A nil `point` ends the drag where the pointer last moved. Ceiling: a press HID counted
+    /// before the tap saw the drag's own counts as the drag's (docs/modifier-drags.md).
     public mutating func endIfReleased(hid: (DragButton) -> ButtonState, at point: CGPoint?) -> Outcome {
         guard let grab else { return Outcome() }
         let state = hid(grab.button)

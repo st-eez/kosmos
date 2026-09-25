@@ -203,9 +203,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// Native tabs share one place, and `new`, the tab just selected, takes `old`'s
-    /// (docs/tree.md). It inherits a tiled `old`'s minimum, as tabs share a size; a fullscreen
-    /// tab's would fill the display. Nil when `old` holds no place.
+    /// `new`, the tab just selected, takes `old`'s place and a tiled `old`'s minimum
+    /// (docs/tree.md). Nil when `old` holds no place.
     public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
@@ -339,9 +338,8 @@ public struct Session: Sendable {
 
     // MARK: Commands
 
-    /// Carries out a command. Nil when it does not apply, such as a focus at the edge.
-    /// `frame` gives where a window is now, for a focus in a direction
-    /// (Workspace.withFloatingTiled).
+    /// Nil when the command does not apply, such as a focus at the edge. `frame` gives where
+    /// a window is now, for a focus in a direction (docs/tree.md).
     public mutating func perform(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         defer { check() }
         switch command {
@@ -506,9 +504,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The windows of `hide` that lose their ordinary Space as they are concealed. macOS would
-    /// key one on the current display over its app's latest window, shown on another display
-    /// (docs/hiding.md and docs/displays.md).
+    /// The windows of `hide` that lose their ordinary Space as they are concealed
+    /// (docs/displays.md).
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
         guard monitors.count > 1 else { return [] }
         return Set(hide.filter { window in

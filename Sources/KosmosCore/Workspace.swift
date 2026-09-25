@@ -171,9 +171,8 @@ extension Workspace {
         return true
     }
 
-    /// The windows return in the reverse of the order they parked, which undoes the parking
-    /// exactly when nothing else changed. `rect` and `gaps` are the ones `frames` gets, for a
-    /// stale hint.
+    /// The windows return in the reverse of the order they parked (docs/tree.md). `rect` and
+    /// `gaps` are the ones `frames` gets, for a stale hint.
     mutating func unpark(_ windows: [WindowID], in rect: CGRect, gaps: Gaps) {
         for entry in parked.reversed() where windows.contains(entry.window) {
             parked.removeAll { $0.window == entry.window }

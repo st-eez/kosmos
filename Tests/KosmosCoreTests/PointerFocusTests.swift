@@ -223,11 +223,11 @@ private func movesPointer(_ binding: String, from source: CommandSource = .hotke
     try command(binding).movesPointer(from: source, toAnotherDisplay: toAnotherDisplay)
 }
 
-/// Steve's desk with the pointer on the main panel, over workspace 1, which has the focus
-/// and windows 10 and 11. The left panel shows workspace 5, with window 50, and hides empty
-/// workspace 7. Workspace-back-and-forth goes to 5.
+/// Over workspace 1 of `desk()`.
 private let pointerOnMainPanel = CGPoint(x: 100, y: 500)
 
+/// Workspace 1 has the focus and windows 10 and 11. The left panel shows workspace 5, with
+/// window 50, and hides empty workspace 7.
 private func desk() -> Session {
     var s = Session(names: ["1", "5", "7"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "5": 1, "7": 1])
     _ = s.add(10)
@@ -279,9 +279,8 @@ private func desk() -> Session {
     }
 
     @Test func aSwitchToTheWorkspaceAnotherDisplayShowsBringsThePointerThere() throws {
-        // alt-5, ctrl-alt-tab and alt-shift-5 reach workspace 5 where the left panel shows it,
-        // with nothing shown or hidden, and a neighbour tile reflowed under the pointer would
-        // take focus on the next bump.
+        // Each reaches workspace 5 on the left panel with nothing shown or hidden, and a tile
+        // reflowed under the pointer would take focus on the next bump.
         for binding in ["workspace 5", "workspace-back-and-forth", "move-node-to-workspace --focus-follows-window 5"] {
             var s = desk()
             let command = try command(binding)
@@ -297,9 +296,8 @@ private func desk() -> Session {
     }
 
     @Test func keyboardFocusOnAnEmptyWorkspaceOfAnotherDisplayGoesToThatDisplay() throws {
-        // alt-7 shows empty workspace 7 on the left panel; focus-monitor left reaches it where
-        // the left panel shows it. With no window to center on, the pointer goes to the
-        // display's center.
+        // Empty workspace 7 is on the left panel. With no window to center on, the pointer
+        // goes to the display's center.
         var shown = desk()
         _ = shown.perform(.workspace(.named("7")))
         _ = shown.perform(.workspace(.named("1")))
@@ -323,9 +321,8 @@ private func desk() -> Session {
     }
 
     @Test func thePointerGoesToTheFrameKosmosWrites() throws {
-        // A move sets no focus. The pointer follows the window to its tile after the move,
-        // the frame the plan writes before the app has applied it, so nothing is read from
-        // WindowServer. The same holds across displays.
+        // A move sets no focus. The pointer follows the window to the tile the plan writes,
+        // on this display or another, so nothing is read from WindowServer.
         var s = desk()
         s.adopt(10)
         let before = s.frames(of: "1")

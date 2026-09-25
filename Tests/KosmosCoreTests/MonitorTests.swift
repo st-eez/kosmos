@@ -454,9 +454,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(60, to: "6"); _ = s.add(20, to: "2")
         // One app owns 10, 20 and 60, and 10 is its window focused last.
         let latest: (WindowID) -> WindowID? = { [10, 20, 60].contains($0) ? 10 : nil }
-        // 60 is concealed on the left panel while 10 shows on the main panel: stripped. 20
-        // is concealed on the main panel, where 10 is: it keeps its Space. 50 is another
-        // app's.
+        // 60, concealed on the left panel away from 10, is stripped. 20, concealed on 10's
+        // main panel, keeps its Space, and so does 50, another app's.
         #expect(s.stripped([20, 50, 60], latest: latest) == [60])
         // Once 10 is minimized, nothing of the app shows, and nothing is stripped.
         _ = s.park([10])
@@ -701,13 +700,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     }
 }
 
-/// Runs random commands, focus changes, arrivals, departures, reopens, minimum sizes, drags
-/// and display changes on three displays, carries out each plan's reveals and conceals on a
-/// model of the screen, and checks after each step what docs/displays.md promises: every
-/// display shows at most one workspace, one it may show; the focused workspace is shown; a
-/// window is concealed exactly when its workspace is hidden, unless it is parked; every
-/// tiled window of a shown workspace lies on that workspace's display; no plan has a frame
-/// for a floating window; and the session is sound (`Session.validate`).
+/// Runs random operations on three displays, carries out each plan on a model of the screen,
+/// and checks after each step what docs/displays.md promises.
 @Test(arguments: 1...12 as ClosedRange<UInt64>)
 func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var random = SplitMix64(state: seed)

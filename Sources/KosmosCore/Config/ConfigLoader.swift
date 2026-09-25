@@ -1,9 +1,8 @@
 import CoreGraphics
 
 extension Config {
-    /// `read` returns the text of a file `include` names, or nil when it cannot. `config` is
-    /// nil when any diagnostic is an error, so a caller applies all of the files or none of
-    /// them (docs/config.md). Diagnostics are in file order, the main file's first.
+    /// `read` returns the text of a file `include` names, or nil. `config` is nil when any
+    /// diagnostic is an error, so all of the files apply or none (docs/config.md).
     public static func load(_ text: String, including read: (String) -> String? = { _ in nil })
         -> (config: Config?, diagnostics: [Diagnostic]) {
         var root: TOMLTable
