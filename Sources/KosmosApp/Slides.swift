@@ -29,6 +29,8 @@ final class Slides {
     private var free: [UInt64] = []
     private let poolChecks = DispatchQueue(label: "kosmos.slide.pool", qos: .utility)
     private var links: [DisplayID: Link] = [:]
+    /// The transparent Spaces of windows waiting for their pops (`hold`).
+    private var held: [WindowID: UInt64] = [:]
 
     private struct Link {
         let link: CADisplayLink
@@ -121,15 +123,37 @@ final class Slides {
         for display in Array(links.keys) { stopLink(display) }
     }
 
+    /// Keeps a window transparent before its pop, in the Space the pop then takes, until the pop
+    /// or `endHold` (docs/geometry.md). An order-out takes a window out of every Space, so a
+    /// window ordered in again is added again.
+    func hold(_ id: WindowID) {
+        guard hiding.guardianReady, let space = held[id] ?? free.popLast() else { return }
+        held[id] = space
+        kosmos_space_set_alpha(space, 0)
+        var ids = [id]
+        kosmos_add_windows(space, &ids, 1, false)
+        slideLog.info("\(id) held transparent")
+    }
+
+    func endHold(_ id: WindowID, _ why: String) {
+        guard let space = held.removeValue(forKey: id) else { return }
+        kosmos_space_set_alpha(space, 1)
+        var ids = [id]
+        kosmos_remove_windows(space, &ids, 1)
+        slideLog.info("\(id) shown again \(why, privacy: .public)")
+        release(space, of: id)
+    }
+
     /// False when the window jumps. A pop's Space turns transparent before the window joins it.
     private func begin(_ id: WindowID, from: CGRect, to target: CGRect, _ motion: Motion, at now: Double) -> Bool {
         guard hiding.guardianReady else { return false }
-        guard let space = free.popLast() else {
+        let holding = motion.pop ? held.removeValue(forKey: id) : nil
+        guard let space = holding ?? free.popLast() else {
             slideLog.notice("\(id) jumps: no animation Space is free")
             return false
         }
         guard startLink(on: motion.display) else {
-            free.append(space)
+            if holding == nil { free.append(space) } else { held[id] = space }
             return false
         }
         let window = SlidingWindow(space: space, display: motion.display, from: from, to: target, pop: motion.pop, at: now)

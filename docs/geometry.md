@@ -165,6 +165,12 @@
     landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
     in at its target, and the reads follow it until it lands. A window its app opens on its
     own tile pops in too.
+  - A window its app closed and kept, then orders in again, pops in as a new window does
+    ([tree.md](tree.md)). Its app orders it in at its old place, so while its reopen waits
+    the pairing window it waits in a transparent Space of the pool, and its pop takes that
+    Space. A tab switch that selects it shows it again at once where it is. So does a
+    reopen that does not pop it, as to a hidden workspace or by a rule that floats it, and
+    the end of a wait with no reopen, as after its order-out or a fullscreen report.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while the guardian is ready, and each Space of the pool is

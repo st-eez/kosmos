@@ -399,8 +399,10 @@ final class Controller {
     }
 
     /// A window ordered in as another of its app with its frame leaves is a native tab
-    /// switch. A hidden tab, or a window closed and kept, ordered in with no tab leaving is
-    /// back a pairing window later (docs/tree.md).
+    /// switch. A hidden tab ordered in with no tab leaving is back a pairing window later. So
+    /// is a window closed and kept while another window of its app is ordered in at its frame,
+    /// as only that window's order-out can still pair, and otherwise it reopens now
+    /// (docs/tree.md).
     private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
         // Measures the tab pairing window; remove once a day of Ghostty and Finder tabs sets it (docs/tree.md).
         controllerLog.info("\(id) ordered \(orderedIn ? "in" : "out", privacy: .public), app \(self.inventory.appIdentity(pid).name ?? String(pid), privacy: .public)")
@@ -409,18 +411,32 @@ final class Controller {
             return
         }
         guard orderedIn, tabs.hidden.contains(id) || closedByApp.contains(id) else { return }
+        if closedByApp.contains(id) {
+            guard inventory.hasOrderedInWindow(pid, at: frame, besides: id) else { return reopen(id, pid: pid) }
+            // Its app ordered it in at its old place (docs/geometry.md).
+            if animations { slides?.hold(id) }
+        }
         after(TabSwitches.window) { controller in
-            guard controller.inventory.windows[id]?.orderedIn == true else { return }
-            if controller.closedByApp.remove(id) != nil {
-                // An ordered out window leaves every Space, the holding Space too, so a conceal
-                // from before it closed would fail the next batch's confirmation.
-                controller.ledger.forget(id)
-                controller.hiding.forgetClosed(id)
-                controller.place(id, pid: pid, ruleWorkspace: true, reopened: true)
-            } else if controller.tabs.detached(id), let pid = controller.owner[id] {
+            let orderedIn = controller.inventory.windows[id]?.orderedIn == true
+            if orderedIn, controller.closedByApp.contains(id) {
+                controller.reopen(id, pid: pid)
+            } else if orderedIn, controller.tabs.detached(id), let pid = controller.owner[id] {
                 controller.place(id, pid: pid, ruleWorkspace: false, reopened: false)
+            } else {
+                controller.slides?.endHold(id, "as it did not reopen")
             }
         }
+    }
+
+    /// An ordered out window leaves every Space, the holding Space too, so a conceal from
+    /// before it closed would fail the next batch's confirmation.
+    private func reopen(_ id: WindowID, pid: pid_t) {
+        closedByApp.remove(id)
+        ledger.forget(id)
+        hiding.forgetClosed(id)
+        place(id, pid: pid, ruleWorkspace: true, reopened: true)
+        // Still held when it does not pop, as when a rule floats it or its workspace is hidden.
+        slides?.endHold(id, "as it reopened with no pop")
     }
 
     /// `new` takes the deselected tab's place with no reflow and no follow, once admitted
@@ -445,8 +461,10 @@ final class Controller {
         if plan.hide.contains(new) { placedHidden[new] = .tab }
         controllerLog.info("tab \(new) replaces \(old)\(parked ? ", after \(old) parked as closed and kept" : "", privacy: .public)")
         tabs.replaced(old, with: new)
-        // Parked as closed by its app, as a window Merge All Windows made a tab.
+        // Parked as closed by its app, as a window Merge All Windows made a tab, and held
+        // transparent since its order-in; shown before the plan writes its place.
         closedByApp.remove(new)
+        slides?.endHold(new, "as a tab switch selected it")
         // A switch inside a native fullscreen group: the new tab is the one in fullscreen.
         if fullscreenParked.remove(old) != nil { fullscreenParked.insert(new) }
         // A deselected tab leaves every Space, and the tab selected lands on its ordinary

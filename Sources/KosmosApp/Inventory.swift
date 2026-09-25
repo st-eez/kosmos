@@ -254,6 +254,10 @@ final class Inventory {
         windows.values.contains { $0.pid == pid && $0.id != window && !$0.orderedIn && isCandidate($0) }
     }
 
+    func hasOrderedInWindow(_ pid: pid_t, at frame: CGRect, besides window: UInt32) -> Bool {
+        windows.values.contains { $0.pid == pid && $0.id != window && $0.orderedIn && $0.frame == frame && isCandidate($0) }
+    }
+
     func otherWindows(of pid: pid_t, besides window: UInt32) -> [DepartureFocus.OtherWindow] {
         windows.values.filter { $0.pid == pid && $0.id != window && isCandidate($0) }
             .map { DepartureFocus.OtherWindow(orderedIn: $0.orderedIn, minimized: isMinimized($0.id)) }

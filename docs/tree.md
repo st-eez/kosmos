@@ -92,7 +92,15 @@
     rule's, and keeps the minimum size Kosmos learned for it. To the user a closed window
     is closed, and in Omarchy reopening makes a new window on the current workspace.
     Before this, Activity Monitor closed with Command-W on workspace 3 came back there
-    when reopened from workspace 5 (live, September 25, 2026). Kosmos takes a managed
+    when reopened from workspace 5 (live, September 25, 2026). It reopens at its order-in,
+    unless another window of its app is ordered in at its frame: only that window's
+    order-out can still pair with the order-in as a tab switch, as when the user selects
+    the tab of a window Merge All Windows parked, so the reopen then waits the pairing
+    window. The app orders the window in at its old place, so while the reopen waits the
+    window is held transparent, and the reopen pops it in ([geometry.md](geometry.md)).
+    Before this, every reopen waited the pairing window, and Activity Monitor, closed with
+    Command-W on workspace 5 and reopened on workspace 6, showed at its workspace 5 tile
+    for about 270 ms after its order-in (live log, September 25, 2026). Kosmos takes a managed
     window ordered out for none of the other reasons as closed and kept, and looks at it
     as soon as the read that saw its order-out is applied with no other read of window
     rows under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A
@@ -215,13 +223,14 @@
     closed tab's place waits the pairing window for it, if the app has windows ordered
     out, in native fullscreen too. Closing the group's last tab is a close. A switch in
     the meantime leaves the closed tab out of its batch ([hiding.md](hiding.md)).
-  - A window ordered in with no tab leaving is back after the pairing window if it is
-    still ordered in. A hidden member dragged out of its group takes a place of its own,
+  - A hidden member ordered in with no tab leaving is back after the pairing window if it
+    is still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It
     floats when a rule floats its app, and the workspace a rule names does not apply to it.
-    A window its app had closed and kept opens again as a new window, so a reopened
-    Settings window opens 250 ms late. Merge All Windows parks the merged windows that
-    way, and selecting one's tab brings it to the group's place.
+    A window its app had closed and kept opens again as a new window, 250 ms late only
+    while another window of its app is ordered in at its frame (above). Merge All Windows
+    parks the merged windows that way, and selecting one's tab brings it to the group's
+    place.
   - Kosmos does not read the AXTabGroup of the selected tab. Frames tell the cases seen
     so far apart at no cost, and a false switch now needs two windows of one app with one
     frame, one leaving and one arriving within 250 ms. The AXTabs of the incoming window
