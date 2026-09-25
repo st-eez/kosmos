@@ -289,7 +289,9 @@ final class Controller {
                 return (1, "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))")
             }
             reports.commandExecuted(receivedAt: received)
-            if let plan = session.perform(command) {
+            // A focus in a direction reads floating windows where the inventory last heard
+            // them, as the pointer's center does, so nothing waits on WindowServer.
+            if let plan = session.perform(command, frames: inventory.windows.mapValues(\.frame)) {
                 execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
             }
             return (0, "")
