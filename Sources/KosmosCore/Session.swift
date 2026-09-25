@@ -283,7 +283,7 @@ public struct Session: Sendable {
         _ = workspaces[name]!.remove(window)
         var plan = Plan()
         plan.frames = frames(of: name)
-        if wasFocused { plan.focus = focused.map(KeyWindow.window) ?? KeyWindow.none }
+        if wasFocused { plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace }
         return plan
     }
 
@@ -577,7 +577,7 @@ public struct Session: Sendable {
         focusedWorkspace = name
         if focused == nil, let first = windows(of: name).first { workspaces[name]!.focus(first) }
         var plan = Plan()
-        plan.focus = focused.map(KeyWindow.window) ?? KeyWindow.none
+        plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
         return plan
     }
 
@@ -593,7 +593,7 @@ public struct Session: Sendable {
         // A workspace whose windows were never focused still gets one focused.
         if focused == nil, let first = plan.show.first { workspaces[name]!.focus(first) }
         plan.frames = frames(of: name)
-        plan.focus = focused.map(KeyWindow.window) ?? KeyWindow.none
+        plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
         return plan
     }
 
@@ -624,7 +624,7 @@ public struct Session: Sendable {
         if onScreen, !isShown(name) { plan.hide.append(window) }
         if !onScreen, isShown(name) { plan.show.append(window) }
         if !following, wasFocused || name == focusedWorkspace {
-            plan.focus = focused.map(KeyWindow.window) ?? KeyWindow.none
+            plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
         }
         plan.frames.merge(frames(of: source)) { current, _ in current }
         plan.frames.merge(frames(of: name)) { current, _ in current }

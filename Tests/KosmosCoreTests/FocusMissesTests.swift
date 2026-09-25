@@ -115,7 +115,7 @@ private func miss(_ misses: inout FocusMisses<Int>, at: Int, reported: UInt32 = 
     var misses = FocusMisses<Int>()
     for request in 0..<10 {
         _ = misses.willRequest(5, pid: 1, at: request * 10)
-        if request.isMultiple(of: 2) { misses.reported(.none, pid: 1, receivedAt: request * 10 + 1, echo: false) }
+        if request.isMultiple(of: 2) { misses.reported(.emptyWorkspace, pid: 1, receivedAt: request * 10 + 1, echo: false) }
     }
     #expect(misses.inARow == 0)
 }

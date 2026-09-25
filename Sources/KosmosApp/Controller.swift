@@ -816,9 +816,9 @@ final class Controller {
             // otherwise ignored (tla/README.md, change 17). It leaves the kill switch's count
             // alone: a raise's report says nothing about the key record.
             guard !sessionLocked else { return }
-            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
+            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .emptyWorkspace, receivedAt: report.received)
         case .focusedWindowChanged(let id):
-            let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
+            let reported: KeyWindow = id.map(KeyWindow.window) ?? .emptyWorkspace
             let repeated = key == reported
             let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
@@ -966,11 +966,11 @@ final class Controller {
             // empty workspace keys its window again, so key equivalents such as Cmd-Q reach no
             // app. After a click on the desktop or a Command-Tab it is the user's choice, and
             // so is an app launched since, which activates before its first window.
-            guard report.key == .none, report.pid != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
+            guard report.key == .emptyWorkspace, report.pid != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
                   NSRunningApplication(processIdentifier: report.pid)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
             else { break }
             controllerLog.notice("\(self.inventory.appIdentity(report.pid).name ?? String(report.pid), privacy: .public) has no key window on an empty workspace; keying its window again")
-            requestFocus(.none)
+            requestFocus(.emptyWorkspace)
         case .undecided:
             let number = held.hold(report, of: report.key)
             after(Self.grace) { controller in
@@ -1037,7 +1037,7 @@ final class Controller {
 
     // MARK: Plans
 
-    private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
+    private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .emptyWorkspace }
 
     /// macOS shows a native fullscreen window's Space: that window is key, or a panel or
     /// dialog of its app is.
@@ -1222,7 +1222,7 @@ final class Controller {
             pid = owner[id]
             privately = focusQueue.killSwitch.isOn
             touch(id)
-        case .none:
+        case .emptyWorkspace:
             // Kosmos's own window, which only the private path can key. The wrong window
             // count judges key records to other apps' windows, so only a crash inside a
             // private call keeps this one from being keyed (docs/focus.md).

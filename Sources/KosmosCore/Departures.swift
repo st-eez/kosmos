@@ -56,7 +56,7 @@ public struct KeyHistory: Sendable {
     /// repeated report of no key window has none: any app can make it, as Finder fronted by
     /// a click on the desktop after the empty workspace's window was keyed.
     public mutating func heard(_ reported: KeyWindow) -> KeyWindow? {
-        guard reported != key else { return reported == .none ? KeyWindow.none : before }
+        guard reported != key else { return reported == .emptyWorkspace ? .emptyWorkspace : before }
         before = key
         key = reported
         return before

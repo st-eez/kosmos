@@ -55,9 +55,9 @@ import Testing
 
 @Test func emptyWorkspaceFocusIsAnEchoAndOtherwiseIgnored() {
     var reports = FocusReports<Int>()
-    reports.focusRequested(.none, app: nil, at: 10)
-    #expect(reports.classify(.none, receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .echo)
-    #expect(reports.classify(.none, receivedAt: 12, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .ignore)
+    reports.focusRequested(.emptyWorkspace, app: nil, at: 10)
+    #expect(reports.classify(.emptyWorkspace, receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .echo)
+    #expect(reports.classify(.emptyWorkspace, receivedAt: 12, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .ignore)
 }
 
 @Test func droppedRequestDoesNotSwallowAUserReport() {
@@ -87,7 +87,7 @@ import Testing
 
 @Test func noKeyWindowAfterTheKeyWindowLeavesFocusesTheWorkspaceAgain() {
     var reports = FocusReports<Int>()
-    #expect(reports.classify(.none, receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .left) == .reassert)
+    #expect(reports.classify(.emptyWorkspace, receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .left) == .reassert)
 }
 
 @Test func ownRequestStillComesBackAsAnEchoAfterTheKeyWindowLeaves() {
@@ -117,7 +117,7 @@ import Testing
     // Ghostty, concealed on 1.
     #expect(reports.classify(.window(3), receivedAt: 11, onShownWorkspace: false, concealed: true, keyLeft: .unknown) == .undecided)
     // No key window is not held: the departure focuses when it comes.
-    #expect(reports.classify(.none, receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .unknown) == .ignore)
+    #expect(reports.classify(.emptyWorkspace, receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .unknown) == .ignore)
     // Classified again once the departure is known, or the grace ends.
     #expect(reports.classify(.window(3), receivedAt: 11, onShownWorkspace: false, concealed: true, keyLeft: .left) == .reassert)
     #expect(reports.classify(.window(3), receivedAt: 11, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(3))
@@ -230,7 +230,7 @@ import Testing
     // A managed desktop window of the same app, or another app's panel: the desktop.
     #expect(!showsFullscreenSpace(key: .window(6), keyManaged: true, keyApp: 100, fullscreen: fullscreen))
     #expect(!showsFullscreenSpace(key: .window(9), keyManaged: false, keyApp: 200, fullscreen: fullscreen))
-    #expect(!showsFullscreenSpace(key: KeyWindow.none, keyManaged: false, keyApp: nil, fullscreen: fullscreen))
+    #expect(!showsFullscreenSpace(key: .emptyWorkspace, keyManaged: false, keyApp: nil, fullscreen: fullscreen))
 }
 
 @Test func anEchoIsKnownBeforeItIsClassified() {
@@ -317,7 +317,7 @@ import Testing
     #expect(reports.classify(.window(2), receivedAt: 12, onShownWorkspace: true, concealed: false, keyLeft: departure(.left)) == .adopt(2))
     #expect(reads == 0)
     #expect(reports.classify(.window(3), receivedAt: 13, onShownWorkspace: false, concealed: true, keyLeft: departure(.left)) == .reassert)
-    #expect(reports.classify(.none, receivedAt: 14, onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
+    #expect(reports.classify(.emptyWorkspace, receivedAt: 14, onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
     #expect(reads == 2)
 }
 

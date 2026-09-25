@@ -2,7 +2,7 @@
 /// empty workspace.
 public enum KeyWindow: Hashable, Sendable {
     case window(UInt32)
-    case none
+    case emptyWorkspace
 }
 
 /// What to do with a key window report (docs/focus.md; tla/Kosmos.tla, Adopt).

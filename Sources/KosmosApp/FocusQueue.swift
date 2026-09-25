@@ -29,7 +29,7 @@ final class FocusQueue: Sendable {
     /// Uses the private path when `privately`, as the kill switch said on the main actor, and
     /// the public path otherwise or when a SkyLight call fails. `worker` belongs to the
     /// target's app: it reads the app's focused window, raises the window and runs the public
-    /// path. For `.none`, `pid` is Kosmos's own, and the private key record keys Kosmos's
+    /// path. For `.emptyWorkspace`, `pid` is Kosmos's own, and the private key record keys Kosmos's
     /// empty workspace window, which no public call can.
     ///
     /// The private path for a window follows the split model in tla/Kosmos.tla (KosmosCore's
@@ -66,7 +66,7 @@ final class FocusQueue: Sendable {
                     Self.wait(for: worker, id, isCurrent, request, performing: raising, dropped: dropping)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     stamp = ContinuousClock.now
-                case .none:
+                case .emptyWorkspace:
                     // `FocusStart`: Kosmos's own window, keyed at once unless it is key already.
                     if front, emptyWorkspace.isKey.load(ordering: .relaxed) { return }
                     stamp = ContinuousClock.now
@@ -75,7 +75,7 @@ final class FocusQueue: Sendable {
                 let performed = killSwitch.guarded {
                     switch key {
                     case .window(let id): kosmos_make_key(pid, id)
-                    case .none: kosmos_make_key(pid, emptyWorkspace.window)
+                    case .emptyWorkspace: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
                 guard performed else { return dropping(stamp) }
@@ -91,7 +91,7 @@ final class FocusQueue: Sendable {
                 worker?.focusPublicly(id, readFocus: front, isCurrent: isCurrent,
                                       performing: { stamp in Self.onMain { performing(stamp, .activation) } },
                                       dropped: dropping)
-            case .none:
+            case .emptyWorkspace:
                 // Only the private path keys Kosmos's own window: an accessory app that
                 // activated itself became front in 0 of 10 trials. With that path off after a
                 // crash, or its call failing, the previous window stays key.

@@ -48,8 +48,8 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(keys.heard(.window(3)) == .window(1))
     #expect(keys.key == .window(3))
     // No key window after 3 left, then another app's report of none: that one has none.
-    #expect(keys.heard(.none) == .window(3))
-    #expect(keys.heard(.none) == KeyWindow.none)
+    #expect(keys.heard(.emptyWorkspace) == .window(3))
+    #expect(keys.heard(.emptyWorkspace) == .emptyWorkspace)
 }
 
 @Test func aHeldReportIsDecidedOnceByItsGrace() {
@@ -81,7 +81,7 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     // Kosmos's focus hid while another window stayed key, or macOS's report came first, or
     // a request found the focus gone: no report is coming, so the departure focuses.
     #expect(DepartureFocus.decide(focusLeft: true, key: .window(4), departing: [1], left: none) == .now)
-    #expect(DepartureFocus.decide(focusLeft: true, key: KeyWindow.none, departing: [1], left: none) == .now)
+    #expect(DepartureFocus.decide(focusLeft: true, key: .emptyWorkspace, departing: [1], left: none) == .now)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
 

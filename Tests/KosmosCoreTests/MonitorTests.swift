@@ -88,7 +88,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     @Test func anEmptyWorkspaceOnAnotherDisplayFocusesNoWindow() {
         var s = desk()
         _ = s.add(10)
-        #expect(s.perform(.workspace(.named("8")))?.focus == KeyWindow.none)
+        #expect(s.perform(.workspace(.named("8")))?.focus == .emptyWorkspace)
         #expect(s.focused == nil)
     }
 
@@ -110,7 +110,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.perform(.workspace(.named("5")))
         let plan = s.perform(.workspace(.named("4")))!
         #expect(s.shownWorkspaces == ["4", "1", "8"])
-        #expect(plan.focus == KeyWindow.none)
+        #expect(plan.focus == .emptyWorkspace)
         // It walks with the left panel's workspaces now, and with the main panel's there.
         _ = s.perform(.workspace(.next))
         #expect(s.focusedWorkspace == "5")
@@ -515,7 +515,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         var s = desk()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
         #expect(s.remove(50).focus == nil)
-        #expect(s.remove(10).focus == KeyWindow.none)
+        #expect(s.remove(10).focus == .emptyWorkspace)
     }
 }
 
