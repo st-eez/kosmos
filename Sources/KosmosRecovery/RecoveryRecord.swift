@@ -1,7 +1,7 @@
 import Foundation
 
 /// A process, identified across pid reuse by its start time.
-public struct ProcessIdentity: Equatable, Sendable {
+public struct ProcessIdentity: Hashable, Sendable {
     public let pid: Int32
     /// Microseconds since 1970, from the kernel.
     public let start: UInt64
@@ -74,6 +74,29 @@ public struct RecoveryRecord: Equatable, Sendable {
         self.manager = manager
         self.spaces = spaces
         self.windows = windows
+    }
+
+    /// The recorded Space hiding conceals into again after a recovery kept the record: the
+    /// newest, while `members`, a read of the recorded Spaces, shows it holding a recorded
+    /// window; nil calls for a new one. Recovery sends a destroy only once no recorded window
+    /// is left in a recorded Space (Recovery.run), and hiding conceals only into a new Space
+    /// or the one returned here. So the Space returned was never sent a destroy, after which
+    /// its level, transform and alpha would be unknown.
+    public func reusableSpace(members: [UInt64: [UInt32]]) -> UInt64? {
+        let recorded = Set(windows.map(\.id))
+        guard let newest = spaces.last, members[newest]?.contains(where: recorded.contains) == true else { return nil }
+        return newest
+    }
+
+    /// The record without the windows that no longer exist, to make room in a full slot.
+    /// `alive` is a read of the recorded windows. The windows of `keeping`, the concealed
+    /// ones and the ones about to be, stay whatever it says. Nil when it misses a window of
+    /// `seen`, which an earlier read found: the read failed, as a failed query reads nothing.
+    public func pruned(alive: Set<UInt32>, keeping: Set<UInt32>, seen: [UInt32]) -> RecoveryRecord? {
+        guard seen.allSatisfy(alive.contains) else { return nil }
+        var pruned = self
+        pruned.windows.removeAll { !alive.contains($0.id) && !keeping.contains($0.id) }
+        return pruned
     }
 
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"

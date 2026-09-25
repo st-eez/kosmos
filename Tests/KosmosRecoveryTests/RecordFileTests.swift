@@ -33,6 +33,8 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     file.publish(record(spaces: [1, 2], windows: 3))
     file.publish(record(spaces: [5]))
     #expect(try RecordFile(url: url).read() == record(spaces: [5]))
+    #expect(RecordFile.peek(url) == record(spaces: [5]))
+    #expect(RecordFile.peek(temporaryFile()) == nil)
 }
 
 @Test func tornSlotFallsBackToTheOlderRecord() throws {
@@ -107,4 +109,14 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(file.publish(record(spaces: Array(1...64))))
     #expect(!file.publish(record(spaces: Array(1...65))))
     #expect(file.read()?.spaces.count == 64)
+}
+
+/// Hiding conceals into the newest recorded Space again only while it holds a recorded
+/// window, 0 here: a Space sent a destroy holds none.
+@Test func onlyTheNewestSpaceHoldingARecordedWindowIsUsedAgain() {
+    let kept = record(spaces: [1, 2], windows: 1)
+    #expect(kept.reusableSpace(members: [1: [], 2: [0]]) == 2)
+    #expect(kept.reusableSpace(members: [1: [0], 2: []]) == nil)
+    #expect(kept.reusableSpace(members: [1: [0]]) == nil)   // 2 is gone
+    #expect(kept.reusableSpace(members: [2: [7]]) == nil)   // another process's window
 }
