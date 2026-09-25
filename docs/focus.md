@@ -192,8 +192,8 @@
   macOS nothing to key when it ends (not measured; the departures probe asks). A click
   or Command-Tab during the animation reads as macOS's own key change, so Kosmos keeps
   its workspace.
-  - A window its app closed and kept departs when Kosmos counts it closed, a pairing
-    window after its order-out ([tree.md](tree.md)). When its app has no other candidate
+  - A window its app closed and kept departs when Kosmos counts it closed, at least a
+    pairing window after its order-out ([tree.md](tree.md)). When its app has no other candidate
     window macOS could key, one ordered in and not minimized, the app stays front with no
     window and no report comes, so the departure focuses at once. Activity Monitor's only
     window, closed while key, got no report, and Helium became key 1.1 s after the window

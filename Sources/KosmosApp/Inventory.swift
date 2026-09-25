@@ -64,15 +64,15 @@ final class Inventory {
     private var awaitingUnlockSweep = false
     /// A Space was created or destroyed, or the active Space changed, since the last sweep.
     private var spacesChanged = false
-    /// When the last such event came. A native fullscreen transition creates Spaces before
-    /// it orders its window out (ClosedAndKept).
-    private var spacesChangedAt: ContinuousClock.Instant?
+    /// When the last such event came, on any display. A native fullscreen transition
+    /// creates Spaces around its order-out (ClosedAndKept).
+    private(set) var spacesChangedAt: ContinuousClock.Instant?
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out a wait after it left, for none of the reasons with
-    /// their own reports: its app closed it and kept it, as NSWindowController does, or
-    /// deselected its native tab. With when the inventory saw it ordered out.
+    /// A managed window still ordered out a pairing window after it left, for none of the
+    /// reasons with their own reports: its app closed it and kept it, as NSWindowController
+    /// does, or deselected its native tab. With when the inventory saw it ordered out.
     var onKeptOrderedOut: (@MainActor (UInt32, ContinuousClock.Instant) -> Void)?
     /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
     /// in (false), with its frame, and when: what a switch between native tabs is made of.
@@ -304,13 +304,12 @@ final class Inventory {
 
     /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
     /// probe), and a minimize, a hide and native fullscreen have their own reports. It is
-    /// judged after the tab pairing window, or after a second while a native fullscreen
-    /// transition may be under way (ClosedAndKept).
+    /// looked at again a pairing window later, when a native tab switch has paired, and the
+    /// controller decides whether it waits more (ClosedAndKept).
     private func checkOrderedOut(_ id: UInt32) {
         let orderedOut = ContinuousClock.now
-        let wait = ClosedAndKept.wait(orderedOut: orderedOut, fullscreen: fullscreen.contains(id), spacesChanged: spacesChangedAt)
         Task { [weak self] in
-            try? await Task.sleep(for: wait)
+            try? await Task.sleep(for: TabSwitches.window)
             guard let self, self.isKeptOrderedOut(id) else { return }
             self.onKeptOrderedOut?(id, orderedOut)
         }

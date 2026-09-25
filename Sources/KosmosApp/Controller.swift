@@ -391,6 +391,13 @@ final class Controller {
     /// when it started to leave its Space.
     private func fullscreenChanged(_ id: WindowID, _ entered: Bool, since: ContinuousClock.Instant) {
         if entered {
+            // Parked already as closed and kept, as a window whose transition posted no Space
+            // event near its order-out would be: it changes reason, and returns when it
+            // leaves fullscreen.
+            if closedByApp.remove(id) != nil {
+                fullscreenParked.insert(id)
+                return
+            }
             guard !session.isParked(id) || session.lifted.contains(id) else { return }
             fullscreenParked.insert(id)
             execute(session.park([id]))
@@ -477,12 +484,14 @@ final class Controller {
     /// other window macOS could key (DepartureFocus), and it returns when the app orders it
     /// in again (orderChanged). Removing it would lose its place, and the inventory would
     /// not admit it again, since it stays managed. A deselected tab has left the session
-    /// already, and one a new tab claims waits for that tab's admission
-    /// (ClosedAndKept.claimWait). A window closed while the user drags it parks too, where
-    /// it stood. `orderedOut`: when the inventory saw it ordered out.
+    /// already. One a new tab claims, and any window while a native fullscreen transition
+    /// may be under way, waits more (ClosedAndKept.hold). A window closed while the user
+    /// drags it parks too, where it stood. `orderedOut`: when the inventory saw it ordered
+    /// out.
     private func keptOrderedOut(_ id: WindowID, orderedOut: ContinuousClock.Instant) {
         guard session.workspace(of: id) != nil, !session.isParked(id) || session.lifted.contains(id) else { return }
-        if let wait = ClosedAndKept.claimWait(orderedOut: orderedOut, claimed: tabs.isClaimed(id), at: .now) {
+        if let wait = ClosedAndKept.hold(orderedOut: orderedOut, claimed: tabs.isClaimed(id),
+                                         spacesChanged: inventory.spacesChangedAt, at: .now) {
             after(wait) { controller in
                 if controller.inventory.isKeptOrderedOut(id) { controller.keptOrderedOut(id, orderedOut: orderedOut) }
             }
