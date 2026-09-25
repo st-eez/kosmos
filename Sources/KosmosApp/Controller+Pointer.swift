@@ -33,7 +33,7 @@ extension Controller {
         // The pointer moved on before this ran. While a window is lifted the pointer is the user's.
         guard !sessionLocked, !dragging, pointer?.window == entered.window else { return }
         let window = entered.window
-        let fullscreen = fullscreenParked.contains(window)
+        let fullscreen = session.parkReason(of: window) == .fullscreen
         let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
                                           app: owner[window].map(inventory.appIdentity), stale: reports.isStale(stamp))
         // Onto the desktop of a display whose workspace is empty, that workspace takes the

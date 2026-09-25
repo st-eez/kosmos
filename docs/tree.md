@@ -85,7 +85,9 @@
     no frame. Parking asks for no focus, since macOS keys another window itself and a
     request would pull the screen out of a native fullscreen Space. A window already
     minimized, hidden or in fullscreen when Kosmos admits it, as at launch, is parked at
-    once on the workspace it joins.
+    once on the workspace it joins. At admission native fullscreen comes before a minimize,
+    and a minimize before a hide. A parked window keeps the reason it parked for, and only
+    a window closed and kept takes a later one (below).
   - A window that leaves the tree to float or park keeps a restore hint that records the
     windows it stood among at each level up to the root, with their shares, since windows
     outlive the containers around them. Its space goes to the windows it shared space

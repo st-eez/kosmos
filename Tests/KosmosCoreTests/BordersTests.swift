@@ -56,7 +56,7 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     s.adopt(2)
     #expect(s.bordered == [1: false, 2: true, 3: false])
     // Minimized, hidden or in native fullscreen: parked, with no border.
-    _ = s.park([1])
+    _ = s.park([1], because: .minimized)
     #expect(s.bordered == [2: true, 3: false])
     // Kosmos's fullscreen takes the tiles' borders, the fullscreen window's too.
     _ = s.perform(.fullscreen)

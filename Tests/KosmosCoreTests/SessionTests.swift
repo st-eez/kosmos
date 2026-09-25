@@ -203,7 +203,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func minimizedWindowCannotBeMovedIntoATile() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    _ = s.park([2])
+    _ = s.park([2], because: .minimized)
     #expect(s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 2)) == nil)
     #expect(s.workspace(of: 2) == "1")
 }
@@ -266,7 +266,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aReturningWindowTakesKosmosToItsWorkspace() {
     var s = session()
     _ = s.add(1)
-    _ = s.park([1])
+    _ = s.park([1], because: .minimized)
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1], follow: 1)
@@ -281,7 +281,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1); _ = s.add(2)
     s.adopt(1)
-    _ = s.park([2])
+    _ = s.park([2], because: .minimized)
     let plan = s.unpark([2], follow: 2)
     #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
     #expect(plan.frames.count == 2)
@@ -292,7 +292,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
     let before = s.frames(of: "1")
-    #expect(s.park([1, 3]).frames == [2: display])
+    #expect(s.park([1, 3], because: .appHidden).frames == [2: display])
     #expect(s.isParked(1) && s.isParked(3) && !s.isParked(2))
     #expect(s.unpark([3, 1], follow: 1).frames == before)
     #expect(!s.isParked(1) && !s.isParked(3))
@@ -302,7 +302,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func parkedWindowsSitOutSwitches() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    _ = s.park([1])
+    _ = s.park([1], because: .minimized)
     #expect(s.perform(.workspace(.named("2")))?.hide == [2])
     #expect(s.perform(.workspace(.named("1")))?.show == [2])
     let plan = s.unpark([1], follow: 1)
@@ -313,7 +313,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(3, to: "3")
-    _ = s.park([1, 3])
+    _ = s.park([1, 3], because: .appHidden)
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1, 3], follow: 1)
@@ -325,7 +325,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aReturnAfterACommandLeavesKosmosWhereTheCommandTookIt() {
     var s = session()
     _ = s.add(1)
-    _ = s.park([1])
+    _ = s.park([1], because: .minimized)
     _ = s.perform(.workspace(.named("2")))
     _ = s.add(2)
     let plan = s.unpark([1], follow: nil)
@@ -339,7 +339,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1); _ = s.add(2)
     s.adopt(2)
-    _ = s.park([2])
+    _ = s.park([2], because: .minimized)
     let plan = s.unpark([2], follow: nil)
     #expect(s.focused == 1)   // though 2 was focused more recently
     #expect(plan.focus == nil)
@@ -348,7 +348,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aReturnNotFollowedIntoAnEmptyShownWorkspaceIsFocused() {
     var s = session()
     _ = s.add(1)
-    _ = s.park([1])
+    _ = s.park([1], because: .minimized)
     #expect(s.focused == nil)
     let plan = s.unpark([1], follow: nil)
     #expect(s.focused == 1)
@@ -361,8 +361,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(2, to: "2")
-    _ = s.park([1])   // minimized
-    _ = s.park([2])   // hidden with A
+    _ = s.park([1], because: .minimized)
+    _ = s.park([2], because: .appHidden)
     _ = s.perform(.workspace(.named("3")))
     let follow = s.followOnUnhide([2], keyed: 1, fallback: 2)
     #expect(follow == nil)
@@ -376,7 +376,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(2, to: "2")
-    _ = s.park([1, 2])   // hidden with their app
+    _ = s.park([1, 2], because: .appHidden)
     #expect(s.followOnUnhide([1, 2], keyed: 2, fallback: 1) == 2)
     // A dialog Kosmos does not manage, or no key window: the most recently focused one.
     #expect(s.followOnUnhide([1, 2], keyed: 99, fallback: 1) == 1)
@@ -395,7 +395,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(2, to: "2")
-    _ = s.park([1, 2])
+    _ = s.park([1, 2], because: .appHidden)
     _ = s.perform(.workspace(.named("2")))
     let plan = s.unpark([1, 2], follow: 2)
     #expect(s.focusedWorkspace == "2")
@@ -408,7 +408,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.perform(.workspace(.named("3")))
     _ = s.add(3)
     _ = s.setMinimum(3, CGSize(width: 600, height: 400))
-    _ = s.park([3])   // closed and kept
+    _ = s.park([3], because: .closedByApp)
     _ = s.perform(.workspace(.named("2")))
     let plan = s.reopen(3, to: nil, floating: false)
     #expect(s.workspace(of: 3) == "2" && !s.isParked(3) && s.windows(of: "3").isEmpty)
@@ -422,11 +422,11 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(2, to: "2")   // concealed, then closed and kept
-    _ = s.park([2])
+    _ = s.park([2], because: .closedByApp)
     var plan = s.reopen(2, to: "3", floating: true)
     #expect(s.workspace(of: 2) == "3" && s.workspaces["3"]!.floating == [2] && s.windows(of: "2").isEmpty)
     #expect(plan?.hide == [2] && plan?.show == [])
-    _ = s.park([2])
+    _ = s.park([2], because: .closedByApp)
     plan = s.reopen(2, to: nil, floating: false)
     #expect(s.workspace(of: 2) == "1" && plan?.show == [2] && plan?.hide == [])
     #expect(plan?.frames[1] != nil && plan?.frames[2] != nil)
@@ -472,7 +472,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
     let before = s.frames(of: "1"), order = s.windows(of: "1")
-    _ = s.park([3])
+    _ = s.park([3], because: .minimized)
     _ = s.replace(2, with: 7)   // 2's tab group switched tabs
     _ = s.unpark([3], follow: nil)
     #expect(s.windows(of: "1") == order.map { $0 == 2 ? 7 : $0 })
@@ -483,7 +483,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     // Merge All Windows orders 2 out with no tab coming in, so it parks as closed and kept.
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
-    _ = s.park([2])
+    _ = s.park([2], because: .closedByApp)
     let before = s.frames(of: "1"), order = s.windows(of: "1")
     _ = s.replace(3, with: 2)
     #expect(!s.isParked(2) && s.workspace(of: 3) == nil)
@@ -497,7 +497,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1, to: "2"); _ = s.add(2, to: "2")
     let before = s.frames(of: "2"), order = s.windows(of: "2")
-    _ = s.park([2])
+    _ = s.park([2], because: .closedByApp)
     _ = s.unpark([2], follow: nil)
     let plan = s.replace(2, with: 7)!
     #expect(!s.isParked(7) && s.workspace(of: 7) == "2")
@@ -510,7 +510,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2)
     let before = s.frames(of: "1")
     _ = s.setMinimum(2, CGSize(width: 1000, height: 800))   // read back while in fullscreen
-    _ = s.park([2])   // tab 2 entered native fullscreen
+    _ = s.park([2], because: .fullscreen)
     _ = s.perform(.workspace(.named("2")))
     let plan = s.replace(2, with: 7)!
     #expect(s.isParked(7) && s.workspace(of: 2) == nil)
