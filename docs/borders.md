@@ -10,9 +10,10 @@ showed the window elsewhere. Kosmos knows each
 window's frame, focus, workspace, concealment and fullscreen state, and during a slide the
 frame the slide shows the window at.
 
-- Steve's dotfiles theme the colors: `theme-set` renders the table from the theme's
-  accent and border width, as it renders JankyBorders' `bordersrc`, into a file the
-  config includes ([config.md](config.md)).
+- Steve's dotfiles theme the table: their theme build renders it for each theme from the
+  accent and border width that render JankyBorders' `bordersrc`, and `theme-set` links the
+  current theme's copy to the file the config includes ([config.md](config.md)) and
+  reloads the config.
 - KosmosCore's `Session.bordered` names the windows that get a border: the tiled and
   floating windows of the shown workspaces, none of them parked (minimized, hidden with its
   app, in native fullscreen, or closed and kept by its app), and no tile of a workspace
