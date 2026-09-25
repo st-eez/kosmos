@@ -116,9 +116,9 @@
 //                                   owner, parent, level and Spaces, whether the record names
 //                                   it and whether its owner owns a recorded window. Read only:
 //                                   it changes no Space or window, opens none and takes no focus.
-//   kosmos-probe float-layer        Can a Space shown above the desktop Space keep another
+//   kosmos-probe float-layer [key]  Can a Space shown above the desktop Space keep another
 //                                   app's floating window above its tiled ones, however the
-//                                   tiles are ordered (FloatLayer.swift)?
+//                                   tiles are ordered (FloatLayer.swift)? key takes focus.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -156,9 +156,9 @@ case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double
 case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
 case "float-stub": floatStub(Array(arguments.dropFirst()))
-case "float-layer": floatLayer()
+case "float-layer": floatLayer(key: arguments.dropFirst().first == "key")
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | float-layer")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | float-layer [key]")
     exit(2)
 }
 
