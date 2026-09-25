@@ -156,6 +156,16 @@
     animations first turn on, and a window that finds none free jumps and is logged.
     Turning animations off ends every slide and keeps the Spaces. Quit ends every slide,
     then recovery destroys the Spaces.
+  - A slide's Space goes back to the pool once a barrier and a read of its windows, off
+    the main thread, show its window out of it. A Space that still lists the window, as
+    after a removal that did not land, or whose read fails, leaves the pool and is logged,
+    since its next slide would move the window too. The ceiling: the window stays in the
+    Space, above the desktop Space's windows, until the quit, the guardian's or the next
+    start's recovery takes it out; if the log shows such a Space, the upgrade is to send
+    the removal again and read once more. Another window the Space lists is logged and
+    left, so a JankyBorders border window yet to follow its window out, as border windows
+    follow the windows they border in and out of the holding Space
+    ([hiding.md](hiding.md)), takes no Space from the pool.
   - A Space of the pool shows over whatever Space its display shows, so a slide on a
     display showing a native fullscreen Space would draw over the fullscreen app. The
     ceiling: a display that holds a native fullscreen window, as the inventory last read
