@@ -577,7 +577,7 @@ final class Controller {
             }
             return
         }
-        controllerLog.info("\(id) closed and kept by its app: parked \(Self.ms(ContinuousClock.now - orderedOut), privacy: .public) ms after it was seen ordered out")
+        controllerLog.info("\(id) closed and kept by its app: parked \((ContinuousClock.now - orderedOut).milliseconds, format: .fixed(precision: 3)) ms after it was seen ordered out")
         closedByApp.insert(id)
         depart([id], remaining: owner[id].map { inventory.otherWindows(of: $0, besides: id) } ?? [])
     }
@@ -961,7 +961,7 @@ final class Controller {
         if id != nil, verdict != .echo, let ended = held.end() {
             controllerLog.notice("""
                 held focus report \(String(describing: ended.key), privacy: .public): replaced by \
-                \(String(describing: report.key), privacy: .public) after \(Self.ms(ContinuousClock.now - ended.received), privacy: .public) ms
+                \(String(describing: report.key), privacy: .public) after \((ContinuousClock.now - ended.received).milliseconds, format: .fixed(precision: 3)) ms
                 """)
         }
         switch verdict {
@@ -1013,23 +1013,23 @@ final class Controller {
     /// window key before it. Every outcome is logged, to tell whether any report came before
     /// the first word of its departure.
     private func decideHeld(_ report: KeyReport) {
-        let after = Self.ms(ContinuousClock.now - report.received)
+        let after = (ContinuousClock.now - report.received).milliseconds
         // The reported window left or stopped being managed meanwhile.
         if case .window(let id) = report.key, session.workspace(of: id) == nil || session.isParked(id) {
-            controllerLog.notice("held focus report \(String(describing: report.key), privacy: .public): dropped, its window left, after \(after, privacy: .public) ms")
+            controllerLog.notice("held focus report \(String(describing: report.key), privacy: .public): dropped, its window left, after \(after, format: .fixed(precision: 3)) ms")
             return
         }
         // A later report moved the key window on, as Kosmos's own echo does when an app it
         // activated keys its last key window first and then the requested one.
         if report.key != key {
-            controllerLog.notice("held focus report \(String(describing: report.key), privacy: .public): dropped, \(String(describing: self.key), privacy: .public) is key now, after \(after, privacy: .public) ms")
+            controllerLog.notice("held focus report \(String(describing: report.key), privacy: .public): dropped, \(String(describing: self.key), privacy: .public) is key now, after \(after, format: .fixed(precision: 3)) ms")
             return
         }
         guard let previous = report.previous else { return }
         let left = inventory.leftScreen(previous)
         controllerLog.notice("""
             held focus report \(String(describing: report.key), privacy: .public): \
-            \(previous) \(left ? "left" : "stayed", privacy: .public) after \(after, privacy: .public) ms
+            \(previous) \(left ? "left" : "stayed", privacy: .public) after \(after, format: .fixed(precision: 3)) ms
             """)
         decide(report, keyLeft: left ? .left : .stayed)
     }
@@ -1100,11 +1100,11 @@ final class Controller {
                 controllerLog.notice("""
                     switch to \(self.session.focusedWorkspace, privacy: .public): \(show.count) shown, \(hide.count) hidden \
                     (\(timing.stripped) stripped), \
-                    before bridge \(Self.ms(submitted - received), privacy: .public) ms, bridge \(Self.ms(bridge), privacy: .public) ms \
-                    (queued \(Self.ms(timing.queued), privacy: .public), sent \(Self.ms(timing.sent), privacy: .public), \
-                    confirmed \(Self.ms(timing.confirmed), privacy: .public) \(timing.barrier.map { $0 ? "by barrier" : "by read" } ?? "without reads", privacy: .public), \
-                    recovered \(Self.ms(timing.recovered), privacy: .public), back \(Self.ms(timing.returned), privacy: .public)), \
-                    total \(Self.ms(total), privacy: .public) ms, \(String(describing: outcome), privacy: .public)
+                    before bridge \((submitted - received).milliseconds, format: .fixed(precision: 3)) ms, bridge \(bridge.milliseconds, format: .fixed(precision: 3)) ms \
+                    (queued \(timing.queued.milliseconds, format: .fixed(precision: 3)), sent \(timing.sent.milliseconds, format: .fixed(precision: 3)), \
+                    confirmed \(timing.confirmed.milliseconds, format: .fixed(precision: 3)) \(timing.barrier.map { $0 ? "by barrier" : "by read" } ?? "without reads", privacy: .public), \
+                    recovered \(timing.recovered.milliseconds, format: .fixed(precision: 3)), back \(timing.returned.milliseconds, format: .fixed(precision: 3))), \
+                    total \(total.milliseconds, format: .fixed(precision: 3)) ms, \(String(describing: outcome), privacy: .public)
                     """)
                 switch outcome {
                 case .confirmed: break
@@ -1128,10 +1128,6 @@ final class Controller {
         publishState()
     }
 
-    private static func ms(_ duration: Duration) -> String {
-        String(format: "%.3f", Double(duration.components.attoseconds) / 1e15 + Double(duration.components.seconds) * 1000)
-    }
-
     /// Floating windows of shown workspaces that sit on a display showing another workspace
     /// go to their workspace's display, from where WindowServer has them now
     /// (Session.floatingFrames). A concealed one reads as off every display and waits for
@@ -1145,7 +1141,7 @@ final class Controller {
         let start = ContinuousClock.now
         let frames = Dictionary(SkyLight.rows(windows).map { ($0.id, $0.frame) }) { first, _ in first }
         let targets = session.floatingFrames(at: frames)
-        controllerLog.info("floating check: \(windows.count) windows read in \(Self.ms(ContinuousClock.now - start), privacy: .public) ms, \(targets.count) moved")
+        controllerLog.info("floating check: \(windows.count) windows read in \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms, \(targets.count) moved")
         writeFrames(targets)
     }
 
@@ -1343,7 +1339,7 @@ final class Controller {
         if let end = outcome.ended { dragEnded(end) }
         if let grab = outcome.began { dragBegan(grab, at: stamp) }
         if let point = outcome.moved, modifierDrag != nil {
-            dragLog.debug("movement carried \(Self.ms(ContinuousClock.now - stamp), privacy: .public) ms after the tap saw it")
+            dragLog.debug("movement carried \((ContinuousClock.now - stamp).milliseconds, format: .fixed(precision: 3)) ms after the tap saw it")
             carryDrag(to: point)
         }
     }
@@ -1554,4 +1550,9 @@ final class Controller {
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(snapshot)) ?? Data("{}".utf8)
     }
+}
+
+extension Duration {
+    /// For the logs, which give times in milliseconds.
+    var milliseconds: Double { Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15 }
 }

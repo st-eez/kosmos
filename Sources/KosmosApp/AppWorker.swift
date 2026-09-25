@@ -375,9 +375,7 @@ actor AppWorker {
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
             // script/bench-relayout.sh counts these lines.
-            let spent = ContinuousClock.now - start
-            let ms = Double(spent.components.seconds) * 1000 + Double(spent.components.attoseconds) / 1e15
-            log.info("\(id) written, AX time \(ms, format: .fixed(precision: 2)) ms")
+            log.info("\(id) written, AX time \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 2)) ms")
             results.append((id, entry.target, readBack))
         }
         if !dropped.isEmpty {
