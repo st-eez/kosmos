@@ -277,7 +277,20 @@ actor AppWorker {
                 queuedWrites[id] = entry
                 continue
             }
-            if let readBack = frame(element) { results.append((id, entry.target, readBack)) }
+            guard var readBack = frame(element) else { continue }
+            // AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display
+            // edge another display adjoins while the bottom is at or past that edge, as for a
+            // window moved at its old height from the built-in display to the panel above it.
+            // Through a height 40 pt shorter, clear of that zone, the target's height lands, and
+            // a window taller than asked after that has a minimum (DESIGN.md, section 5.2).
+            if case .frame(let target) = entry.write, readBack.height > target.height + 2 {
+                let kept = readBack.height
+                set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))
+                set(element, kAXSizeAttribute, target.size)
+                readBack = frame(element) ?? readBack
+                log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
+            }
+            results.append((id, entry.target, readBack))
         }
         if !results.isEmpty { send(.framesApplied(results)) }
     }

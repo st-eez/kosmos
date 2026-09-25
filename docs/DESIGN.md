@@ -193,6 +193,17 @@ off the main thread).
   Unchanged windows get no write, and each window keeps only its newest target.
 - When the size changes, write size, then position, then size again; otherwise write the
   position alone. Read the frame back once per batch.
+- AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display edge
+  that another display adjoins, while the bottom is at or past that edge. A window moved
+  at its old height from the built-in display up to the panel above it hangs past the
+  panel's bottom edge, and the 10 pt gap puts its target's bottom in that zone. On
+  2026-09-24, at y = 35 on the 1080 pt panel above the built-in display, Activity Monitor
+  and a probe window kept 1070 pt when asked for 1035. From a bottom at the edge,
+  Activity Monitor ignored 1035 to 1025 and took 1020, and from 1020 it took 1035. The
+  probe window showed no such zone at a bottom edge with no display below, nor at a right
+  edge another display adjoins. So a window left more than 2 pt taller than a frame write
+  asked is written again through a height 40 pt shorter, then the target's, and only a
+  window still taller has a minimum.
 - A window that refuses a size keeps its observed minimum. Kosmos doesn't retry that size
   until the target changes.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
