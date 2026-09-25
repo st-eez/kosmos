@@ -263,8 +263,12 @@ private final class HidingStore: @unchecked Sendable {
     private func send(show: [UInt32], on showDisplays: [UInt32: CGDirectDisplayID], hide: [UInt32],
                       stripping: Set<UInt32>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
         guard load() else { return nil }
+        // A window closed since the batch was planned has no row, nothing to conceal and no
+        // owner to record, so the batch leaves it out (docs/hiding.md).
+        let rows = Dictionary(SkyLight.rows(Array(Set(hide))).map { ($0.id, $0) }) { first, _ in first }
+        let hide = hide.filter { rows[$0] != nil }
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
-        if !fresh.isEmpty, !prepare(Array(fresh)) { return nil }
+        if !fresh.isEmpty, !prepare(Array(fresh), rows: rows) { return nil }
         let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,
                                  hasOrdinarySpace: Self.hasOrdinarySpace)
         // Adds land before any removal is sent: a window removed from its only Space lands on
@@ -318,8 +322,8 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// Records the holding Space before any window enters it, and each window before its
-    /// first hide. A change is kept only once it is published.
-    private func prepare(_ windows: [UInt32]) -> Bool {
+    /// first hide, from its row in `rows`. A change is kept only once it is published.
+    private func prepare(_ windows: [UInt32], rows: [UInt32: WindowRow]) -> Bool {
         var next = state!
         var created: UInt64 = 0
         if space == 0 {
@@ -332,7 +336,6 @@ private final class HidingStore: @unchecked Sendable {
         }
         let known = Set(next.windows.map(\.id))
         let new = windows.filter { !known.contains($0) }
-        let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(new).map { ($0.id, $0) })
         for id in new {
             guard let row = rows[id], let owner = ProcessIdentity.of(row.pid) else { return abandon(created) }
             let original = (kosmos_window_spaces(id) as? [UInt64])?.first ?? 0

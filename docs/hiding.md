@@ -99,6 +99,14 @@
   still listed stays recorded, as one that only stopped being managed or that a failed
   read took for closed, so recovery restores it. A window the ledger does not hold leaves
   once its row is gone or it has a Space: recovery restores one alive on no Space.
+- A batch leaves out each window to hide that WindowServer no longer lists, as a closed
+  tab whose place waits for the next tab ([tree.md](tree.md)), or a window of an app that
+  quit before the inventory heard. Such a window has nothing to conceal and no owner to
+  record, and it had failed its batch before the batch sent anything, after which
+  recovery showed every concealed window (bench stub, live log, September 25, 2026). The
+  ceiling: a failed row query reads as every window gone, as it does for the inventory,
+  and leaves the batch's windows to hide on screen until their workspace is shown and
+  hidden again.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

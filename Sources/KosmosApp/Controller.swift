@@ -1067,9 +1067,6 @@ final class Controller {
             hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
             needsResync = false
         }
-        // A window the inventory removed, whose place waits for its tab (managedChanged), is
-        // gone, and a batch that names it fails before it sends anything (docs/tree.md).
-        hide.removeAll { inventory.windows[$0] == nil }
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(intent, fromCommand: fromCommand) }
             bringFloatingHome()
