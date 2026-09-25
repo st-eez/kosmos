@@ -396,7 +396,8 @@ off the main thread).
     stacking order. Then the app's worker raises the window, only while the app is front
     and the window is still its focused window, so it never raises over a window the user
     chose since. It does not check that the request is current: a newer request for the
-    same window finds it key and raises nothing. The worker records the raise's echo just
+    same window would find it key and raise nothing, and the window would stay behind. The
+    worker records the raise's echo just
     before it, since the raise keys the window again if the user keyed another window of
     the app first. Once the raise has returned and the worker has read the app's focused
     window, it tells the main actor, which forgets the record if no report used it: the

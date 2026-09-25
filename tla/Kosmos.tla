@@ -102,12 +102,15 @@
 (* activation's read (HoldNotes), and a notice records that its app had    *)
 (* already lost the front to Kosmos's activation (NoticeCheck). A          *)
 (* background app can change its own focused window (AllowBackground, and  *)
-(* a raise landing there, which it reports: RaiseReports). ActFrontCheck,  *)
-(* LateNoteCheck, RaiseTimeout, BackgroundRaise and SplitRules = "d1be665" *)
-(* each run a rule the implementation had, and turning off HoldNotes,      *)
-(* NoticeCheck, NoteFollows or PostRaise, on ReassertTakes, or             *)
-(* PostRaiseEcho other than "done", a rule the spec had, for configs that  *)
-(* fail as expected.                                                       *)
+(* a raise landing there, which it reports: RaiseReports). While no window *)
+(* is key after a departure, the app whose window closed or minimized      *)
+(* stays front, and the departure is evidence that the next key change is  *)
+(* macOS's own for a second, which passes once Kosmos has every report     *)
+(* (Age). ActFrontCheck, LateNoteCheck, RaiseTimeout, BackgroundRaise and  *)
+(* SplitRules = "d1be665" each run a rule the implementation had, and      *)
+(* turning off HoldNotes, NoticeCheck, NoteFollows or PostRaise, on        *)
+(* ReassertTakes, or PostRaiseEcho other than "done", a rule the spec had, *)
+(* for configs that fail as expected.                                      *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
@@ -564,8 +567,8 @@ ObserveSplit(t, ev0) ==
         \* A repeat of the held window after a miss. Inside the front app the worker's raise
         \* keys the window, so requests do not miss, and a repeat of the window Kosmos last
         \* heard of can be the other report of one activation, or a newer one.
-        again == MissRule /\ t.held # <<>> /\ ev.w = t.held[1].w /\ ev.prev = ev.w
-        miss == MissRule /\ ks = {} /\ Missed(t, ev)
+        again == MissRule /\ t.held # <<>> /\ ev.w = t.held[1].w /\ ev0.w = t.seenKey
+        miss == MissRule /\ ks = {} /\ Missed(t, [ev EXCEPT !.prev = t.seenKey])
         tm == IF miss THEN DropMissed(tk, ev) ELSE tk
     IN IF ks # {}
        \* The app's window the read found is the held notification's: the user changed it
