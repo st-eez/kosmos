@@ -358,4 +358,12 @@ private func desk() -> Session {
             #expect(!input.bringsPointer(onDock: true))
         }
     }
+
+    @Test func aWindowFollowedToItsRulesWorkspaceAtAdmissionBringsThePointer() {
+        // Chrome launched from Raycast keyed its window 5.2 s after the hotkey, and its rule
+        // sent the window to hidden workspace 4 (live log, September 25, 2026).
+        let launch = ActivationInput(key: 5.242, leftClick: 26.741, rightClick: 3263.641, moved: 16.143)
+        #expect(!launch.bringsPointer(onDock: false))
+        #expect(launch.bringsPointer(onDock: false, admitted: true))
+    }
 }

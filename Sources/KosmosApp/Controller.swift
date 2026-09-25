@@ -45,8 +45,10 @@ final class Controller {
     /// them. macOS keyed such a window by the user's or the app's choice, so its report
     /// counts as one of a concealed window whose key window before it stayed: an app keys a
     /// window it opens, and the window key before a tab is the tab deselected. It is
-    /// followed at once.
-    private var placedHidden: Set<WindowID> = []
+    /// followed at once, and the follow of an admitted window brings the pointer
+    /// (ActivationInput.bringsPointer).
+    private var placedHidden: [WindowID: Placed] = [:]
+    private enum Placed { case admitted, tab }
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
     /// request against, which the focus queue decides when the request runs.
     private var keys = KeyHistory()
@@ -379,14 +381,15 @@ final class Controller {
                                           locked: sessionLocked)
         switch focus {
         case .adopt: session.adopt(id)
-        case .placedHidden: placedHidden.insert(id)
+        case .placedHidden: placedHidden[id] = .admitted
         case .none: break
         }
         execute(plan, floatingCheck: floats)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
-            placedHidden.remove(id)
+            placedHidden[id] = nil
             report.concealed = true
+            report.admitted = true
             decidePlaced(report, keyLeft: .stayed)
         }
     }
@@ -399,7 +402,7 @@ final class Controller {
         fullscreenParked.remove(id)
         closedByApp.remove(id)
         tabs.forget(id)
-        placedHidden.remove(id)
+        placedHidden[id] = nil
         ledger.forget(id)
         hiding.forgetClosed(id)
         execute(session.remove(id))
@@ -470,8 +473,8 @@ final class Controller {
         // is dropped.
         if closedByApp.remove(old) != nil { _ = session.unpark([old], follow: nil) }
         guard let plan = session.replace(old, with: new) else { return false }
-        placedHidden.remove(old)
-        if plan.hide.contains(new) { placedHidden.insert(new) }
+        placedHidden[old] = nil
+        if plan.hide.contains(new) { placedHidden[new] = .tab }
         controllerLog.info("tab \(new) replaces \(old)")
         tabs.replaced(old, with: new)
         // Parked as closed by its app, as a window Merge All Windows made a tab.
@@ -491,7 +494,7 @@ final class Controller {
         // is key in its own Space, as any parked window.
         if var report = unplacedKey, report.key == .window(new), !session.isParked(new) {
             unplacedKey = nil
-            placedHidden.remove(new)
+            placedHidden[new] = nil
             report.concealed = session.workspace(of: new).map { !session.isShown($0) } ?? false
             decidePlaced(report, keyLeft: .stayed)
         }
@@ -797,10 +800,11 @@ final class Controller {
             // was concealed is judged at the stamp, for a notification as for an activation
             // read: only its notification reports a window opened inside the front app
             // (tla/README.md, change 22).
-            let placed = id.map { placedHidden.remove($0) != nil } ?? false
+            let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
-                                   concealed: placed || id.map { hiding.wasConcealed($0, at: report.received) } ?? false, miss: miss),
-                         keyLeft: placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
+                                   concealed: placed != nil || id.map { hiding.wasConcealed($0, at: report.received) } ?? false,
+                                   miss: miss, admitted: placed == .admitted),
+                         keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -845,6 +849,9 @@ final class Controller {
         var concealed: Bool
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss
+        /// The reported window is one Kosmos admitted to its rule's hidden workspace
+        /// (AdmissionFocus.placedHidden), and following it brings the pointer.
+        var admitted = false
     }
 
     /// How long a report waits to learn whether the window key before it left. macOS keyed
@@ -917,8 +924,9 @@ final class Controller {
             touch(window)
             // Command-Tab, a launcher's hotkey or a Dock click names a window, and the pointer
             // goes to it, on the pointer's own display too, unlike a workspace switch command.
+            // So does a window admitted to its rule's hidden workspace, whatever the input.
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && pickedAwayFromPointer())
+            execute(plan, movePointer: mouseFollowsFocus && pickedAwayFromPointer(admitted: report.admitted))
         }
     }
 
@@ -989,7 +997,7 @@ final class Controller {
             if plan.focus != nil { requestFocus(intent, fromCommand: fromCommand) }
             bringFloatingHome()
         } else {
-            placedHidden.subtract(show)   // their workspace is shown
+            for id in show { placedHidden[id] = nil }   // their workspace is shown
             switchGeneration += 1
             let generation = switchGeneration
             let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
@@ -1003,7 +1011,7 @@ final class Controller {
             let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
             hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
                 guard let self else { return }
-                self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
+                for id in hide { self.placedHidden[id] = nil }   // the conceal that placed them hidden is done
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
@@ -1152,16 +1160,17 @@ final class Controller {
     }
 
     /// Whether the activation being handled brings the pointer (ActivationInput.bringsPointer).
-    private func pickedAwayFromPointer() -> Bool {
+    private func pickedAwayFromPointer(admitted: Bool = false) -> Bool {
         let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
                                     rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
         let dock = Self.isDock(clickedWindow)
         pointerLog.debug("""
-            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
+            activation\(admitted ? " at admission" : "", privacy: .public): key \(input.key, format: .fixed(precision: 3)) s ago, \
+            left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
             \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
             pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return input.bringsPointer(onDock: dock)
+        return input.bringsPointer(onDock: dock, admitted: admitted)
     }
 
     /// Whether the window is the Dock's own at the Dock's level, where its icons are, and not

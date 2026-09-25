@@ -118,10 +118,15 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     follows mouse the user seldom clicks, so a key press long ago would otherwise pass for
     Command-Tab when an app activates itself. The read takes no event tap, and the log
     gives the times. A Command-Tab switcher held open for over a second reads as a click.
-    A launched app's window that Kosmos follows to a rule's workspace (displays.md) is
-    judged the same way when Kosmos follows it, so an app that opens its window more than a
-    second after the launcher's hotkey leaves the pointer where it is. Judging the input
-    as of the key window report would need the report's stamp in the read.
+  - A new window its app keyed, which Kosmos follows to its rule's hidden workspace
+    ([displays.md](displays.md)), always brings the pointer, as a keyboard focus change
+    does, whatever input came before (`ActivationInput.bringsPointer`, `admitted`). An app
+    can open its first window seconds after the launcher's hotkey, past the second the
+    Command-Tab test allows. Live on 2026-09-25, Chrome launched from Raycast on workspace 8
+    on the built-in display keyed its window 5.2 s after the hotkey, Kosmos followed it to
+    workspace 4 on the main panel, and the pointer stayed on the built-in display, before
+    this. A launch by an agent or a script that brings the app front brings the pointer
+    too, as it brings the follow.
   - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
     window it activates the same way. Left on the Dock, the pointer would focus every
     window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and

@@ -57,7 +57,8 @@ public enum AdmissionFocus: Equatable, Sendable {
     /// The window's place is on a hidden workspace. Its key window report, one that waited
     /// for the place or one that comes before its conceal completes, is decided as one of a
     /// concealed window whose key window before it stayed, which Kosmos follows as it
-    /// follows a Command-Tab.
+    /// follows a Command-Tab. The follow brings the pointer whatever the input
+    /// (ActivationInput.bringsPointer).
     case placedHidden
 
     /// - Parameters:
