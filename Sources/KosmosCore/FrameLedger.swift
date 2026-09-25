@@ -105,6 +105,13 @@ public struct FrameLedger: Sendable {
         if let refusal = refused[id], refusal.kept != frame.size { refused[id] = nil }
     }
 
+    /// The window's workspace is being shown. A target it read back larger than while hidden,
+    /// on its way to the holding Space or another display, says nothing of the app's limit,
+    /// so the write that shows it is a first attempt again.
+    public mutating func shown(_ id: UInt32) {
+        refusedLarger[id] = nil
+    }
+
     /// Records a frame read for a change that came before the last confirm, the write's own
     /// change, when it differs from the frame confirmed. The change applies after the
     /// confirm, and its row can hold a later change, as the app's next live resize step,

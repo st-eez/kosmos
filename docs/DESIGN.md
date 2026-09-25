@@ -258,7 +258,10 @@ off the main thread).
   that write's larger read back is a first refusal as well. The retry waits out the
   100 ms, since the window's next change event can come inside a queued live resize step
   or the display or Space change itself. A window the user holds again by then gets its
-  tile at that press's mouse up.
+  tile at that press's mouse up. A window on a hidden workspace gets no retry, and a
+  refusal read back while it was hidden, as it moved there or the displays changed, says
+  nothing of the app's limit either. Showing the workspace forgets it, so the write that
+  shows the window, sent before the reveal, is a first attempt, retried after the reveal.
 - A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
   Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
   axis. Its workspace is laid out again then, or at the mouse up during a press.

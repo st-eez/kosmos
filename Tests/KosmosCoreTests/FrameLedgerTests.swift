@@ -90,6 +90,22 @@ private let t0 = ContinuousClock.now
     #expect(ledger.confirm(1, target: shifted, readBack: kept.offsetBy(dx: 50, dy: 0), at: t0) == .refused)
 }
 
+@Test func aSizeRefusedWhileHiddenIsAFirstRefusalOnceShown() {
+    var ledger = FrameLedger()
+    let target = CGRect(x: 10, y: 35, width: 945, height: 1035)
+    let kept = CGRect(x: 10, y: 35, width: 1900, height: 1035)
+    // Sent to a hidden workspace, the window kept its width, and its retry waited.
+    _ = ledger.writes(for: [1: target])
+    #expect(ledger.confirm(1, target: target, readBack: kept, at: t0) == .refused)
+    // The write that shows it, sent before the reveal, reads back larger once more.
+    ledger.shown(1)
+    #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
+    #expect(ledger.confirm(1, target: target, readBack: kept, at: t0) == .refused)
+    // Written again after the reveal, it took the target.
+    #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
+    #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
+}
+
 @Test func userResizeIsWrittenBack() {
     var ledger = FrameLedger()
     _ = ledger.writes(for: [1: a])
