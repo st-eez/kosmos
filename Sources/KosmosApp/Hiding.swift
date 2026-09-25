@@ -230,7 +230,7 @@ private final class HidingStore: @unchecked Sendable {
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(Array(fresh), owners: owners) { return nil }
         let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,
-                                 hasOrdinarySpace: Self.hasOrdinarySpace)
+                                 isOnAnySpace: Self.isOnAnySpace)
         // Adds land before any removal: a window removed from its only Space lands on the
         // active Space, maybe a fullscreen one. Only a batch that adds pays the barrier and
         // the display read (docs/hiding.md).
@@ -353,7 +353,7 @@ private final class HidingStore: @unchecked Sendable {
 
     /// kosmos_window_spaces leaves out the holding Space. A fullscreen Space counts too: an add
     /// to an ordinary Space would take the window out of it.
-    private static func hasOrdinarySpace(_ window: WindowID) -> Bool {
+    private static func isOnAnySpace(_ window: WindowID) -> Bool {
         SkyLight.spaces(of: window)?.isEmpty == false
     }
 }

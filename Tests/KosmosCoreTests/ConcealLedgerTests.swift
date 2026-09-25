@@ -5,16 +5,16 @@ private let holding: SpaceID = 100
 
 @Test func freshConcealsAreRecordedWithTheirSpace() {
     var ledger = ConcealLedger()
-    let batch = ledger.batch(show: [], hide: [2, 1, 2], into: holding, hasOrdinarySpace: { _ in true })
+    let batch = ledger.batch(show: [], hide: [2, 1, 2], into: holding, isOnAnySpace: { _ in true })
     #expect(batch.fresh == [1, 2])
     #expect(batch.mustBeIn == [1: holding, 2: holding])
     ledger.commit(batch, into: holding)
     #expect(ledger.entries == [1: holding, 2: holding])
 }
 
-@Test func revealRemovesEachWindowAndAddsOnlyThoseWithoutAnOrdinarySpace() {
+@Test func revealRemovesEachWindowAndAddsOnlyThoseOnNoOtherSpace() {
     var ledger = ConcealLedger(entries: [1: holding, 2: holding])
-    let batch = ledger.batch(show: [1, 2, 3], hide: [], into: holding, hasOrdinarySpace: { $0 == 1 })
+    let batch = ledger.batch(show: [1, 2, 3], hide: [], into: holding, isOnAnySpace: { $0 == 1 })
     #expect(batch.removals == [holding: [1, 2]])
     #expect(batch.adds == [2])
     ledger.commit(batch, into: holding)
@@ -23,7 +23,7 @@ private let holding: SpaceID = 100
 
 @Test func onlyWindowsConcealedNowAreStripped() {
     var ledger = ConcealLedger(entries: [3: holding])
-    let batch = ledger.batch(show: [], hide: [1, 2, 3], stripping: [2, 3], into: holding, hasOrdinarySpace: { _ in true })
+    let batch = ledger.batch(show: [], hide: [1, 2, 3], stripping: [2, 3], into: holding, isOnAnySpace: { _ in true })
     #expect(batch.fresh == [1, 2])
     #expect(batch.strip == [2])
     #expect(batch.mustBeIn == [1: holding, 2: holding, 3: holding])
@@ -33,7 +33,7 @@ private let holding: SpaceID = 100
 
 @Test func concealingAConcealedWindowChangesNothing() {
     var ledger = ConcealLedger(entries: [2: holding])
-    let batch = ledger.batch(show: [], hide: [2], into: holding, hasOrdinarySpace: { _ in true })
+    let batch = ledger.batch(show: [], hide: [2], into: holding, isOnAnySpace: { _ in true })
     #expect(batch.fresh.isEmpty)
     #expect(batch.mustBeIn == [2: holding])
     ledger.commit(batch, into: holding)
@@ -43,13 +43,13 @@ private let holding: SpaceID = 100
 @Test func windowsLeftInAnOlderSpaceAreCheckedAndRevealedThere() {
     let old: SpaceID = 7
     let ledger = ConcealLedger(entries: [4: old])
-    #expect(ledger.batch(show: [], hide: [4], into: holding, hasOrdinarySpace: { _ in true }).mustBeIn == [4: old])
-    #expect(ledger.batch(show: [4], hide: [], into: holding, hasOrdinarySpace: { _ in true }).removals == [old: [4]])
+    #expect(ledger.batch(show: [], hide: [4], into: holding, isOnAnySpace: { _ in true }).mustBeIn == [4: old])
+    #expect(ledger.batch(show: [4], hide: [], into: holding, isOnAnySpace: { _ in true }).removals == [old: [4]])
 }
 
 @Test func aBatchIsDoneWhenEachWindowIsWhereItPutIt() {
     let desktop: SpaceID = 5
-    let batch = ConcealLedger(entries: [1: holding]).batch(show: [1], hide: [2], into: holding, hasOrdinarySpace: { _ in true })
+    let batch = ConcealLedger(entries: [1: holding]).batch(show: [1], hide: [2], into: holding, isOnAnySpace: { _ in true })
     #expect(batch.touched == [holding])
     #expect(batch.isDone(members: [holding: [2]]))
     #expect(!batch.isDone(members: [holding: [1, 2], desktop: [1]]))
@@ -68,7 +68,7 @@ private let holding: SpaceID = 100
 
 @Test func anAddedWindowIsRemovedOnlyOnceItsAddLanded() {
     let batch = ConcealLedger(entries: [1: holding, 2: holding])
-        .batch(show: [1, 2], hide: [], into: holding, hasOrdinarySpace: { $0 == 1 })
+        .batch(show: [1, 2], hide: [], into: holding, isOnAnySpace: { $0 == 1 })
     #expect(batch.removals(landed: { _ in true }) == [holding: [1, 2]])
     #expect(batch.removals(landed: { _ in false }) == [holding: [1]])
 }
@@ -106,7 +106,7 @@ private struct Memberships {
     var (shown, hidden): (WindowID, WindowID) = (2, 1)
     for _ in 0..<4 {
         let batch = ledger.batch(show: [shown], hide: [hidden], into: holding,
-                                 hasOrdinarySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
+                                 isOnAnySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
         server.run(batch)
         #expect(batch.isDone(members: server.members(of: batch.touched)))
         #expect(server.spaces == [shown: [Memberships.desktop], hidden: [Memberships.desktop, holding]])
@@ -121,7 +121,7 @@ private struct Memberships {
     var (shown, hidden): (WindowID, WindowID) = (1, 2)
     for _ in 0..<4 {
         let batch = ledger.batch(show: [shown], hide: [hidden], into: holding,
-                                 hasOrdinarySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
+                                 isOnAnySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
         #expect(batch.adds.isEmpty)
         server.run(batch)
         #expect(batch.isDone(members: server.members(of: batch.touched)))
@@ -134,7 +134,7 @@ private struct Memberships {
 @Test func aRevealWhoseAddFailsLeavesTheWindowConcealed() {
     let ledger = ConcealLedger(entries: [2: holding])
     var server = Memberships(spaces: [2: [holding]], addsLand: false)
-    let batch = ledger.batch(show: [2], hide: [], into: holding, hasOrdinarySpace: { _ in false })
+    let batch = ledger.batch(show: [2], hide: [], into: holding, isOnAnySpace: { _ in false })
     server.run(batch)
     #expect(server.spaces[2] == [holding])
     #expect(!batch.isDone(members: server.members(of: batch.touched)))
@@ -145,7 +145,7 @@ private struct Memberships {
     var ledger = ConcealLedger(entries: [1: 9, 2: 9])
     ledger.forget([1])
     #expect(ledger.entries == [2: 9])
-    let batch = ledger.batch(show: [], hide: [1], into: 9, hasOrdinarySpace: { _ in true })
+    let batch = ledger.batch(show: [], hide: [1], into: 9, isOnAnySpace: { _ in true })
     #expect(batch.fresh == [1] && batch.mustBeIn == [1: 9])
 }
 
