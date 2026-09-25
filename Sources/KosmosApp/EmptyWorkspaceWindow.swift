@@ -10,11 +10,10 @@ import Synchronization
 ///
 /// It is 1 by 1 point at the bottom left corner of the display it is placed on, borderless,
 /// clear and transparent, ignores the mouse, joins every Space and stays out of the window
-/// cycle. The
-/// inventory tracks only regular apps' windows, and Kosmos is an accessory app, so Kosmos
-/// never manages or conceals it. It swallows every key and key equivalent: Kosmos has no
-/// main menu, and a key no responder takes would beep. Kosmos's hotkeys are Carbon hotkeys,
-/// which fire before the key reaches any window.
+/// cycle and Mission Control. The inventory tracks only regular apps' windows, and Kosmos
+/// is an accessory app, so Kosmos never manages or conceals it. It swallows every key and
+/// key equivalent: Kosmos has no main menu, and a key no responder takes would beep.
+/// Kosmos's hotkeys are Carbon hotkeys, which fire before the key reaches any window.
 final class EmptyWorkspaceWindow: NSWindow {
     /// What the focus queue needs of the window, from any thread.
     final class Target: Sendable {
@@ -40,7 +39,7 @@ final class EmptyWorkspaceWindow: NSWindow {
         backgroundColor = .clear
         alphaValue = 0
         ignoresMouseEvents = true
-        collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
+        collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
         isReleasedWhenClosed = false
         orderFrontRegardless()
         target = Target(window: UInt32(windowNumber))

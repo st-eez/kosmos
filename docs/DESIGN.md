@@ -592,20 +592,20 @@ off the main thread).
   cover the public path. If the app keys the requested window late, after the user chose
   another of its windows, that late report reads as the user's and pulls focus back,
   change 6's bounce in the fallback alone.
-- An empty workspace keys a window of Kosmos's own (EmptyWorkspaceWindow): 1 by 1 point
-  at the bottom left corner of the display the workspace is on, borderless, clear and
-  transparent, ignoring the mouse, on every Space and out of the window cycle. With
-  displays that have separate Spaces, keying a window makes its display the active one,
-  which takes the menu bar and the next new window. An app fronted with no window
-  brought forward still keys its own last key window: `kosmos_front_without_windows` let
-  a stub key its window in 10 of 10 trials, and a stub whose every window was concealed
-  keyed one of them in 10 of 10 in each of four ways, kept in their ordinary Space or
-  concealed exclusively, fronted by `activate` or by `kosmos_front_without_windows`. So
-  Finder, or any app with a concealed window, cannot be the target: Kosmos would follow
-  the concealed window it keys off the empty workspace on every switch. A background
-  accessory app keyed an invisible window of its own by the private key record in 10 of
-  10 trials, from its own background thread and from another process
-  (`kosmos-probe keying`, September 24, 2026).
+- An empty workspace keys a window of Kosmos's own (EmptyWorkspaceWindow): 1 by 1 point at
+  the bottom left corner of the display the workspace is on, borderless, clear and
+  transparent, ignoring the mouse, on every Space, and out of the window cycle and Mission
+  Control (`transient`). With displays that have separate Spaces, keying a window makes its
+  display the active one, which takes the menu bar and the next new window. An app fronted
+  with no window brought forward still keys its own last key window:
+  `kosmos_front_without_windows` let a stub key its window in 10 of 10 trials, and a stub
+  whose every window was concealed keyed one of them in 10 of 10 in each of four ways, kept
+  in their ordinary Space or concealed exclusively, fronted by `activate` or by
+  `kosmos_front_without_windows`. So Finder, or any app with a concealed window, cannot be
+  the target: Kosmos would follow the concealed window it keys off the empty workspace on
+  every switch. A background accessory app keyed an invisible window of its own by the
+  private key record in 10 of 10 trials, from its own background thread and from another
+  process (`kosmos-probe keying`, September 24, 2026).
   - Kosmos is an accessory app, and the inventory tracks only regular apps' windows, so it
     never manages or conceals the window. The window becoming key is the key window report
     for an empty workspace, as Kosmos keeps no worker for itself; it names no window and
