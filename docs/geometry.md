@@ -195,6 +195,21 @@
     the main thread and the slide queue while the bridge queue sends its batches.
     `script/bench-relayout.sh` times the CPU of Kosmos, the app, WindowManager and
     WindowServer with animations on and off, and counts the reads.
+  - The bench's latency is to the last frame change the stub saw for a step, the final
+    frame Kosmos wrote, and to the log line of each window's final write, which Kosmos logs
+    after reading the frame back, in millisecond steps. With animations on, the window
+    takes its final frame at once and shows at it when its slide ends, 0.38 s after the
+    write, or for a pop 0.41 s after its write lands. Each step's next response is a
+    `list-workspaces` query sent as soon as the step's command answers, which Kosmos
+    answers on the main actor, where every slide's display frames also run. CPU times come
+    from `ps -o time=` in 10 ms steps, fine for a run's total divided by its relayouts.
+    WindowServer's include every other app's drawing, so the summary also gives each
+    process's time over 10 s of rest with the windows tiled, scaled to the run's length.
+    The stub prints a line per frame change, a cost both modes share. A real app's window,
+    given by id, reports no frames of its own, so its latency is to its final write in
+    Kosmos's log, and its CPU is its app's main process, without the helper processes that
+    draw it. The summary records each app's AXEnhancedUserInterface (`kosmos-probe eui`),
+    which makes Chrome and Firefox animate Accessibility moves themselves.
   - Open until the live test: `kill -9` of Kosmos mid-slide and mid-pop, after which the
     guardian's recovery should show the window at its own frame and alpha 1, out of the
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next

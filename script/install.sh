@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-# Installs Kosmos from this checkout, swaps the previous copy back in, or removes Kosmos.
+# Installs Kosmos from this checkout, swaps the previous copy back in, or removes Kosmos
+# (docs/INSTALL.md).
 #
 #   script/install.sh [--dry-run] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]
 #
-# Install builds with script/bundle.sh and puts Kosmos.app in /Applications. The copy it
-# replaces becomes Kosmos-previous beside the app, a directory without the .app extension,
-# so LaunchServices never registers it. --rollback swaps the two by renaming, so a second
-# rollback undoes the first. --uninstall turns off launch at login and removes the app, the
-# link and the previous copy.
-#
-# ~/.local/bin/kosmos links to the CLI inside the app, so the CLI always matches the running
-# app, after a rollback too. ~/.local/bin needs no sudo, and it leaves /opt/homebrew/bin to
-# Homebrew, where the planned cask links its own kosmos (docs/distribution.md).
-#
-# A Kosmos running from the app quits first, which restores its hidden windows, and starts
-# again afterwards. --dry-run prints each command that would change something.
+# The copy an install replaces becomes Kosmos-previous, without the .app extension, so
+# LaunchServices never registers it, and --rollback swaps the two. ~/.local/bin/kosmos links
+# to the CLI inside the app. A Kosmos running from the app quits first, which restores its
+# hidden windows, and starts again afterwards.
 set -euo pipefail
 
 usage="usage: script/install.sh [--dry-run] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]"
@@ -55,8 +48,7 @@ run() {
     fi
 }
 
-# Quits a Kosmos running from $app with SIGTERM, which restores its hidden windows, then
-# waits for it and its guardian to exit.
+# SIGTERM quits Kosmos through AppKit, which restores its hidden windows.
 was_running=false
 stop_kosmos() {
     local pids pid
