@@ -343,8 +343,8 @@ off the main thread).
     concealed. The switch wins, and its focus is requested again. After a batch fails,
     recovery shows every workspace's windows until a switch conceals them again. A
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
-- Four races leave Kosmos nothing to tell the cases apart, and the TLA+ spec exempts
-  them:
+- Four races leave Kosmos nothing to tell the cases apart. They are known limits, and the
+  TLA+ spec exempts them:
   - Kosmos keys an app again before that app's activation read runs. The read finds
     Kosmos's window, and a Command-Tab to another window of that app is lost.
   - A request Kosmos made before the user's click inside the front app activates another
@@ -353,8 +353,10 @@ off the main thread).
     activated it, as for a change the app made before that activation, and the click is
     lost.
   - A switch reveals or conceals a window between the user's change and the main actor's
-    notice or the notification's callback. Kosmos can then follow a click on a window
-    being concealed, or lose a Command-Tab to a hidden window.
+    notice or the notification's callback. Kosmos can then follow a click that lands on a
+    window in the milliseconds it is being concealed, which costs one switch back, or lose
+    a Command-Tab to a hidden window. Notifications follow so that a window opened inside
+    the front app brings Kosmos to it, which admits this race.
   - The user keys a window of an app whose raise Kosmos decided before the app performs
     it. A change to the raised window reads as the raise's echo, and after a change to
     another window the raise keys its window again over the user's.

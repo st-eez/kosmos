@@ -129,8 +129,8 @@ The `split-` configs run a focus request as the steps the implementation takes
 (`SplitQueue`): the focus queue's, the target app worker's, the app's AXRaise landing
 later, the raise after a background app's key record (`PostRaise`) and the echo it records
 (`PostRaiseEcho`), the app's focus notification, whose observer callback runs some time
-after the change (`NoteDelay`), and the activation read, which runs on the app's worker and reads the app's focused window
-whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
+after the change (`NoteDelay`), and the activation read, which runs on the app's worker
+and reads the app's focused window whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
 unless named `busyb`). AXRaise alone keys a window inside the front app (`RaiseKeys`), and
 a raise in a background app is reported as a focus change (`RaiseReports`), both as
 `kosmos-probe keying` measured. Requests do not miss there, so the split configs run
