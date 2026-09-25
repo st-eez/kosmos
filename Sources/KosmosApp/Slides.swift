@@ -201,7 +201,7 @@ final class Slides {
             if !members.isEmpty {
                 slideLog.notice("animation Space \(space) back in the pool with \(members.map(String.init).joined(separator: " "), privacy: .public) in it")
             }
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.free.append(space) } }
+            onMain { self.free.append(space) }
         }
     }
 

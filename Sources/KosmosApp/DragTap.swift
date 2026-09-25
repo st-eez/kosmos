@@ -133,6 +133,6 @@ final class DragTap: Sendable {
         guard outcome.ended != nil || outcome.began != nil || outcome.moved != nil else { return }
         let stamp = ContinuousClock.now
         let handle = self.handle
-        DispatchQueue.main.async { MainActor.assumeIsolated { handle(outcome, stamp) } }
+        onMain { handle(outcome, stamp) }
     }
 }

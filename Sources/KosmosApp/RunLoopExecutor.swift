@@ -1,5 +1,10 @@
 import Foundation
 
+/// Runs `body` on the main actor from any thread, after the blocks already queued there.
+func onMain(_ body: @escaping @MainActor () -> Void) {
+    DispatchQueue.main.async { MainActor.assumeIsolated(body) }
+}
+
 /// A serial executor on a dedicated thread's run loop, one for each app worker, so a hung app
 /// blocks only its own thread. A worker's AX observer runs on a second one, which only
 /// hosts the run loop.

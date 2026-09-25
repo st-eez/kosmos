@@ -68,12 +68,10 @@ final class Guardian {
             var byte: UInt8 = 0
             let ready = poll(&poller, 1, 5000) == 1 && read(readFD, &byte, 1) == 1 && byte == UInt8(ascii: "R")
             close(readFD)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self, self.exitSource === source else { return }
-                    self.isReady = ready
-                    if ready { guardianLog.info("guardian \(pid) ready") } else { guardianLog.error("guardian \(pid) not ready") }
-                }
+            onMain {
+                guard let self, self.exitSource === source else { return }
+                self.isReady = ready
+                if ready { guardianLog.info("guardian \(pid) ready") } else { guardianLog.error("guardian \(pid) not ready") }
             }
         }
     }

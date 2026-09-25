@@ -100,6 +100,6 @@ final class PointerTap: Sendable {
         if !heard.exchange(true, ordering: .relaxed) { pointerLog.notice("pointer tap receiving events") }
         guard let entered = gate.withLock({ $0.admit(window, at: location, control: control) }) else { return }
         let callback = self.entered
-        DispatchQueue.main.async { MainActor.assumeIsolated { callback(entered, stamp) } }
+        onMain { callback(entered, stamp) }
     }
 }

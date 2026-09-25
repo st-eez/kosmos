@@ -408,7 +408,7 @@ final class Inventory {
         if pending.isEmpty {
             // Queued after the events already on the main queue, such as the rest of
             // SkyLight's batch, so one read covers them.
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.flushReads() } }
+            onMain { self.flushReads() }
         }
         pending.append(event)
     }
@@ -426,7 +426,7 @@ final class Inventory {
         looks.readAsked()
         reads.async {
             let rows = SkyLight.rows(Array(ids), cornerRadii: true)
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
+            onMain { self.applyReads(events, rows) }
         }
     }
 
@@ -588,11 +588,9 @@ final class Inventory {
     private func scheduleWatch() {
         guard !watchPending else { return }
         watchPending = true
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                self.watchPending = false
-                SkyLight.watch(Array(Set(self.windows.keys).union(self.arrivedWhileLocked.keys)))
-            }
+        onMain {
+            self.watchPending = false
+            SkyLight.watch(Array(Set(self.windows.keys).union(self.arrivedWhileLocked.keys)))
         }
     }
 
@@ -613,9 +611,7 @@ final class Inventory {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
             let rows = SkyLight.rows(listed + unlisted, cornerRadii: true)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { self.finishSweep(rows) }
-            }
+            onMain { self.finishSweep(rows) }
         }
     }
 

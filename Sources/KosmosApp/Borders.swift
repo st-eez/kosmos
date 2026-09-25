@@ -45,7 +45,7 @@ final class Borders {
         }
         // Light and dark show the accent in shades of their own.
         appearance = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.readAccentAgain() } }
+            onMain { self?.readAccentAgain() }
         }
     }
 

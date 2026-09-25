@@ -50,8 +50,8 @@ final class FocusQueue: Sendable {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !concealed else { return }
-            let raising: @Sendable (ContinuousClock.Instant) -> Void = { stamp in Self.onMain { performing(stamp, .raise) } }
-            let dropping: @Sendable (ContinuousClock.Instant) -> Void = { stamp in Self.onMain { dropped(stamp) } }
+            let raising: @Sendable (ContinuousClock.Instant) -> Void = { stamp in onMain { performing(stamp, .raise) } }
+            let dropping: @Sendable (ContinuousClock.Instant) -> Void = { stamp in onMain { dropped(stamp) } }
             let front = kosmos_front_pid() == pid
             if privately {
                 let stamp: ContinuousClock.Instant
@@ -66,7 +66,7 @@ final class FocusQueue: Sendable {
                     if front, emptyWorkspace.isKey.load(ordering: .relaxed) { return }
                     stamp = ContinuousClock.now
                 }
-                Self.onMain { performing(stamp, .keyRecord) }
+                onMain { performing(stamp, .keyRecord) }
                 let performed = killSwitch.guarded {
                     switch key {
                     case .window(let id): kosmos_make_key(pid, id)
@@ -84,7 +84,7 @@ final class FocusQueue: Sendable {
             switch key {
             case .window(let id):
                 worker?.focusPublicly(id, readFocus: front, isCurrent: isCurrent,
-                                      performing: { stamp in Self.onMain { performing(stamp, .activation) } },
+                                      performing: { stamp in onMain { performing(stamp, .activation) } },
                                       dropped: dropping)
             case .none:
                 // Only the private path keys Kosmos's own window: an accessory app that
@@ -111,10 +111,6 @@ final class FocusQueue: Sendable {
             finished.signal()
         }
         _ = finished.wait(timeout: .now() + .milliseconds(30))
-    }
-
-    private static func onMain(_ callback: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.async { MainActor.assumeIsolated { callback() } }
     }
 }
 

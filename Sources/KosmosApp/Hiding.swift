@@ -70,7 +70,7 @@ final class Hiding {
         let store = self.store
         bridge.async {
             let spaces = store.createAnimationSpaces(count, level: level)
-            DispatchQueue.main.async { MainActor.assumeIsolated { done(spaces) } }
+            onMain { done(spaces) }
         }
     }
 
@@ -92,7 +92,7 @@ final class Hiding {
         bridge.async {
             store.forgetClosed(window)
             let concealed = store.concealed
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.concealed = concealed } }
+            onMain { self.concealed = concealed }
         }
     }
 
@@ -117,17 +117,15 @@ final class Hiding {
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
                                 confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier,
                                 stripped: stripped)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    timing.returned = .now - finished
-                    self.concealed = concealed
-                    for window in hide {
-                        self.concealing[window]! -= 1
-                        if self.concealing[window] == 0 { self.concealing[window] = nil }
-                    }
-                    if let outcome { self.report(outcome) }
-                    done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
+            onMain {
+                timing.returned = .now - finished
+                self.concealed = concealed
+                for window in hide {
+                    self.concealing[window]! -= 1
+                    if self.concealing[window] == 0 { self.concealing[window] = nil }
                 }
+                if let outcome { self.report(outcome) }
+                done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
             }
         }
     }
@@ -141,7 +139,7 @@ final class Hiding {
         bridge.async {
             store.forget(windows)
             let concealed = store.concealed
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.concealed = concealed } }
+            onMain { self.concealed = concealed }
         }
     }
 
@@ -151,11 +149,9 @@ final class Hiding {
         bridge.async {
             let outcome = store.recover(keepingAnimationSpaces: true)
             let concealed = store.concealed
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self.concealed = concealed
-                    self.report(outcome)
-                }
+            onMain {
+                self.concealed = concealed
+                self.report(outcome)
             }
         }
     }

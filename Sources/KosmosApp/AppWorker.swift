@@ -548,6 +548,6 @@ actor AppWorker {
 
     private nonisolated func deliver(_ report: AXReport) {
         let deliver = self.report
-        DispatchQueue.main.async { MainActor.assumeIsolated { deliver(report) } }
+        onMain { deliver(report) }
     }
 }
