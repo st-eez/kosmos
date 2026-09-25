@@ -44,6 +44,15 @@ extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);
 
 // The WindowServer id of an Accessibility window element.
 extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
+// An element of another app from its remote token, and an element's token. The token is 20
+// bytes: the app's pid, 4 zero bytes, 'coco' (0x636f636f) and the element id, as yabai and
+// alt-tab make it (kosmos-probe ax-search).
+extern AXUIElementRef _AXUIElementCreateWithRemoteToken(CFDataRef token) CF_RETURNS_RETAINED;
+extern CFDataRef _AXUIElementRemoteTokenCreate(AXUIElementRef element) CF_RETURNS_RETAINED;
+// The element with the id `element` in the app `pid`, or NULL. The app's window list leaves
+// out windows on a Space that is not shown, which a search of element ids still finds
+// (KosmosBridge.m).
+AXUIElementRef kosmos_ax_element(pid_t pid, uint64_t element) CF_RETURNS_RETAINED;
 
 #include "KosmosBridge.h"
 #include "KosmosBar.h"

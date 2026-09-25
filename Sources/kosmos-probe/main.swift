@@ -58,6 +58,18 @@
 //                                   child app that is launching, answering and hung. The
 //                                   child is an accessory app with no window, which a running
 //                                   Kosmos ignores. Needs Accessibility for the terminal.
+//   kosmos-probe ax-search          Does a search of element ids find a window its app's
+//                                   Accessibility window list leaves out, as AppWorker.search
+//                                   does for windows on Spaces no display shows? Three
+//                                   invisible windows off every display, each in its own app
+//                                   with the prohibited activation policy, go into a holding
+//                                   Space alone: one whose app's list named it first, one
+//                                   whose list named it to another process that has exited,
+//                                   and one no list named before its search. Prints the token of a
+//                                   listed element, whether the list names each window in the
+//                                   holding Space, where each search found it and how long it
+//                                   took, then the time of a search that finds nothing. Needs
+//                                   Accessibility for the terminal.
 //   kosmos-probe keying [rounds] [finder]
 //                                   Keys windows of two stub apps four ways: the key record
 //                                   alone, AXRaise then the record (the order Kosmos uses), the
@@ -138,6 +150,10 @@ case "displays": displays()
 case "secure-input": secureInput()
 case "ax-child": axChild()
 case "ax-timeout": axTimeout()
+case "ax-search": axSearch()
+case "ax-read":
+    let read = arguments.dropFirst().compactMap { Int($0) }
+    print("reader: window \(read[1]) \(windowElement(pid_t(read[0]), UInt32(read[1])) == nil ? "not listed" : "listed")")
 case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
 case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3, finder: arguments.contains("finder"))
 case "level": levels()
@@ -1042,6 +1058,65 @@ final class KeyStub {
         guard let window else { return "none" }
         return windows.firstIndex(of: window).map { "\(name)\($0 + 1)" } ?? String(window)
     }
+}
+
+@MainActor func axSearch() {
+    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+    _ = NSApplication.shared   // bridged operations need an AppKit client
+    let (listedApp, listed) = spawnPanel("hidden-window")
+    let (unlistedApp, unlisted) = spawnPanel("hidden-window")
+    let (exitedApp, exited) = spawnPanel("hidden-window")
+    defer { listedApp.terminate(); unlistedApp.terminate(); exitedApp.terminate() }
+    let pids = [listed: listedApp.processIdentifier, unlisted: unlistedApp.processIdentifier, exited: exitedApp.processIdentifier]
+    // Another process reads the third window's element from its app's list, then exits, as
+    // a Kosmos that quit did.
+    let reader = Process()
+    reader.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    reader.arguments = ["ax-read", String(pids[exited]!), String(exited)]
+    try! reader.run()
+    reader.waitUntilExit()
+    if let element = windowElement(pids[listed]!, listed), let token = _AXUIElementRemoteTokenCreate(element) {
+        print("window \(listed) listed, its token: \((token as Data).map { String(format: "%02x", $0) }.joined(separator: " "))")
+    } else {
+        print("window \(listed) not listed on the current Space")
+    }
+    let space = kosmos_holding_create()
+    guard space != 0 else { print("holding Space not created"); return }
+    var ids = [listed, unlisted, exited]
+    defer {
+        _ = kosmos_remove_windows(space, &ids, ids.count)
+        _ = kosmos_space_destroy(space)
+    }
+    _ = kosmos_add_windows(space, &ids, ids.count, true)
+    _ = kosmos_barrier(space)
+    for window in [unlisted, exited, listed] {
+        let pid = pids[window]!
+        let start = ContinuousClock.now
+        let (found, asked) = searchElement(pid, window)
+        let time = elapsed(start)
+        print(String(format: "window %u in the holding Space alone, ordinary Spaces %@: search %@ after %d ids in %.1f ms; its list %@",
+                     window, "\((kosmos_window_spaces(window) as? [UInt64]) ?? [])", found.map { "found it at element id \($0)" } ?? "did not find it",
+                     asked, time, windowElement(pid, window) == nil ? "leaves it out" : "names it"))
+    }
+    let start = ContinuousClock.now
+    let (_, asked) = searchElement(pids[listed]!, 0)
+    let time = elapsed(start)
+    print(String(format: "a search that finds nothing: %d ids in %.1f ms, %.1f us each", asked, time, time * 1000 / Double(asked)))
+}
+
+/// Where a search of the app's element ids, as AppWorker.search makes it, finds the window,
+/// and how many ids it asked.
+func searchElement(_ pid: pid_t, _ window: UInt32) -> (element: UInt64?, asked: Int) {
+    for element in UInt64(0)..<0x7fff {
+        guard let candidate = kosmos_ax_element(pid, element) else { continue }
+        var id: UInt32 = 0, role: CFTypeRef?
+        if _AXUIElementGetWindow(candidate, &id) == .success, id == window,
+           AXUIElementCopyAttributeValue(candidate, kAXRoleAttribute as CFString, &role) == .success,
+           role as? String == kAXWindowRole {
+            return (element, Int(element) + 1)
+        }
+    }
+    return (nil, 0x7fff)
 }
 
 /// The window's element in its app, found by window id.

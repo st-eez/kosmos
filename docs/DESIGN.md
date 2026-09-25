@@ -214,6 +214,22 @@ off the main thread).
   restored a window that no read answered for and no creation report named while it
   stayed hidden, so before these reads it was never managed (live log, September 24,
   2026).
+- An app's window list leaves out its windows on Spaces no display shows. On 2026-09-24
+  Kosmos restarted while the main panel showed Moonlight's native fullscreen Space, and
+  the ChatGPT, Helium and Activity Monitor windows on the ordinary Space behind it, which
+  the launch sweep found, stayed unmanaged until the user left fullscreen 4 minutes later
+  and the sweep after that Space change read them. So a worker asked about windows its
+  list leaves out that sit only on Spaces no display shows searches for their elements by
+  id, as yabai does at startup. For each id from 0 up to 0x7fff it makes the element from
+  a remote token of the app's pid and the id, and asks the app for its window, until every
+  such window is found. An app numbers an element when it first gives it to an
+  Accessibility client, and the number outlasts that client. `kosmos-probe ax-search`
+  found the window of a new app at id 42 when the probe, or another process that had
+  exited since, had read it from the list, and did not find one no process had read. A
+  search that finds nothing asked 32767 ids in 0.4 to 0.8 s, 13 us each, of the probe's
+  small app, so each window is searched for once. A window no process has read, or with
+  an id past 0x7fff, waits for its Space to be shown. Found at launch, the windows join
+  the workspace shown on the display under their centers, unless a rule names another.
 
 ### 5.2 Geometry
 

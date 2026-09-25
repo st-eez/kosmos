@@ -39,6 +39,20 @@ public struct Displays {
         }
     }
 
+    /// The windows whose Spaces are all ones no display shows, as an ordinary Space behind a
+    /// native fullscreen one. Their apps' Accessibility window lists leave them out (DESIGN.md,
+    /// section 5.1). A window in no Space, or in Kosmos's holding Space alone, is not among
+    /// them. The queries can block during a Space transition, so call it off the main thread.
+    public static func onSpacesNotShown(_ windows: [UInt32]) -> [UInt32] {
+        guard !windows.isEmpty else { return [] }
+        let raw = SLSCopyManagedDisplaySpaces(SkyLight.connection)?.takeRetainedValue() as? [[String: Any]] ?? []
+        let shown = Set(raw.compactMap { ($0["Current Space"] as? [String: Any])?["id64"] as? UInt64 })
+        return windows.filter { window in
+            let spaces = kosmos_window_spaces(window) as? [UInt64] ?? []
+            return !spaces.isEmpty && shown.isDisjoint(with: spaces)
+        }
+    }
+
     public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.spaces)) }
 
     /// The ordinary Space for a window that has none: the main display's current Space,
