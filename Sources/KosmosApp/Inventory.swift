@@ -130,11 +130,17 @@ final class Inventory {
         /// or again.
         case changed(at: ContinuousClock.Instant)
     }
+    private enum PendingEvent: Sendable {
+        /// Read the window's row, apply it, then the follow-up.
+        case read(UInt32, FollowUp)
+        case destroyed(UInt32)
+        case appExited(pid_t)
+    }
     /// Window events waiting for the next read. A read waited on WindowServer during a
     /// switch's Space transaction, about 1.4 ms each with three displays (2026-09-24), so the
     /// reads run on `reads`, one query for all the windows a main run loop turn's events
     /// name, and sweeps read there too: every result reaches the main actor in read order.
-    private var pending = PendingReads<FollowUp>()
+    private var pending: [PendingEvent] = []
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
 
     /// WindowServer tracking needs no permission and starts at once.
@@ -363,7 +369,7 @@ final class Inventory {
 
     /// Holds the event for the read after this run loop turn. A window it names counts as
     /// changed during a running sweep from now, as the sweep's snapshot may predate the change.
-    private func enqueue(_ event: PendingReads<FollowUp>.Event) {
+    private func enqueue(_ event: PendingEvent) {
         switch event {
         case .read(let id, _), .destroyed(let id): touchedDuringSweep?.insert(id)
         case .appExited: break
@@ -373,21 +379,26 @@ final class Inventory {
             // SkyLight's batch, so one read covers them.
             DispatchQueue.main.async { MainActor.assumeIsolated { self.flushReads() } }
         }
-        pending.add(event)
+        pending.append(event)
     }
 
     /// Reads the rows of every window the waiting events name in one query off the main
     /// thread, then applies the events in the order they came.
     private func flushReads() {
         guard !pending.isEmpty else { return }
-        let (events, ids) = pending.take()
+        let events = pending
+        pending = []
+        let ids = Set(events.compactMap { event -> UInt32? in
+            guard case .read(let id, _) = event else { return nil }
+            return id
+        })
         reads.async {
-            let rows = SkyLight.rows(ids)
+            let rows = SkyLight.rows(Array(ids))
             DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
         }
     }
 
-    private func applyReads(_ events: [PendingReads<FollowUp>.Event], _ rows: [WindowRow]) {
+    private func applyReads(_ events: [PendingEvent], _ rows: [WindowRow]) {
         let rows = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
         for event in events {
             switch event {
