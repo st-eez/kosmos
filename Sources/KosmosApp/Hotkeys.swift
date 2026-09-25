@@ -28,7 +28,7 @@ final class Hotkeys: NSObject {
     }
 
     private(set) var mode = "main"
-    private var modes: [String: [Binding]] = [:]
+    private(set) var modes: [String: [Binding]] = [:]
     private var layout: [Character: UInt16]
     /// The active mode's bindings on the current layout. A pressed key's command comes from
     /// here, so a key two modes share stays registered across a switch.

@@ -49,6 +49,18 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     }
 }
 
+/// `list-bindings` describes every binding's amount, and a trap there would stop Kosmos.
+@Test func resizeAmountsAreFiniteAndAtMost100000Points() {
+    #expect(Command.parse(["resize", "smart", "+100000"]) == .success(.resize(.smart, by: 100_000)))
+    #expect(Command.parse(["resize", "width", "-0.5"]) == .success(.resize(.width, by: -0.5)))
+    for amount in ["+inf", "-inf", "+nan", "+1e20", "-1e19", "+100000.5", "-100001"] {
+        guard case .failure = Command.parse(["resize", "smart", amount]) else {
+            Issue.record("accepted \(amount)")
+            continue
+        }
+    }
+}
+
 @Test func aCommandNamingAWorkspaceTheProfileLeavesOutFails() {
     // The laptop profile lists 1 to 5; `workspace 6` exited 0 and did nothing.
     let s = session(["1", "2", "3", "4", "5"])

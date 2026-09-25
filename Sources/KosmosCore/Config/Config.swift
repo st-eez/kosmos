@@ -117,9 +117,10 @@ public struct Binding: Equatable, Sendable {
     /// The combination as written in the config, such as `alt-shift-h`.
     public var key: String
     public var combo: KeyCombo
-    /// The command's arguments, as the CLI passes them. `Command.parse` accepted them when the
-    /// config loaded.
+    /// The command's arguments, as the CLI passes them.
     public var arguments: [String]
+    /// What `Command.parse` made of `arguments` when the config loaded.
+    public var command: Command
 }
 
 public struct WindowRule: Equatable, Sendable {

@@ -120,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller?.turnOnPrivateFocus()
             let (applied, messages) = reloadConfig(atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
+        case ["list-bindings"]:
+            return listBindings()
         default:
             switch Command.parse(arguments) {
             case .success(.mode(let name)): return switchMode(to: name)
@@ -132,6 +134,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = controller.run(arguments, received: received, from: source)
             return result.code == 0 ? Response(stdout: result.text) : Response(exitCode: result.code, stderr: "kosmos: " + result.text)
         }
+    }
+
+    /// A binding as `kosmos list-bindings` prints it.
+    private struct ListedBinding: Encodable {
+        var mode: String
+        /// The combination as the config writes it, such as `alt-shift-left`.
+        var key: String
+        var description: String
+        var category: String
+    }
+
+    /// The loaded bindings as JSON for launchers (DESIGN.md, section 5.12): mode main first,
+    /// then the other modes by name, each in file order.
+    private func listBindings() -> Response {
+        guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
+        let modes = hotkeys.modes.sorted { ($0.key == "main" ? 0 : 1, $0.key) < ($1.key == "main" ? 0 : 1, $1.key) }
+        let bindings = modes.flatMap { mode, bindings in
+            bindings.map { ListedBinding(mode: mode, key: $0.key, description: $0.command.summary, category: $0.command.category) }
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return Response(stdout: String(decoding: (try? encoder.encode(bindings)) ?? Data("[]".utf8), as: UTF8.self))
     }
 
     private func switchMode(to name: String) -> Response {
