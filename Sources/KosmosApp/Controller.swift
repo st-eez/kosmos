@@ -114,6 +114,11 @@ final class Controller {
     private var sessionLocked: Bool { inventory.sessionLocked }
     /// The slide trial, with `KOSMOS_ANIMATE=slide` while Kosmos manages windows.
     private let slides: Slides?
+    /// The config's borders, or nil while they are off (docs/borders.md).
+    var borders: BorderSettings? {
+        didSet { if borders != oldValue { updateBorders() } }
+    }
+    private let borderWindows = Borders()
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -134,11 +139,15 @@ final class Controller {
         inventory.onKeptOrderedOut = { [weak self] id, orderedOut in self?.keptOrderedOut(id, orderedOut: orderedOut) }
         inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
+            self?.updateBorders()
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
         inventory.onFrameChange = { [weak self] id, old, frame, receivedAt in
             self?.frameChanged(id, from: old, to: frame, receivedAt: receivedAt)
+            self?.updateBorders()
         }
+        inventory.onReordered = { [weak self] id in self?.borderWindows.raise(id) }
+        slides?.onChange = { [weak self] in self?.updateBorders() }
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let point = event.cgEvent?.location else { return }
@@ -1016,6 +1025,8 @@ final class Controller {
             hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
                 guard let self else { return }
                 self.placedHidden.subtract(hide)   // the conceal that placed them hidden is done
+                // Revealed now, the incoming windows get their borders.
+                self.updateBorders()
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
@@ -1416,12 +1427,31 @@ final class Controller {
     }
 
     /// One snapshot for the bar and for `kosmos subscribe` (docs/integrations.md). Every
-    /// change of the model ends here, so the drag tap's windows follow it too.
+    /// change of the model ends here, so the drag tap's windows and the borders follow it too.
     private func publishState() {
         let data = stateJSON()
         bar.publish(data)
         publish?(data)
         dragTap?.setWindows(draggable)
+        updateBorders()
+    }
+
+    /// Shows the border of each window the session borders, where WindowServer has it or a
+    /// slide shows it, and none for a window concealed or ordered out (docs/borders.md). No
+    /// border shows while borders are off or Kosmos only observes, and a locked session keeps
+    /// its borders until the resync after the unlock.
+    private func updateBorders() {
+        guard !sessionLocked else { return }
+        guard managing, let borders else { return borderWindows.show([:]) }
+        let shown = session.borders(borders) { id in
+            guard !hiding.isConcealed(id), let row = inventory.windows[id], row.orderedIn else { return nil }
+            return (slides?.shown(id)?.frame ?? row.frame, row.cornerRadius)
+        }
+        borderWindows.show(shown.reduce(into: [:]) { result, entry in
+            let slide = slides?.shown(entry.key)
+            result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
+                                              alpha: slide?.alpha ?? 1, sliding: slide != nil)
+        })
     }
 
     /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.

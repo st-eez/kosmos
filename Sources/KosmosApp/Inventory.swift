@@ -84,6 +84,9 @@ final class Inventory {
     /// `.changed` event that reported it came, or nil: a Space change, as a reveal makes, a
     /// creation or a sweep can read a new frame too.
     var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, ContinuousClock.Instant?) -> Void)?
+    /// WindowServer ordered a managed window above or below others, as its app raising it
+    /// does, which leaves its border below it (docs/borders.md).
+    var onReordered: (@MainActor (UInt32) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -380,6 +383,9 @@ final class Inventory {
             enqueue(.read(id, .none))
         case .changed(let id):
             enqueue(.read(id, .changed(at: .now)))
+        case .reordered(let id):
+            enqueue(.read(id, .changed(at: .now)))
+            if isManaged(id) { onReordered?(id) }
         case .spaceMembership(let id):
             enqueue(.read(id, .spaceMembership(.now)))
         case .destroyed(let id):

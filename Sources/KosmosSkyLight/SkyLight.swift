@@ -10,7 +10,9 @@ private let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "skylig
 public enum WindowServerEvent: Sendable {
     case created(UInt32)
     case destroyed(UInt32)
-    case changed(UInt32)   // moved (806), resized (807), reordered (808), ordered in (815) or out (816)
+    case changed(UInt32)   // moved (806), resized (807), ordered in (815) or out (816)
+    /// Ordered above or below other windows (808), as when its app raises it.
+    case reordered(UInt32)
     case spaceMembership(UInt32)
     case spacesChanged     // a Space was created or destroyed, or the active Space changed
     case frontAppChanged
@@ -24,7 +26,8 @@ public enum WindowServerEvent: Sendable {
         switch id {
         case 811: guard let w = u32(at: 0) else { return nil }; self = .created(w)
         case 804: guard let w = u32(at: 0) else { return nil }; self = .destroyed(w)
-        case 806, 807, 808, 815, 816: guard let w = u32(at: 0) else { return nil }; self = .changed(w)
+        case 806, 807, 815, 816: guard let w = u32(at: 0) else { return nil }; self = .changed(w)
+        case 808: guard let w = u32(at: 0) else { return nil }; self = .reordered(w)
         // A 64 bit Space id, then the window id.
         case 1325, 1326: guard let w = u32(at: 8) else { return nil }; self = .spaceMembership(w)
         case 1327, 1328, 1401: self = .spacesChanged
@@ -36,7 +39,7 @@ public enum WindowServerEvent: Sendable {
     /// The window the event names, if any.
     public var window: UInt32? {
         switch self {
-        case .created(let id), .destroyed(let id), .changed(let id), .spaceMembership(let id): id
+        case .created(let id), .destroyed(let id), .changed(let id), .reordered(let id), .spaceMembership(let id): id
         case .spacesChanged, .frontAppChanged: nil
         }
     }
@@ -50,6 +53,8 @@ public struct WindowRow: Sendable, Equatable {
     public let level: Int32
     public let orderedIn: Bool
     public let frame: CGRect
+    /// The radius WindowServer rounds the window's corners by, 0 for square corners.
+    public let cornerRadius: CGFloat
 }
 
 public enum SkyLight {
@@ -111,10 +116,12 @@ public enum SkyLight {
         let it = iterator.takeUnretainedValue()
         var rows: [WindowRow] = []
         while SLSWindowIteratorAdvance(it) {
+            // The array is the caller's (CKosmos.h).
+            let radii = SLSWindowIteratorGetCornerRadii(it)?.takeRetainedValue() as? [NSNumber]
             rows.append(WindowRow(id: SLSWindowIteratorGetWindowID(it), pid: SLSWindowIteratorGetPID(it),
                                   parent: SLSWindowIteratorGetParentID(it), level: SLSWindowIteratorGetLevel(it),
                                   orderedIn: SLSWindowIteratorGetAttributes(it) & 0x2 != 0,
-                                  frame: SLSWindowIteratorGetBounds(it)))
+                                  frame: SLSWindowIteratorGetBounds(it), cornerRadius: CGFloat(radii?.first?.doubleValue ?? 0)))
         }
         return rows
     }

@@ -55,6 +55,9 @@ final class Slides {
     }
 
     private let hiding: Hiding
+    /// Called after each display frame's steps and after each slide ends, so the borders
+    /// follow where the windows show (docs/borders.md).
+    var onChange: (@MainActor () -> Void)?
     private var entries: [WindowID: Entry] = [:]
     private let onscreen = Onscreen()
     private var free: [UInt64] = []
@@ -101,6 +104,15 @@ final class Slides {
         for id in Array(entries.keys) where !shown(id) { end(id, "as it left the screen") }
     }
 
+    /// Where a sliding window shows, as of the last display frame stepped, and at what alpha,
+    /// or nil for a window that is not sliding. A new window that waits for its write to land
+    /// shows nowhere yet, at alpha 0, and a slide that is over holds its window at the target.
+    func shown(_ id: WindowID) -> (frame: CGRect, alpha: Double)? {
+        guard let entry = entries[id] else { return nil }
+        guard let slide = entry.slide else { return (entry.target.scaled(Slide.popScale), 0) }
+        return slide.isOver(at: entry.shownAt) ? (slide.to, 1) : (slide.shown(at: entry.shownAt), slide.alpha(at: entry.shownAt))
+    }
+
     /// Ends every slide, for quit, so recovery finds the pool's Spaces empty.
     func endAll() {
         for id in Array(entries.keys) { end(id, "at quit") }
@@ -119,6 +131,7 @@ final class Slides {
             kosmos_remove_windows(entry.space, &ids, 1)
         }
         free.append(entry.space)
+        onChange?()
         // script/bench-relayout.sh counts these lines.
         let landed = entry.landed.map { String(format: "landed %.1f ms after its write", ($0 - entry.sent) * 1000) } ?? "did not land"
         if let why {
@@ -253,6 +266,7 @@ final class Slides {
             }
         }
         for id in over { end(id) }
+        if over.isEmpty { onChange?() }
         let spent = CACurrentMediaTime() - began
         callbacks += 1
         callbackTime += spent
