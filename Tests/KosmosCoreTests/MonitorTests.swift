@@ -391,6 +391,21 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.drop(at: CGPoint(x: -5000, y: 0)).hide == [11] && s.workspace(of: 11) == "2")
     }
 
+    @Test func aHotkeyDuringTheDragDropsTheWindowBeforeItsCommandRuns() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11)
+        _ = s.lift(11)
+        // alt-2 with the pointer in the right half of 10, which fills the display: the
+        // controller drops 11 there first, and the switch then conceals it with 10.
+        let tile = s.frames(of: "1")[10]!
+        #expect(s.drop(at: CGPoint(x: tile.maxX - 100, y: tile.midY)).focus == .window(11))
+        #expect(s.lifted.isEmpty && s.workspaces["1"]!.tree == "h[10 11]")
+        let plan = s.perform(.workspace(.named("2")))!
+        #expect(Set(plan.hide) == [10, 11] && s.focusedWorkspace == "2" && s.focused == nil)
+        // Back on 1, the dropped window has the focus.
+        #expect(s.perform(.workspace(.named("1")))!.focus == .window(11))
+    }
+
     @Test func aWindowThatLeavesOrParksDuringTheDragIsNotDropped() {
         var s = desk()
         _ = s.add(10); _ = s.add(11); _ = s.add(12)

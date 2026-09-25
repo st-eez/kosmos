@@ -846,12 +846,14 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     the press, or with the pointer on a resize border at its first change event
     (`Session.onResizeBorder`), is being resized and never lifts, since WindowServer can
     apply a resize by the left or top edge as a move first. Kosmos writes the lifted
-    window no frame while macOS moves it, and a switch meanwhile leaves it in the user's
-    hand.
-  - Hotkeys do nothing until the drop, as Hyprland's `DragController.cpp` calls
-    `shadowKeybinds()` for a drag, and Kosmos moves the pointer for no focus change
-    meanwhile. A switch mid-drag would otherwise key another workspace's window, and
-    `Session.focused` skips the lifted window, so a move would take its neighbour.
+    window no frame while macOS moves it, and a switch the CLI asks for meanwhile leaves
+    it in the user's hand.
+  - A hotkey pressed during the drag first drops the window where the pointer is, as the
+    button coming up would, and its command then runs, as Hyprland 0.56.2's
+    `KeybindManager.cpp` ends a drag in `ensureMouseBindState()` before a bind fires. So
+    a switch keys the right window, and a move takes the dropped window, which
+    `Session.focused` skips while it is lifted. Kosmos moves the pointer for no focus
+    change while a window is lifted.
   - When the button comes up, it tiles on the workspace shown on the display under the
     pointer, beside the tiled window under the pointer, else the one whose center is
     closest. The two sit side by side when that window is wider than it is tall

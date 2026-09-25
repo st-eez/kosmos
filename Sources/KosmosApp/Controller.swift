@@ -72,7 +72,7 @@ final class Controller {
     /// Move the pointer into a window that a command focused.
     var mouseFollowsFocus = false
     /// The user is dragging a tiled window, lifted out of the layout.
-    var dragging: Bool { !session.lifted.isEmpty }
+    private var dragging: Bool { !session.lifted.isEmpty }
     /// The active display profile, for the bar.
     private(set) var profile: String?
     /// Each connected display as the bar numbers it, read with the displays.
@@ -475,9 +475,19 @@ final class Controller {
         }
     }
 
-    /// The left button came up at `point`. A lifted window tiles where it was dropped
-    /// (Session.drop), and the other tiled windows moved or resized with the button down go
-    /// back to their tiles (Session.released).
+    /// A hotkey was pressed. During a drag it first ends the press as the left button coming
+    /// up does, where the pointer is now, and its command then runs on the layout with the
+    /// window dropped, as Hyprland's KeybindManager ends a drag in ensureMouseBindState before
+    /// a bind fires (DESIGN.md, section 5.13).
+    func endDrag() {
+        guard dragging else { return }
+        controllerLog.info("hotkey during a drag: the window drops where the pointer is")
+        leftMouseUp(at: nil)
+    }
+
+    /// The left button came up at `point`, or at the pointer when nil. A lifted window tiles
+    /// where it was dropped (Session.drop), and the other tiled windows moved or resized with
+    /// the button down go back to their tiles (Session.released).
     private func leftMouseUp(at point: CGPoint?) {
         guard managing, !sessionLocked else { return }
         let moved = Set(mouseMoved.keys)
