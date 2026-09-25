@@ -812,21 +812,20 @@ off the main thread).
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, then into that sibling by focus order, as i3's does. The
   workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
-  (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c). macOS with SIP on
-  cannot keep another app's floating windows above the tiles. Focusing or clicking a tile
-  brings it over any floating window it overlaps, so a floating window can end up behind
-  a tile, where hover cannot reach it either. A Space
-  shown above the desktop's keeps one on top, and covers every menu and all system UI too
-  (`kosmos-probe float-layer`, on the floatprobe branch).
+  (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard
+  reaches a floating window a tile covers (section 5.11).
   - Each floating window stands in the container of the tile under its center, just
     before that tile, or just after it when its center is at or past the tile's center
     along the container. The tile under a center is the one whose share of the tiling
     rectangle, with no gaps, holds it, as AeroSpace's virtual rectangles do, and a center
     off that rectangle counts at its nearest point there. A floating window centered
     between two side by side tiles therefore stands between them: from the left tile,
-    `focus right` reaches it, and again reaches the right tile. With no tiles, the
-    floating windows stand first in the root. Windows at one place go in the order of
-    their centers along the container, and stacking plays no part.
+    `focus right` reaches it, and again reaches the right tile. Windows at one place go in
+    the order of their centers along the container, and stacking plays no part.
+  - With no tiles, the floating windows stand in the root in the order of their centers,
+    so the arrows walk between them, as on Steve's workspace 4, which holds only floating
+    Chrome windows. AeroSpace does the same (FocusCommandTest.swift,
+    `testFocusOverFloatingWindows`).
   - The frames are the ones the inventory last heard from WindowServer, which the
     pointer's center uses too (section 5.11), so the command waits on no read. Only the
     focused workspace's floating windows count, and parked windows never do: minimized,
@@ -834,12 +833,8 @@ off the main thread).
   - Into a container, Kosmos goes by each window's own focus order. AeroSpace's temporary
     placement marks each floating window most recently focused, which its source calls a
     bug ("floating windows break mru").
-  - At the workspace's edge in the direction, with no window there, floating or tiled,
-    `--boundaries all-monitors-outer-frame` goes on to the next display (section 5.13).
-  - Focusing a floating window raises it over the tiles it overlaps through the request
-    every focus makes (section 5.4): AXRaise inside the front app, and the key record,
-    then the worker's AXRaise, for another app. A keyboard focus change centers the
-    pointer on a floating window as on a tile (section 5.11).
+  - Focusing a floating window raises it and centers the pointer on it as any focus does
+    (sections 5.4 and 5.11).
   - Hyprland's `movefocus` looks among windows of the focused window's kind first: from a
     tile, the tiles beside it on that side, and the floating windows only when no tile is
     there; from a floating window, the floating windows by angle and distance
@@ -1307,14 +1302,18 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - Keeping floating windows over a tile the pointer enters. Inside the front app only
     AXRaise keys a window, and for another app AXRaise follows the key record (section
     5.4), so the tile comes up over any floating window it overlaps, which Hyprland keeps
-    on top. Raising the floating windows again after the raise would key one of the front
-    app's, or reorder only a background app's own windows. `focus` in a direction reaches a
-    floating window a tile covers (section 5.5). If it bothers in practice, the
-    path is yabai's `window_manager_focus_window_without_raise`, which AutoRaise carries
-    under FOCUS_FIRST (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a =
-    0x02 to the app's key window, 10 ms later one with 0x8a = 0x01 to the target, then the
-    private front and the key record. It would replace AXRaise on the worker, and the raise
-    after a key record, for a hover focus of a tile, the echo recorded just before, once
+    on top. Focusing or clicking a tile does the same. With SIP on, no process can set the
+    level of another app's window, and raising the floating windows again after the raise
+    would key one of the front app's, or reorder only a background app's own windows. A
+    Space shown above the desktop's keeps a floating window on top, and covers every menu
+    and all system UI too (`kosmos-probe float-layer`, on the floatprobe branch). A covered
+    floating window stays in reach of `focus` in a direction (section 5.5), where hover
+    cannot reach it. If it bothers in practice, the path is yabai's
+    `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
+    (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
+    key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
+    the key record. It would replace AXRaise on the worker, and the raise after a key
+    record, for a hover focus of a tile, the echo recorded just before, once
     `kosmos-probe keying` shows it keys 20 of 20 in the front app with the window order
     unchanged.
 
