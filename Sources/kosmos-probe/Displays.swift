@@ -16,7 +16,7 @@ import KosmosSkyLight
     print("managed displays (SLSCopyManagedDisplays), \(managed.count) for \(active.count) active: \(managed)")
     let sketchyBar = sketchyBarNumbers()
     for id in active {
-        let screen = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }
+        let screen = NSScreen.screens.first { $0.displayID == id }
         let uuid = DisplayIdentity.uuid(of: id)
         let number = BarSnapshot.displayNumber(uuid: uuid, active: active.count, managed: managed)
         let start = ContinuousClock.now

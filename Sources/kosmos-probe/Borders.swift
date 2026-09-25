@@ -15,11 +15,14 @@ import CKosmos
 import KosmosCore
 import KosmosSkyLight
 
+extension NSScreen {
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    }
+}
+
 @MainActor func builtInScreen() -> NSScreen {
-    NSScreen.screens.first { screen in
-        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-        return CGDisplayIsBuiltin(id) != 0
-    } ?? NSScreen.main ?? NSScreen.screens[0]
+    NSScreen.screens.first { CGDisplayIsBuiltin($0.displayID) != 0 } ?? NSScreen.main ?? NSScreen.screens[0]
 }
 
 /// The second of the two layouts changes each column's width and each row's height, so every

@@ -56,12 +56,8 @@ final class WindowSampler: @unchecked Sendable {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     app.finishLaunching()
-    func number(_ screen: NSScreen) -> CGDirectDisplayID {
-        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-    }
     let builtIn = builtInScreen()
-    guard builtIn != NSScreen.screens[0],
-          let other = NSScreen.screens.dropFirst().first(where: { number($0) != number(builtIn) }) else {
+    guard builtIn != NSScreen.screens[0], let other = NSScreen.screens.dropFirst().first(where: { $0 != builtIn }) else {
         print("needs the built-in display and another one, neither of them the main display")
         exit(1)
     }
@@ -199,7 +195,7 @@ final class FrameBoxes: NSObject, SCStreamOutput, @unchecked Sendable {
         ready.signal()
     }
     ready.wait()
-    let builtIn = (builtInScreen().deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    let builtIn = builtInScreen().displayID
     var stream: SCStream?
     var boxes: FrameBoxes?
     if let target = content?.windows.first(where: { $0.windowID == window }),
