@@ -1,37 +1,21 @@
-// Windows that leave and come back: native fullscreen, the key window's departure, and native
-// tabs (docs/tree.md).
+// Windows that leave and come back: native fullscreen, the key window's departure and native
+// tabs (docs/tree.md). Each uses windows of its own, in apps Kosmos does not manage.
 //
-//   kosmos-probe fullscreen [dry]   Which signals report a window entering and leaving
-//                                   native fullscreen, and when: SkyLight Space events, and
-//                                   Displays.isFullscreen after each Space membership event,
-//                                   as the inventory checks it. dry never enters.
-//   kosmos-probe departures         When the key window leaves, which does macOS report
-//                                   first: the window leaving (ordered out or destroyed) or
-//                                   the next key window? Minimizes, closes and hides a
-//                                   window of its own accessory app, with one clock, and
-//                                   minimizes the app's last window, after which macOS may
-//                                   report no key window at all, and keys another window
-//                                   during a minimize's animation.
-//                                   The window belongs to an accessory app, which Kosmos
-//                                   does not manage.
-//   kosmos-probe tabs [strip|keep]  Does WindowServer order out the deselected window of a
-//                                   native tab group, and which Spaces keep it? Two tabs of
-//                                   its own, invisible and off every display, in an app with
-//                                   the prohibited activation policy, switched twice. strip
-//                                   or keep conceals the selected tab in a holding Space
-//                                   first, as Kosmos does, to see whether deselecting it
-//                                   drops that membership. Each event prints the tab's
-//                                   frame: tab B joins at another size, and the selected
-//                                   tab's frame changes 0.3 s before a switch, then just
-//                                   before one.
-//                                   Accessibility focus changes print only when the
-//                                   terminal is trusted.
+//   kosmos-probe fullscreen [dry]   Which Space events report a window entering and leaving
+//                                   native fullscreen, and what Displays.isFullscreen reads
+//                                   after each. Its window takes focus. dry never enters.
+//   kosmos-probe departures         When the key window is minimized, closed or hidden,
+//                                   whether macOS reports it leaving or the next key window
+//                                   first. Its windows take focus.
+//   kosmos-probe tabs [strip|keep]  Whether WindowServer orders out a deselected native tab,
+//                                   and which Spaces keep it. strip or keep conceals the
+//                                   selected tab first, as Kosmos does. Focus changes print
+//                                   only when the terminal has Accessibility.
 import AppKit
 import CKosmos
 import KosmosSkyLight
 
-/// A window that enters native fullscreen 1.5 s after it appears and leaves 4 s later, in
-/// an accessory app. Prints its window id.
+/// Prints its window id.
 @MainActor func fullscreenWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -85,12 +69,8 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// Two windows of an accessory app. The first is minimized and restored. It is minimized
-/// again while the second is keyed during the animation: does macOS still key a window
-/// when the animation ends? The first is restored and closed. The second, the app's last
-/// window, is minimized and restored: does macOS report any key window then, or does the
-/// app stay front with none? Then the app hides. Each key change is printed with its
-/// uptime.
+/// Prints both window ids, then each key change with its uptime. Keying B during A's
+/// minimize, and minimizing the last window, ask whether macOS keys a window after them.
 @MainActor func departuresWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -152,8 +132,8 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// Two windows in one native tab group, invisible and off every display. Prints both
-/// window ids, then selects each tab in turn, printing each selection with its uptime.
+/// Invisible and off every display. Prints both window ids, then each selection with its
+/// uptime.
 @MainActor func tabsWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
@@ -213,8 +193,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
         print(String(format: "%.1f event %d tab %@ frame %@", uptime(), id, window == tabWindows[0] ? "A" : "B", frame))
     }
     SkyLight.watch(tabWindows)
-    // The child's focused window as Accessibility reports it, only when trusted: the probe
-    // never asks for the permission.
+    // Only when trusted: the probe never asks for Accessibility.
     var observer: AXObserver?
     if AXIsProcessTrusted(), AXObserverCreate(child.pid, { _, element, _, _ in
         var id: UInt32 = 0
@@ -228,7 +207,6 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     } else {
         print("Accessibility not trusted: no focus changes")
     }
-    // Conceal the selected tab as Kosmos does, stripping its ordinary Space or keeping it.
     var space: UInt64 = 0
     if conceal == "strip" || conceal == "keep" {
         space = kosmos_holding_create()
@@ -237,7 +215,6 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
         _ = kosmos_barrier(space)
         print("B concealed (\(conceal!)) in holding Space \(space)")
     }
-    /// Each tab's order and Spaces as the inventory reads them, and holding membership.
     func state(_ step: String) {
         let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(tabWindows).map { ($0.id, $0) })
         if space != 0 { _ = kosmos_barrier(space) }

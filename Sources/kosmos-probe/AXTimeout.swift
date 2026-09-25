@@ -1,13 +1,12 @@
 // Accessibility reads of an app that is launching, answering and hung (docs/overview.md).
 //
 //   kosmos-probe ax-timeout         What Accessibility returns, and how long it takes, for a
-//                                   child app that is launching, answering and hung. The
-//                                   child is an accessory app with no window, which a running
-//                                   Kosmos ignores. Needs Accessibility for the terminal.
+//                                   child with no window that is launching, answering and
+//                                   hung. Needs Accessibility for the terminal.
 import AppKit
 
-/// An accessory app with no window. Each number on stdin hangs its main thread for that many
-/// seconds, then it prints "awake". Prints "ready" once its run loop runs.
+/// Prints "ready" once its run loop runs. Each number on stdin hangs its main thread that many
+/// seconds, then it prints "awake".
 @MainActor func axChild() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)

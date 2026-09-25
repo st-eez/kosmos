@@ -1,10 +1,9 @@
 // How Kosmos tells displays apart (docs/config.md).
 //
-//   kosmos-probe displays           Each display's identity as Kosmos reads it: EDID
-//                                   serial, framebuffer, and the bar number, checked against
-//                                   SketchyBar's own when it runs. Read only. Every
-//                                   framebuffer and the EDID fields it publishes, with or
-//                                   without a display:
+//   kosmos-probe displays           Each display's EDID serial, framebuffer and bar number,
+//                                   checked against SketchyBar's, and the Space a reveal there
+//                                   lands in. Read only. Every framebuffer and its EDID
+//                                   fields, with or without a display:
 //                                   ioreg -rtc IOMobileFramebufferShim -d1 -w0 | grep -E '\+-o disp|ProductAttributes'
 import AppKit
 import CKosmos
@@ -43,7 +42,6 @@ import KosmosSkyLight
     for id in active {
         print("display \(id): a reveal there lands in Space \(spaces.ordinarySpace(on: id, original: nil).map(String.init) ?? "none")")
     }
-    // Kosmos's own view: each display by bar number, and the workspace it shows.
     let state = try? IPCClient.send(["state"], socketPath: kosmosSocketPath())
     guard let snapshot = state.flatMap({ try? JSONDecoder().decode(BarSnapshot.self, from: Data($0.stdout.utf8)) }) else {
         return print("Kosmos: no answer to kosmos state")
@@ -56,8 +54,7 @@ import KosmosSkyLight
     }
 }
 
-/// SketchyBar's arrangement id for each display, from `--query displays`, or nil when no bar
-/// answers or the reply does not parse.
+/// Nil when no bar answers or the reply does not parse.
 func sketchyBarNumbers() -> [UInt32: Int]? {
     let query: [CChar] = ["--query", "displays"].flatMap { $0.utf8CString } + [0]
     var reply = [CChar](repeating: 0, count: 16384)

@@ -1,21 +1,13 @@
 // Which SkyLight events arrive, and when (docs/inventory.md).
 //
-//   kosmos-probe level [onscreen|opaque]  Does WindowServer report a change of a window's
-//                                   level? A window of its own, invisible and off every
-//                                   display, in an app with the prohibited activation policy,
-//                                   goes to the floating level and back three times. onscreen
-//                                   puts it in a corner of the main display, still invisible;
-//                                   opaque gives it full alpha off every display. Every
-//                                   SkyLight notification from 750 to 1799 is registered, and
-//                                   the window is watched. Prints every event in time order
-//                                   with the level changes, then counts the events of other ids
-//                                   near a change and at other times.
-//   kosmos-probe events [seconds]   Which SkyLight events reach Kosmos, and when: prints each
-//                                   event Kosmos registers, with the wall clock time the
-//                                   unified log uses, the window and its app, for 30 s by
-//                                   default. Every window is watched on the probe's own
-//                                   connection. Passive: it opens no window and takes no
-//                                   focus, so it runs beside Kosmos while switches are timed.
+//   kosmos-probe level [onscreen|opaque]  Whether WindowServer reports a change of a
+//                                   window's level. An invisible window of its own goes to
+//                                   the floating level and back three times, off every
+//                                   display, or with onscreen in a corner of the main one;
+//                                   opaque gives it full alpha. Prints every event in order.
+//   kosmos-probe events [seconds]   Each event Kosmos registers, for 30 s by default, with the
+//                                   unified log's clock, the window and its app. Opens no
+//                                   window and takes no focus, so it runs beside Kosmos.
 import AppKit
 import CKosmos
 import KosmosSkyLight
@@ -29,9 +21,8 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
     let start = uptime()
-    // Registered before the child starts, so the window's creation shows too. In the reverse
-    // engineered CGSInternal headers, the ids below 750 include input events, which the probe
-    // leaves alone.
+    // Before the child starts, so the window's creation shows too. Ids below 750 include input
+    // events (CGSInternal headers), which the probe leaves alone.
     let ids: Range<UInt32> = 750..<1800
     var registered = 0
     for id in ids {
@@ -67,9 +58,8 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
     exit(0)
 }
 
-/// The events that name the window, in time order with the level changes, then the events
-/// of other ids that came from a change's request to 100 ms after WindowServer read it,
-/// against how many came at other times.
+/// Events of other ids count as near a change from its request to 100 ms after WindowServer
+/// read it.
 @MainActor func reportLevels(_ window: UInt32, start: Double) {
     var timeline = levelSteps.map { (at: $0.at, text: $0.text) }
     var others: [(id: UInt32, at: Double)] = []

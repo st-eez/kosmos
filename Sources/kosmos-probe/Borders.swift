@@ -1,36 +1,20 @@
-// What Kosmos's border windows (docs/borders.md) need from macOS 27, and what they cost.
+// What Kosmos's border windows need from macOS 27, and what they cost (docs/borders.md).
 //
-//   kosmos-probe borders            A border window of the probe's own, set up as Kosmos's
-//                                   are, around windows of a child app: whether ordering it
-//                                   above another app's window with NSWindow.order(_:relativeTo:)
-//                                   puts it directly above, what a raise of either window
-//                                   does, whether WindowServer's hit test passes through it,
-//                                   which Spaces it joins as it is ordered in and out, each
-//                                   target's corner radius, whether the radii read returns an
-//                                   array the caller owns, and what it adds to a read of rows.
+//   kosmos-probe borders            A border window set up as Kosmos's, around windows of a
+//                                   child app: how it stacks, raises, hit tests and joins
+//                                   Spaces, each target's corner radius, and what reading the
+//                                   radii costs.
 //   kosmos-probe borders-cpu [relayouts]
-//                                   The CPU of borders that follow relayouts of four windows
-//                                   of a child app, 12 relayouts by default, against the same
-//                                   relayouts with no border of the probe's: the borders
-//                                   following WindowServer's change events, as Kosmos's
-//                                   follow its inventory, and the borders stepped at each
-//                                   display frame over 0.38 s, as a slide steps them. Reads
-//                                   the CPU of the probe, the child, WindowServer and
-//                                   JankyBorders if it runs, whose borders then follow the
-//                                   same windows.
-//   kosmos-probe border-targets <count>
-//                                   The child: count titled windows in a grid at the bottom
-//                                   left of the built-in display, in an accessory app, which
-//                                   a running Kosmos leaves alone, never activated. Prints
-//                                   their ids. Lines on stdin: `front <id>` orders a window
-//                                   front, `layout <n>` moves every window to layout n of
-//                                   two and prints `done`. Quits at the end of stdin.
+//                                   The CPU of the probe, the child, WindowServer and
+//                                   JankyBorders, if it runs, over 12 relayouts of four windows
+//                                   by default: with no border of the probe's, with borders
+//                                   following change events, and with borders stepped as a
+//                                   slide steps them.
 import AppKit
 import CKosmos
 import KosmosCore
 import KosmosSkyLight
 
-/// The built-in display, else the main one.
 @MainActor func builtInScreen() -> NSScreen {
     NSScreen.screens.first { screen in
         let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
@@ -38,9 +22,8 @@ import KosmosSkyLight
     } ?? NSScreen.main ?? NSScreen.screens[0]
 }
 
-/// Layout `n` of two for `count` windows at the bottom left of `area`, in AppKit's
-/// coordinates: a grid of 200 by 130 point windows, and the same grid with each column's
-/// width and each row's height changed, so every window moves and resizes.
+/// The second of the two layouts changes each column's width and each row's height, so every
+/// window moves and resizes.
 func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     (0..<count).map { index in
         let column = CGFloat(index % 2), row = CGFloat(index / 2)
@@ -53,6 +36,9 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     }
 }
 
+/// Titled windows at the bottom left of the built-in display, in an app never activated.
+/// Prints their ids. On stdin, `front <id>` orders a window front, and `layout <n>` moves
+/// every window to layout n and prints `done`.
 @MainActor func borderTargets(_ count: Int) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -87,10 +73,7 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     exit(0)
 }
 
-/// A border window as Kosmos makes one: borderless, clear, click-through, out of the window
-/// cycle and Mission Control, and never key. The ring is a layer's border, `width / 2`
-/// wide, from half the width outside the target's frame in to its edge, its corners
-/// concentric with the target's.
+/// Set up as Kosmos's border windows are (docs/borders.md).
 @MainActor final class ProbeBorder {
     let window: NSWindow
     let ring = CALayer()
@@ -277,9 +260,8 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
         print("no other display's Space to move B to")
     }
 
-    // Who owns the radii array: 50,000 reads that release it and 50,000 that do not, with the
-    // resident size after each. The size grows only when the reads keep them, so the caller
-    // owns the array, as JankyBorders's CFRelease of it assumes.
+    // 50,000 radii reads that release the array and 50,000 that do not: the resident size
+    // grows with the second only if the caller owns the array.
     func resident() -> Double {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)

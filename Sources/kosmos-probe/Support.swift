@@ -59,9 +59,8 @@ final class Child {
 }
 
 extension WindowServerEvent {
-    /// Registers `handle` for the events `ids` on the probe's own connection. It runs on the
-    /// thread that read each event, with the event's id, the window it names, if any, and its
-    /// payload.
+    /// Calls `handle` on the thread that read each event, with its id, the window it names and
+    /// its payload.
     static func register(_ ids: [UInt32], _ handle: @escaping @Sendable (UInt32, UInt32?, UnsafeRawBufferPointer) -> Void) {
         let context = Unmanaged.passRetained(EventHandler(handle)).toOpaque()   // lives for the process
         for id in ids {

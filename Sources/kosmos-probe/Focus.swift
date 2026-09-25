@@ -1,55 +1,26 @@
 // How a window is made key, and which process holds focus (docs/focus.md).
 //
 //   kosmos-probe keying [rounds] [finder]
-//                                   Keys windows of two stub apps four ways: the key record
-//                                   alone, AXRaise then the record (the order Kosmos uses), the
-//                                   record then AXRaise (yabai and alt-tab), and AXRaise alone.
-//                                   Covers two stacked windows of one app, two side by side,
-//                                   another app, and back into an app whose other window was
-//                                   key; a background accessory app activating itself, as
-//                                   Kosmos does for an empty workspace on the public path;
-//                                   one with no window activating another app three ways,
-//                                   as the public path does for every target, and the
-//                                   private front with no key window that Kosmos uses for an
-//                                   empty workspace, both on stub A and, with `finder`, on
-//                                   Finder (it fronts Finder and moves none of its windows);
-//                                   a background accessory app keying an invisible window of
-//                                   its own by the private path, as an empty workspace
-//                                   would, from itself and from another process;
-//                                   then a key window concealed and revealed, where the focus
-//                                   queue's already key check could skip wrongly, and an app
-//                                   whose every window is concealed, with and without its
-//                                   ordinary Space, fronted both ways to see whether it keys
-//                                   one of them. The
-//                                   stubs say which window they hold key, and every
-//                                   AXFocusedWindowChanged is logged against the raise. They are
-//                                   accessory apps with small windows at the bottom right, which
-//                                   a running Kosmos leaves alone. The probe takes keyboard focus
-//                                   while it runs and hands it back at the end.
-//   kosmos-probe key-holder [seconds]  Who is front, who holds the key window and who owns
-//                                   the menu bar: every 50 ms for 30 s by default, prints each
-//                                   change of the front process (kosmos_front_pid), the key
-//                                   focus process (kosmos_key_focus_pid) and NSWorkspace's
-//                                   menuBarOwningApplication, with each app's name and
-//                                   activation policy, then the time each read took. Passive:
-//                                   open Raycast, Spotlight, a password prompt, Control Center
-//                                   or a menu, or focus an empty workspace in Kosmos, while it
-//                                   runs to see which read names what.
+//                                   Keys windows of stub apps in each order of the key record
+//                                   and AXRaise, activates apps the public and private ways,
+//                                   keys an invisible window as an empty workspace would, and
+//                                   fronts an app whose windows are concealed. finder also
+//                                   fronts Finder, moving none of its windows. The stubs'
+//                                   windows sit at the bottom right. It takes keyboard focus
+//                                   while it runs and hands it back. Needs Accessibility for
+//                                   the terminal.
+//   kosmos-probe key-holder [seconds]  Each change of the front process, the key focus process
+//                                   and the menu bar's owner, read every 50 ms for 30 s by
+//                                   default, then each read's time. Passive: open a panel, a
+//                                   menu or an empty workspace while it runs.
 import AppKit
 import CKosmos
 import KosmosCore
 import KosmosSkyLight
 
-/// An accessory app for `keying`, which a running Kosmos leaves alone. Opens a 170 by 90
-/// window for each "left,up" offset from the bottom right corner of the main screen's
-/// visible area and prints the window ids. Each "key" line on its standard input prints the
-/// window the app holds key, or 0. Each "activate" line activates the app from this
-/// background thread, as Kosmos's focus queue activates Kosmos, and prints what `activate`
-/// returned; "activate <way> <pid>" activates that app instead (ActivationWay). "invisible"
-/// opens the window an empty workspace would key (InvisibleWindow) and prints its id, and
-/// "key-self <id>" keys a window of the app's own by the private path from this background
-/// thread, as Kosmos's focus queue would, and prints what the call returned. It exits when
-/// its standard input closes.
+/// An accessory app, which a running Kosmos leaves alone, with a window for each "left,up"
+/// offset from the main screen's bottom right. It answers KeyStub's lines on a background
+/// thread, as Kosmos's focus queue runs, and exits when its standard input closes.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -95,7 +66,6 @@ final class InvisibleWindow: NSWindow {
 
     @MainActor private static var opened: [InvisibleWindow] = []
 
-    /// Opens one and returns its window id.
     @MainActor static func open() -> Int {
         let origin = NSScreen.main?.frame.origin ?? .zero
         let window = InvisibleWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 1, height: 1)),
@@ -112,9 +82,8 @@ final class InvisibleWindow: NSWindow {
     }
 }
 
-/// How a background app with no window, as Kosmos is, asks for another app's activation
-/// (`keying`). macOS 14 made activation cooperative: an app is asked to yield before
-/// another activates from it.
+/// macOS 14 made activation cooperative: an app is asked to yield before another activates
+/// from it.
 enum ActivationWay: String, CaseIterable {
     /// `activate(options:)`, what Kosmos's public path calls.
     case plain
@@ -166,7 +135,6 @@ final class KeyStub {
         return child.line() == "true"
     }
 
-    /// Opens an InvisibleWindow in the stub and returns its id.
     func openInvisibleWindow() -> UInt32 {
         child.send("invisible")
         return UInt32(child.line()) ?? 0
@@ -196,7 +164,6 @@ final class KeyStub {
     }
 }
 
-/// The window's element in its app, found by window id.
 func windowElement(_ pid: pid_t, _ window: UInt32) -> AXUIElement? {
     var windows: CFTypeRef?
     AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &windows)
@@ -279,7 +246,6 @@ final class FocusNotes: @unchecked Sendable {
     let a = KeyStub("A", ["0,0", "60,40", "300,0"])
     let b = KeyStub("B", ["30,20"])
     let notes = FocusNotes()
-    /// Each phase's results, printed at the end.
     var summary: [String] = []
 
     init(rounds: Int) {

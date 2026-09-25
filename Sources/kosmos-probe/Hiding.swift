@@ -1,33 +1,22 @@
-// The holding Space and recovery (docs/hiding.md, docs/overview.md).
+// The holding Space and recovery (docs/hiding.md).
 //
-//   kosmos-probe barrier [cycles]   Does one bridged read return only after earlier
-//                                   conceal and reveal operations have landed?
-//   kosmos-probe destroyed-space    What reading a destroyed Space's members returns: nil (a
-//                                   failed read) or an empty list.
+//   kosmos-probe barrier [cycles]   Whether one bridged read returns only after earlier
+//                                   conceals and reveals have landed.
+//   kosmos-probe destroyed-space    What a destroyed Space's members read as.
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
-//                                   itself with SIGKILL. Check afterwards that the panel
-//                                   is back, the Space is gone and the record is clear.
-//   kosmos-probe reveal             Does an exclusive add to an ordinary Space take a window
-//                                   out of the holding Space, and where does a window
-//                                   removed from its only Space land? Its window is
-//                                   invisible, off every display, in an app with the
-//                                   prohibited activation policy, so it runs beside a live
-//                                   session: the panel's regular app, and an accessory one,
-//                                   made itself the front process when it started and took
-//                                   the key window from the user's app for the second the
-//                                   probe ran (WindowServer log, 2026-09-24).
-//   kosmos-probe holding            Who owns each window in a running Kosmos's holding Spaces:
-//                                   reads its recovery record and prints each member with its
-//                                   owner, parent, level and Spaces, whether the record names
-//                                   it and whether its owner owns a recorded window. Read only:
-//                                   it changes no Space or window, opens none and takes no focus.
+//                                   itself. Check that the panel is back, the Space gone and
+//                                   the record clear. Quit Kosmos first.
+//   kosmos-probe reveal             Where an exclusive add and a removal put a window. Its app
+//                                   can never be front, so it runs beside a live session.
+//   kosmos-probe holding            Who owns each window in a running Kosmos's holding Spaces.
+//                                   Read only.
 import AppKit
 import CKosmos
 import KosmosRecovery
 import KosmosSkyLight
 
-/// A panel in a child process, so the probe acts on another app's window, as Kosmos does.
-/// Prints its window id and stays until killed.
+/// Another app's window for the probe to act on, as Kosmos does. Prints its id and stays
+/// until killed.
 @MainActor func showPanel() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
@@ -41,12 +30,8 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// An invisible window off every display, in an app that can never be the front process.
-/// Prints its window id and stays until killed. With `levels`, the window goes to the
-/// floating level and back three times, a second apart, printing the uptime just before each
-/// change and the new level, and the app exits 7.5 s after it started. `onscreen` puts the
-/// window in a corner of the main display, still invisible, and `opaque` leaves it off every
-/// display at full alpha.
+/// Invisible and off every display, in an app that can never be front. Prints its id. With
+/// `levels` it prints the uptime and level of each change (`kosmos-probe level`).
 @MainActor func showHiddenWindow(levels: Bool) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
@@ -71,7 +56,6 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// Runs `command` (`panel` or `hidden-window`) as a child and returns it with its window.
 func spawnPanel(_ command: String = "panel") -> (Child, UInt32) {
     let child = Child([command])
     let window = child.readWindows()[0]
@@ -184,8 +168,6 @@ func surviveKill() -> Never {
         kosmos_space_destroy(space)
     }
     print("window \(window), ordinary Space \(desktop), holding Space \(space)")
-    /// The window's ordinary Spaces and whether the holding Space has it, after one barrier,
-    /// and whether WindowServer still reads it ordered in, as the inventory does.
     func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
         _ = kosmos_barrier(space)
         let ordinary = SkyLight.spaces(of: window) ?? [], held = inSpace(window, space)
@@ -216,8 +198,6 @@ func surviveKill() -> Never {
           + "removed from its only Space, it landed on \(landed.ordinary)")
 }
 
-/// Reads the record without opening it for writing, and the Spaces and windows with direct
-/// reads only, so it runs beside a live session.
 @MainActor func holding() {
     guard let record = RecordFile.peek(KosmosFiles.record) else { return print("no recovery record") }
     let recorded = Set(record.windows.map(\.id)), apps = Set(record.windows.map(\.owner))
