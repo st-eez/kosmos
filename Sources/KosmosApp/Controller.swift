@@ -447,6 +447,10 @@ final class Controller {
         let moved = mouseMoved
         mouseMoved = [:]
         let now = Dictionary(SkyLight.rows(Array(moved.keys)).map { ($0.id, $0.frame) }) { first, _ in first }
+        // Each gets a whole frame write: a position write sized by frames observed in the
+        // drag could land before macOS's shrink to fit the display at the drop, and the
+        // ledger would take that shrink for a refusal.
+        for id in moved.keys { ledger.forget(id) }
         let plan = session.released(Dictionary(uniqueKeysWithValues: moved.compactMap { id, before in
             now[id].map { (id, (before: before, after: $0)) }
         }))
