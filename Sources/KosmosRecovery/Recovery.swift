@@ -16,6 +16,8 @@ public enum Recovery {
         case staleSession
         /// The WindowServer could not be identified; the record is kept.
         case windowServerUnknown
+        /// `spaces` counts the Spaces read back as gone after their destroy. One that is not
+        /// stays in the record, with no windows.
         case restored(windows: Int, spaces: Int)
         /// Some windows are still in a recorded Space or on no Space; the record is kept
         /// for another attempt.
@@ -31,11 +33,11 @@ public enum Recovery {
         }
 
         // An operation Kosmos sent just before it died may still be landing. A Space that no
-        // longer exists holds nothing and leaves the record. Windows the record does not name
-        // stay where they are, and count neither as restored nor as left.
+        // longer exists holds nothing and leaves the record. Windows of other processes stay
+        // where they are (SpaceMembers).
         let (members, gone) = settledMembers(of: record)
         let liveSpaces = record.spaces.filter { !gone.contains($0) }
-        let alive = Set(SkyLight.rows(record.windows.map(\.id)).map(\.id))
+        let alive = Set(SkyLight.rows(Array(Set(members.values.joined()).union(record.windows.map(\.id)))).map(\.id))
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
         let stranded = record.windows.map(\.id).filter { alive.contains($0) && spaces(of: $0).isEmpty }
         let plan = RecoveryPlan.make(members: members.mapValues { $0.filter(alive.contains) }, stranded: stranded,
@@ -56,8 +58,8 @@ public enum Recovery {
         }
 
         let handled = Set(plan.adds.values.joined()).union(plan.removals.values.joined())
-        let after = SpaceMembers.read(liveSpaces)
-        let remaining = record.concealed(in: after.members).values.reduce(0) { $0 + $1.count }
+        let after = SpaceMembers.read(liveSpaces, of: record)
+        let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let onNoSpace = { (window: UInt32) in !SkyLight.rows([window]).isEmpty && spaces(of: window).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
             let withoutSpace = plan.windows.filter(onNoSpace).count
@@ -68,28 +70,41 @@ public enum Recovery {
             file.publish(kept)
             return .incomplete(remaining: remaining + withoutSpace)
         }
-        // Destroying a Space cannot be confirmed through the bridge. One left behind holds
-        // no recorded window.
+        // A destroy's return says only that it was sent, and whether it takes away a Space
+        // that still holds windows of other processes is unconfirmed. A barrier and a read
+        // show each Space gone or not; one that is not stays in the record, with no windows,
+        // for the next recovery to destroy again.
         for space in liveSpaces { kosmos_space_destroy(space) }
-        file.clear()
-        recoveryLog.notice("restored \(handled.count) windows, destroyed \(liveSpaces.count) Spaces")
-        return .restored(windows: handled.count, spaces: liveSpaces.count)
+        let left = liveSpaces.filter { space in
+            _ = kosmos_barrier(space)
+            return (kosmos_space_windows(space) as? [UInt32]) != nil
+        }
+        if left.isEmpty {
+            file.clear()
+        } else {
+            recoveryLog.error("\(left.count) Spaces still exist after their destroy; keeping them in the record")
+            var kept = record
+            (kept.spaces, kept.windows) = (left, [])
+            file.publish(kept)
+        }
+        let destroyed = liveSpaces.count - left.count
+        recoveryLog.notice("restored \(handled.count) windows, destroyed \(destroyed) Spaces")
+        return .restored(windows: handled.count, spaces: destroyed)
     }
 
-    /// The recorded windows in each existing recorded Space once two reads 100 ms apart
+    /// The concealed windows in each existing recorded Space once two reads 100 ms apart
     /// agree, for at most about 1 s; past that, the newest read, which the check after the
     /// adds and removals backs up. Spaces that are gone are listed apart.
     private static func settledMembers(of record: RecoveryRecord) -> (members: [UInt64: [UInt32]], gone: Set<UInt64>) {
-        let first = SpaceMembers.read(record.spaces)
-        var members = record.concealed(in: first.members)
-        let existing = record.spaces.filter { !first.gone.contains($0) }
+        var previous = SpaceMembers.read(record.spaces, of: record)
+        let existing = record.spaces.filter { !previous.gone.contains($0) }
         for _ in 0..<10 {
             usleep(100_000)
-            let current = record.concealed(in: SpaceMembers.read(existing).members)
-            if current == members { break }
-            members = current
+            let current = SpaceMembers.read(existing, of: record)
+            if current.members == previous.members { break }
+            previous.members = current.members
         }
-        return (members, first.gone)
+        return (previous.members, previous.gone)
     }
 
     private static func spaces(of window: UInt32) -> [UInt64] {

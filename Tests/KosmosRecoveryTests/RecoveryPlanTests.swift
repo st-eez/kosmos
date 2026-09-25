@@ -50,13 +50,31 @@ import Testing
     #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 3 }))
 }
 
-/// Another process can add windows of its own to a holding Space, as WindowManager.app
-/// appears to for Mission Control's placeholders. Recovery plans nothing for them, and one
-/// left in the Space does not keep the record.
-@Test func windowsTheRecordDoesNotNameAreLeftAlone() {
-    let owner = ProcessIdentity(pid: 3, start: 4)
-    let record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: owner, spaces: [9],
-                                windows: [.init(id: 1, owner: owner, originalSpace: 5)])
-    #expect(record.concealed(in: [9: [1, 7]]) == [9: [1]])
-    #expect(record.concealed(in: [9: [7]]) == [9: []])
+private let app = ProcessIdentity(pid: 3, start: 4)
+/// Window 1 is recorded and 2 is a sheet of it, which its app owns; 7 is a placeholder
+/// another process added to the holding Space.
+private let record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 5, start: 6),
+                                    spaces: [9], windows: [.init(id: 1, owner: app, originalSpace: 5)])
+private let owners: [UInt32: ProcessIdentity] = [1: app, 2: app, 7: ProcessIdentity(pid: 8, start: 9)]
+private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
+    SpaceMembers.concealed(members, by: record, owners: { ids in owners.filter { ids.contains($0.key) } })
 }
+
+/// Recovery restores the recorded window and its app's sheet, and leaves the placeholder
+/// where it is. Left behind, the placeholder does not keep the record.
+@Test func recoveryRestoresTheAppsWindowsAndLeavesOthersAlone() {
+    let members = concealed([9: [1, 2, 7]])
+    #expect(members == [9: [1, 2]])
+    let plan = RecoveryPlan.make(members: members, stranded: [], hasOrdinarySpace: { _ in true }, destination: { _ in 5 })
+    #expect(plan.removals == [9: [1, 2]])
+    let after = concealed([9: [7]])
+    #expect(after == [9: []])   // the Space still exists
+    #expect(plan.isComplete(remainingMembers: after.values.joined().count, isOnNoSpace: { _ in false }))
+    #expect(!plan.isComplete(remainingMembers: concealed([9: [2, 7]]).values.joined().count, isOnNoSpace: { _ in false }))
+}
+
+/// A window whose owner cannot be read, as one that no longer exists, is not restored.
+@Test func aWindowWithNoOwnerIsLeftOut() {
+    #expect(concealed([9: [1, 4]]) == [9: [1]])
+}
+
