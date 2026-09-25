@@ -92,6 +92,9 @@ final class DragTap: Sendable {
                 $0.pressed(type == .leftMouseDown ? .left : .right, number: number, over: window, flags: event.flags,
                            at: event.location, hid: Self.hid)
             }
+            // The live test reads these: the gate is safe only if presses carry distinct
+            // numbers and each up carries its press's (DESIGN.md, section 5.14).
+            if outcome.began != nil { dragLog.info("modifier drag's press has event number \(number)") }
         case .leftMouseDragged, .rightMouseDragged:
             outcome = gate.withLock { $0.dragged(to: event.location) }
         case .leftMouseUp, .rightMouseUp:

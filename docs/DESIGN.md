@@ -1510,8 +1510,10 @@ pointer gets none of the drag's events.
     `window_manager_find_window_at_point`) stands in for the field;
   - whether a taken press still activates its app; Kosmos focuses the window either way;
   - whether a press and its mouse up carry the same event number at the annotated
-    location. The log says when a mouse up with another number ends a drag, which should
-    not happen without a timeout;
+    location, and whether two presses carry different ones. The log gives each drag's
+    press number, and says when a mouse up with another number ends a drag, which should
+    not happen without a timeout. Numbers that repeat from press to press would let a
+    drag ended at the tap's turn-on take a later plain press's mouse up;
   - whether the focus path's key record counts as a press in HID's state. If it did, a
     drag of a window of an app in the background would end at the other button's press
     and as the tap turns on again;
