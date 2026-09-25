@@ -1,3 +1,6 @@
+/// A Space's id, as SkyLight's calls take it.
+public typealias SpaceID = UInt64
+
 /// Which Space holds each concealed window, and the operations a batch of reveals and
 /// conceals needs (docs/hiding.md). Only the bridge queue changes it, in batch
 /// order, so a reveal always undoes what was really done.
@@ -5,25 +8,25 @@ public struct ConcealLedger: Equatable, Sendable {
     /// The operations for one batch.
     public struct Batch: Equatable, Sendable {
         /// Revealed windows, by the concealing Space to remove them from.
-        public var removals: [UInt64: [UInt32]] = [:]
+        public var removals: [SpaceID: [WindowID]] = [:]
         /// Revealed windows with no ordinary Space, to add to one before their removal. The
         /// add strips only managed Spaces, so it leaves them in the concealing Space.
-        public var adds: [UInt32] = []
+        public var adds: [WindowID] = []
         /// Windows to conceal for the first time. They keep their ordinary Space, except
         /// those in `strip`.
-        public var fresh: [UInt32] = []
+        public var fresh: [WindowID] = []
         /// The windows of `fresh` that lose their ordinary Space (docs/displays.md).
-        public var strip: [UInt32] = []
+        public var strip: [WindowID] = []
         /// After the batch: each window to hide and the Space it must be in.
-        public var mustBeIn: [UInt32: UInt64] = [:]
+        public var mustBeIn: [WindowID: SpaceID] = [:]
 
         /// The Spaces the batch changes, which its confirmation reads.
-        public var touched: Set<UInt64> { Set(mustBeIn.values).union(removals.keys) }
+        public var touched: Set<SpaceID> { Set(mustBeIn.values).union(removals.keys) }
 
         /// Whether `members`, the windows each touched Space holds, show the batch done: each
         /// revealed window out of the Space that concealed it, whatever other Space it is in,
         /// and each window to hide in its Space. A Space `members` leaves out proves nothing.
-        public func isDone(members: [UInt64: Set<UInt32>]) -> Bool {
+        public func isDone(members: [SpaceID: Set<WindowID>]) -> Bool {
             let hidden = mustBeIn.allSatisfy { members[$0.value]?.contains($0.key) == true }
             let shown = removals.allSatisfy { space, windows in
                 guard let held = members[space] else { return false }
@@ -36,24 +39,24 @@ public struct ConcealLedger: Equatable, Sendable {
         /// concealing Space only if `landed` says its add took: removed from its only Space,
         /// it would land on the active Space, which can be a native fullscreen one. Left
         /// there, it fails the batch's confirmation, and recovery adds it again.
-        public func removals(landed: (UInt32) -> Bool) -> [UInt64: [UInt32]] {
+        public func removals(landed: (WindowID) -> Bool) -> [SpaceID: [WindowID]] {
             let failed = Set(adds.filter { !landed($0) })
             return removals.mapValues { $0.filter { !failed.contains($0) } }
         }
     }
 
     /// The concealing Space of each concealed window.
-    public private(set) var entries: [UInt32: UInt64] = [:]
+    public private(set) var entries: [WindowID: SpaceID] = [:]
 
-    public init(entries: [UInt32: UInt64] = [:]) {
+    public init(entries: [WindowID: SpaceID] = [:]) {
         self.entries = entries
     }
 
     /// The ledger for windows found in concealing Spaces, as after a recovery that could not
     /// restore them all. Nil when any Space's members could not be read: the state is then
     /// unknown, and a guess could strand a window.
-    public static func rebuilt(members: [UInt64: [UInt32]?]) -> ConcealLedger? {
-        var entries: [UInt32: UInt64] = [:]
+    public static func rebuilt(members: [SpaceID: [WindowID]?]) -> ConcealLedger? {
+        var entries: [WindowID: SpaceID] = [:]
         for (space, windows) in members {
             guard let windows else { return nil }
             for window in windows { entries[window] = space }
@@ -66,8 +69,8 @@ public struct ConcealLedger: Equatable, Sendable {
     /// keeps its ordinary Space too, unless `stripping` names it. A revealed window must
     /// still have an ordinary Space, or removing it would leave it on none; one that has
     /// none, as `hasOrdinarySpace` reads it now, is added to one first.
-    public func batch(show: [UInt32], hide: [UInt32], stripping: Set<UInt32> = [], into space: UInt64,
-                      hasOrdinarySpace: (UInt32) -> Bool) -> Batch {
+    public func batch(show: [WindowID], hide: [WindowID], stripping: Set<WindowID> = [], into space: SpaceID,
+                      hasOrdinarySpace: (WindowID) -> Bool) -> Batch {
         var batch = Batch()
         for window in show {
             guard let held = entries[window] else { continue }
@@ -88,7 +91,7 @@ public struct ConcealLedger: Equatable, Sendable {
 
     /// Drops windows that left their concealing Space on their own, as a native tab does
     /// when it is deselected (kosmos-probe tabs).
-    public mutating func forget(_ windows: [UInt32]) {
+    public mutating func forget(_ windows: [WindowID]) {
         for window in windows { entries[window] = nil }
     }
 
@@ -96,7 +99,7 @@ public struct ConcealLedger: Equatable, Sendable {
     /// `members` reads a Space; a failed read, nil, keeps its windows. A window the ledger
     /// does not hold leaves when `settled` says its row is gone or it has a Space: one alive
     /// on no Space stays for recovery to restore.
-    public func departed(_ windows: [UInt32], members: (UInt64) -> [UInt32]?, settled: (UInt32) -> Bool) -> [UInt32] {
+    public func departed(_ windows: [WindowID], members: (SpaceID) -> [WindowID]?, settled: (WindowID) -> Bool) -> [WindowID] {
         windows.filter { window in
             guard let space = entries[window] else { return settled(window) }
             return members(space).map { !$0.contains(window) } ?? false
@@ -104,7 +107,7 @@ public struct ConcealLedger: Equatable, Sendable {
     }
 
     /// Records a batch once it is confirmed.
-    public mutating func commit(_ batch: Batch, into space: UInt64) {
+    public mutating func commit(_ batch: Batch, into space: SpaceID) {
         for window in batch.removals.values.joined() { entries[window] = nil }
         for window in batch.fresh { entries[window] = space }
     }

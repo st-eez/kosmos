@@ -1,7 +1,7 @@
 import Testing
 @testable import KosmosCore
 
-private let holding: UInt64 = 100
+private let holding: SpaceID = 100
 
 @Test func freshConcealsAreRecordedWithTheirSpace() {
     var ledger = ConcealLedger()
@@ -45,14 +45,14 @@ private let holding: UInt64 = 100
 }
 
 @Test func windowsLeftInAnOlderSpaceAreCheckedAndRevealedThere() {
-    let old: UInt64 = 7
+    let old: SpaceID = 7
     let ledger = ConcealLedger(entries: [4: old])
     #expect(ledger.batch(show: [], hide: [4], into: holding, hasOrdinarySpace: { _ in true }).mustBeIn == [4: old])
     #expect(ledger.batch(show: [4], hide: [], into: holding, hasOrdinarySpace: { _ in true }).removals == [old: [4]])
 }
 
 @Test func aBatchIsDoneWhenEachWindowIsWhereItPutIt() {
-    let desktop: UInt64 = 5
+    let desktop: SpaceID = 5
     let batch = ConcealLedger(entries: [1: holding]).batch(show: [1], hide: [2], into: holding, hasOrdinarySpace: { _ in true })
     #expect(batch.touched == [holding])
     #expect(batch.isDone(members: [holding: [2]]))
@@ -84,13 +84,13 @@ private let holding: UInt64 = 100
 /// strips only managed Spaces, so a window leaves the holding Space by removal alone, and a
 /// window removed from its only Space lands on the active Space.
 private struct Memberships {
-    static let desktop: UInt64 = 5
-    static let fullscreen: UInt64 = 6
-    var spaces: [UInt32: Set<UInt64>]
+    static let desktop: SpaceID = 5
+    static let fullscreen: SpaceID = 6
+    var spaces: [WindowID: Set<SpaceID>]
     var addsLand = true
 
     /// The windows each of `spaces` holds, as a read of them returns.
-    func members(of spaces: Set<UInt64>) -> [UInt64: Set<UInt32>] {
+    func members(of spaces: Set<SpaceID>) -> [SpaceID: Set<WindowID>] {
         Dictionary(uniqueKeysWithValues: spaces.map { space in (space, Set(self.spaces.filter { $0.value.contains(space) }.keys)) })
     }
 
@@ -117,7 +117,7 @@ private struct Memberships {
 @Test func aWindowWithNoListedSpaceIsAddedThenRemoved() {
     var ledger = ConcealLedger(entries: [2: holding])
     var server = Memberships(spaces: [1: [Memberships.desktop], 2: [holding]])
-    var (shown, hidden): (UInt32, UInt32) = (2, 1)
+    var (shown, hidden): (WindowID, WindowID) = (2, 1)
     for _ in 0..<4 {
         let batch = ledger.batch(show: [shown], hide: [hidden], into: holding,
                                  hasOrdinarySpace: { server.spaces[$0]!.contains(Memberships.desktop) })
@@ -134,7 +134,7 @@ private struct Memberships {
 @Test func windowsThatKeepTheDesktopAreRevealedByRemovalAlone() {
     var ledger = ConcealLedger()
     var server = Memberships(spaces: [1: [Memberships.desktop], 2: [Memberships.desktop]])
-    var (shown, hidden): (UInt32, UInt32) = (1, 2)
+    var (shown, hidden): (WindowID, WindowID) = (1, 2)
     for _ in 0..<4 {
         let batch = ledger.batch(show: [shown], hide: [hidden], into: holding,
                                  hasOrdinarySpace: { server.spaces[$0]!.contains(Memberships.desktop) })

@@ -1,7 +1,7 @@
 /// A window macOS reports as key, or no key window: an app with none, or Kosmos's own window for an
 /// empty workspace.
 public enum KeyWindow: Hashable, Sendable {
-    case window(UInt32)
+    case window(WindowID)
     case emptyWorkspace
 }
 
@@ -14,10 +14,10 @@ public enum ReportVerdict: Equatable, Sendable {
     case reassert
     /// A window on a workspace a display shows becomes the focus intent, and its display
     /// the focused one (docs/displays.md).
-    case adopt(UInt32)
+    case adopt(WindowID)
     /// The user reached a hidden window, with Command-Tab or by opening it: switch to its
     /// workspace.
-    case follow(UInt32)
+    case follow(WindowID)
     /// No key window and nothing to do.
     case ignore
     /// The verdict depends on whether the window key before the report left the screen,

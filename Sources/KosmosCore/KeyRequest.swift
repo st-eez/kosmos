@@ -35,7 +35,7 @@ public struct KeyRequest: Sendable {
     /// `WorkerRead`: a stale request ends, and so does one whose target is the app's focused
     /// window, which is key already, or whose app did not answer the read
     /// (focusGoesAhead).
-    public func workerRead(isCurrent: Bool, focused: UInt32??, target: UInt32) -> Bool {
+    public func workerRead(isCurrent: Bool, focused: WindowID??, target: WindowID) -> Bool {
         isCurrent && focusGoesAhead(to: target, appIsFront: true, focused: focused)
     }
 
@@ -60,7 +60,7 @@ public struct KeyRequest: Sendable {
     /// window the user chose since. It does not check that the request is current: a newer
     /// request for the same window finds it key and raises nothing, and the window would stay
     /// behind its app's other windows (tla/README.md, changes 21 and 23).
-    public static func workerPostRaises(appIsFront: Bool, focused: UInt32??, target: UInt32) -> Bool {
+    public static func workerPostRaises(appIsFront: Bool, focused: WindowID??, target: WindowID) -> Bool {
         appIsFront && focused == .some(target)
     }
 }

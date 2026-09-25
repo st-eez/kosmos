@@ -2,7 +2,7 @@ import Testing
 @testable import KosmosCore
 
 /// A request for a window of app 1 at `at`, answered by app 1 reporting `reported`.
-private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, reported: UInt32 = 9) -> Bool {
+private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, reported: WindowID = 9) -> Bool {
     let tripped = misses.willRequest(5, pid: 1, at: at)
     misses.reported(.window(reported), pid: 1, receivedAt: at + .milliseconds(1), echo: false)
     return tripped
@@ -60,7 +60,7 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
     var misses = FocusMisses()
     var tripped = false
     for request in 1..<20 {
-        let window = UInt32(request)
+        let window = WindowID(request)
         tripped = misses.willRequest(window, pid: 1, at: t0 + .milliseconds(request * 10)) || tripped
         misses.reported(.window(window - 1), pid: 1, receivedAt: t0 + .milliseconds(request * 10 + 1), echo: true)
         misses.reported(.window(window - 1), pid: 1, receivedAt: t0 + .milliseconds(request * 10 + 2), echo: false)

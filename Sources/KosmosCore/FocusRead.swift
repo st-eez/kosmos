@@ -7,7 +7,7 @@
 /// the same timeout, so the app is not answering, and a record for a call that changes
 /// nothing would swallow a later click on the window: going ahead failed TLC's user
 /// configs, where the model's reads always answer (kosmos-hover).
-public func focusGoesAhead(to window: UInt32, appIsFront: Bool, focused: UInt32??) -> Bool {
+public func focusGoesAhead(to window: WindowID, appIsFront: Bool, focused: WindowID??) -> Bool {
     guard appIsFront else { return true }
     guard let focused else { return false }
     return focused != window

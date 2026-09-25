@@ -83,7 +83,7 @@ public struct SlidingWindow: Sendable {
     /// its end while the write has not landed: the Accessibility timeout.
     public static let landingWait = 1.0
 
-    public let space: UInt64
+    public let space: SpaceID
     public let display: DisplayID
     public let pop: Bool
     /// The newest write's target, and the frame the worker read back after it.
@@ -106,7 +106,7 @@ public struct SlidingWindow: Sendable {
 
     /// A window at `from` whose write to `target` is queued at `now`. A move shows it at
     /// `from`; a pop shows nothing until its write lands.
-    public init(space: UInt64, display: DisplayID, from: CGRect, to target: CGRect, pop: Bool, at now: Double) {
+    public init(space: SpaceID, display: DisplayID, from: CGRect, to target: CGRect, pop: Bool, at now: Double) {
         self.space = space
         self.display = display
         self.pop = pop

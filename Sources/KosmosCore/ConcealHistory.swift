@@ -8,11 +8,11 @@
 /// of its stamp, and a window concealed and revealed again in that time is judged by the
 /// later change alone.
 public struct ConcealHistory: Sendable {
-    private var last: [UInt32: (concealed: Bool, at: ContinuousClock.Instant)] = [:]
+    private var last: [WindowID: (concealed: Bool, at: ContinuousClock.Instant)] = [:]
 
     public init() {}
 
-    public mutating func changed(_ windows: [UInt32], concealed: Bool, at stamp: ContinuousClock.Instant) {
+    public mutating func changed(_ windows: [WindowID], concealed: Bool, at stamp: ContinuousClock.Instant) {
         for window in windows { last[window] = (concealed, stamp) }
     }
 
@@ -21,14 +21,14 @@ public struct ConcealHistory: Sendable {
         last.removeAll()
     }
 
-    public mutating func forget(_ window: UInt32) {
+    public mutating func forget(_ window: WindowID) {
         last[window] = nil
     }
 
     /// Whether the window was concealed at `stamp`: as its last change left it if that came
     /// by then, and otherwise as it was before that change. `now` serves a window with no
     /// change recorded.
-    public func wasConcealed(_ window: UInt32, at stamp: ContinuousClock.Instant, now: Bool) -> Bool {
+    public func wasConcealed(_ window: WindowID, at stamp: ContinuousClock.Instant, now: Bool) -> Bool {
         guard let change = last[window] else { return now }
         return change.at <= stamp ? change.concealed : !change.concealed
     }

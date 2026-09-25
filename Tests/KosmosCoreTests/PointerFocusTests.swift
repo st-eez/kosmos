@@ -8,7 +8,7 @@ private let mainPanel = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, he
 
 /// A movement: the window under the pointer, the pointer's x, left of 0 on the left panel,
 /// and whether Control is held.
-private typealias Movement = (window: UInt32, x: CGFloat, control: Bool)
+private typealias Movement = (window: WindowID, x: CGFloat, control: Bool)
 
 private func gate() -> PointerGate {
     var gate = PointerGate()

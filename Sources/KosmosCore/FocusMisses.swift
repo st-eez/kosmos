@@ -17,7 +17,7 @@ public struct FocusMisses: Sendable {
     /// misses in a row at 5% come once in about 3 million runs.
     public static let limit = 5
 
-    private var pending: (window: UInt32, pid: Int32, requested: ContinuousClock.Instant, wrongWindow: Bool)?
+    private var pending: (window: WindowID, pid: Int32, requested: ContinuousClock.Instant, wrongWindow: Bool)?
     public private(set) var inARow = 0
 
     public init() {}
@@ -26,7 +26,7 @@ public struct FocusMisses: Sendable {
     /// Returns true when that one was the `limit`th miss in a row. A `retry` of a missed
     /// request (FocusReports.miss) is the same focus attempt: the missed request stays
     /// pending, so the attempt counts at most once.
-    public mutating func willRequest(_ window: UInt32, pid: Int32, at stamp: ContinuousClock.Instant, retry: Bool = false) -> Bool {
+    public mutating func willRequest(_ window: WindowID, pid: Int32, at stamp: ContinuousClock.Instant, retry: Bool = false) -> Bool {
         if retry, pending?.wrongWindow == true { return false }
         if pending?.wrongWindow == true { inARow += 1 }
         pending = (window, pid, stamp, false)

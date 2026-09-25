@@ -8,11 +8,11 @@ public struct PointerGate: Sendable {
     /// What a movement that goes on entered.
     public struct Entered: Equatable, Sendable {
         /// The window under the pointer, as WindowServer found it.
-        public let window: UInt32
+        public let window: WindowID
         /// The display under the pointer, when the movement entered another display.
         public let display: DisplayID?
 
-        public init(window: UInt32, display: DisplayID? = nil) {
+        public init(window: WindowID, display: DisplayID? = nil) {
             self.window = window
             self.display = display
         }
@@ -22,7 +22,7 @@ public struct PointerGate: Sendable {
     public var monitors: [Monitor] = []
     /// The window the pointer was in at the last movement that counted, or nil when the next
     /// movement counts wherever it is.
-    public private(set) var window: UInt32?
+    public private(set) var window: WindowID?
     private var display: DisplayID?
     /// Kosmos moved the pointer since the last movement.
     private var warpPending = false
@@ -32,7 +32,7 @@ public struct PointerGate: Sendable {
     /// What a movement to `location`, with `window` under the pointer, entered, or nil when
     /// it goes no further. A movement with Control held changes nothing, so after Control is
     /// released the next movement enters the window and the display under the pointer.
-    public mutating func admit(_ window: UInt32, at location: CGPoint, control: Bool) -> Entered? {
+    public mutating func admit(_ window: WindowID, at location: CGPoint, control: Bool) -> Entered? {
         let display = monitors.first { $0.frame.contains(location) }?.id
         if warpPending {
             warpPending = false
