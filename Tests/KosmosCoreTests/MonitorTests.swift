@@ -302,7 +302,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         // share its space.
         let tile = lift.frames[12]!
         let plan = s.drop(at: CGPoint(x: tile.midX, y: tile.midY + 100))
-        #expect(s.workspaces["1"]!.tree == "h[11 v[12 10]]")
+        #expect(s.workspaces["1"]!.tree == "h[11 v[12 10]]" && s.lifted.isEmpty)
         #expect(plan.frames[10]!.minY > plan.frames[12]!.minY && plan.frames[10]!.width == tile.width)
         #expect(plan.focus == .window(10) && plan.show.isEmpty && plan.hide.isEmpty)
         #expect(s.focusedWorkspace == "1" && s.focused == 10)
@@ -789,6 +789,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         case 22:
             // The left button comes up anywhere, off every display too.
             carryOut(s.drop(at: CGPoint(x: CGFloat.random(in: -2500...2500, using: &random), y: CGFloat.random(in: -200...2300, using: &random))))
+            #expect(s.lifted.isEmpty, "seed \(seed) step \(step)")
         default:
             // A display change or a forced profile, and the resync after it.
             let profile = profiles.randomElement(using: &random)!
