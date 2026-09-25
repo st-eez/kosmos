@@ -76,7 +76,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Context | Owns | Never does |
 | --- | --- | --- |
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
-| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, and raises before focus. Its observer runs on a second thread, which stamps each focus notification and checks the front process as the app sends it | Touch the model directly |
+| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, the raise that keys a window of the front app, and the raise after a key record. Its observer runs on a second thread, which stamps each focus notification and checks the front process in its callback | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
@@ -451,40 +451,42 @@ off the main thread).
 
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
-- Every report names the key window, the front app's focused window. For an app
-  activation, the app's worker reads the app's focused window. An app's focused window
-  notification is stamped, and checked against the front process, on an observer thread
-  that never waits behind the worker's calls into the app. Checked when the worker got to
-  it, a click inside the front app that raced Kosmos's activation of another app was
-  dropped (tla/README.md, change 12). A focus change reported by an app that is not front,
-  as a background app opening a window causes, is no key window report: it consumes an
-  echo it matches, is otherwise ignored, and never counts as the last report
-  (tla/Kosmos.tla, Observe). Hotkeys and socket commands are stamped on receipt.
+- Every report names the key window, the front app's focused window. A key change inside
+  an app is reported by the app's focused window notification, and an app that came front
+  also by its activation read: the main actor notices and stamps the activation, and the
+  app's worker reads the app's focused window. A notification is stamped, and checked
+  against the front process, in its callback on an observer thread that never waits
+  behind the worker's calls into the app. Checked when the worker got to it, a click inside
+  the front app that raced Kosmos's activation of another app was dropped (tla/README.md,
+  change 19, `split-user-latenote`). The callback still runs some time after the change,
+  and Kosmos can key or hide windows in between (change 20). An activation read is checked
+  against the front process when the app answers. Hotkeys and socket commands are stamped
+  on receipt. tla/README.md, change 16 onward, gives the rules below; its first line says
+  which of them the code implements.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
-    app alone would take a Command-Tab to another window of that app for an echo. The
-    exception is an activation read: Kosmos records an activation only just before
-    making it, so the next activation read of that app is its echo, whichever window the
-    app has by then. A notification of the same window joins an activation's record
-    without using it up. Only the matched record goes: each app's reports wait behind its
-    own worker, so an echo can come after the echo of a later request. When the echo
-    names another window than the current intent, as after a busy app's late raise, the
-    intent is requested again.
-  - A report from an app that is not the front process consumes an echo it matches and is
-    otherwise ignored: background apps report windows they open. An activation read of
-    an app that lost the front is ignored too, unless Kosmos's activation overtook it:
-    Kosmos recorded an activation after the read's stamp, or, when the main actor noticed
-    the activation, the app had already lost the front to an app Kosmos had recorded an
-    activation for. Then the user's activation beat Kosmos's older request and stands.
-  - A notification from an app Kosmos activated, received before that activation's read,
-    waits for the read. It stands if the read finds its window: the user changed the
-    app's window after Kosmos's activation. Otherwise it is dropped: the app changed its
-    focused window in the background, and the callback ran after Kosmos brought the app
-    front.
+    app alone would take a Command-Tab to another window of that app for an echo. Only
+    the matched record goes: each app reports on its own threads, so on a fast sweep of
+    the pointer across apps an echo can come after the echo of a later request, and
+    dropped with that one it read as the user's choice and took focus back (tla/README.md,
+    change 19). The ceiling: a record whose echo never comes stays until a report of its
+    window, which it takes for its echo, or until a resync forgets it. That happens when
+    an app the key record activated already had the window focused, so it posts no
+    notification, and its activation read finds another window or gets no answer.
+    Matching the activation read to its app's key record whatever window it reads would
+    clear the first case (Deferred, below).
+  - A report from an app that is not the front process, at the notification's callback or
+    when the app answers the activation read, consumes an echo it matches and is otherwise
+    ignored: background apps report windows they open, and a raise in a background app
+    reports a focus change. Such a report is neither the key window Kosmos last heard of
+    nor the last report taken (change 17). The ceiling: when an older request of Kosmos's
+    fronts another app before an activation read runs, the user's activation of the read's
+    app, as a Command-Tab, is lost (`split-user-actcheck`; Deferred, below).
   - A report stamped before the last report Kosmos adopted or followed was overtaken by
-    it. A report that only made Kosmos request its intent again does not count: the
-    notification of a Command-Tab to a hidden window ends that way, and the activation
-    read, stamped earlier, still has to follow it.
+    it: the user clicked a window of one app, then of another, and the first app's report
+    came last (change 19). A report that only made Kosmos request its intent again does
+    not count, or it overtook an older report that still had to be followed (change 20,
+    `split-user-reasserttakes`).
   - A click or Command-Tab received before the latest command is stale. The command wins,
     and its focus is requested again.
   - A window on a workspace that a display shows becomes the focus intent, and its
@@ -492,10 +494,12 @@ off the main thread).
     older request of Kosmos's landed after the user's change.
   - Only the user reaches a window that was hidden when it became key: with Command-Tab,
     or by opening that window, as `open` on a document, an app's Window menu or the
-    Dock's window list do. Kosmos follows it to its workspace. Whether the window was
-    hidden is judged at the report's stamp: the bridge queue notes when it sends each
+    Dock's window list do. Kosmos follows it to its workspace, whether a notification or an
+    activation read reports it: a window opened inside the front app has only its
+    notification (tla/README.md, change 22, `split-open-readfollows`). Whether the window
+    was hidden is judged at the report's stamp: the bridge queue notes when it sends each
     window's conceal and reveal, because a switch can reveal or conceal the window before
-    the report is classified (tla/README.md, change 12). That excludes the report right
+    the report is classified (change 19). That excludes the report right
     after the key window left, when it closed or minimized or its app hid. macOS then keys
     another window itself, sometimes a concealed one, and Kosmos keeps its workspace and
     focuses it again. The window key before the report left the screen within the last second if
@@ -507,8 +511,8 @@ off the main thread).
     change 24).
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
-    window key before it. A newer report of another window replaces it; one stamped
-    before the held report, from another app's worker, was overtaken by it. Every held
+    window key before it. A later report of a window that is no echo and was not overtaken
+    replaces it, even one stamped before the held report (Deferred, below). Every held
     report logs its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
     happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
     1, where macOS keyed Ghostty.
@@ -536,9 +540,7 @@ off the main thread).
     Kosmos's window, and a Command-Tab to another window of that app is lost.
   - A request Kosmos made before the user's click inside the front app activates another
     app before the click's callback runs. The callback finds another app in front, as
-    for a background app's own change, or finds the app front again after Kosmos
-    activated it, as for a change the app made before that activation, and the click is
-    lost.
+    for a background app's own change, and the click is lost.
   - A switch reveals or conceals a window between the user's change and the main actor's
     notice or the notification's callback. Kosmos can then follow a click that lands on a
     window in the milliseconds it is being concealed, which costs one switch back, or lose
@@ -562,28 +564,56 @@ off the main thread).
   window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
-  WorkerRaise, FocusDecide). Each side records the echo, through the main queue, right
-  before its own call that changes the key window, and never for the other side's call.
+  WorkerRaise, FocusDecide, WorkerPost). Each side records the echo, through the main
+  queue, right before its own call that changes the key window, never at the request and
+  never for the other side's call (tla/README.md, changes 16 and 18). The key record's
+  echo is an activation's (`act` in the spec), and a raise's a change inside the front app
+  (`note`); Kosmos keeps no kind with the record, since only the deferred rules read it.
   The queue checks the generation, reads whether the target's app is front, hands the app's
   worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so
     the worker keys it and the queue posts no key record. The worker ends a stale request,
     and one whose front app already has the target focused; then, just before the raise,
-    it records and raises if the request is current and the app is still front.
-  - For a background app the queue keys it and nothing raises the window: a raise in a
-    background app lands after anything that fronts the app meanwhile, and in TLC it keyed
-    a stale window over a newer activation (tla/README.md, change 12). The app's job does
-    nothing, and the queue waits on it only so its key record follows the app's queued
-    activation reads. Unless the request went stale or the app came front meanwhile, the
-    queue records and posts the key record, which activates the app with the named window.
-  - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
-    serves only a call that fails.
-  - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
-    both ways, either app busy with the 30 ms timeout nondeterministic, background apps
-    opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
-    keys the target inside the front app: it did so in 20 of 20 trials of `kosmos-probe
-    keying` for stacked and side by side windows, where the record alone keyed 0 of 20
-    (September 24, 2026). The model's WorkerKey step, for the other case, is left out.
+    it records and raises if the request is current and the app is still front. The app
+    stays front while it has no key window after its key window closed or minimized, and
+    Kosmos reads the front process from WindowServer, so the worker raises there too
+    (change 24).
+  - For a background app the queue keys it, and nothing raises the window before the key
+    record: a raise in a background app lands after anything that fronts the app
+    meanwhile, and in TLC it keyed a stale window over a newer activation (change 19,
+    `split-user-bgraise`). The app's job does nothing, and the queue waits on it only so
+    its key record follows the app's queued activation reads. Unless the request went stale
+    or the app came front meanwhile, the queue records and posts the key record, which
+    activates the app with the named window but leaves it where it sits in its app's
+    stacking order.
+  - Then the app's worker raises the window, only while the app is front and the window is
+    its focused window, so it never raises over a window the user chose since. It does not
+    check that the request is current: with that check, a hover on the same window made the
+    raise stale, the new request found the window key and raised nothing, and the window
+    stayed behind its app's other windows (`FocusOnTop` failed `split-hover`; without the
+    raise `split-user-nopostraise` fails it). The worker records the raise's echo just
+    before it, since the raise keys the window again if the user keyed another window of
+    the app first. Once the raise has returned and the worker has read the app's focused
+    window, by when the app's callbacks for the raise have run, the main actor forgets the
+    record if no report used it: the raise changed nothing. Without the record
+    `split-open-postraisenone` fails, and with a record kept until matched
+    `split-open-postraisekept` does (changes 21 and 23). The ceiling: the worker's read can
+    reach the app before the app handles the key record, and then finds the window it had
+    focused before and skips the raise. `kosmos-probe keying` measures that read in its
+    `record, then AXRaise while front and focused` order, which has not run yet.
+  - Only the raise after a key record has its record forgotten, once the raise is done, so
+    no late answer can orphan any other call; `dropped` otherwise serves only a call that
+    fails.
+  - TLC checks the split path with RaiseKeys and RaiseReports as `kosmos-probe keying`
+    measured, either app busy with the 30 ms timeout nondeterministic, background apps
+    opening windows, a window opened inside the front app, two displays, and the key
+    window on top of its app at rest (tla/README.md, changes 15 to 24). Those configs run
+    the spec's full rule set; Kosmos builds part of it, the rest is under Deferred below,
+    and no TLC run checks the part built. Kosmos builds the RaiseKeys case, where AXRaise
+    alone keys the target inside the front app: it did so in 20 of 20 trials of
+    `kosmos-probe keying` for stacked and side by side windows, where the record alone
+    keyed 0 of 20 (September 24, 2026). The model's WorkerKey step, for the other case, is
+    left out.
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
@@ -638,22 +668,20 @@ off the main thread).
     (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, and only inside the front app. On macOS 27 the record
-  alone leaves the key window unchanged inside the app that is already frontmost, for
-  stacked and side by side windows alike, while AXRaise and then the record keyed the right
-  window in every case (`kosmos-probe raise` on the hover branch). A hung app holds only
-  its own worker. AXRaise took 0.65 and 1.02 ms at the median and 3.70 and 2.13 ms at
-  most, over 120 raises in each of two runs (`kosmos-probe keying`, September 24, 2026).
-- Open item: the key record alone keys a background app's window but leaves it where it
-  was in the window order. It was on top in 0 of 20 trials, behind the windows of the app
-  that was front and of its own app. The record and then AXRaise keyed it and put it on
-  top in 20 of 20, while AXRaise and then the record put it on top in 11 of 20. Tiled
-  windows do not overlap, so this shows with floating windows. yabai raises after its
-  record for this. A raise in a background app is what failed TLC, so the raise after
-  the record waits for the split model.
+- AXRaise runs on the app's worker, inside the front app and after the key record. Inside
+  the front app the key record alone keyed nothing in 20 of 20, stacked or side by side,
+  and AXRaise alone keyed the window in 20 of 20. For another app the key record alone
+  keyed the window but put it on top 0 times in 20, behind the windows of the app that
+  was front and of its own app, and the key record then AXRaise did both 20 times in 20,
+  where AXRaise first put it on top 11 times in 20 (`kosmos-probe keying`). yabai and
+  alt-tab raise after the record too. AXRaise in a background app makes it post a focus
+  notification 0.4 to 0.5 ms later, without keying it. A hung app holds only its own
+  worker. AXRaise took 0.65 and 1.02 ms at the median and 3.70 and 2.13 ms at most, over
+  120 raises in each of two runs (`kosmos-probe keying`, September 24, 2026).
 - The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
   waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
-  a newer command, and Kosmos followed it there (tla/README.md, change 12). A raise that
+  a newer command, and Kosmos followed it there (tla/README.md, change 19,
+  `split-user-timeout`). A raise that
   outlasts the 5 s counts as made, so its echo is still recognized. Only a raise the app
   refuses or fails at once is dropped.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the
@@ -715,7 +743,7 @@ off the main thread).
   switches on 2026-09-24. The focus queue could read it at FocusStart instead, off the
   main thread and closer to the key call. That changes RequestFocus and FocusStart in
   tla/Kosmos.tla, as the request would take a new generation even when the queue drops its
-  target, so it waits for the focus spec's merge.
+  target, so it waits for that change to the spec and a TLC run of it.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
@@ -726,22 +754,44 @@ off the main thread).
   follows the private call with that public activation. An empty workspace would still
   leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
   fullscreen Space, which takes over the screen.
-- Open item, for the report rules of the `focus` work: echoes out of order. Each app's
-  observer thread sends its own reports, so on a fast sweep of the pointer across apps an
-  earlier request's echo can reach the main actor after a later one's. Consuming an echo
-  drops every expectation before it, so the late echo reads as the user's choice and
-  focus goes back to the window the pointer left. The hover branch's merged spec removes
-  only the matched record, together with rules that keep an expectation from lingering:
-  records have a kind, an activation record from the key record or Kosmos's own window
-  and an in-app record from the worker's raise; an activation read matches the oldest
-  activation record of its app, whatever window it reads; a notification consumes an
-  in-app record of its window and only joins an activation record; and after an echo
-  whose window is not the intent, the intent is requested again. Removing only the
-  matched record without them leaves an expectation whose echo was lost, as when
-  Apps.activated reports nothing or a background key record's only report is the
-  activation read, to swallow a later report of its window as its echo: a Command-Tab to
-  a concealed window is then not followed. tla/Kosmos.tla here still drops the earlier
-  records, so the code does too until those rules land with the spec.
+- Deferred. The spec's split model has these rules too (tla/README.md, changes 19 to 24).
+  Each answers a race TLC found, and none has been seen live, so Kosmos leaves them out
+  until one is:
+  - Held notifications (change 20, `HoldNotes`; `split-user-background-nohold`). A
+    notification from an app Kosmos activated, received before that activation's read,
+    waits for the read, and stands only if the read finds its window. Without it, a
+    background app's own change whose callback runs after Kosmos's older request brought
+    the app front is adopted, over the user's later Command-Tab. The live evidence: a
+    window adopted just after Kosmos activated its app, one the user did not pick, with its
+    notification logged before the app's activation read.
+  - An activation read that matches its app's key record whatever window it reads, a
+    notification of the window that only joins that record, and an echo naming another
+    window than the intent that requests the intent again (change 19). Without them the
+    notification consumes the record and the read is a report of its own, and a record
+    whose app posts no notification and whose read finds another window stays, as above.
+    The split configs found the race before change 19, and none keeps the old rule. The
+    live evidence: a Command-Tab to a concealed window logged as an echo and not followed,
+    or a follow into another workspace by an activation read just after Kosmos's request.
+  - An activation read of an app that lost the front that still stands when Kosmos
+    recorded an activation after its stamp, or when the app had already lost the front to
+    Kosmos's activation as the main actor noticed it (changes 19 and 20, `NoticeCheck`;
+    `split-user-actcheck`, `split-user-notice-nocheck`). The live evidence: a Command-Tab
+    logged as a background report, with a request of Kosmos's to another app just before.
+  - Notifications checked when the app sends them (change 19). Kosmos checks each in its
+    observer callback, which the split configs model as running later (`NoteDelay`), and
+    the spec exempts what happens in between (`lastLost`, `lastMis`). The live evidence: a
+    click inside the front app logged as a background report.
+  - The second of departure evidence passing once Kosmos has every report (change 24,
+    `Age`, with input inside it exempted as `lastEarly`; `split-leave`). Kosmos counts a
+    departure for a second from when it heard of it (DepartureLog), so a Command-Tab within
+    that second, with no report of a next key window, reads as macOS's re-key, and Kosmos
+    keeps its workspace. The live evidence: a Command-Tab to another workspace ignored just
+    after the key window closed or minimized.
+  - A report stamped before a held report, overtaken by it (change 21). Without it, an
+    older report of another app arriving late ends the held report as a newer activation
+    and replaces it. The split configs found the race, and none keeps the old rule. The
+    live evidence: a held report's log line "replaced by" naming a report stamped before
+    it.
 
 ### 5.5 Tree
 
@@ -983,6 +1033,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - The window under the pointer takes focus as soon as the pointer enters it, through the
   same exact-window focus request as a focus command, as Hyprland's `follow_mouse = 1`
   does.
+- That request leaves the window on top of its app (section 5.4), so a floating window
+  the pointer enters comes up over the tiled windows it overlaps, whichever app was front.
+  The pointer is over a part of the window that was on top already, and the raise brings
+  up the rest. Before the raise after the key record, a floating window of a background
+  app stayed behind the tiles it overlapped.
 - Focusing another app's window activates the app, which costs macOS about 94 ms of CPU
   outside Kosmos (section 2), so a pointer swept across windows of several apps activates
   each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
@@ -1053,10 +1108,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   empty workspace 7, did nothing before this.
 - A hover focus counts as a command stamped when the tap saw the movement: reports of the
   user's activations before it are stale, and its request's echo is consumed like any
-  other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`
-  configs passed (commit ae9e5c1). With the hover unstamped, TLC found a click made before
-  the hover but reported after it adopted, and focus left the window the pointer was in.
-  The spec on this branch does not model hover yet.
+  other. The spec models it so, and its `hover` and `hover-settles` configs pass, as does
+  `split-hover` with its `settles` and `notice` configs for as long as they ran
+  (tla/README.md). With the hover unstamped, TLC found a click made before the hover but
+  reported after it adopted, and focus left the window the pointer was in.
 - Holding Control pauses focus follows mouse, as AutoRaise's `disableKey` did. Control is
   read from each movement's flags, so the tap takes no keyboard events. A movement with
   Control held changes nothing, so after Control is released the next movement focuses
@@ -1201,23 +1256,19 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     leave the key window with the front process, so the key holder check leaves them to
     this. If the live test shows it, one SkyLight window list read per window entered, for
     a window at the pop-up menu level on screen, would keep the menu open.
-  - A raise of a background app's window. The key record keys it and leaves the stacking
-    order alone (section 5.4), until the worker's raise after the key record lands. The
-    window under the pointer is on top at the pointer already, so only the parts of a
-    floating window that other windows cover stay behind them.
-  - Keeping floating windows over a tile the pointer enters in the app that is front.
-    Inside the front app only AXRaise keys a window (section 5.4), so the tile comes up
-    over any floating window it overlaps, which Hyprland keeps on top. A tile of another
-    app is keyed by the key record alone and stays where it is, so hovering from floating
-    Messages onto a Ghostty tile keeps Messages on top (Steve's live test on 2026-09-24);
-    only two windows of the front app bury one. Raising the floating windows again after
-    the raise would key one of the front app's, or reorder only a background app's own
-    windows. If it bothers in practice, the path is yabai's
+  - Keeping floating windows over a tile the pointer enters. Inside the front app only
+    AXRaise keys a window, and for another app AXRaise follows the key record (section
+    5.4), so the tile comes up over any floating window it overlaps, which Hyprland keeps
+    on top. Before the raise after the key record, a tile of another app stayed where it
+    was, and hovering from floating Messages onto a Ghostty tile kept Messages on top
+    (Steve's live test on 2026-09-24); now the tile comes up over Messages. Raising the
+    floating windows again after the raise would key one of the front app's, or reorder
+    only a background app's own windows. If it bothers in practice, the path is yabai's
     `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
     (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
     key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
-    the key record. It would replace AXRaise on the worker for a hover focus of a tile, the
-    echo recorded just before, once `kosmos-probe keying` shows it keys 20 of 20 in the
+    the key record. It would replace AXRaise on the worker, and the raise after a key
+    record, for a hover focus of a tile, the echo recorded just before, once `kosmos-probe keying` shows it keys 20 of 20 in the
     front app with the window order unchanged.
 
 ### 5.12 Other tools
