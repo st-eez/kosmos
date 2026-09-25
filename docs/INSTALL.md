@@ -70,8 +70,8 @@ Launch at Login in the Kosmos menu registers the LaunchAgent inside the app,
   restart it once every 30 s, so a crash loop cannot run hot.
 - After a crash, the guardian restores hidden windows while it holds the instance lock,
   and tries again every 2 s for about 30 s when windows are left, releasing the lock in
-  between. The restarted Kosmos waits up to 3 s for the lock. If the lock is still held, it exits
-  with an error, and launchd tries again within 30 s.
+  between. The restarted Kosmos waits up to 3 s for the lock. If the lock is still held,
+  it exits with an error, and launchd tries again within 30 s.
 - Registering starts the agent at once. While the Kosmos you opened is running, the
   agent's copy finds it and exits, and launchd starts Kosmos at the next login. Until then
   the Kosmos you opened has no crash restart.
