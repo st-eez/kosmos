@@ -85,6 +85,37 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(DepartureFocus.decide(focusLeft: false, key: .window(1), departing: [1], left: none) == .none)
 }
 
+// The key window 1 closed and its app kept it. Whether the departure waits for macOS's
+// report of the next key window depends on whether its app has another window to key.
+
+private func afterClose(_ remaining: [DepartureFocus.OtherWindow], focusLeft: Bool = true) -> DepartureFocus {
+    DepartureFocus.decide(focusLeft: focusLeft, key: .window(1), departing: [1], left: { $0 == 1 }, remaining: remaining)
+}
+
+@Test func aClosedKeyWindowWithNoOtherWindowOfItsAppFocusesAtOnce() {
+    // Activity Monitor's only window closed while key: the app stayed front with no window,
+    // no report came, and Helium became key only when the departure bound ended (live log,
+    // September 25, 2026).
+    #expect(afterClose([]) == .now)
+    // A window ordered out, as one closed and kept before or a deselected tab, and one
+    // minimizing are none macOS keys.
+    #expect(afterClose([.init(orderedIn: false, minimized: false), .init(orderedIn: true, minimized: true)]) == .now)
+    #expect(afterClose([], focusLeft: false) == .none)
+}
+
+@Test func aClosedKeyWindowWithAnotherWindowOfItsAppWaitsForTheKeyReport() {
+    // macOS keys the app's other window as the window closes, and that report focuses.
+    #expect(afterClose([.init(orderedIn: true, minimized: false)]) == .afterKeyReport)
+}
+
+@Test func aClosedKeyWindowWithAnotherWindowConcealedWaitsForTheKeyReport() {
+    // The app's other window is concealed on a hidden workspace. A conceal leaves it
+    // ordered in (kosmos-probe reveal), and macOS keyed concealed windows in 10 of 10
+    // trials (docs/focus.md), so macOS may key it, and its report decides.
+    let concealed = DepartureFocus.OtherWindow(orderedIn: true, minimized: false)
+    #expect(afterClose([concealed]) == .afterKeyReport)
+}
+
 // Native tabs: a switch orders one window of the app in and another out, in either order.
 
 @Test func aTabSwitchPairsTwoWindowsOfOneAppInEitherOrder() {
@@ -262,4 +293,49 @@ private func placed(_ window: WindowID) -> Bool { places.contains(window) }
     #expect(tabs.admitting(9) == .own)
     tabs.forget(7)
     #expect(tabs.hidden.isEmpty)
+}
+
+// A window its app closed and kept is looked at a tab pairing window after its order-out,
+// and parks then unless a native fullscreen transition may be under way or a new tab claims
+// its place. Activity Monitor's Command-W waited a second before its neighbor reflowed
+// (live log, September 25, 2026).
+
+/// When a window ordered out at `out` parks, from its look a pairing window later.
+private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false,
+                    spacesChanged: ContinuousClock.Instant? = nil) -> ContinuousClock.Instant {
+    let look = out + TabSwitches.window
+    return look + (ClosedAndKept.hold(orderedOut: out, claimed: claimed, spacesChanged: spacesChanged, at: look) ?? .zero)
+}
+
+@Test func aWindowClosedAndKeptParksAtThePairingWindow() {
+    #expect(judged(t0) - t0 == TabSwitches.window)
+    // A Space event more than a second before is no transition of this window's.
+    #expect(judged(t0, spacesChanged: t0 - .seconds(2)) - t0 == TabSwitches.window)
+}
+
+// kosmos-probe fullscreen, September 23, 2026, from the child's toggleFullScreen. Entering:
+// Spaces created at 38 to 47 ms, ordered out at 84 ms, in the fullscreen Space at 574 ms,
+// ordered in at 612 ms. Leaving: Spaces created at 25 and 32 ms, ordered out at 225 ms, on
+// the desktop Space at 543 ms, where it stops counting as in fullscreen, ordered in at 751 ms.
+
+@Test func aNativeFullscreenTransitionIsBackBeforeItIsJudged() {
+    let enter = t0, out = enter + .milliseconds(84.2), back = enter + .milliseconds(612.4)
+    #expect(judged(out, spacesChanged: enter + .milliseconds(47.1)) > back)
+    let leave = t0 + .seconds(4), outAgain = leave + .milliseconds(224.8)
+    #expect(judged(outAgain, spacesChanged: leave + .milliseconds(31.6)) > leave + .milliseconds(750.8))
+    // A Space event that comes only after the order-out, before the look, holds it too.
+    #expect(judged(out, spacesChanged: out + .milliseconds(100)) > back)
+}
+
+@Test func aTabANewTabClaimsWaitsForThatTabsAdmission() {
+    // Command-T in an app slow to answer Accessibility: the new tab 7, selected, is not
+    // admitted yet when tab 2 is looked at. Never admitted, 2 parks a second after its
+    // order-out.
+    var tabs = TabGroups()
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed, sharesFrame: { _ in true }) == .pending)
+    #expect(tabs.isClaimed(2) && !tabs.isClaimed(7))
+    #expect(judged(t0, claimed: tabs.isClaimed(2)) == t0 + .seconds(1))
+    // Admitted, 7 takes the place, and nothing claims 2.
+    #expect(tabs.admitting(7) == .takes(2))
+    #expect(judged(t0, claimed: tabs.isClaimed(2)) == t0 + TabSwitches.window)
 }

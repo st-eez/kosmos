@@ -101,8 +101,8 @@ public struct HeldReport<Report: Sendable>: Sendable {
     }
 }
 
-/// What a departure of Kosmos's focus does, when it minimized or hid with its app
-/// (tla/Kosmos.tla, Leaves).
+/// What a departure of Kosmos's focus does, when it minimized, hid with its app, or was
+/// closed and kept by its app (tla/Kosmos.tla, Depart).
 public enum DepartureFocus: Equatable, Sendable {
     /// The focus stayed: nothing to do.
     case none
@@ -113,14 +113,55 @@ public enum DepartureFocus: Equatable, Sendable {
     /// report. A report that never comes is bounded by the departure bound.
     case afterKeyReport
 
+    /// Another candidate window of the app whose key window closed, as the inventory has it.
+    public struct OtherWindow: Equatable, Sendable {
+        public let orderedIn: Bool
+        public let minimized: Bool
+
+        public init(orderedIn: Bool, minimized: Bool) {
+            self.orderedIn = orderedIn
+            self.minimized = minimized
+        }
+
+        /// macOS can key it: ordered in and not minimized. A concealed window stays ordered
+        /// in (kosmos-probe reveal), and macOS keys concealed windows (docs/focus.md).
+        var keyable: Bool { orderedIn && !minimized }
+    }
+
     /// - Parameters:
     ///   - key: the key window macOS last reported.
     ///   - departing: the windows that left together.
     ///   - left: whether a window left the screen just now.
+    ///   - remaining: for a window its app closed and kept, the app's other candidate
+    ///     windows; nil for a minimize or a hide. With none macOS can key, the app stays
+    ///     front with no window and no report comes, so the departure focuses now. With
+    ///     one, macOS keys it as the window closes, and the departure waits for that report.
     public static func decide(focusLeft: Bool, key: KeyWindow?, departing: [WindowID],
-                              left: (WindowID) -> Bool) -> DepartureFocus {
+                              left: (WindowID) -> Bool, remaining: [OtherWindow]? = nil) -> DepartureFocus {
         guard focusLeft else { return .none }
         guard case .window(let id)? = key, departing.contains(id) || left(id) else { return .now }
+        if let remaining, !remaining.contains(where: \.keyable) { return .now }
         return .afterKeyReport
+    }
+}
+
+/// When a managed window its app ordered out counts as closed and kept, as a closed
+/// NSWindowController window does: still ordered out, for none of the reasons with reports
+/// of their own (docs/tree.md). The inventory looks a pairing window after the order-out,
+/// when a native tab switch has paired.
+public enum ClosedAndKept {
+    /// Outlasts a native fullscreen transition's order-out (docs/tree.md).
+    static let longWait: Duration = .seconds(1)
+
+    /// How much longer a window still ordered out at `now` waits, or nil to park it now. It
+    /// waits until `longWait` after its order-out at `orderedOut` while a native fullscreen
+    /// transition may be under way: the last Space event, at `spacesChanged`, came within
+    /// `longWait` before the order-out or since. It waits too while a new tab Kosmos has not
+    /// admitted yet claims its place (docs/tree.md).
+    public static func hold(orderedOut: ContinuousClock.Instant, claimed: Bool,
+                            spacesChanged: ContinuousClock.Instant?, at now: ContinuousClock.Instant) -> Duration? {
+        let transition = spacesChanged.map { orderedOut - $0 < longWait } == true
+        guard claimed || transition, now - orderedOut < longWait else { return nil }
+        return orderedOut + longWait - now
     }
 }

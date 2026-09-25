@@ -128,7 +128,7 @@ final class Controller {
         inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
         inventory.onReport = { [weak self] report in self?.handle(report) }
         inventory.onFullscreenChange = { [weak self] id, entered, since in self?.fullscreenChanged(id, entered, since: since) }
-        inventory.onKeptOrderedOut = { [weak self] id in self?.keptOrderedOut(id) }
+        inventory.onKeptOrderedOut = { [weak self] id, orderedOut in self?.keptOrderedOut(id, orderedOut: orderedOut) }
         inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
@@ -411,6 +411,13 @@ final class Controller {
     /// when it started to leave its Space.
     private func fullscreenChanged(_ id: WindowID, _ entered: Bool, since: ContinuousClock.Instant) {
         if entered {
+            // Parked already as closed and kept, as a window whose transition posted no Space
+            // event near its order-out would be: it changes reason, and returns when it
+            // leaves fullscreen.
+            if closedByApp.remove(id) != nil {
+                fullscreenParked.insert(id)
+                return
+            }
             guard !session.isParked(id) || session.lifted.contains(id) else { return }
             fullscreenParked.insert(id)
             execute(session.park([id]))
@@ -458,8 +465,9 @@ final class Controller {
         case .replace(let holder): old = holder
         }
         // Parked as closed by its app before the switch took effect, as when the new tab's
-        // admission outlasts the kept rule's second: the place returns for the new tab, which
-        // is on screen. The replace's plan lays the place out, so the unpark's is dropped.
+        // admission outlasts the second a claimed tab waits for it: the place returns for the
+        // new tab, which is on screen. The replace's plan lays the place out, so the unpark's
+        // is dropped.
         if closedByApp.remove(old) != nil { _ = session.unpark([old], follow: nil) }
         guard let plan = session.replace(old, with: new) else { return false }
         placedHidden.remove(old)
@@ -491,15 +499,26 @@ final class Controller {
     }
 
     /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
-    /// parks as a minimized window does, and returns when the app orders it in again
-    /// (orderChanged). Removing it would lose its place, and the inventory would not admit
-    /// it again, since it stays managed. A deselected tab has left the session already. A
-    /// window closed while the user drags it parks too, where it stood.
-    private func keptOrderedOut(_ id: WindowID) {
+    /// parks as a minimized window does, its focus moves on at once when its app has no
+    /// other window macOS could key (DepartureFocus), and it returns when the app orders it
+    /// in again (orderChanged). Removing it would lose its place, and the inventory would
+    /// not admit it again, since it stays managed. A deselected tab has left the session
+    /// already. One a new tab claims, and any window while a native fullscreen transition
+    /// may be under way, waits more (ClosedAndKept.hold). A window closed while the user
+    /// drags it parks too, where it stood. `orderedOut`: when the inventory saw it ordered
+    /// out.
+    private func keptOrderedOut(_ id: WindowID, orderedOut: ContinuousClock.Instant) {
         guard session.workspace(of: id) != nil, !session.isParked(id) || session.lifted.contains(id) else { return }
-        controllerLog.info("\(id) closed and kept by its app: parked")
+        if let wait = ClosedAndKept.hold(orderedOut: orderedOut, claimed: tabs.isClaimed(id),
+                                         spacesChanged: inventory.spacesChangedAt, at: .now) {
+            after(wait) { controller in
+                if controller.inventory.isKeptOrderedOut(id) { controller.keptOrderedOut(id, orderedOut: orderedOut) }
+            }
+            return
+        }
+        controllerLog.info("\(id) closed and kept by its app: parked \(Self.ms(ContinuousClock.now - orderedOut), privacy: .public) ms after it was seen ordered out")
         closedByApp.insert(id)
-        depart([id])
+        depart([id], remaining: owner[id].map { inventory.otherWindows(of: $0, besides: id) } ?? [])
     }
 
     /// Windows back from minimizing, hiding or fullscreen return to their places, and Kosmos
@@ -515,16 +534,18 @@ final class Controller {
         execute(plan, movePointer: mouseFollowsFocus && follow != nil && !stale && pickedAwayFromPointer())
     }
 
-    /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus
-    /// leaves, the workspace's next window, or the empty workspace's, is focused now, or after
-    /// macOS's report of the next key window when the key window left too (DepartureFocus). A
-    /// report that does not come within the departure bound, as when an app keeps no key
-    /// window, has the departure focus then. The bound outlasts macOS's key change after a
-    /// minimize, which ends its animation first.
-    private func depart(_ windows: [WindowID]) {
+    /// Minimized, hidden with their app, or closed and kept by it with the app's `remaining`
+    /// windows (tla/Kosmos.tla, Depart). When Kosmos's focus leaves, the workspace's next
+    /// window, or the empty workspace's, is focused now, or after macOS's report of the next
+    /// key window when the key window left too and macOS has a window to key
+    /// (DepartureFocus). A report that does not come within the departure bound, as when an
+    /// app keeps no key window, has the departure focus then. The bound outlasts macOS's key
+    /// change after a minimize, which ends its animation first.
+    private func depart(_ windows: [WindowID], remaining: [DepartureFocus.OtherWindow]? = nil) {
         let focusLeft = session.focused.map(windows.contains) == true
         execute(session.park(windows))
-        switch DepartureFocus.decide(focusLeft: focusLeft, key: key, departing: windows, left: inventory.leftScreen) {
+        switch DepartureFocus.decide(focusLeft: focusLeft, key: key, departing: windows, left: inventory.leftScreen,
+                                     remaining: remaining) {
         case .none:
             break
         case .now:

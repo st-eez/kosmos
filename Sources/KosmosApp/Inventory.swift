@@ -64,13 +64,16 @@ final class Inventory {
     private var awaitingUnlockSweep = false
     /// A Space was created or destroyed, or the active Space changed, since the last sweep.
     private var spacesChanged = false
+    /// When the last such event came, on any display. A native fullscreen transition
+    /// creates Spaces around its order-out (ClosedAndKept).
+    private(set) var spacesChangedAt: ContinuousClock.Instant?
     /// An app hid (true) or came back (false), after the inventory recorded it, and when
     /// NSWorkspace said so.
     var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out a second after it left, for none of the reasons
-    /// with their own reports: its app closed it and kept it, as NSWindowController does, or
-    /// deselected its native tab.
-    var onKeptOrderedOut: (@MainActor (UInt32) -> Void)?
+    /// A managed window still ordered out a pairing window after it left, for none of the
+    /// reasons with their own reports: its app closed it and kept it, as NSWindowController
+    /// does, or deselected its native tab. With when the inventory saw it ordered out.
+    var onKeptOrderedOut: (@MainActor (UInt32, ContinuousClock.Instant) -> Void)?
     /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
     /// in (false), with its frame, and when: what a switch between native tabs is made of.
     var onOrderChange: (@MainActor (UInt32, pid_t, Bool, CGRect, ContinuousClock.Instant) -> Void)?
@@ -300,25 +303,38 @@ final class Inventory {
     }
 
     /// A managed window left the screen. Concealing a window leaves it ordered in (the reveal
-    /// probe), and a minimize, a hide and native fullscreen have their own reports. The
-    /// second outlasts a fullscreen transition, which takes a window off its Space for about
-    /// 0.5 s. While the session is locked, and until the sweep after the unlock, no window
-    /// counts as closed, as none is removed: whether the lock screen orders windows out is
-    /// unmeasured. That sweep checks every window still ordered out again.
+    /// probe), and a minimize, a hide and native fullscreen have their own reports. It is
+    /// looked at again a pairing window later, when a native tab switch has paired, and the
+    /// controller decides whether it waits more (ClosedAndKept).
     private func checkOrderedOut(_ id: UInt32) {
+        let orderedOut = ContinuousClock.now
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            guard let self, !self.sessionLocked, !self.awaitingUnlockSweep, let row = self.windows[id], !row.orderedIn, self.isManaged(id), !self.isMinimized(id),
-                  NSRunningApplication(processIdentifier: row.pid)?.isHidden != true,
-                  !self.fullscreen.contains(id) else { return }
-            self.onKeptOrderedOut?(id)
+            try? await Task.sleep(for: TabSwitches.window)
+            guard let self, self.isKeptOrderedOut(id) else { return }
+            self.onKeptOrderedOut?(id, orderedOut)
         }
+    }
+
+    /// Whether the managed window is ordered out for none of the reasons with their own
+    /// reports. While the session is locked, and until the sweep after the unlock, no window
+    /// counts, as none is removed: whether the lock screen orders windows out is unmeasured.
+    /// That sweep checks every window still ordered out again.
+    func isKeptOrderedOut(_ id: UInt32) -> Bool {
+        guard !sessionLocked, !awaitingUnlockSweep, let row = windows[id], !row.orderedIn, isManaged(id), !isMinimized(id)
+        else { return false }
+        return NSRunningApplication(processIdentifier: row.pid)?.isHidden != true && !fullscreen.contains(id)
     }
 
     /// Whether the app has a candidate window ordered out besides `window`, as a native tab
     /// group's deselected tabs are.
     func hasOrderedOutWindows(_ pid: pid_t, besides window: UInt32) -> Bool {
         windows.values.contains { $0.pid == pid && $0.id != window && !$0.orderedIn && isCandidate($0) }
+    }
+
+    /// The app's candidate windows besides `window`, for the departure of its key window.
+    func otherWindows(of pid: pid_t, besides window: UInt32) -> [DepartureFocus.OtherWindow] {
+        windows.values.filter { $0.pid == pid && $0.id != window && isCandidate($0) }
+            .map { DepartureFocus.OtherWindow(orderedIn: $0.orderedIn, minimized: isMinimized($0.id)) }
     }
 
     /// An app hid or came back. Its windows leave or return with it, and the controller hears
@@ -370,6 +386,7 @@ final class Inventory {
             enqueue(.destroyed(id))
         case .spacesChanged:
             spacesChanged = true
+            spacesChangedAt = .now
             sweep()
         case .frontAppChanged:
             break
