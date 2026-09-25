@@ -753,26 +753,41 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   event's location. The stacking of overlapping floating windows is WindowServer's answer.
   A hit test of the model's frames would need a stacking order the model does not keep.
   The monitor's handler runs on the main thread and passes a movement on only when it
-  enters another window than the last movement passed on, with Control up (KosmosCore's
-  PointerGate).
+  enters another window or another display than the last movement passed on, with Control
+  up (KosmosCore's PointerGate). The gate tells the display from the event's location and
+  the session's displays, which the main actor gives it at each change.
 - The main actor focuses the window only when all of these hold (KosmosCore's
   `FocusFollowsMouse.skip`, whose reason for skipping is logged):
-  - It is a tiled or floating window of a workspace a display shows. Menus, the bar,
-    panels and dialogs, the Dock, Mission Control's windows, Kosmos's own windows and the
-    windows of a workspace a switch is hiding leave focus where it is.
+  - It is a tiled or floating window of a workspace a display shows, or a native
+    fullscreen window. Menus, the bar, panels and dialogs, the Dock, Mission Control's
+    windows, Kosmos's own windows and the windows of a workspace a switch is hiding leave
+    focus where it is.
   - Its app is not ignored.
   - It is not the focus intent and key already. When a panel or dialog took key from the
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
-- The pointer focuses neither over nor into native fullscreen, display by display. On a
-  display that shows a fullscreen Space, the windows under the pointer are the fullscreen
-  window, which is parked, and its app's panels, and the session tiles neither. A
-  fullscreen window key on another display leaves this display's windows free: the window
-  under the pointer is on screen, so keying it takes no display out of a fullscreen Space,
-  and a hover focus passes the fullscreen gate of section 5.4 as a command does.
-  AeroSpace's focus follows mouse raised tiled windows over fullscreen video.
-- A hover focus counts as a command stamped when the tap saw the movement: reports of the
-  user's activations before it are stale, and its request's echo is consumed like any
+- The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
+  does, and never focuses anything over one, display by display. On a display that shows
+  a fullscreen Space, the windows under the pointer are the fullscreen window and its
+  app's panels, which stay skipped, and WindowServer's hit test never names a window
+  behind them. AeroSpace's focus follows mouse raised tiled windows over fullscreen video.
+  The fullscreen window stays parked and the session's focus stays where it was, as when
+  the user clicks it; its report, which Kosmos otherwise leaves unclassified, consumes the
+  request's echo. A fullscreen window key on another display leaves this display's
+  windows free: the window under the pointer is on screen, so keying it takes no display
+  out of a fullscreen Space, and a hover focus passes the fullscreen gate of section 5.4
+  as a command does. Live on 2026-09-24, the pointer entering Moonlight in native
+  fullscreen on the built-in display skipped it as untiled, which this replaced.
+- When the pointer enters a display whose shown workspace has no windows, that workspace
+  takes the focus as `workspace` gives it: Kosmos keys its empty workspace window on that
+  display, with no switch and no pointer move, as Hyprland's `follow_mouse` moves the
+  monitor focus (`FocusFollowsMouse.emptyWorkspace`). Over a gap or the desktop of a
+  display whose workspace has windows, focus stays where it is, as in Hyprland. The hit
+  test names no managed window there, which is why the gate passes on a movement onto
+  another display. Live on 2026-09-24, moving from workspace 1 on the main panel onto the
+  left panel, which showed empty workspace 7, did nothing before this.
+- A hover focus counts as a command stamped when the monitor saw the movement: reports of
+  the user's activations before it are stale, and its request's echo is consumed like any
   other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`
   configs passed (commit ae9e5c1). With the hover unstamped, TLC found a click made before
   the hover but reported after it adopted, and focus left the window the pointer was in.
@@ -783,10 +798,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   the window under the pointer. Nothing is focused while a mouse button is down, because a
   movement with a button down is a drag event, which the monitor does not receive.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
-  keyboard moves focus to another window or moves the focused window and no workspace is
-  switched (KosmosCore's FocusChange). Omarchy on the development Mac centers the pointer
-  only when focus moves between windows of one workspace, and Steve's AeroSpace config
-  chained `move-mouse window-lazy-center` onto hotkey bindings only.
+  keyboard moves focus to another window or moves the focused window, and either no
+  workspace is switched or the window is on another display than the pointer
+  (KosmosCore's FocusChange). Omarchy on the development Mac centers the pointer only when
+  focus moves between windows of one workspace, and Steve's AeroSpace config chained
+  `move-mouse window-lazy-center` onto hotkey bindings only.
   - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
     another display shows, centers the pointer on the window it focuses.
   - A hotkey's `move`, `swap` or `move-node-to-monitor` brings the pointer along with the
@@ -798,12 +814,22 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     the activation: `CGEventSource.secondsSinceLastEventType` for key down against left and
     right mouse down, in the combined session state. The read takes no event tap, and the
     log gives both times.
-  - A workspace switch leaves the pointer where it is: `workspace` by name, `next` or
-    `prev`, `workspace-back-and-forth`, `move-node-to-workspace --focus-follows-window`, and
-    Command-Tab or a click that Kosmos follows into a hidden workspace.
+  - A workspace switch on the pointer's display leaves the pointer where it is:
+    `workspace` by name, `next` or `prev`, `workspace-back-and-forth`,
+    `move-node-to-workspace --focus-follows-window`, and Command-Tab that Kosmos follows
+    into a hidden workspace.
+  - A keyboard focus change that lands on a window of another display than the pointer
+    brings the pointer, even when that display's workspace switched: alt-N to a workspace
+    of another display, and Command-Tab or a launcher's hotkey into a workspace another
+    display hides. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which
+    the left panel then showed in place of empty workspace 7, and the pointer stayed on
+    the main panel, while with 6 already shown it came along. A focus change reaches the
+    pointer's display by the window's workspace and the session's displays
+    (`Session.isOnAnotherDisplay`).
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
     leaves the pointer, so a click on the bar's workspaces, a script or a launcher never
-    moves it. Neither does a hover focus, nor a layout, resize or `join-with` command.
+    moves it. Neither does a click that Kosmos follows or adopts, a hover focus, nor a
+    layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
     window. When the window moves, the frame is the one Kosmos is writing, which the app's
     worker may not have applied yet; AeroSpace's binding slept 50 ms before it read the

@@ -11,7 +11,7 @@ let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "pointer
 /// neither costs anything.
 ///
 /// The monitor delivers on the main thread. Each movement goes through a PointerGate, and
-/// only a movement into another window with Control up goes on. The window under the
+/// only a movement into another window or display with Control up goes on. The window under the
 /// pointer is the one WindowServer annotated the event with, when the monitor's event
 /// carries it, and otherwise WindowServer's hit test at the pointer. Only mouse moved
 /// events are monitored: a movement with a button down is a drag, so nothing is focused
@@ -21,11 +21,11 @@ final class PointerTap: Sendable {
     private nonisolated(unsafe) var monitor: Any?
     private let gate = Mutex(PointerGate())
     private let heard = Atomic<Bool>(false)
-    private let entered: @MainActor (UInt32, ContinuousClock.Instant) -> Void
+    private let entered: @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void
 
-    /// `entered` runs on the main actor with the window the pointer moved into and when the
+    /// `entered` runs on the main actor with what the pointer moved into and when the
     /// monitor saw the movement.
-    init(entered: @escaping @MainActor (UInt32, ContinuousClock.Instant) -> Void) {
+    init(entered: @escaping @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void) {
         self.entered = entered
         pointerLog.notice("pointer monitor created; Input Monitoring granted: \(CGPreflightListenEventAccess(), privacy: .public)")
     }
@@ -37,7 +37,7 @@ final class PointerTap: Sendable {
         guard on != (monitor != nil) else { return }
         if on {
             // The window under the pointer counts as entered on the first movement.
-            gate.withLock { $0 = PointerGate() }
+            gate.withLock { $0.reset() }
             monitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
                 MainActor.assumeIsolated { self?.moved(event) }
             }
@@ -53,6 +53,11 @@ final class PointerTap: Sendable {
         gate.withLock { $0.warped() }
     }
 
+    /// The displays, to tell which one the pointer is on.
+    func setMonitors(_ monitors: [Monitor]) {
+        gate.withLock { $0.monitors = monitors }
+    }
+
     @MainActor private func moved(_ event: NSEvent) {
         let annotated = event.cgEvent.map { UInt32(truncatingIfNeeded: $0.getIntegerValueField(.mouseEventWindowUnderMousePointer)) } ?? 0
         if !heard.exchange(true, ordering: .relaxed) {
@@ -62,14 +67,17 @@ final class PointerTap: Sendable {
         // hit test takes.
         let window = annotated != 0 ? annotated
             : UInt32(truncatingIfNeeded: NSWindow.windowNumber(at: event.locationInWindow, belowWindowWithWindowNumber: 0))
-        moved(over: window, control: event.modifierFlags.contains(.control))
+        // The event's CoreGraphics location has the top left origin the session's displays use.
+        let location = event.cgEvent?.location ?? CGPoint(x: event.locationInWindow.x,
+                                                           y: (NSScreen.screens.first?.frame.height ?? 0) - event.locationInWindow.y)
+        moved(over: window, at: location, control: event.modifierFlags.contains(.control))
     }
 
-    /// One movement, with `window` under the pointer.
-    private func moved(over window: UInt32, control: Bool) {
+    /// One movement to `location`, with `window` under the pointer.
+    private func moved(over window: UInt32, at location: CGPoint, control: Bool) {
         let stamp = ContinuousClock.now
-        guard gate.withLock({ $0.admit(window, control: control) }) else { return }
-        let entered = self.entered
-        DispatchQueue.main.async { MainActor.assumeIsolated { entered(window, stamp) } }
+        guard let entered = gate.withLock({ $0.admit(window, at: location, control: control) }) else { return }
+        let callback = self.entered
+        DispatchQueue.main.async { MainActor.assumeIsolated { callback(entered, stamp) } }
     }
 }
