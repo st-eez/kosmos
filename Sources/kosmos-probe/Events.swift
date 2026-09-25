@@ -41,7 +41,6 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
 }
 
 @MainActor func levels(_ arguments: [String]) -> Never {
-    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
     let start = uptime()
@@ -109,7 +108,6 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
 }
 
 @MainActor func events(seconds: Double) -> Never {
-    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
     WindowServerEvent.register(WindowServerEvent.ids) { id, window, payload in

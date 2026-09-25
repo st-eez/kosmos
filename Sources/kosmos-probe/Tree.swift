@@ -34,7 +34,6 @@ import KosmosSkyLight
 }
 
 @MainActor func fullscreen(dry: Bool) -> Never {
-    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
     let child = Child(["fullscreen-window"] + (dry ? ["dry"] : []))
@@ -177,7 +176,6 @@ import KosmosSkyLight
 nonisolated(unsafe) var tabWindows: [UInt32] = []
 
 @MainActor func tabs(conceal: String?) -> Never {
-    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
     let child = Child(["tabs-window"])

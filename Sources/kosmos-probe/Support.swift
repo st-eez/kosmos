@@ -60,7 +60,8 @@ final class Child {
 
 extension WindowServerEvent {
     /// Calls `handle` on the thread that read each event, with its id, the window it names and
-    /// its payload.
+    /// its payload. SkyLight delivers events only inside a running AppKit event loop, as in
+    /// Kosmos.
     static func register(_ ids: [UInt32], _ handle: @escaping @Sendable (UInt32, UInt32?, UnsafeRawBufferPointer) -> Void) {
         let context = Unmanaged.passRetained(EventHandler(handle)).toOpaque()   // lives for the process
         for id in ids {
