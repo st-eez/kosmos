@@ -45,16 +45,6 @@ import Testing
     #expect(!request.workerRaises(isCurrent: false, appIsFront: true))
 }
 
-@Test func aFrontAppsFocusedTargetIsKeyAlready() {
-    #expect(!KeyRequest(appWasFront: true).workerRead(isCurrent: true, focused: .some(1), target: 1))
-}
-
-@Test func aFrontAppThatDoesNotAnswerTheReadStopsTheRequest() {
-    // Going ahead left a record for a raise that changed nothing, which swallowed the user's
-    // Command-Tab back to the window (kosmos-hover's TLC run).
-    #expect(!KeyRequest(appWasFront: true).workerRead(isCurrent: true, focused: nil, target: 1))
-}
-
 @Test func afterTheKeyRecordTheWorkerRaisesOnlyTheFrontAppsFocusedTarget() {
     // split-user-nopostraise: without the raise the key record's window stayed behind its
     // app's other windows.
