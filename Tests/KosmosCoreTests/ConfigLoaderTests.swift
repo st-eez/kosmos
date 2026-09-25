@@ -199,7 +199,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(result.config == nil)
         #expect(result.diagnostics == [
             "5:9: error: mode.main.binding.alt-j: unknown command or arguments: fcous down",
-            "6:9: error: mode.main.binding.alt-k: resize: amount must be +N or -N points, got 100",
+            "6:9: error: mode.main.binding.alt-k: resize: amount must be +N or -N points, up to 100000, got 100",
         ])
     }
 
