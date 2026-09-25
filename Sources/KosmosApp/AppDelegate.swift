@@ -218,6 +218,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.mouseFollowsFocus = config.mouseFollowsFocus
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
+            // Hotkeys do nothing while the user drags a tiled window, as Hyprland shadows its
+            // keybinds during a drag (DESIGN.md, section 5.13).
+            if self?.controller?.dragging == true {
+                return log.debug("hotkey ignored during a drag: \(binding.arguments.joined(separator: " "), privacy: .public)")
+            }
             _ = self?.respond(to: binding.arguments, received: .now)
         }
         self.hotkeys = hotkeys

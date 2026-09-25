@@ -839,6 +839,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     it leaves the tree, parked where it stood, and the other windows fill its space at
     once. Kosmos writes it no frame while macOS moves it, and a switch meanwhile leaves it
     in the user's hand.
+  - Hotkeys do nothing until the drop, as Hyprland's `DragController.cpp` calls
+    `shadowKeybinds()` for a drag, and Kosmos moves the pointer for no focus change
+    meanwhile. A switch mid-drag would otherwise key another workspace's window, and
+    `Session.focused` skips the lifted window, so a move would take its neighbour.
   - When the button comes up, it tiles on the workspace shown on the display under the
     pointer, beside the tiled window under the pointer, else the one whose center is
     closest. The two sit side by side when that window is wider than it is tall
@@ -846,7 +850,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     the pointer is in the left or top half, and they share its space equally
     (`default_split_ratio` 1). Omarchy's `force_split = 2` does not apply to a drop, and
     `precise_mouse_move` is off. On an empty workspace the window fills it.
-  - The drop's workspace takes the focus, with the window focused, and the pointer stays
+  - The drop's workspace takes the focus, Kosmos keys the window, and the pointer stays
     where the user let go.
   - Off every display, the window goes back to where it stood, as it does when a lock, a
     wake or a display change cuts the drag short. A window minimized or closed while

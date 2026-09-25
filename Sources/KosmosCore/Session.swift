@@ -637,9 +637,8 @@ public struct Session: Sendable {
     /// side by side when that window is wider than it is tall and else one above the other,
     /// first when the pointer is in its left or top half, and the two share its space
     /// equally. On an empty workspace it fills it. Off every display, or over one that shows
-    /// no workspace, it returns to where it stood. The drop's workspace takes the focus,
-    /// with the window focused; the plan asks for none, as the window is key already, and
-    /// leaves the pointer where it is (DESIGN.md, section 5.13).
+    /// no workspace, it returns to where it stood. The drop's workspace takes the focus, and
+    /// the plan focuses the window (DESIGN.md, section 5.13).
     public mutating func drop(at point: CGPoint) -> Plan {
         var plan = Plan()
         for window in lifted.sorted() {
@@ -661,6 +660,7 @@ public struct Session: Sendable {
             if name != source { merged[window] = nil }
             workspaces[name]!.focus(window)
             focusShown(name)
+            plan.focus = .window(window)
             plan.frames.merge(frames(of: source)) { current, _ in current }
             plan.frames.merge(frames(of: name)) { _, new in new }
         }

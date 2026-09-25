@@ -63,6 +63,8 @@ final class Controller {
     var rules: [WindowRule] = []
     /// Move the pointer into a window that a command focused.
     var mouseFollowsFocus = false
+    /// The user is dragging a tiled window, lifted out of the layout.
+    var dragging: Bool { !session.lifted.isEmpty }
     /// The active display profile, for the bar.
     private(set) var profile: String?
     /// Each connected display as the bar numbers it, read with the displays.
@@ -754,7 +756,8 @@ final class Controller {
         // A window that just left the screen, before Kosmos heard: fronting it would
         // unminimize it or unhide its app. Its departure focuses.
         if case .window(let id) = target, inventory.leftScreen(id) { return }
-        if movePointer, case .window(let id) = target { centerPointer(on: id) }
+        // The pointer is the user's while they drag a tiled window.
+        if movePointer, !dragging, case .window(let id) = target { centerPointer(on: id) }
         // The focus queue skips a target that is key already, checked when the request runs:
         // the key window last reported here can be older than a request still in flight.
         let pid: pid_t?

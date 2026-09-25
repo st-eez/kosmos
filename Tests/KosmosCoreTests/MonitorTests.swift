@@ -304,7 +304,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         let plan = s.drop(at: CGPoint(x: tile.midX, y: tile.midY + 100))
         #expect(s.workspaces["1"]!.tree == "h[11 v[12 10]]" && s.lifted.isEmpty)
         #expect(plan.frames[10]!.minY > plan.frames[12]!.minY && plan.frames[10]!.width == tile.width)
-        #expect(plan.focus == nil && plan.show.isEmpty && plan.hide.isEmpty)
+        #expect(plan.focus == .window(10) && plan.show.isEmpty && plan.hide.isEmpty)
         #expect(s.focusedWorkspace == "1" && s.focused == 10)
         // 12 is now wider than tall: 11 dropped in its left half goes before it.
         _ = s.lift(11)
@@ -351,9 +351,9 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.add(10); _ = s.add(11)
         _ = s.lift(11)
         #expect(s.perform(.workspace(.named("2")))!.hide == [10])
-        // Dropped on the main panel, it joins 2; off every display, it goes back to 1 and
-        // is concealed with it.
-        _ = s.drop(at: mainCenter)
+        // Dropped on the main panel, it joins 2 and asks for the key the switch gave away;
+        // off every display, it goes back to 1 and is concealed with it.
+        #expect(s.drop(at: mainCenter).focus == .window(11))
         #expect(s.workspace(of: 11) == "2" && s.workspaces["2"]!.tree == "h[11]")
         _ = s.lift(11)
         _ = s.perform(.workspace(.named("3")))
