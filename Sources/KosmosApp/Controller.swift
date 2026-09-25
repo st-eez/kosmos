@@ -486,6 +486,11 @@ final class Controller {
                 unplacedKey = session.workspace(of: id) == nil
                     ? KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
                                 concealed: false, miss: miss) : nil
+                // A native fullscreen window Kosmos keyed, as when the pointer entered it:
+                // the report is that request's echo.
+                if session.isParked(id), reports.consumeEcho(reported, receivedAt: report.received) {
+                    misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: true)
+                }
                 return
             }
             unplacedKey = nil
@@ -834,7 +839,9 @@ final class Controller {
     }
 
     private func focusUnderPointer(_ window: WindowID, at stamp: ContinuousClock.Instant) {
-        if let skip = focusFollowsMouse.skip(window, in: session, key: key, app: owner[window].map(inventory.appIdentity),
+        let fullscreen = fullscreenParked.contains(window)
+        if let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
+                                             app: owner[window].map(inventory.appIdentity),
                                              stale: reports.isStale(stamp)) {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
             return
@@ -844,7 +851,9 @@ final class Controller {
         // entered it: reports of the user's activations before it are stale, and its echo is
         // consumed like any other. It never moves the pointer.
         reports.commandExecuted(receivedAt: stamp)
-        session.adopt(window)
+        // A native fullscreen window stays parked, and the session's focus stays where it
+        // was, as when the user clicks the window.
+        if !fullscreen { session.adopt(window) }
         // The window is on screen under the pointer, so keying it takes no display out of a
         // native fullscreen Space: it passes the gate as a command does, and a fullscreen
         // window key on another display leaves this one free.

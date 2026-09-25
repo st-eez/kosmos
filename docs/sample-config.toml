@@ -13,9 +13,9 @@ config-version = 1
 # inside the window already or a workspace switch did it. Commands from the CLI, as the
 # bar's workspace clicks, and clicks leave the pointer where it is.
 mouse-follows-focus = true
-# Focus the window the pointer enters, in place of AutoRaise. Holding Control stops it, and
-# the pointer leaves the listed apps alone, matched by bundle identifier or name, as
-# AutoRaise's ignoreApps did.
+# Focus the window the pointer enters, tiled, floating or in native fullscreen, in place of
+# AutoRaise. Holding Control stops it, and the pointer leaves the listed apps alone, matched
+# by bundle identifier or name, as AutoRaise's ignoreApps did.
 focus-follows-mouse = true
 focus-follows-mouse-ignore-apps = ['Google Chrome for Testing']
 

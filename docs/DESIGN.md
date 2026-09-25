@@ -756,20 +756,26 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   PointerGate).
 - The main actor focuses the window only when all of these hold (KosmosCore's
   `FocusFollowsMouse.skip`, whose reason for skipping is logged):
-  - It is a tiled or floating window of a workspace a display shows. Menus, the bar,
-    panels and dialogs, the Dock, Mission Control's windows, Kosmos's own windows and the
-    windows of a workspace a switch is hiding leave focus where it is.
+  - It is a tiled or floating window of a workspace a display shows, or a native
+    fullscreen window. Menus, the bar, panels and dialogs, the Dock, Mission Control's
+    windows, Kosmos's own windows and the windows of a workspace a switch is hiding leave
+    focus where it is.
   - Its app is not ignored.
   - It is not the focus intent and key already. When a panel or dialog took key from the
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
-- The pointer focuses neither over nor into native fullscreen, display by display. On a
-  display that shows a fullscreen Space, the windows under the pointer are the fullscreen
-  window, which is parked, and its app's panels, and the session tiles neither. A
-  fullscreen window key on another display leaves this display's windows free: the window
-  under the pointer is on screen, so keying it takes no display out of a fullscreen Space,
-  and a hover focus passes the fullscreen gate of section 5.4 as a command does.
-  AeroSpace's focus follows mouse raised tiled windows over fullscreen video.
+- The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
+  does, and never focuses anything over one, display by display. On a display that shows
+  a fullscreen Space, the windows under the pointer are the fullscreen window and its
+  app's panels, which stay skipped, and WindowServer's hit test never names a window
+  behind them. AeroSpace's focus follows mouse raised tiled windows over fullscreen video.
+  The fullscreen window stays parked and the session's focus stays where it was, as when
+  the user clicks it; its report, which Kosmos otherwise leaves unclassified, consumes the
+  request's echo. A fullscreen window key on another display leaves this display's
+  windows free: the window under the pointer is on screen, so keying it takes no display
+  out of a fullscreen Space, and a hover focus passes the fullscreen gate of section 5.4
+  as a command does. Live on 2026-09-24, the pointer entering Moonlight in native
+  fullscreen on the built-in display skipped it as untiled, which this replaced.
 - A hover focus counts as a command stamped when the tap saw the movement: reports of the
   user's activations before it are stale, and its request's echo is consumed like any
   other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`

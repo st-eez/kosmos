@@ -69,10 +69,11 @@ private func settings(enabled: Bool = true) -> FocusFollowsMouse {
     return settings
 }
 
-private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings(), key: KeyWindow? = .window(1),
+private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings(), fullscreen: Bool = false,
+                  key: KeyWindow? = .window(1),
                   app: (bundleID: String?, name: String?)? = ("com.mitchellh.ghostty", "Ghostty"),
                   stale: Bool = false) -> PointerSkip? {
-    settings.skip(window, in: session(), key: key, app: app, stale: stale)
+    settings.skip(window, in: session(), fullscreen: fullscreen, key: key, app: app, stale: stale)
 }
 
 @Suite struct FocusFollowsMouseTests {
@@ -82,7 +83,7 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
     }
 
     @Test func otherWindowsLeaveFocusAlone() {
-        #expect(skip(3) == .notTiled)    // parked: minimized, hidden or in native fullscreen
+        #expect(skip(3) == .notTiled)    // parked minimized or hidden
         #expect(skip(4) == .notTiled)    // another workspace, which a switch may still show
         #expect(skip(99, app: nil) == .notTiled)   // a menu, the bar, or a window of Kosmos's own
     }
@@ -100,7 +101,16 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(skip(2, stale: true) == .stale)
     }
 
-    @Test func withSeveralDisplaysOnlyTheDisplayInFullscreenIsLeftAlone() {
+    @Test func aNativeFullscreenWindowUnderThePointerTakesFocus() {
+        // Window 3 is parked in native fullscreen; the pointer can only be over it, or over
+        // its app's panels, on that display.
+        #expect(skip(3, fullscreen: true) == nil)
+        #expect(skip(3, fullscreen: true, key: .window(3)) == .focused)
+        #expect(skip(3, fullscreen: true, app: ("com.numi.Numi", "Numi")) == .ignoredApp)
+        #expect(skip(99, app: nil) == .notTiled)   // the fullscreen app's panel or menu
+    }
+
+    @Test func withSeveralDisplaysAFullscreenWindowLeavesTheOthersFree() {
         // The main display shows workspace 1 and has the focus; the left one shows 5.
         let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
         let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
@@ -113,12 +123,13 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(s.isVisible(10) && s.isVisible(11) && s.isVisible(50))
         #expect(!s.isVisible(20) && !s.isVisible(60))   // hidden workspaces
         // Window 11 went native fullscreen on the main display and is key there. The
-        // pointer on the left display still focuses window 50; on the main display it finds
-        // only window 11, which is parked.
+        // pointer on the left display still focuses window 50, and coming back to the main
+        // display, where it finds only window 11, focuses that.
         _ = s.park([11])
         let settings = settings()
-        #expect(settings.skip(50, in: s, key: .window(11), app: nil, stale: false) == nil)
-        #expect(settings.skip(11, in: s, key: .window(11), app: nil, stale: false) == .notTiled)
+        #expect(settings.skip(50, in: s, fullscreen: false, key: .window(11), app: nil, stale: false) == nil)
+        #expect(settings.skip(11, in: s, fullscreen: true, key: .window(11), app: nil, stale: false) == .focused)
+        #expect(settings.skip(11, in: s, fullscreen: true, key: .window(50), app: nil, stale: false) == nil)
     }
 
     @Test func ignoresAppsByBundleIdentifierOrName() {
