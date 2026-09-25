@@ -63,9 +63,10 @@ state, and during a slide the frame the slide shows the window at.
   window), and kept on screen when Hide Others in another app hides Kosmos
   (`canHide = false`). The ring is its layer's border, which Core Animation draws with no
   backing store: a border around 1200 by 800 points added nothing to the probe's memory
-  footprint. A border hidden is ordered out and goes to a pool, and the next window
-  bordered reuses it, so Steve's one border window moves from window to window with the
-  focus.
+  footprint. A border hidden is ordered out and goes to its display's pool, and the next
+  window bordered on that display reuses it, so each of Steve's displays keeps one border
+  window, which moves from window to window with the focus. A display that goes keeps its
+  pool, ordered out, for its return.
 - The border is ordered directly above its window with `NSWindow.order(_:relativeTo:)`,
   which takes another app's window: in `kosmos-probe borders`, in each of six runs on
   2026-09-25, the window list showed the border right above the child app's window and
@@ -86,13 +87,29 @@ state, and during a slide the frame the slide shows the window at.
   Space of its display, kept its Space while ordered out and in, and stayed in another
   display's Space after it was ordered above its target again; moving it 10 points put it
   back in its own display's current Space. A display's current Space can be another app's
-  native fullscreen Space, so whenever a border is shown for another window or its
-  display changes, Kosmos reads its Spaces and its target's off the main thread, since a
-  read can wait out a Space transition, and moves the border to its target's ordinary
-  Space with `SLSMoveWindowsToManagedSpace` when it is in none of them. A border moved to
+  native fullscreen Space, so whenever a border window is shown for another window,
+  Kosmos reads its Spaces and its target's off the main thread, since a read can wait out
+  a Space transition, and moves the border to its target's ordinary Space with
+  `SLSMoveWindowsToManagedSpace` when it is in none of them. A border moved to
   another display's Space was there when read back. The target's Spaces can include the
   holding Space or a slide's animation Space, whose transform would draw the border too,
   so Kosmos chooses from the displays' ordinary Spaces alone.
+- A border window keeps to one display, and a window that moves to another display takes
+  a border window of that display's. Before 2026-09-25 one pool served every display, so
+  Steve's one border window moved between displays with the focus, and Kosmos moved it to
+  the new display's Space. `kosmos-probe border-watch` sampled it every 1.5 ms while Steve
+  moved the focus 28 times between Ghostty on the main display and a window on the
+  built-in one. In 12 of the hops the border showed on the new display at the last
+  window's size for 9 to 40 ms. Toward Ghostty it showed at the other window's 1712 by
+  1074 points at (8, -2), then at Ghostty's 1904 by 1039 at (8, 33), and Steve saw it
+  appear inside Ghostty and stretch to fill it. Toward the built-in display it showed at
+  Ghostty's size at (8, 1150), and the built-in display showed it there for 8 to 33 ms.
+  Each time the Space move reached WindowServer before AppKit's new frame, and
+  WindowServer moved the window onto the Space's display at its old size. In
+  `kosmos-probe border-hop`, a hop took 10.4 and 12.4 ms of the main thread at the median
+  in two runs of 20 with one border window, against 0.79 and 0.88 ms with a border
+  window for each display. The probe's new frame always reached WindowServer before its
+  Space move, so it showed no stray frame with one window either.
 - The border follows the frame WindowServer last reported for its window: the inventory's
   row, read after each change event, so it follows every move and resize, the user's,
   the app's and Kosmos's own. It trails the window by the event's way to Kosmos and the
@@ -136,6 +153,8 @@ state, and during a slide the frame the slide shows the window at.
   layers moved, and nothing measurable for borders following change events. Kosmos's
   slide log gives its display link's callback time, which includes the borders.
 - Open until the live test:
+  - whether a focus move between displays still shows the border at the last window's
+    size (`kosmos-probe border-watch` with the border window's id);
   - whether the ring's inner corners meet the window's: they are circular arcs of the
     window's radius, so corners of another curve would show a sliver of the desktop, or of
     the ring over the window, at each corner, which JankyBorders' line below the window
