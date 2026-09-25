@@ -238,7 +238,7 @@ private struct ConfigDecoder {
                     default:
                         break
                     }
-                    bindings.append(Binding(key: binding.key, combo: combo, arguments: parsed.arguments))
+                    bindings.append(Binding(key: binding.key, combo: combo, arguments: parsed.arguments, command: parsed.command))
                 }
             }
             modes[mode.key] = bindings

@@ -1,0 +1,78 @@
+import Testing
+@testable import KosmosCore
+
+/// What `kosmos list-bindings` says about each form of each command.
+@Test func describesEachCommandForm() throws {
+    let commands = [
+        "workspace 1",
+        "workspace next",
+        "workspace-back-and-forth",
+        "focus left",
+        "focus --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors up",
+        "move right",
+        "move --boundaries all-monitors-outer-frame down",
+        "swap left",
+        "swap down",
+        "join-with up",
+        "move-node-to-workspace 3",
+        "move-node-to-workspace --focus-follows-window 1",
+        "layout horizontal",
+        "layout tiles vertical",
+        "layout tiles horizontal vertical",
+        "layout floating tiling",
+        "fullscreen",
+        "resize width +10",
+        "resize height -1",
+        "resize smart +12.5",
+        "balance-sizes",
+        "flatten-workspace-tree",
+        "reload-config",
+        "mode resize",
+        "focus-monitor left",
+        "focus-monitor --wrap-around next",
+        "focus-monitor prev",
+        "focus-monitor 2",
+        "move-node-to-monitor right",
+        "move-node-to-monitor 1",
+        "move-node-to-monitor --wrap-around --focus-follows-window up",
+        "profile home",
+    ]
+    let described = try commands.map { line in
+        let command = try Command.parse(line.split(separator: " ").map(String.init)).get()
+        return "\(command.summary) [\(command.category)]"
+    }
+    #expect(described == [
+        "Switch to workspace 1 [Workspace]",
+        "Switch to the next workspace on the focused monitor [Workspace]",
+        "Switch back and forth between the last two workspaces [Workspace]",
+        "Focus left [Focus]",
+        "Focus up, across monitors, wrapping around [Focus]",
+        "Move window right [Move]",
+        "Move window down, across monitors [Move]",
+        "Swap window with the window to the left [Move]",
+        "Swap window with the window below [Move]",
+        "Join window with the window above [Layout]",
+        "Move window to workspace 3 [Workspace]",
+        "Move window to workspace 1 and follow [Workspace]",
+        "Set the layout to horizontal [Layout]",
+        "Set the layout to vertical [Layout]",
+        "Toggle the layout between horizontal and vertical [Layout]",
+        "Toggle floating and tiling [Layout]",
+        "Toggle fullscreen [Layout]",
+        "Grow window width by 10 points [Resize]",
+        "Shrink window height by 1 point [Resize]",
+        "Grow window by 12.5 points [Resize]",
+        "Balance window sizes [Resize]",
+        "Flatten the workspace tree [Layout]",
+        "Reload the config [Other]",
+        "Switch to mode resize [Other]",
+        "Focus the monitor to the left [Monitor]",
+        "Focus the next monitor, wrapping around [Monitor]",
+        "Focus the previous monitor [Monitor]",
+        "Focus monitor 2 [Monitor]",
+        "Move window to the monitor to the right [Monitor]",
+        "Move window to monitor 1 [Monitor]",
+        "Move window to the monitor above and follow, wrapping around [Monitor]",
+        "Switch to profile home [Profile]",
+    ])
+}
