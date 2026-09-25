@@ -38,7 +38,7 @@ public struct SpaceMembers: Equatable, Sendable {
 
     /// The windows of `members` that Kosmos concealed: the recorded ones; any other window of
     /// an app that owns a recorded one; a child of a concealed window, as the Open or Save
-    /// sheet of a sandboxed app, which the panel service owns; and a member `rows` did not
+    /// panel of a sandboxed app, which the panel service owns; and a member `rows` did not
     /// find, since the Space just listed it and the read must have failed. Another process
     /// can add windows of its own to a holding Space, as WindowManager.app appears to for
     /// Mission Control's placeholders (DESIGN.md, section 5.3). Kosmos never concealed them,
