@@ -60,7 +60,7 @@ final class Controller {
     let managing: Bool
     /// Window rules, first match wins.
     var rules: [WindowRule] = []
-    /// Move the pointer into the window the keyboard focused or moved (FocusChange).
+    /// Move the pointer to the focus the keyboard moved (Command.movesPointer).
     var mouseFollowsFocus = false
     /// The config's settings; the `focus-follows-mouse` command changes `enabled` until the
     /// next load.
@@ -191,7 +191,7 @@ final class Controller {
             }
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) {
-                execute(plan, since: received, fromCommand: true, movePointer: movesPointer(.command(command, from: source)))
+                execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
             }
             return (0, "")
         }
@@ -598,15 +598,13 @@ final class Controller {
             requestFocus(.window(window))
             // Command-Tab to a window away from the pointer brings the pointer along; a click,
             // on the window or the Dock, leaves it.
-            if movesPointer(.activation(keyboard: Self.keyPressedLast(), intoHiddenWorkspace: false)) {
-                centerPointer(on: window)
-            }
+            if mouseFollowsFocus, Self.keyPressedLast() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)
             // A workspace switch, which brings the pointer along only to another display.
             let plan = session.follow(window)
-            execute(plan, movePointer: movesPointer(.activation(keyboard: Self.keyPressedLast(), intoHiddenWorkspace: true)))
+            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast() && focusAwayFromPointer)
         }
     }
 
@@ -650,13 +648,13 @@ final class Controller {
                                     fullscreen: Dictionary(uniqueKeysWithValues: fullscreenParked.compactMap { id in owner[id].map { (id, $0) } }))
     }
 
-    /// `since` is when the command arrived, for the switch timing log. `movePointer` moves the
-    /// pointer into the focused window, at the frame the plan gives it.
+    /// `since` is when the command arrived, for the switch timing log. `movePointer` centers
+    /// the pointer on the focus.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
                          movePointer: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
-        if movePointer, let window = session.focused { centerPointer(on: window, at: plan.frames[window]) }
+        if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
             show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
@@ -799,27 +797,31 @@ final class Controller {
         onFocusProblem?(focusProblem)
     }
 
-    /// Moves the pointer to the window's center unless it is already inside the window, as
-    /// AeroSpace's `move-mouse window-lazy-center` does. The frame is `planned`, the one Kosmos
-    /// is writing, when the window moves: its app's worker may not have applied it yet, and
-    /// AeroSpace's move binding slept 50 ms before it read the frame. Otherwise the frame is
-    /// the layout's, or for a floating window the last one the inventory heard, so nothing
-    /// waits on WindowServer.
-    private func centerPointer(on window: WindowID, at planned: CGRect? = nil) {
-        guard let frame = planned ?? session.workspace(of: window).flatMap({ session.frames(of: $0)[window] })
-                ?? inventory.windows[window]?.frame, !frame.isEmpty,
-              let location = CGEvent(source: nil)?.location, !frame.contains(location) else { return }
+    /// Centers the pointer on the focused window, or on the focused workspace's display when
+    /// that has no window, as Hyprland's `focusmonitor` does, unless the pointer is inside
+    /// already, as with AeroSpace's `move-mouse window-lazy-center`. A tile's frame is the
+    /// layout's after the change, the one Kosmos is writing, and a floating window's the last
+    /// one the inventory heard, so nothing waits on WindowServer (DESIGN.md, section 5.11).
+    private func centerPointer() {
+        let frame: CGRect? = if let window = session.focused {
+            session.frames(of: session.focusedWorkspace)[window] ?? inventory.windows[window]?.frame
+        } else {
+            session.monitor(of: session.focusedWorkspace).frame
+        }
+        guard let frame, !frame.isEmpty, let location = CGEvent(source: nil)?.location, !frame.contains(location) else { return }
         CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
         pointer?.warped()
     }
 
-    /// Whether mouse-follows-focus moves the pointer to the focused window after `change`,
-    /// which the session has carried out.
-    private func movesPointer(_ change: @autoclosure () -> FocusChange) -> Bool {
-        guard mouseFollowsFocus, let window = session.focused, let location = CGEvent(source: nil)?.location else {
-            return false
-        }
-        return change().movesPointer(toAnotherDisplay: session.isOnAnotherDisplay(window, than: location))
+    /// Whether mouse-follows-focus centers the pointer on the focus after `command`, which
+    /// the session has carried out.
+    private func movesPointer(after command: Command, from source: CommandSource) -> Bool {
+        mouseFollowsFocus && command.movesPointer(from: source, toAnotherDisplay: focusAwayFromPointer)
+    }
+
+    /// The focused workspace is on another display than the pointer.
+    private var focusAwayFromPointer: Bool {
+        CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
     }
 
     /// Whether a key press came after the last click, from the times the session's event
@@ -844,7 +846,7 @@ final class Controller {
     private func pointerEntered(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         after(Self.dwell) { controller in
             // The pointer left the window during the dwell, or moved on before this ran.
-            guard controller.managing, !controller.sessionLocked, controller.pointer?.window == entered.window else { return }
+            guard !controller.sessionLocked, controller.pointer?.window == entered.window else { return }
             controller.focusUnderPointer(entered, at: stamp)
         }
     }

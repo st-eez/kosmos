@@ -798,8 +798,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   movement with a button down is a drag event, which the tap does not receive.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
   keyboard moves focus to another window or moves the focused window, and either no
-  workspace is switched or the window is on another display than the pointer
-  (KosmosCore's FocusChange). Omarchy on the development Mac centers the pointer only when
+  workspace is switched or the focus is on another display than the pointer
+  (KosmosCore's `Command.movesPointer`). Omarchy on the development Mac centers the pointer only when
   focus moves between windows of one workspace, and Steve's AeroSpace config chained
   `move-mouse window-lazy-center` onto hotkey bindings only.
   - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
@@ -817,23 +817,26 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth`,
     `move-node-to-workspace --focus-follows-window`, and Command-Tab that Kosmos follows
     into a hidden workspace.
-  - A keyboard focus change that lands on a window of another display than the pointer
-    brings the pointer, even when that display's workspace switched: alt-N to a workspace
-    of another display, and Command-Tab or a launcher's hotkey into a workspace another
-    display hides. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which
-    the left panel then showed in place of empty workspace 7, and the pointer stayed on
-    the main panel, while with 6 already shown it came along. A focus change reaches the
-    pointer's display by the window's workspace and the session's displays
-    (`Session.isOnAnotherDisplay`).
+  - A keyboard focus change that lands on another display than the pointer brings the
+    pointer, whether or not that display's workspace switched: alt-N, alt-shift-N and
+    `workspace-back-and-forth` to a workspace another display shows or hides, and
+    Command-Tab or a launcher's hotkey into a workspace another display hides. Left
+    behind, the pointer sits over a tile of its own display that the next bump would
+    focus. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which the
+    left panel then showed in place of empty workspace 7, and the pointer stayed on the
+    main panel. The focus is on the display of the focused workspace
+    (`Session.focusIsOnAnotherDisplay`). When that workspace is empty, the pointer goes to
+    the display's center, as Hyprland's `focusmonitor` puts it.
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
     leaves the pointer, so a click on the bar's workspaces, a script or a launcher never
     moves it. Neither does a click that Kosmos follows or adopts, a hover focus, nor a
     layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
-    window. When the window moves, the frame is the one Kosmos is writing, which the app's
-    worker may not have applied yet; AeroSpace's binding slept 50 ms before it read the
-    frame. Otherwise it is the layout's frame, or a floating window's last frame the
-    inventory heard, so the move reads nothing from WindowServer and runs on the main actor.
+    window, or the empty workspace's display. A tile's frame is the layout's after the
+    change, the one Kosmos is writing, which the app's worker may not have applied yet;
+    AeroSpace's binding slept 50 ms before it read the frame. A floating window's is the
+    last frame the inventory heard. So the move reads nothing from WindowServer and runs on
+    the main actor.
 - Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
   the next movement as the place the pointer landed and passes nothing on, whether or not
   the move posts an event of its own. A movement the tap passed on before a command is
@@ -883,7 +886,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - Left out:
   - The pointer after `join-with`, layout and resize commands, which can leave it over a
     neighbour of the focused window. Steve's AeroSpace bindings left it there too; if a
-    bump then focuses the neighbour in practice, they join FocusChange's list.
+    bump then focuses the neighbour in practice, they join `Command.movesPointer`'s list.
   - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
     AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
     minimum distance from where the pointer last counted, in PointerGate, brings it back.
