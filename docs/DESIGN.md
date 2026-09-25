@@ -816,8 +816,9 @@ off the main thread).
 ### 5.9 Status item and onboarding
 
 - The status item is a static template icon at square length. Its image shows one of
-  four states: running, Accessibility missing, Secure Input on, and problems (config
-  errors, hotkeys that could not be registered, and hiding that stopped).
+  four states: running (the app icon's mark, a disc split by its seam, drawn in code),
+  Accessibility missing, Secure Input on, and problems (config errors, hotkeys that could
+  not be registered, and hiding that stopped).
   - Nothing inside a switch writes to it, though a Secure Input change can swap its image
     right after one (section 5.6). No test checks that yet; the work counts in section 6
     are meant to.

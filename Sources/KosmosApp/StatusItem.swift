@@ -26,17 +26,42 @@ final class StatusItem: NSObject, NSMenuDelegate {
     }
 
     /// Waiting for Accessibility outranks Secure Input, which explains keys that do nothing
-    /// right now; problems come next, then running normally.
+    /// right now; problems come next, then running normally, shown as the app icon's mark.
     private func updateImage() {
-        let name = accessibilityMissing ? "exclamationmark.triangle"
+        let symbol = accessibilityMissing ? "exclamationmark.triangle"
             : secureInput != nil ? "lock.square"
-            : problems.isEmpty ? "square.grid.2x2" : "exclamationmark.octagon"
+            : problems.isEmpty ? nil : "exclamationmark.octagon"
+        let name = symbol ?? "mark"
         guard name != shownImage else { return }
         shownImage = name
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "Kosmos")
+        guard let symbol else {
+            item.button?.image = Self.mark
+            return
+        }
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Kosmos")
         image?.isTemplate = true
         item.button?.image = image
     }
+
+    /// The app icon in one colour: a disc split by its seam. Drawn from vectors at the size
+    /// and weight of the menu bar's SF Symbols, with the seam on whole pixels at 1x and 2x, and
+    /// a template so the menu bar tints it, highlighted or not.
+    private static let mark: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: 14, height: 14))
+            NSColor.black.setFill()
+            for side in [NSRect(x: 0, y: 0, width: 8, height: 18), NSRect(x: 10, y: 0, width: 8, height: 18)] {
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(rect: side).addClip()
+                disc.fill()
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Kosmos"
+        return image
+    }()
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
