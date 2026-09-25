@@ -15,8 +15,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   outside Kosmos ([overview.md, section 2](overview.md#2-what-the-fork-measured)), so a pointer swept across windows of several apps activates
   each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
   few windows on its way. AutoRaise waited for the pointer to rest in a window (`delay=2`
-  at `pollMillis=50`, 50 to 100 ms). The delay is one constant, `Controller.dwell`, set
-  to zero; at 50 ms a window takes focus only once the pointer has stayed in it that long.
+  at `pollMillis=50`, 50 to 100 ms). Kosmos waits for nothing: `Controller.pointerEntered`
+  focuses the window as the tap's movement reaches the main actor. A rest of 50 ms would
+  be a timer there that focuses the window if the pointer is still in it when it fires.
 - Pointer movement arrives through a listen-only event tap on its own thread, at the
   annotated session location, for mouse moved events only. A pointer at rest costs
   nothing, and the tap is off while focus follows mouse is. AutoRaise polls 20 times a

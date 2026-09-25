@@ -1440,22 +1440,13 @@ final class Controller {
 
     // MARK: Focus follows mouse
 
-    /// How long the pointer rests in a window before the window takes focus. Zero focuses it
-    /// as the pointer enters, as Hyprland's `follow_mouse = 1` does, although each focus of
-    /// another app's window costs macOS about 94 ms of CPU
-    /// (docs/overview.md, section 2, and docs/focus-follows-mouse.md).
-    private static let dwell: Duration = .zero
-
     /// The pointer moved into a window, the one WindowServer found under it, or onto another
-    /// display, at `stamp` (docs/focus-follows-mouse.md). The window takes focus through the same
-    /// path as a focus command when FocusFollowsMouse.skip allows it.
+    /// display, at `stamp` (docs/focus-follows-mouse.md). The window takes focus at once, through
+    /// the same path as a focus command, when FocusFollowsMouse.skip allows it.
     private func pointerEntered(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
-        after(Self.dwell) { controller in
-            // The pointer left the window during the dwell, or moved on before this ran. While
-            // a window is lifted the pointer is the user's.
-            guard !controller.sessionLocked, !controller.dragging, controller.pointer?.window == entered.window else { return }
-            controller.focusUnderPointer(entered, at: stamp)
-        }
+        // The pointer moved on before this ran. While a window is lifted the pointer is the user's.
+        guard !sessionLocked, !dragging, pointer?.window == entered.window else { return }
+        focusUnderPointer(entered, at: stamp)
     }
 
     private func focusUnderPointer(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
