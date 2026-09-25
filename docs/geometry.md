@@ -39,7 +39,8 @@
   retry, and showing the workspace forgets its refusal, so the write that shows the
   window, sent before the reveal, is a first attempt, retried until the reveal lands. A
   window a failed batch left concealed on a shown workspace is written every 100 ms while
-  it refuses, until a switch reveals it. A window moved on screen to another display, by
+  it refuses, until a switch reveals it. The upgrade: the retry skips a concealed window,
+  and the switch that reveals it after the failed batch writes its tile. A window moved on screen to another display, by
   `move-node-to-workspace --focus-follows-window` or `move-node-to-monitor`, is neither
   concealed nor revealed, so only the 100 ms retry keeps a size it ignores during the
   move from counting. One that ignores the retry too records a minimum, until it is

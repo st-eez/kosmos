@@ -746,7 +746,8 @@ final class Controller {
                 // Concealed or on a hidden workspace, a window refused once at most, and its
                 // retry waits for the reveal (docs/geometry.md). Ceiling: a window a failed batch
                 // left concealed on a shown workspace is written every 100 ms while it refuses,
-                // until a switch reveals it.
+                // until a switch reveals it. Upgrade: writeTileAgain skips concealed windows, and
+                // the switch that reveals them (needsResync) writes their tiles.
                 if hiding.isConcealed(result.id) || session.workspace(of: result.id).map(session.isShown) != true {
                     ledger.forgetLargerReadBack(result.id)
                 }
