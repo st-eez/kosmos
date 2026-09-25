@@ -867,10 +867,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   movement with a button down is a drag event, which the tap does not receive, nor while
   a tiled window is lifted (section 5.13): the pointer is the user's during a drag.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
-  keyboard moves focus to another window or moves the focused window, and either no
-  workspace is switched or the focus is on another display than the pointer (KosmosCore's
-  `Command.movesPointer`). Omarchy on the development Mac centers the pointer only when
-  focus moves between windows of one workspace, and Steve's AeroSpace config chained
+  keyboard moves focus to another window or moves the focused window. A workspace switch
+  command moves it only when the focus is on another display than the pointer
+  (KosmosCore's `Command.movesPointer`), and a keyboard activation of a window always
+  does. Omarchy on the development Mac centers the pointer only when focus moves between
+  windows of one workspace, and Steve's AeroSpace config chained
   `move-mouse window-lazy-center` onto hotkey bindings only.
   - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
     another display shows, centers the pointer on the window it focuses.
@@ -878,32 +879,34 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     focused window, and `move-node-to-workspace` without `--focus-follows-window` centers
     it on the window focused next. With focus follows mouse, a pointer left behind would
     focus the neighbour on the next bump.
-  - Command-Tab to a window of a shown workspace centers the pointer on it. Kosmos tells
-    Command-Tab from a click, on the window or the Dock, when it handles the activation:
-    a key went down within the last second, and after the last left or right mouse down
-    and the last pointer movement (`CGEventSource.secondsSinceLastEventType` in the
-    combined session state). With focus follows mouse the user seldom clicks, so a key
-    press long ago would otherwise pass for Command-Tab when an app activates itself. The
-    read takes no event tap, and the log gives the three times. A Command-Tab switcher held
-    open for over a second reads as a click.
-  - A workspace switch on the pointer's display leaves the pointer where it is:
-    `workspace` by name, `next` or `prev`, `workspace-back-and-forth`,
-    `move-node-to-workspace --focus-follows-window`, and Command-Tab that Kosmos follows
-    into a hidden workspace.
+  - Command-Tab, or a launcher's hotkey that activates an app, centers the pointer on the
+    window it activates, on a shown workspace or one Kosmos follows it into, on the
+    pointer's display too: it names a window, as `focus` does, where a workspace switch
+    names a workspace. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6,
+    which the left panel then showed in place of empty workspace 7, and the pointer stayed
+    on the main panel; and Command-Tab from workspace 7 to Spotify on workspace 6, both on
+    the left panel, left the pointer where it was, before this. Kosmos tells Command-Tab
+    from a click, on the window or the Dock, when it handles the activation: a key went
+    down within the last second, and after the last left or right mouse down and the last
+    pointer movement (`CGEventSource.secondsSinceLastEventType` in the combined session
+    state). With focus follows mouse the user seldom clicks, so a key press long ago would
+    otherwise pass for Command-Tab when an app activates itself. The read takes no event
+    tap, and the log gives the three times. A Command-Tab switcher held open for over a
+    second reads as a click.
+  - A workspace switch command on the pointer's display leaves the pointer where it is:
+    `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
+    `move-node-to-workspace --focus-follows-window`.
   - A keyboard focus change that lands on another display than the pointer brings the
     pointer, whether or not that display's workspace switched: alt-N, alt-shift-N and
-    `workspace-back-and-forth` to a workspace another display shows or hides, and
-    Command-Tab or a launcher's hotkey into a workspace another display hides. Left
-    behind, the pointer sits over a tile of its own display that the next bump would
-    focus. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which the
-    left panel then showed in place of empty workspace 7, and the pointer stayed on the
-    main panel. The focus is on the display of the focused workspace
-    (`Session.focusIsOnAnotherDisplay`). When that workspace is empty, the pointer goes to
-    the display's center, as Hyprland's `focusmonitor` puts it.
+    `workspace-back-and-forth` to a workspace another display shows or hides. Left behind,
+    the pointer sits over a tile of its own display that the next bump would focus. The
+    focus is on the display of the focused workspace (`Session.focusIsOnAnotherDisplay`).
+    When that workspace is empty, the pointer goes to the display's center, as Hyprland's
+    `focusmonitor` puts it.
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
-    leaves the pointer, so a click on the bar's workspaces, a script or a launcher never
-    moves it. Neither does a click that Kosmos follows or adopts, a hover focus, nor a
-    layout, resize or `join-with` command.
+    leaves the pointer, so a click on the bar's workspaces, a script or a launcher running
+    `kosmos` never moves it. Neither does a click that Kosmos follows or adopts, a hover
+    focus, nor a layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
     window, or the empty workspace's display. A tile's frame is the layout's after the
     change, the one Kosmos is writing, which the app's worker may not have applied yet;

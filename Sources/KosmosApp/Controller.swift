@@ -716,9 +716,10 @@ final class Controller {
             publishState()
         case .follow(let window):
             touch(window)
-            // A workspace switch, which brings the pointer along only to another display.
+            // Command-Tab or a launcher's hotkey names a window, and the pointer goes to it,
+            // on the pointer's own display too, unlike a workspace switch command.
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast() && focusAwayFromPointer)
+            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast())
         }
     }
 

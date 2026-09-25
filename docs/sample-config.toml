@@ -10,9 +10,10 @@
 
 config-version = 1
 # Move the pointer into the window a hotkey or Command-Tab focuses or moves, unless it is
-# inside the window already, or a workspace switch did it on the pointer's own display.
-# Commands from the CLI, as the bar's workspace clicks, and clicks leave the pointer where
-# it is.
+# inside the window already. Command-Tab and a launcher's app hotkey bring it along into
+# another workspace too, while a workspace switch command moves it only to another
+# display. Commands from the CLI, as the bar's workspace clicks, and clicks leave the
+# pointer where it is.
 mouse-follows-focus = true
 # Focus the window the pointer enters, tiled, floating or in native fullscreen, and the
 # empty workspace of a display it enters, in place of AutoRaise. Holding Control stops it,
