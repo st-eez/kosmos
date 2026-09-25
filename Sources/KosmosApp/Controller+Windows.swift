@@ -196,7 +196,7 @@ extension Controller {
         var plan = session.unpark(windows, follow: stale ? nil : follow)
         if stale { plan.focus = session.intent }
         // A Dock click or Command-Tab that brings it back picks it away from the pointer.
-        execute(plan, movePointer: mouseFollowsFocus && follow != nil && !stale && pickedAwayFromPointer())
+        execute(plan, movePointer: movesPointer(after: .returned(followed: follow != nil && !stale)))
     }
 
     /// When the key window left too and macOS has a window to key, the focus waits for its

@@ -87,15 +87,17 @@ extension Controller {
         pointer?.warped()
     }
 
-    func movesPointer(after command: Command, from source: CommandSource) -> Bool {
-        mouseFollowsFocus && command.movesPointer(from: source, toAnotherDisplay: focusAwayFromPointer)
+    func movesPointer(after change: FocusChange) -> Bool {
+        change.movesPointer(mouseFollowsFocus: mouseFollowsFocus, reading: pointerReadings)
     }
 
-    private var focusAwayFromPointer: Bool {
-        CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
+    var pointerReadings: PointerReadings {
+        PointerReadings(
+            focusOnAnotherDisplay: { CGEvent(source: nil).map { self.session.focusIsOnAnotherDisplay(than: $0.location) } ?? false },
+            leftButtonDown: { UserInput.leftButtonDown }, activation: { self.activation() })
     }
 
-    func pickedAwayFromPointer() -> Bool {
+    private func activation() -> (input: ActivationInput, onDock: Bool) {
         let input = ActivationInput(key: UserInput.secondsSince(.keyDown), leftClick: UserInput.secondsSince(.leftMouseDown),
                                     rightClick: UserInput.secondsSince(.rightMouseDown), moved: UserInput.secondsSince(.mouseMoved))
         let dock = UserInput.isDock(clickedWindow)
@@ -104,6 +106,6 @@ extension Controller {
             \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
             pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return input.bringsPointer(onDock: dock)
+        return (input, dock)
     }
 }

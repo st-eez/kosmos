@@ -62,9 +62,7 @@ public struct KeyReportIntake: Sendable {
         /// reaches them (docs/focus.md).
         public var recovered: Bool
         public var mouseFollowsFocus: Bool
-        public var leftButtonDown: () -> Bool
-        /// Command-Tab or a Dock click picked the window (ActivationInput.bringsPointer).
-        public var pickedAwayFromPointer: () -> Bool
+        public var pointer: PointerReadings
         /// A key or mouse button went down within the last second.
         public var userPressedJustBefore: () -> Bool
         /// The app launched after the empty workspace's window last became key.
@@ -76,7 +74,7 @@ public struct KeyReportIntake: Sendable {
                     wasConcealed: @escaping (WindowID, ContinuousClock.Instant) -> Bool,
                     leftScreen: @escaping (WindowID) -> Bool, app: @escaping (WindowID) -> Int32?,
                     intent: KeyWindow, locked: Bool, recovered: Bool, mouseFollowsFocus: Bool,
-                    leftButtonDown: @escaping () -> Bool, pickedAwayFromPointer: @escaping () -> Bool,
+                    pointer: PointerReadings,
                     userPressedJustBefore: @escaping () -> Bool,
                     launchedSinceEmptyWorkspaceKeyed: @escaping (Int32) -> Bool,
                     note: @escaping (Note) -> Void) {
@@ -91,8 +89,7 @@ public struct KeyReportIntake: Sendable {
             self.locked = locked
             self.recovered = recovered
             self.mouseFollowsFocus = mouseFollowsFocus
-            self.leftButtonDown = leftButtonDown
-            self.pickedAwayFromPointer = pickedAwayFromPointer
+            self.pointer = pointer
             self.userPressedJustBefore = userPressedJustBefore
             self.launchedSinceEmptyWorkspaceKeyed = launchedSinceEmptyWorkspaceKeyed
             self.note = note
@@ -198,7 +195,8 @@ public struct KeyReportIntake: Sendable {
         }
         // A new window its app keyed brings the pointer on any display
         // (docs/focus-follows-mouse.md).
-        return (focus, facts.mouseFollowsFocus && focus == .adopt && !atLaunch && !facts.leftButtonDown())
+        return (focus, FocusChange.admission(focus, atLaunch: atLaunch)
+            .movesPointer(mouseFollowsFocus: facts.mouseFollowsFocus, reading: facts.pointer))
     }
 
     /// `new` takes the deselected tab's place (docs/tree.md), before the replace's plan runs.
@@ -305,6 +303,7 @@ public struct KeyReportIntake: Sendable {
     /// Command-Tab, a launcher or a Dock click brings the pointer, on the window's own display
     /// too, and a click on the window leaves it (docs/focus-follows-mouse.md).
     private func bringsPointer(_ report: Report, _ facts: Facts) -> Bool {
-        facts.mouseFollowsFocus && (report.admitted ? !facts.leftButtonDown() : facts.pickedAwayFromPointer())
+        FocusChange.keyReport(admitted: report.admitted)
+            .movesPointer(mouseFollowsFocus: facts.mouseFollowsFocus, reading: facts.pointer)
     }
 }
