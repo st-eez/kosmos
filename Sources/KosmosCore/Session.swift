@@ -234,6 +234,13 @@ public struct Session: Sendable {
         home[window].map(isShown) == true && !isParked(window)
     }
 
+    /// Whether the window's workspace is laid out on another display than the one under
+    /// `point`.
+    public func isOnAnotherDisplay(_ window: WindowID, than point: CGPoint) -> Bool {
+        guard let name = home[window] else { return false }
+        return !monitor(of: name).frame.contains(point)
+    }
+
     public func frames(of name: String) -> [WindowID: CGRect] {
         guard let workspace = workspaces[name] else { return [:] }
         let monitor = monitor(of: name)

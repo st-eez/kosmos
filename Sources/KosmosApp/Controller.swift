@@ -69,7 +69,8 @@ final class Controller {
             // Creating the tap may ask for Input Monitoring, so it waits until focus follows
             // mouse is first turned on.
             if focusFollowsMouse.enabled, managing, pointer == nil {
-                pointer = PointerTap { [weak self] window, stamp in self?.pointerEntered(window, at: stamp) }
+                pointer = PointerTap { [weak self] entered, stamp in self?.pointerEntered(entered, at: stamp) }
+                pointer?.setMonitors(session.monitors)
             }
             pointer?.setEnabled(focusFollowsMouse.enabled)
         }
@@ -120,6 +121,7 @@ final class Controller {
         let displaysBefore = session.monitors
         session.reconfigure(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays,
                             merge: setup.mergeWorkspaces)
+        pointer?.setMonitors(session.monitors)
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
         controllerLog.notice("""
             profile \(setup.profile ?? "base", privacy: .public), workspace on each display \
@@ -189,8 +191,7 @@ final class Controller {
             }
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) {
-                execute(plan, since: received, fromCommand: true,
-                        movePointer: mouseFollowsFocus && FocusChange.command(command, from: source).movesPointer)
+                execute(plan, since: received, fromCommand: true, movePointer: movesPointer(.command(command, from: source)))
             }
             return (0, "")
         }
@@ -597,14 +598,15 @@ final class Controller {
             requestFocus(.window(window))
             // Command-Tab to a window away from the pointer brings the pointer along; a click,
             // on the window or the Dock, leaves it.
-            if mouseFollowsFocus, FocusChange.activation(keyboard: Self.keyPressedLast()).movesPointer {
+            if movesPointer(.activation(keyboard: Self.keyPressedLast(), intoHiddenWorkspace: false)) {
                 centerPointer(on: window)
             }
             publishState()
         case .follow(let window):
             touch(window)
-            // A workspace switch, which leaves the pointer where it is (FocusChange).
-            execute(session.follow(window))
+            // A workspace switch, which brings the pointer along only to another display.
+            let plan = session.follow(window)
+            execute(plan, movePointer: movesPointer(.activation(keyboard: Self.keyPressedLast(), intoHiddenWorkspace: true)))
         }
     }
 
@@ -811,6 +813,15 @@ final class Controller {
         pointer?.warped()
     }
 
+    /// Whether mouse-follows-focus moves the pointer to the focused window after `change`,
+    /// which the session has carried out.
+    private func movesPointer(_ change: @autoclosure () -> FocusChange) -> Bool {
+        guard mouseFollowsFocus, let window = session.focused, let location = CGEvent(source: nil)?.location else {
+            return false
+        }
+        return change().movesPointer(toAnotherDisplay: session.isOnAnotherDisplay(window, than: location))
+    }
+
     /// Whether a key press came after the last click, from the times the session's event
     /// state keeps, which reading takes no event tap.
     private static func keyPressedLast() -> Bool {
@@ -827,22 +838,34 @@ final class Controller {
     /// another app's window costs macOS about 94 ms of CPU (DESIGN.md, sections 2 and 5.11).
     private static let dwell: Duration = .zero
 
-    /// The pointer moved into `window`, the window WindowServer found under it, at `stamp`
-    /// (DESIGN.md, section 5.11). The window takes focus through the same path as a focus
-    /// command when FocusFollowsMouse.skip allows it.
-    private func pointerEntered(_ window: WindowID, at stamp: ContinuousClock.Instant) {
+    /// The pointer moved into a window, the one WindowServer found under it, or onto another
+    /// display, at `stamp` (DESIGN.md, section 5.11). The window takes focus through the same
+    /// path as a focus command when FocusFollowsMouse.skip allows it.
+    private func pointerEntered(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         after(Self.dwell) { controller in
             // The pointer left the window during the dwell, or moved on before this ran.
-            guard controller.managing, !controller.sessionLocked, controller.pointer?.window == window else { return }
-            controller.focusUnderPointer(window, at: stamp)
+            guard controller.managing, !controller.sessionLocked, controller.pointer?.window == entered.window else { return }
+            controller.focusUnderPointer(entered, at: stamp)
         }
     }
 
-    private func focusUnderPointer(_ window: WindowID, at stamp: ContinuousClock.Instant) {
+    private func focusUnderPointer(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
+        let window = entered.window
         let fullscreen = fullscreenParked.contains(window)
         if let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
                                              app: owner[window].map(inventory.appIdentity),
                                              stale: reports.isStale(stamp)) {
+            // Onto a display whose shown workspace is empty: that workspace takes the focus as
+            // `workspace` gives it, keying the empty workspace window there, and the pointer
+            // stays where it is.
+            if skip == .notTiled, let display = entered.display,
+               let name = focusFollowsMouse.emptyWorkspace(entered: display, in: session),
+               let plan = session.perform(.workspace(.named(name))) {
+                pointerLog.info("pointer focuses empty workspace \(name, privacy: .public)")
+                reports.commandExecuted(receivedAt: stamp)
+                execute(plan, fromCommand: true)
+                return
+            }
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
             return
         }

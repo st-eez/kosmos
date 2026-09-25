@@ -11,8 +11,8 @@ let pointerLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "pointer
 ///
 /// The tap sits where WindowServer has annotated each event with the window under the
 /// pointer, found by its own hit test, so moving the pointer queries no window list. Each
-/// movement goes through a PointerGate, and only a movement into another window with
-/// Control up goes on to the main actor. Only mouse moved events are tapped: a movement
+/// movement goes through a PointerGate, and only a movement into another window or
+/// display with Control up goes on to the main actor. Only mouse moved events are tapped: a movement
 /// with a button down is a drag, so nothing is focused while a button is down.
 ///
 /// On macOS 27 creating even this mouse-only tap asked a process without Input Monitoring
@@ -27,11 +27,11 @@ final class PointerTap: Sendable {
     private let enabled = Atomic<Bool>(false)
     private let gate = Mutex(PointerGate())
     private let heard = Atomic<Bool>(false)
-    private let entered: @MainActor (UInt32, ContinuousClock.Instant) -> Void
+    private let entered: @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void
 
-    /// `entered` runs on the main actor with the window the pointer moved into and when the
-    /// tap saw the movement.
-    init(entered: @escaping @MainActor (UInt32, ContinuousClock.Instant) -> Void) {
+    /// `entered` runs on the main actor with what the pointer moved into and when the tap
+    /// saw the movement.
+    init(entered: @escaping @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void) {
         self.entered = entered
         port = CGEvent.tapCreate(
             tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
@@ -56,7 +56,7 @@ final class PointerTap: Sendable {
     func setEnabled(_ on: Bool) {
         guard let port, enabled.exchange(on, ordering: .relaxed) != on else { return }
         // The window under the pointer counts as entered on the first movement.
-        if on { gate.withLock { $0 = PointerGate() } }
+        if on { gate.withLock { $0.reset() } }
         CGEvent.tapEnable(tap: port, enable: on)
         pointerLog.notice("focus follows mouse \(on ? "on" : "off", privacy: .public); tap enabled: \(CGEvent.tapIsEnabled(tap: port), privacy: .public)")
     }
@@ -64,6 +64,11 @@ final class PointerTap: Sendable {
     /// Kosmos moved the pointer (PointerGate.warped).
     func warped() {
         gate.withLock { $0.warped() }
+    }
+
+    /// The displays, to tell which one the pointer is on.
+    func setMonitors(_ monitors: [Monitor]) {
+        gate.withLock { $0.monitors = monitors }
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) {
@@ -76,15 +81,15 @@ final class PointerTap: Sendable {
             return
         }
         moved(over: UInt32(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer)),
-              control: event.flags.contains(.maskControl))
+              at: event.location, control: event.flags.contains(.maskControl))
     }
 
-    /// One movement, with `window` under the pointer.
-    private func moved(over window: UInt32, control: Bool) {
+    /// One movement to `location`, with `window` under the pointer.
+    private func moved(over window: UInt32, at location: CGPoint, control: Bool) {
         let stamp = ContinuousClock.now
         if !heard.exchange(true, ordering: .relaxed) { pointerLog.notice("pointer tap receiving events") }
-        guard gate.withLock({ $0.admit(window, control: control) }) else { return }
-        let entered = self.entered
-        DispatchQueue.main.async { MainActor.assumeIsolated { entered(window, stamp) } }
+        guard let entered = gate.withLock({ $0.admit(window, at: location, control: control) }) else { return }
+        let callback = self.entered
+        DispatchQueue.main.async { MainActor.assumeIsolated { callback(entered, stamp) } }
     }
 }

@@ -1,27 +1,53 @@
+import CoreGraphics
+
 /// Filters pointer movements for focus follows mouse on the event tap's thread (DESIGN.md,
 /// section 5.11), so it only compares numbers. A movement goes on to the main actor when it
-/// enters another window than the last movement that went on, with Control up.
+/// enters another window or another display than the last movement that went on, with
+/// Control up.
 public struct PointerGate: Sendable {
+    /// What a movement that goes on entered.
+    public struct Entered: Equatable, Sendable {
+        /// The window under the pointer, as WindowServer found it.
+        public let window: UInt32
+        /// The display under the pointer, when the movement entered another display.
+        public let display: DisplayID?
+
+        public init(window: UInt32, display: DisplayID? = nil) {
+            self.window = window
+            self.display = display
+        }
+    }
+
+    /// The displays, from the session, to tell which one the pointer is on.
+    public var monitors: [Monitor] = []
     /// The window the pointer was in at the last movement that counted, or nil when the next
     /// movement counts wherever it is.
     public private(set) var window: UInt32?
+    private var display: DisplayID?
     /// Kosmos moved the pointer since the last movement.
     private var warpPending = false
 
     public init() {}
 
-    /// Whether a movement with `window` under the pointer goes on. A movement with Control
-    /// held changes nothing, so after Control is released the next movement enters the
-    /// window under the pointer.
-    public mutating func admit(_ window: UInt32, control: Bool) -> Bool {
+    /// What a movement to `location`, with `window` under the pointer, entered, or nil when
+    /// it goes no further. A movement with Control held changes nothing, so after Control is
+    /// released the next movement enters the window and the display under the pointer.
+    public mutating func admit(_ window: UInt32, at location: CGPoint, control: Bool) -> Entered? {
+        let display = monitors.first { $0.frame.contains(location) }?.id
         if warpPending {
             warpPending = false
-            self.window = window
-            return false
+            (self.window, self.display) = (window, display)
+            return nil
         }
-        guard !control, window != self.window else { return false }
-        self.window = window
-        return true
+        guard !control, window != self.window || display != self.display else { return nil }
+        let crossed = display != self.display
+        (self.window, self.display) = (window, display)
+        return Entered(window: window, display: crossed ? display : nil)
+    }
+
+    /// The next movement counts wherever it is, as when focus follows mouse turns on.
+    public mutating func reset() {
+        (window, display, warpPending) = (nil, nil, false)
     }
 
     /// Kosmos moved the pointer into a window it focused. The next movement starts where
@@ -70,6 +96,15 @@ extension FocusFollowsMouse {
         if key == .window(window), fullscreen || session.focused == window { return .focused }
         return nil
     }
+    /// The workspace to focus when the pointer entered `display`: the one it shows, when
+    /// that has no windows and is not focused already, as Hyprland's `follow_mouse` moves
+    /// the monitor focus. Over the desktop or a gap of a display whose workspace has
+    /// windows, focus stays where it is, as in Hyprland.
+    public func emptyWorkspace(entered display: DisplayID, in session: Session) -> String? {
+        guard enabled, let name = session.workspace(shownOn: display), name != session.focusedWorkspace,
+              session.windows(of: name).isEmpty else { return nil }
+        return name
+    }
 }
 
 /// Where a command came from. Bar clicks, scripts and launchers send theirs through the CLI.
@@ -82,29 +117,32 @@ public enum CommandSource: Sendable {
 /// section 5.11).
 public enum FocusChange: Equatable, Sendable {
     case command(Command, from: CommandSource)
-    /// The user activated a window of a shown workspace, which Kosmos adopts. `keyboard`: a
-    /// key press came after the last click, as with Command-Tab. Otherwise a click on the
-    /// window or the Dock did it.
-    case activation(keyboard: Bool)
+    /// The user activated a window, which Kosmos adopts on a shown workspace or follows
+    /// into a hidden one, a switch. `keyboard`: a key press came after the last click, as
+    /// with Command-Tab. Otherwise a click on the window or the Dock did it.
+    case activation(keyboard: Bool, intoHiddenWorkspace: Bool)
 
-    /// Whether the pointer goes to the focused window, unless it is over it already. It
-    /// does when the keyboard moves focus to another window, or moves the focused window,
-    /// and no workspace is switched, as in Omarchy. A hotkey's focus and move commands
-    /// qualify, across displays too, and so does sending the window to another workspace
-    /// while focus stays. A workspace switch never moves the pointer, nor does anything
-    /// from the CLI, a click, or following an activation into a hidden workspace, which
-    /// is a switch.
-    public var movesPointer: Bool {
+    /// Whether the pointer goes to the focused window, unless it is inside it already.
+    /// `toAnotherDisplay`: that window is on another display than the pointer.
+    ///
+    /// It does when the keyboard moves focus to another window, or moves the focused window:
+    /// a hotkey's focus and move commands, sending the window to another workspace while
+    /// focus stays, and Command-Tab. A workspace switch moves it only to another display,
+    /// as when a launcher's hotkey activates an app on a workspace another display hides; on
+    /// the pointer's own display the pointer stays, as in Omarchy. Nothing from the CLI or a
+    /// click moves it.
+    public func movesPointer(toAnotherDisplay: Bool) -> Bool {
         switch self {
         case .command(let command, let source):
             guard source == .hotkey else { return false }
             switch command {
             case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
-            case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow
+            case .workspace, .workspaceBackAndForth: return toAnotherDisplay
+            case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay
             default: return false
             }
-        case .activation(let keyboard):
-            return keyboard
+        case .activation(let keyboard, let intoHiddenWorkspace):
+            return keyboard && (!intoHiddenWorkspace || toAnotherDisplay)
         }
     }
 }

@@ -2,51 +2,96 @@ import CoreGraphics
 import Testing
 @testable import KosmosCore
 
-/// Runs movements through one gate, each the window under the pointer and whether Control
-/// is held, and returns which ones go on to the main actor.
-private func admitted(_ movements: [(window: UInt32, control: Bool)], gate: inout PointerGate) -> [Bool] {
-    movements.map { gate.admit($0.window, control: $0.control) }
+// Steve's desk, less the built-in display: the left panel and the main panel.
+private let leftPanel = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+private let mainPanel = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+
+/// A movement: the window under the pointer, the pointer's x, left of 0 on the left panel,
+/// and whether Control is held.
+private typealias Movement = (window: UInt32, x: CGFloat, control: Bool)
+
+private func gate() -> PointerGate {
+    var gate = PointerGate()
+    gate.monitors = [leftPanel, mainPanel]
+    return gate
 }
 
-private func admitted(_ movements: [(window: UInt32, control: Bool)]) -> [Bool] {
-    var gate = PointerGate()
-    return admitted(movements, gate: &gate)
+/// Runs movements through the gate and returns what each one entered, or nil.
+private func entered(_ movements: [Movement], gate: inout PointerGate) -> [PointerGate.Entered?] {
+    movements.map { gate.admit($0.window, at: CGPoint(x: $0.x, y: 500), control: $0.control) }
+}
+
+private func entered(_ movements: [Movement]) -> [PointerGate.Entered?] {
+    var gate = gate()
+    return entered(movements, gate: &gate)
+}
+
+private func into(_ window: UInt32, display: DisplayID? = nil) -> PointerGate.Entered? {
+    PointerGate.Entered(window: window, display: display)
 }
 
 @Suite struct PointerGateTests {
     @Test func onlyAMovementIntoAnotherWindowGoesOn() {
         // The first movement counts wherever it is, as after focus follows mouse turns on.
-        #expect(admitted([(7, false), (7, false), (8, false), (8, false), (7, false)]) == [true, false, true, false, true])
+        #expect(entered([(7, 100, false), (7, 200, false), (8, 1000, false), (8, 1100, false), (7, 100, false)])
+            == [into(7, display: 2), nil, into(8), nil, into(7)])
+    }
+
+    @Test func aMovementOntoAnotherDisplayGoesOnOverTheSameWindow() {
+        // The desktop, window 5, under the pointer on both panels.
+        #expect(entered([(7, 100, false), (5, -100, false), (5, -200, false), (5, 100, false)])
+            == [into(7, display: 2), into(5, display: 1), nil, into(5, display: 2)])
     }
 
     @Test func controlPausesUntilTheNextMovementWithoutIt() {
         // Released inside window 8: the next movement enters it.
-        #expect(admitted([(7, false), (8, true), (8, true), (8, false)]) == [true, false, false, true])
+        #expect(entered([(7, 100, false), (8, 1000, true), (8, 1010, true), (8, 1020, false)])
+            == [into(7, display: 2), nil, nil, into(8)])
         // Back in the window where Control went down: nothing to enter.
-        #expect(admitted([(7, false), (8, true), (7, true), (7, false)]) == [true, false, false, false])
+        #expect(entered([(7, 100, false), (8, 1000, true), (7, 100, true), (7, 110, false)])
+            == [into(7, display: 2), nil, nil, nil])
+        // Released on the other panel: the next movement enters it.
+        #expect(entered([(7, 100, false), (5, -100, true), (5, -110, false)])
+            == [into(7, display: 2), nil, into(5, display: 1)])
     }
 
     @Test func theMovementAfterKosmosMovesThePointerEntersNothing() {
         // A command focused window 9 and moved the pointer there from window 7.
-        var gate = PointerGate()
-        #expect(admitted([(7, false)], gate: &gate) == [true])
+        var gate = gate()
+        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
         gate.warped()
-        #expect(admitted([(9, false), (9, false), (7, false)], gate: &gate) == [false, false, true])
+        #expect(entered([(9, 1500, false), (9, 1510, false), (7, 100, false)], gate: &gate) == [nil, nil, into(7)])
     }
 
     @Test func theMovementAfterTheMoveCountsWhereverThePointerLanded() {
         // The move landed over window 8, not the window Kosmos focused: focus stays.
-        var gate = PointerGate()
-        #expect(admitted([(7, false)], gate: &gate) == [true])
+        var gate = gate()
+        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
         gate.warped()
-        #expect(admitted([(8, false), (8, false), (9, false)], gate: &gate) == [false, false, true])
+        #expect(entered([(8, 1500, false), (8, 1510, false), (9, 1800, false)], gate: &gate) == [nil, nil, into(9)])
+    }
+
+    @Test func theMovementAfterAMoveToAnotherDisplayEntersNothingEither() {
+        var gate = gate()
+        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
+        gate.warped()
+        #expect(entered([(50, -900, false), (50, -910, false), (7, 100, false)], gate: &gate)
+            == [nil, nil, into(7, display: 2)])
     }
 
     @Test func theMovementAfterAMoveWithControlHeldEntersNothingEither() {
-        var gate = PointerGate()
-        #expect(admitted([(7, false)], gate: &gate) == [true])
+        var gate = gate()
+        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
         gate.warped()
-        #expect(admitted([(9, true), (9, false), (7, false)], gate: &gate) == [false, false, true])
+        #expect(entered([(9, 1500, true), (9, 1510, false), (7, 100, false)], gate: &gate) == [nil, nil, into(7)])
+    }
+
+    @Test func turningOnAgainCountsTheNextMovementWherever() {
+        var gate = gate()
+        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
+        gate.reset()
+        #expect(gate.monitors.count == 2)
+        #expect(entered([(7, 110, false)], gate: &gate) == [into(7, display: 2)])
     }
 }
 
@@ -132,6 +177,30 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(settings.skip(11, in: s, fullscreen: true, key: .window(50), app: nil, stale: false) == nil)
     }
 
+    @Test func onToADisplayShowingAnEmptyWorkspaceThatWorkspaceTakesFocus() {
+        // Workspace 1 on the main panel has the focus and a window; the left panel shows
+        // empty workspace 7.
+        var s = Session(names: ["1", "6", "7"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "6": 1, "7": 1])
+        _ = s.add(10)
+        _ = s.add(60, to: "6")
+        _ = s.perform(.workspace(.named("7")))
+        _ = s.perform(.workspace(.named("1")))
+        let settings = settings()
+        #expect(s.workspace(shownOn: 1) == "7")
+        #expect(settings.emptyWorkspace(entered: 1, in: s) == "7")
+        // Back on the main panel, over a gap or the desktop: its workspace has a window.
+        #expect(settings.emptyWorkspace(entered: 2, in: s) == nil)
+        // Workspace 7 focused already, or focus follows mouse off.
+        var focused = s
+        _ = focused.perform(.workspace(.named("7")))
+        #expect(settings.emptyWorkspace(entered: 1, in: focused) == nil)
+        #expect(FocusFollowsMouse().emptyWorkspace(entered: 1, in: s) == nil)
+        // The left panel showing workspace 6, which has a window, keeps focus where it is.
+        _ = s.perform(.workspace(.named("6")))
+        _ = s.perform(.workspace(.named("1")))
+        #expect(settings.emptyWorkspace(entered: 1, in: s) == nil)
+    }
+
     @Test func ignoresAppsByBundleIdentifierOrName() {
         var settings = FocusFollowsMouse()
         settings.ignoreApps = ["com.google.chrome.for.testing", "Numi"]
@@ -158,9 +227,9 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
 }
 
 /// Whether mouse-follows-focus moves the pointer for a command as a binding writes it.
-private func movesPointer(_ binding: String, from source: CommandSource = .hotkey) throws -> Bool {
+private func movesPointer(_ binding: String, from source: CommandSource = .hotkey, toAnotherDisplay: Bool = false) throws -> Bool {
     let command = try Command.parse(binding.split(separator: " ").map(String.init)).get()
-    return FocusChange.command(command, from: source).movesPointer
+    return FocusChange.command(command, from: source).movesPointer(toAnotherDisplay: toAnotherDisplay)
 }
 
 @Suite struct MouseFollowsFocusTests {
@@ -172,14 +241,18 @@ private func movesPointer(_ binding: String, from source: CommandSource = .hotke
                         // The window leaves, and the focus goes to the next window of the workspace.
                         "move-node-to-workspace 3"] {
             #expect(try movesPointer(binding), "\(binding)")
+            #expect(try movesPointer(binding, toAnotherDisplay: true), "\(binding)")
         }
     }
 
-    @Test func workspaceSwitchesLeaveThePointer() throws {
+    @Test func workspaceSwitchesMoveThePointerOnlyToAnotherDisplay() throws {
         for binding in ["workspace 2", "workspace next", "workspace prev", "workspace-back-and-forth",
                         "move-node-to-workspace --focus-follows-window 2",
                         "move-node-to-workspace --focus-follows-window next"] {
             #expect(try !movesPointer(binding), "\(binding)")
+            // alt-6 for workspace 6, which the left panel shows or hides, with the pointer on
+            // the main panel.
+            #expect(try movesPointer(binding, toAnotherDisplay: true), "\(binding)")
         }
     }
 
@@ -187,19 +260,40 @@ private func movesPointer(_ binding: String, from source: CommandSource = .hotke
         for binding in ["join-with left", "layout tiles horizontal vertical", "layout floating tiling", "fullscreen",
                         "resize smart +50", "balance-sizes", "flatten-workspace-tree"] {
             #expect(try !movesPointer(binding), "\(binding)")
+            #expect(try !movesPointer(binding, toAnotherDisplay: true), "\(binding)")
         }
     }
 
     @Test func theCLILeavesThePointer() throws {
         // SketchyBar's workspace pills, scripts and Raycast.
-        #expect(try !movesPointer("workspace 2", from: .cli))
-        #expect(try !movesPointer("focus left", from: .cli))
-        #expect(try !movesPointer("move right", from: .cli))
+        for binding in ["workspace 2", "focus left", "move right"] {
+            #expect(try !movesPointer(binding, from: .cli), "\(binding)")
+            #expect(try !movesPointer(binding, from: .cli, toAnotherDisplay: true), "\(binding)")
+        }
     }
 
     @Test func commandTabBringsThePointerAndAClickDoesNot() {
-        #expect(FocusChange.activation(keyboard: true).movesPointer)
-        #expect(!FocusChange.activation(keyboard: false).movesPointer)
+        #expect(FocusChange.activation(keyboard: true, intoHiddenWorkspace: false).movesPointer(toAnotherDisplay: false))
+        #expect(!FocusChange.activation(keyboard: false, intoHiddenWorkspace: false).movesPointer(toAnotherDisplay: false))
+        #expect(!FocusChange.activation(keyboard: false, intoHiddenWorkspace: false).movesPointer(toAnotherDisplay: true))
+    }
+
+    @Test func anActivationIntoAHiddenWorkspaceMovesThePointerOnlyToAnotherDisplay() {
+        // A launcher's hotkey activates Spotify on workspace 6, which the left panel hides,
+        // with the pointer on the main panel.
+        #expect(FocusChange.activation(keyboard: true, intoHiddenWorkspace: true).movesPointer(toAnotherDisplay: true))
+        #expect(!FocusChange.activation(keyboard: true, intoHiddenWorkspace: true).movesPointer(toAnotherDisplay: false))
+        // A Dock click leaves the pointer wherever the window is.
+        #expect(!FocusChange.activation(keyboard: false, intoHiddenWorkspace: true).movesPointer(toAnotherDisplay: true))
+    }
+
+    @Test func aWindowIsOnAnotherDisplayThanThePointerByItsWorkspace() {
+        var s = Session(names: ["1", "6", "7"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "6": 1, "7": 1])
+        _ = s.add(10)
+        _ = s.add(60, to: "6")   // hidden: the left panel shows 7
+        #expect(!s.isOnAnotherDisplay(10, than: CGPoint(x: 100, y: 500)))
+        #expect(s.isOnAnotherDisplay(60, than: CGPoint(x: 100, y: 500)))
+        #expect(!s.isOnAnotherDisplay(60, than: CGPoint(x: -100, y: 500)))
     }
 
     @Test func aMovesPlanGivesTheFrameThePointerGoesTo() throws {
