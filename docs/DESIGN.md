@@ -40,7 +40,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Live on 2026-09-24, 40 alternating switches per run between two workspaces of one window each. Reading the holding Space directly every 0.1 ms confirmed each batch at a median of 2.10, 2.18 and 2.95 ms in three runs (p90 3.66, 4.83 and 3.44 ms; at most 4.62, 9.79 and 3.86 ms), and all 120 confirmed before the barrier was due. The barrier alone confirmed at 3.31 and 3.44 ms median in two runs (p90 4.72 and 5.24 ms; at most 11.08 and 10.59 ms). Switches over 8.3 ms from keypress to the end: 10 of 120 with the reads, 21 of 80 with the barrier alone | Direct reads confirm a switch; the barrier backs them up after 10 ms |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
 | Keying a window of another app costs about 94 ms of CPU outside Kosmos: BiomeAgent 29 ms, spotlightknowledged.updater 15, MenuBarAgent 15, duetexpertd 14, WindowManager 6, ContextStoreAgent 6 and the activated app 8, plus 12 for BetterTouchTool on the development Mac. Five stub apps were keyed back and forth through the focus path, 384 activations against 96 in 73 s each, and the cost is the difference between the two; WindowServer's share was lost in the noise of the desktop in use. The focus call took 4.4 ms at the median and 16.6 ms at p95 (`kosmos-probe sweep` and `script/sweep.sh`, commit 3223999 on the hover branch) | Accepted for focus follows mouse, which focuses the window the pointer enters at once (section 5.11) |
-| Keying a window through the focus path leaves the stacking order alone. The key record alone keyed another app's window 10 times in 10 and put it on top 0 times, and inside the front app it keyed nothing (0 of 20). AXRaise alone keyed a window of the front app 20 of 20. For another app, the key record and then AXRaise keyed the window and put it on top 10 of 10, AXRaise first only 1 of 10. AXRaise in a background app posts a focus notification from it, 0.4 to 0.5 ms later, without keying it. AXRaise took 0.65 ms at the median and 3.7 ms at most (`kosmos-probe keying`, 10 rounds) | Inside the front app the worker raises. For another app the queue posts the key record and the app's worker raises the window after it |
+| Keying a window through the focus path leaves the stacking order alone. Inside the front app the key record alone keyed nothing in 20 of 20 trials, stacked or side by side, and AXRaise alone keyed the window in 20 of 20. For another app the key record alone keyed the window in 20 of 20 and put it on top in none, behind the windows of the app that was front and of its own app; the key record then AXRaise keyed it and put it on top in 20 of 20, and AXRaise then the key record in 10 or 11 of 20. Each count held in each of four runs of `kosmos-probe keying 10` on September 24, 2026. Over the four, an app whose focused window was the target already reported it again after the key record then AXRaise in 6 of 40 trials, and after the key record alone in none. AXRaise in a background app made the app report a focus change without keying it, 0.3 to 0.6 ms later in 74 of 80 trials and 3.9 ms at most. AXRaise took 0.30 to 1.02 ms at the median and 1.39 to 3.70 ms at most, over 120 raises per run | Inside the front app the worker raises. For another app the queue posts the key record and the app's worker raises the window after it (section 5.4) |
 | An AX call to a hung app returns kAXErrorCannotComplete 5 ms after its messaging timeout, and with none set macOS 27 waits 1.5 s. An app still launching fails with the same error in under 9 ms and answers about 60 ms after it starts. An answered read takes 13 µs (`kosmos-probe ax-timeout`) | Time out every call at 1 s, and back an app off only after a call that waited out the timeout |
 
 ## 3. Primitive decisions
@@ -659,28 +659,21 @@ off the main thread).
     between two windows of the active app, so the miss rate is at most about 5% at 95%
     confidence, and five misses in a row at 5% come once in about 3 million runs. Those
     trials raised first and posted a down and up record pair. Kosmos's own sequence, the
-    down record alone to a background app, keyed the named window in 20 of 20 trials of
-    `kosmos-probe keying` (September 24, 2026). The public path chose the wrong window in 9
-    of 9 trials, so a false trip costs more than a few late wrong windows
+    down record alone to a background app, keyed the named window in every trial (section
+    2). The public path chose the wrong window in 9 of 9 trials, so a false trip costs more
+    than a few late wrong windows
     (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, inside the front app and after the key record. Inside
-  the front app the key record alone keyed nothing in 20 of 20, stacked or side by side,
-  and AXRaise alone keyed the window in 20 of 20. For another app the key record alone
-  keyed the window but put it on top 0 times in 20, behind the windows of the app that
-  was front and of its own app, and the key record then AXRaise did both 20 times in 20,
-  where AXRaise first put it on top 11 times in 20 (`kosmos-probe keying`). yabai and
-  alt-tab raise after the record too. AXRaise in a background app makes it post a focus
-  notification 0.4 to 0.5 ms later, without keying it. A hung app holds only its own
-  worker. AXRaise took 0.65 and 1.02 ms at the median and 3.70 and 2.13 ms at most, over
-  120 raises in each of two runs (`kosmos-probe keying`, September 24, 2026).
+- AXRaise runs on the app's worker, inside the front app, where only it keys a window, and
+  after the key record, which leaves another app's window where it sits in its app's
+  stacking order (section 2). yabai and alt-tab raise after the record too. A hung app
+  holds only its own worker.
 - The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
   waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
   a newer command, and Kosmos followed it there (tla/README.md, change 19,
-  `split-user-timeout`). A raise that
-  outlasts the 5 s counts as made, so its echo is still recognized. Only a raise the app
-  refuses or fails at once is dropped.
+  `split-user-timeout`). A raise that outlasts the 5 s counts as made, so its echo is
+  still recognized. Only a raise the app refuses or fails at once is dropped.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the
   public path on the app's worker: make the window the app's main window, raise it, then
   activate the app. A background accessory app with no window, as Kosmos is, made another
