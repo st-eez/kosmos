@@ -35,7 +35,9 @@ frame the slide shows the window at.
 - A bordered window gets its border only while it is on screen: not concealed, as a
   switch's incoming windows are until the batch that reveals them confirms, and ordered
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks
-  it. A window on no display, as a concealed one reads, gets none. So the border hides at
+  it. A window that a batch still in flight conceals counts as concealed: after a switch
+  to workspace B and straight back to A, A's windows get their borders once the batch
+  that conceals them and the one that reveals them have both finished. A window on no display, as a concealed one reads, gets none. So the border hides at
   a conceal and a switch, a minimize, a hide, native fullscreen and Kosmos's fullscreen,
   and shows again at the reveal, the return or the toggle back. The outgoing workspace's
   borders go as Kosmos plans the switch, before its batch conceals the windows, and the

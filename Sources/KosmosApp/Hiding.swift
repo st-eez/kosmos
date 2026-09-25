@@ -41,6 +41,8 @@ final class Hiding {
     /// The windows concealed after the last batch the bridge finished, for focus reports.
     /// The bridge queue's ledger is the truth; this copy only follows it.
     private var concealed: Set<UInt32> = []
+    /// The windows that batches in flight conceal, each with how many batches do.
+    private var concealing: [UInt32: Int] = [:]
 
     /// Called with a description when concealed windows could not all be restored, and with
     /// nil once they have been.
@@ -53,6 +55,10 @@ final class Hiding {
     }
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
+
+    /// Whether the window is concealed or a batch in flight conceals it, which
+    /// `isConcealed` reads only once the batch finishes.
+    func isConcealedOrConcealing(_ window: UInt32) -> Bool { concealed.contains(window) || concealing[window] != nil }
 
     /// Whether the guardian would recover windows now, should Kosmos die: windows slide
     /// through the pool's Spaces only then (Slides).
@@ -98,6 +104,7 @@ final class Hiding {
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady
         let hide = canConceal ? hide : []
+        for window in hide { concealing[window, default: 0] += 1 }
         let store = self.store
         let submitted = ContinuousClock.now
         bridge.async {
@@ -114,6 +121,10 @@ final class Hiding {
                 MainActor.assumeIsolated {
                     timing.returned = .now - finished
                     self.concealed = concealed
+                    for window in hide {
+                        self.concealing[window]! -= 1
+                        if self.concealing[window] == 0 { self.concealing[window] = nil }
+                    }
                     if let outcome { self.report(outcome) }
                     done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
                 }

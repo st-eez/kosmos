@@ -1491,14 +1491,14 @@ final class Controller {
     }
 
     /// Shows the border of each window the session borders, where WindowServer has it or a
-    /// slide shows it, and none for a window concealed or ordered out (docs/borders.md). No
-    /// border shows while borders are off or Kosmos only observes, and a locked session keeps
-    /// its borders until the resync after the unlock.
+    /// slide shows it, and none for a window concealed, being concealed or ordered out
+    /// (docs/borders.md). No border shows while borders are off or Kosmos only observes, and
+    /// a locked session keeps its borders until the resync after the unlock.
     private func updateBorders() {
         guard !sessionLocked else { return }
         guard managing, let borders else { return borderWindows.show([:]) }
         let shown = session.borders(borders, accent: borderWindows.accent) { id in
-            guard !hiding.isConcealed(id), let row = inventory.windows[id], row.orderedIn else { return nil }
+            guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
             return (slides?.shown(id)?.frame ?? row.frame, row.cornerRadius)
         }
         borderWindows.show(shown.reduce(into: [:]) { result, entry in
