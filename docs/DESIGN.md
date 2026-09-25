@@ -694,16 +694,17 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   few windows on its way. AutoRaise waited for the pointer to rest in a window (`delay=2`
   at `pollMillis=50`, 50 to 100 ms). The delay is one constant, `Controller.dwell`, set
   to zero; at 50 ms a window takes focus only once the pointer has stayed in it that long.
-- Pointer movement arrives through a listen-only event tap on its own thread, at the
-  annotated session location, for mouse moved events only. A pointer at rest costs
-  nothing, and the tap is off while focus follows mouse is. AutoRaise polls 20 times a
-  second.
-- Each event names the window under the pointer as WindowServer's own hit test found it
-  (`kCGMouseEventWindowUnderMousePointer`, filled in at the annotated location), so moving
-  the pointer queries no window list, and the stacking of overlapping floating windows is
-  WindowServer's answer. A hit test of the model's frames would need a stacking order the
-  model does not keep. The tap's callback passes a movement on to the main actor only when
-  it enters another window than the last movement passed on, with Control up (KosmosCore's
+- Pointer movement arrives through an NSEvent global monitor for mouse moved events only,
+  because the live test showed the listen-only tap asking Kosmos for Input Monitoring. A
+  pointer at rest costs nothing, and the monitor is removed while focus follows mouse is
+  off. AutoRaise polls 20 times a second.
+- The window under the pointer is WindowServer's own hit test: the window the event is
+  annotated with (`kCGMouseEventWindowUnderMousePointer`) when the monitor's event carries
+  it, and otherwise `NSWindow.windowNumber(at:belowWindowWithWindowNumber: 0)` at the
+  event's location. The stacking of overlapping floating windows is WindowServer's answer.
+  A hit test of the model's frames would need a stacking order the model does not keep.
+  The monitor's handler runs on the main thread and passes a movement on only when it
+  enters another window than the last movement passed on, with Control up (KosmosCore's
   PointerGate).
 - The main actor focuses the window only when all of these hold (KosmosCore's
   `FocusFollowsMouse.skip`, whose reason for skipping is logged):
@@ -726,10 +727,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   the hover but reported after it adopted, and focus left the window the pointer was in.
   The spec on this branch does not model hover yet.
 - Holding Control pauses focus follows mouse, as AutoRaise's `disableKey` did. Control is
-  read from each movement's flags, so the tap takes no keyboard events. A movement with
+  read from each movement's flags, so the monitor takes no keyboard events. A movement with
   Control held changes nothing, so after Control is released the next movement focuses
   the window under the pointer. Nothing is focused while a mouse button is down, because a
-  movement with a button down is a drag event, which the tap does not receive.
+  movement with a button down is a drag event, which the monitor does not receive.
 - The pointer follows focus the other way too, with `mouse-follows-focus`. A command that
   focuses a window moves the pointer to its center unless the pointer is already over it,
   and so does Command-Tab to a window away from the pointer. A click happens over the
@@ -737,45 +738,27 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   click never moves the pointer. A hover focus never moves the pointer.
 - Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
   the next movement as the place the pointer landed and passes nothing on, whether or not
-  the move posts an event of its own. A movement the tap passed on before a command is
-  stale. The ceiling: a movement made before the move that reaches the tap after it is
-  taken as the landing place, and the movement after it then enters the window Kosmos
-  focused, which at most requests that window again.
+  the move posts an event of its own. A movement passed on before a command is stale.
 - On macOS 27, creating a listen-only tap for mouse moved events alone made macOS ask a
   process with neither Accessibility nor Input Monitoring for Input Monitoring ("would
-  like to receive keystrokes from any application"), and that tap received nothing, while
-  the same tap under the terminal's grants received about 5,800 movements in the same
-  minutes. Apps with Accessibility alone run listen-only taps: AltTab at the annotated
-  location (`src/events/WindowAttentionEvents.swift`, whose tap creation fails without
-  Accessibility) and Loop for mouse movement (`PassiveEventMonitor.swift`). Whether
-  Kosmos's grant is enough is open until a live test settles it. The tap is created only
-  when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
-  granted when it creates the tap, whether the tap is enabled when it turns on, and when
-  the first event arrives.
-- Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
-  `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead, and only PointerTap's
-  event source changes; the gate and everything after it stay. AeroSpace's and Amethyst's
-  focus follows mouse and Rectangle's drag snapping use such monitors, and their code asks
-  only for Accessibility. AppKit installs the monitor as a handler on HIToolbox's event
-  monitor target (AppKit's imports and disassembly on macOS 27), which Carbon's
-  documentation of `GetEventMonitorTarget` describes as WindowServer copying user input
-  events sent to other processes into this one's event queue, so it is no event tap.
-  NSEvent's header requires Accessibility for key events and names nothing for mouse
-  events. Against the tap it gives up two things:
+  like to receive keystrokes from any application"), and Kosmos's live test showed the
+  same with Accessibility. AeroSpace's and Amethyst's focus follows mouse and Rectangle's
+  drag snapping use global monitors, and their code asks only for Accessibility. AppKit
+  installs the monitor as a handler on HIToolbox's event monitor target (AppKit's imports
+  and disassembly on macOS 27), which Carbon's documentation of `GetEventMonitorTarget`
+  describes as WindowServer copying user input events sent to other processes into this
+  one's event queue, so it is no event tap. NSEvent's header requires Accessibility for key
+  events and names nothing for mouse events. Kosmos logs whether Input Monitoring is
+  granted, whether the monitor was added, when the first event arrives, and whether events
+  name the window under the pointer. Against the tap the monitor gives up two things:
   - Delivery is on the main thread, so every movement wakes the main actor and queues with
     hotkey events. The gate still runs first, and only a movement into another window does
     more.
-  - The event may not name the window under the pointer; whether its `cgEvent` carries the
-    annotated field is for the live test. If not, `NSWindow.windowNumber(at:
-    belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point, including
-    other apps' windows, at one WindowServer call per movement. The monitor's points have a
-    bottom left origin and are flipped first.
+  - Without the annotated window, each movement costs one WindowServer hit test.
 
-  The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
-  and Control still comes from each event's modifier flags. An active tap is the other way
-  out: Rectangle, skhd and yabai create default taps with Accessibility, and it keeps the
-  tap's thread and field, but every pointer event would wait on Kosmos's callback, which
-  section 3 rejects for the keyboard.
+  An active tap is the other way out: Rectangle, skhd and yabai create default taps with
+  Accessibility, and it keeps the tap's thread and field, but every pointer event would
+  wait on Kosmos's callback, which section 3 rejects for the keyboard.
 - `focus-follows-mouse = true` turns it on, and `focus-follows-mouse-ignore-apps` lists
   apps by bundle identifier or name, as AutoRaise's `ignoreApps` did; Steve's AutoRaise
   ignored Google Chrome for Testing. The command `focus-follows-mouse on|off|toggle`
