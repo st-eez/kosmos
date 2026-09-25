@@ -17,22 +17,21 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     }
 }
 
-/// The line is centered on the window's edge as JankyBorders draws it: 2 of its 4 points
-/// outside, and 1 point inside over the window's edge, with corners concentric with the
-/// window's.
-@Test func theRingStraddlesTheWindowsEdge() {
+/// The ring is what shows of JankyBorders' line below a window: the 2 of its 4 points
+/// outside the window's edge, with the window's corners on the inside.
+@Test func theRingLiesOutsideTheWindowsEdge() {
     let display = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
     let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
     let border = Border(around: frame, radius: 16, width: 4, color: blue, displays: [display])!
     #expect(border.ring == CGRect(x: 98, y: 98, width: 404, height: 304))
     #expect(border.frame == border.ring && border.display == 1 && border.displayFrame == display.frame)
-    #expect(border.cornerRadius == 18 && border.lineWidth == 3)
-    // The inner edge is 1 point inside the frame, its radius 1 point less than the window's.
-    #expect(border.ring.insetBy(dx: border.lineWidth, dy: border.lineWidth) == frame.insetBy(dx: 1, dy: 1))
-    #expect(border.cornerRadius - border.lineWidth == 15)
-    // A line narrower than 2 points shows its whole inner half; a square window gets square corners.
-    let thin = Border(around: frame, radius: 0, width: 1, color: blue, displays: [display])!
-    #expect(thin.lineWidth == 1 && thin.cornerRadius == 0)
+    #expect(border.cornerRadius == 18 && border.lineWidth == 2)
+    // The inner edge is the window's edge, its radius the window's.
+    #expect(border.ring.insetBy(dx: border.lineWidth, dy: border.lineWidth) == frame)
+    #expect(border.cornerRadius - border.lineWidth == 16)
+    // A square window gets square corners.
+    let square = Border(around: frame, radius: 0, width: 4, color: blue, displays: [display])!
+    #expect(square.lineWidth == 2 && square.cornerRadius == 0)
 }
 
 /// The border shows on the display that holds most of the window, cut to it, and a window on

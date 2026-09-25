@@ -37,13 +37,18 @@ state, and during a slide the frame the slide shows the window at.
   that conceals them and the one that reveals them have both finished. The outgoing
   workspace's borders go as Kosmos plans the switch, before its batch conceals the
   windows, and the incoming ones come when the batch confirms, after the windows show.
-- The shape is JankyBorders' line (`border.c`, Steve's fork): `width` points wide and
-  centered on the window's edge, so its outer half lies outside the window, and of its
-  inner half only the point next to the edge shows, over the window's own edge. With
-  width 4 that is 2 points outside and 1 inside. The corners are concentric with the
-  window's: WindowServer's corner radius for the window, read with its row
-  (`SLSWindowIteratorGetCornerRadii`), plus half the width outside, and the radius less
-  1 point inside. Only the inventory's reads take the radius: it took a read of 2
+- The shape is what shows of JankyBorders' line (`border.c`, Steve's fork), so `width`
+  looks the same in both. JankyBorders strokes `width` points centered on the window's
+  edge, clipped 1 point inside it, in a window ordered below its target by default, so
+  the target covers the inner half: with `width = 4` Steve saw its outer 2 points. Kosmos
+  orders its border above the window, and so draws only that outer half, a ring from the
+  window's edge outward by half the width: with `width = 4`, 2 points. Before
+  2026-09-25 it drew JankyBorders' point inside the edge too, over the window, and Steve
+  found its 3 points thicker. The ring's inner corners are the window's: WindowServer's
+  corner radius for the window, read with its row (`SLSWindowIteratorGetCornerRadii`).
+  Its outer corners are that radius plus half the width, concentric, as a layer's border
+  draws its inner edge at the corner radius less the border's width (an offscreen render
+  on macOS 27). Only the inventory's reads take the radius: it took a read of 2
   windows' rows from 0.0138 and 0.0140 ms to 0.0152 and 0.0155 ms at the median in two
   runs of the probe on 2026-09-25, and Slides' poll reads rows every 100 µs while a
   write lands. A titled window's corners are rounded 16 points on macOS 27 (26A428,
@@ -74,9 +79,9 @@ state, and during a slide the frame the slide shows the window at.
   within the stacking order, so when the target's row shows another level, Kosmos orders
   the border above the target again.
 - WindowServer's hit test passes through a border: `NSWindow.windowNumber(at:)`, the
-  window a mouse down at a point would hit, named the target at a point 0.5 points inside
-  its edge under the ring, and at a point 1 point outside it, in the target's resize
-  margin. So clicks and resizes by the edge reach the window.
+  window a mouse down at a point would hit, named the target at a point 1 point outside
+  its edge, under the ring and in the target's resize margin. So clicks and resizes by the
+  edge reach the window.
 - A border is in its window's Space. In the probe, a new border window joined the current
   Space of its display, kept its Space while ordered out and in, and stayed in another
   display's Space after it was ordered above its target again; moving it 10 points put it
@@ -107,9 +112,9 @@ state, and during a slide the frame the slide shows the window at.
   ring's layer, which took a fourth of the main thread's time that moving the window did
   (below). The border stays in the desktop Space, out of the animation Space and its
   transform, so its line keeps its width and its display. The animation Space draws above
-  the desktop Space, so during the slide the window covers the border's point inside its
-  edge, and the line shows 1 point narrower until the slide ends. A new window waiting for
-  its write to land, transparent, shows no border yet.
+  the desktop Space, and the ring lies outside the window's edge, so the window covers
+  none of it during the slide. A new window waiting for its write to land, transparent,
+  shows no border yet.
 - Borders need no recovery: they are Kosmos's own windows, so they go with its process,
   and a border hides by being ordered out, never through the holding Space.
 - `kosmos-probe borders-cpu` times four windows of a child app, each moved and resized by
@@ -131,6 +136,10 @@ state, and during a slide the frame the slide shows the window at.
   layers moved, and nothing measurable for borders following change events. Kosmos's
   slide log gives its display link's callback time, which includes the borders.
 - Open until the live test:
+  - whether the ring's inner corners meet the window's: they are circular arcs of the
+    window's radius, so corners of another curve would show a sliver of the desktop, or of
+    the ring over the window, at each corner, which JankyBorders' line below the window
+    hid;
   - whether the border follows a new accent color and a switch between light and dark;
   - whether focus follows mouse and modifier drags, which read WindowServer's hit test
     from each event (`kCGMouseEventWindowUnderMousePointer`), see through a border as
