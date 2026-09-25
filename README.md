@@ -6,8 +6,8 @@ A tree tiling window manager for macOS, built for fast workspace switching.
 
 **Status:** early development. Kosmos runs in observer mode: it tracks every window and
 follows focus next to another window manager, and moves nothing yet. The design is in
-[docs/DESIGN.md](docs/DESIGN.md), and the TLA+ spec of the workspace switch is in
-[tla/](tla/README.md).
+[docs/](docs/README.md), one doc per component, and the TLA+ spec of the workspace switch
+is in [tla/](tla/README.md).
 
 ## Goals
 
@@ -75,7 +75,7 @@ Kosmos learns from [AeroSpace](https://github.com/nikitabobko/AeroSpace),
 [i3](https://i3wm.org), [yabai](https://github.com/koekeishiya/yabai),
 [rift](https://github.com/acsandmann/rift), [AltTab](https://github.com/lwouis/alt-tab-macos),
 [WindowKit](https://github.com/ejbills/WindowKit) and others. Where their code shaped a
-decision, the design doc says so.
+decision, the design docs say so.
 
 ## License
 
