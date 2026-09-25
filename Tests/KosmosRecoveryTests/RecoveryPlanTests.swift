@@ -88,6 +88,15 @@ private func concealed(_ members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
     #expect(!plan.isComplete(remainingMembers: concealed([9: [6]]).values.joined().count, isOnNoSpace: { _ in false }))
 }
 
+/// Every window in an animation Space came in through Kosmos, so recovery takes each out,
+/// another process's too, and keeps the holding Space's rule for the rest.
+@Test func recoveryTakesEveryWindowOutOfAnAnimationSpace() {
+    var sliding = record
+    sliding.animationSpaces = [12]
+    let members = SpaceMembers.concealed([9: [1, 7], 12: [5, 6, 7]], by: sliding, rows: { ids in rows.filter { ids.contains($0.key) } })
+    #expect(members == [9: [1], 12: [5, 6, 7]])
+}
+
 @Test func aFullSlotDropsOnlyWindowsThatAreGoneAndNotKept() {
     let windows = (1...4).map { RecoveryRecord.Window(id: $0, owner: app, originalSpace: 5) }
     let full = RecoveryRecord(windowServer: app, manager: app, spaces: [9], windows: windows)
