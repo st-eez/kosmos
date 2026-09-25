@@ -127,12 +127,11 @@ public struct Session: Sendable {
             }
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
-        for window in lifted where parkReasons[window] != nil { problems.append("lifted window \(window) has a park reason") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
         for window in parkReasons.keys where !isParked(window) { problems.append("window \(window) with a park reason is not parked") }
         for name in names {
-            for entry in workspaces[name]!.parked where parkReasons[entry.window] == nil && !lifted.contains(entry.window) {
-                problems.append("parked window \(entry.window) has no reason")
+            for entry in workspaces[name]!.parked where (parkReasons[entry.window] == nil) != lifted.contains(entry.window) {
+                problems.append("parked window \(entry.window) must have a park reason exactly when it is not lifted")
             }
         }
         for (window, origin) in mergedFrom {
