@@ -450,6 +450,19 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.workspaces["1"]!.root.windows.isEmpty)
     }
 
+    @Test func aMergedWindowThatBecomesTheSelectedTabLeavesItsOwnPlace() {
+        var s = desk()
+        _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
+        s.adopt(61)
+        _ = s.add(62, to: "6")
+        #expect(s.workspaces["6"]!.tree == "h[60 61 62]")
+        s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [builtIn], assigned: [:], merge: ["6": "1"])
+        // As after Merge All Windows: 62, placed on its own, is now the tab selected in 60's place.
+        _ = s.replace(60, with: 62)
+        s.reconfigure(names: names, monitors: [builtIn, left, main], assigned: home, merge: [:])
+        #expect(s.workspaces["6"]!.tree == "h[62 61]")
+    }
+
     @Test func aFlapMovesTheMergedWindowsBackAtOnce() {
         var s = desk()
         _ = s.add(60, to: "6")
