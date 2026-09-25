@@ -78,8 +78,8 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
     /// A theme file sets the borders, as the dotfiles' theme-set links one per theme.
     @Test func includedFilesAddTheirKeys() throws {
-        let files = ["theme.toml": "[borders]\nwidth = 4.0\nactive = '#7aa2f7'\n", "more/gaps.toml": "gaps = { inner = 10 }"]
-        let result = Config.load(header + "include = ['theme.toml', 'more/gaps.toml']", including: { files[$0] })
+        let files = ["theme.toml": "[borders]\nwidth = 4.0\nactive = '#7aa2f7'\n", "gaps.toml": "gaps = { inner = 10 }"]
+        let result = Config.load(header + "include = ['theme.toml', 'gaps.toml']", including: { files[$0] })
         #expect(result.diagnostics.isEmpty)
         let config = try #require(result.config)
         #expect(config.borders == BorderSettings(width: 4, active: BorderColor(hex: "#7aa2f7")!))
@@ -94,7 +94,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "broken.toml": "[borders\n",
             "second.toml": "borders = { active = '#7aa2f7' }",
         ]
-        let result = Config.load(header + "include = ['theme.toml', 'missing.toml', '../up.toml', '/abs.toml', 'broken.toml', 'second.toml']\ngaps = { inner = 'x' }",
+        let result = Config.load(header + "include = ['theme.toml', 'missing.toml', '../up.toml', 'more/gaps.toml', 'broken.toml', 'second.toml']\ngaps = { inner = 'x' }",
                                  including: { files[$0] })
         #expect(result.config == nil)
         #expect(result.diagnostics.map { "\($0.file ?? "main"): \($0)" } == [

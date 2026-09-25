@@ -1,6 +1,6 @@
 extension Config {
     /// Parses and checks a whole config file and the files its `include` names, which `read`
-    /// returns the text of, by the path the file gives, or nil when it cannot. `config` is
+    /// returns the text of, by the name the file gives, or nil when it cannot. `config` is
     /// nil when any diagnostic is an error, so a caller applies all of the files or none of
     /// them; warnings can come with a config. Diagnostics are in file order, the main file's
     /// first. Binding commands go through `Command.parse`, so a bad command fails the load
@@ -38,17 +38,15 @@ private struct ConfigDecoder {
     private var profileTargets: [Located] = []
 
     /// Adds the top-level keys of each file the root's `include` names to the root, and
-    /// returns the files' paths in order, the first being file 1 (SourcePosition). A path is
-    /// relative to the main file's directory and stays inside it, so a copy of the directory
-    /// loads the same (ConfigFile's last good config). An included file sets keys the main
-    /// file and the files before it leave out, and includes nothing. A file that cannot be
-    /// read is left out with a warning.
+    /// returns the files' names in order, the first being file 1 (SourcePosition). Each is a
+    /// file in the main file's directory. An included file sets keys the main file and the
+    /// files before it leave out, and includes nothing. A file that cannot be read is left
+    /// out with a warning.
     mutating func include(into root: inout TOMLTable, read: (String) -> String?) -> [String] {
         guard let entry = root["include"], let paths = stringOrList(entry.value, ValuePath().key(entry.key)) else { return [] }
         var files: [String] = []
         for path in paths {
-            let parts = path.value.split(separator: "/", omittingEmptySubsequences: false)
-            guard !path.value.hasPrefix("/"), !path.value.hasPrefix("~"), !parts.contains(".."), !parts.contains("") else {
+            guard !path.value.contains("/"), path.value != ".." else {
                 fail("name a file in the config's directory, such as 'theme.toml'", at: path.position, path.path)
                 continue
             }
