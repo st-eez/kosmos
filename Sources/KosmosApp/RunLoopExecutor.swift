@@ -5,9 +5,8 @@ func onMain(_ body: @escaping @MainActor () -> Void) {
     DispatchQueue.main.async { MainActor.assumeIsolated(body) }
 }
 
-/// A serial executor on a dedicated thread's run loop, one for each app worker, so a hung app
-/// blocks only its own thread. A worker's AX observer runs on a second one, which only
-/// hosts the run loop.
+/// A serial executor on a thread's own run loop, so a call that blocks, as into a hung app,
+/// holds only that thread.
 final class RunLoopExecutor: SerialExecutor, @unchecked Sendable {
     let runLoop: CFRunLoop
 
@@ -19,7 +18,7 @@ final class RunLoopExecutor: SerialExecutor, @unchecked Sendable {
             // A run loop with no sources returns at once; the port keeps this one alive.
             RunLoop.current.add(NSMachPort(), forMode: .default)
             ready.signal()
-            CFRunLoopRun()   // returns after stop()
+            CFRunLoopRun()
         }
         thread.name = name
         thread.qualityOfService = .userInteractive

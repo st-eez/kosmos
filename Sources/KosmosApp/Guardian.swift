@@ -3,14 +3,13 @@ import os
 
 private let guardianLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "guardian")
 
-/// Keeps kosmos-guardian running. It sits in its own process group, so a signal to Kosmos's
-/// group or the end of its launchd job leaves it alive to restore windows. Kosmos may hide
-/// windows only while `isReady` (docs/overview.md, section 4.1).
+/// Keeps kosmos-guardian running in its own process group, so a signal to Kosmos's group or
+/// the end of its launchd job leaves it alive to restore windows (docs/overview.md, section 4.1).
 @MainActor
 final class Guardian {
+    /// Kosmos conceals windows only while this is true.
     private(set) var isReady = false
-    /// Called when the guardian keeps dying and Kosmos stops trying: nothing may stay
-    /// concealed without it.
+    /// The guardian keeps dying and Kosmos stops trying: nothing may stay concealed without it.
     var onUnavailable: (@MainActor () -> Void)?
     private var exitSource: DispatchSourceProcess?
     private var recentExits: [ContinuousClock.Instant] = []
@@ -76,7 +75,6 @@ final class Guardian {
         }
     }
 
-    /// Respawns at once, unless the helper keeps dying.
     private func exited(_ pid: pid_t) {
         var status: Int32 = 0
         waitpid(pid, &status, WNOHANG)
@@ -86,8 +84,6 @@ final class Guardian {
         failed()
     }
 
-    /// A guardian that could not start or has exited: try again, unless it keeps failing,
-    /// in which case every concealed window is restored.
     private func failed() {
         isReady = false
         let now = ContinuousClock.now

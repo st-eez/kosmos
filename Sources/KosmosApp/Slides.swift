@@ -7,41 +7,29 @@ import os
 
 private let slideLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "slide")
 
-/// Slides windows to the frames a relayout writes, and pops a new window in
-/// (docs/geometry.md). A window that slides joins a Space of the pool, shown in place at
-/// level 1, and keeps its ordinary Space. Its frame goes through the ordinary frame path once,
-/// and the Space's transform shows it where it showed, eased to its frame (SlidingWindow);
-/// then the window leaves the Space. A display link per display steps the windows sliding on
-/// that display, and reads off the main thread follow each write until it lands (Onscreen).
+/// Slides windows to the frames a relayout writes, and pops a new window in, through a pool
+/// of Spaces whose transforms show each window where it showed (docs/geometry.md).
 @MainActor
 final class Slides {
-    /// How a write slides: from `from`, where WindowServer has the window, which is nil while
-    /// a write of Kosmos's still moves it; stepped by `display`'s link; popping in when the
-    /// window is new.
+    /// `from` is where WindowServer has the window, nil while a write of Kosmos's still moves it.
     struct Motion {
         var from: CGRect?
         var display: DisplayID
         var pop = false
     }
 
-    /// One level above the desktop Space's, 0, where a window alone in a shown Space is drawn
-    /// with the Space's transform and alpha (kosmos-probe space-anim, branch spaceanim).
+    /// One above the desktop Space's, where a shown Space draws its window with its transform
+    /// and alpha (kosmos-probe space-anim).
     private static let level: Int32 = 1
-    /// The Spaces made at the first turn on. A window that finds none free jumps.
     private static let poolSize = 8
 
     private let hiding: Hiding
-    /// Called after each display frame's steps and after each slide ends, so the borders
-    /// follow where the windows show (docs/borders.md).
     var onChange: (@MainActor () -> Void)?
     private let onscreen = Onscreen()
-    /// Spaces of the pool that hold no window.
     private var free: [UInt64] = []
-    /// Reads the Space of each slide that ended before it goes back to the pool (release).
-    private let checks = DispatchQueue(label: "kosmos.slide.pool", qos: .utility)
+    private let poolChecks = DispatchQueue(label: "kosmos.slide.pool", qos: .utility)
     private var links: [DisplayID: Link] = [:]
 
-    /// A display's link, with its callbacks since it started and their time, for the log.
     private struct Link {
         let link: CADisplayLink
         var callbacks = 0, time = 0.0, slowest = 0.0
@@ -55,11 +43,8 @@ final class Slides {
         }
     }
 
-    /// Takes the frame writes about to go to the workers, before they are queued, so a window
-    /// joins its Space before its app takes the frame. `sliding` holds the writes that slide
-    /// (Controller.motions). A new slide jumps while the guardian is not ready, with no Space
-    /// free, or with nowhere known to start from. A write that does not slide ends the
-    /// window's slide at once, unless it is to the slide's target (SlidingWindow.wrote).
+    /// Called before the writes are queued, so a window joins its Space before its app takes
+    /// the frame.
     func writing(_ targets: [WindowID: CGRect], sliding: [WindowID: Motion]) {
         let now = CACurrentMediaTime()
         var ended: [(WindowID, SlidingWindow)] = []
@@ -96,46 +81,38 @@ final class Slides {
         }
     }
 
-    /// The worker read the window's frame back after writing `target` (SlidingWindow.confirmed).
     func confirmed(_ id: WindowID, target: CGRect, readBack: CGRect) {
         let now = CACurrentMediaTime()
         onscreen.state.withLock { $0.windows[id]?.confirmed(target: target, readBack: readBack, at: now) }
     }
 
-    /// Ends at once the slide of each window `visible` rejects, as one concealed, parked,
-    /// closed or on a workspace no longer shown, before a batch conceals it, and of each
-    /// window on a display of `fullscreen`.
+    /// Ends the slides of windows `visible` rejects or on a display of `fullscreen`, before a
+    /// batch conceals them.
     func keep(_ visible: (WindowID) -> Bool, fullscreen: Set<DisplayID>) {
         let displays = onscreen.state.withLock { $0.windows.mapValues(\.display) }
         for (id, display) in displays where !visible(id) || fullscreen.contains(display) { end(id, "as it left the screen") }
     }
 
-    /// Where a sliding window shows as of the last display frame its link stepped, and at
-    /// what alpha, or nil for a window that is not sliding. A new window that waits for its
-    /// write to land shows at alpha 0, and a slide that is over holds its window at its end.
+    /// Where the window shows as of its link's last display frame, and at what alpha; nil when
+    /// it is not sliding.
     func shown(_ id: WindowID) -> (frame: CGRect, alpha: Double)? {
         onscreen.state.withLock { state in state.windows[id].map { ($0.shown, $0.alpha) } }
     }
 
-    /// The window changed to `frame` during a press: the user moved or resized it, and its
-    /// slide's transform would hold it where the slide shows it, so the slide ends at once.
-    /// A change to where its newest write puts it leaves the slide, since WindowServer can take
-    /// the write's frame after the worker read it back, while the user holds the button on
-    /// another window (SlidingWindow.isWrite).
+    /// A change to the newest write's frame leaves the slide: WindowServer can take it after
+    /// the worker read it back, while the user holds the button (docs/geometry.md).
     func changedInPress(_ id: WindowID, to frame: CGRect) {
         guard onscreen.state.withLock({ $0.windows[id].map { !$0.isWrite(frame) } }) == true else { return }
         end(id, "as the user moved it")
     }
 
-    /// Ends the window's slide at once, and it shows at its own frame. `why` goes to the log.
     func end(_ id: WindowID, _ why: String) {
         guard let window = onscreen.state.withLock({ Onscreen.remove(id, from: &$0) }) else { return }
         finished(id, window, why)
         stopIdleLinks()
     }
 
-    /// Ends every slide and stops every display link, one whose display went too, so the next
-    /// slide starts a link on a display that has a screen.
+    /// Stops every display link too: one whose display went stops firing (docs/geometry.md).
     func endAll(_ why: String) {
         let all = onscreen.state.withLock { state in
             Array(state.windows.keys).compactMap { id in Onscreen.remove(id, from: &state).map { (id, $0) } }
@@ -144,8 +121,7 @@ final class Slides {
         for display in Array(links.keys) { stopLink(display) }
     }
 
-    /// Starts a slide: the window joins a free Space, whose alpha a pop sets to 0 first, so
-    /// the window shows nothing until it pops in. False when it jumps instead.
+    /// False when the window jumps. A pop's Space turns transparent before the window joins it.
     private func begin(_ id: WindowID, from: CGRect, to target: CGRect, _ motion: Motion, at now: Double) -> Bool {
         guard hiding.guardianReady else { return false }
         guard let space = free.popLast() else {
@@ -169,8 +145,7 @@ final class Slides {
         return true
     }
 
-    /// Frees the Space of a window whose slide ended, and logs the slide. `why` says why it
-    /// ended before it was done.
+    /// `why` is nil for a slide that ran to its end.
     private func finished(_ id: WindowID, _ window: SlidingWindow, _ why: String? = nil) {
         release(window.space, of: id)
         onChange?()
@@ -183,14 +158,10 @@ final class Slides {
         }
     }
 
-    /// Puts the Space of a slide that ended back in the pool once a barrier and a read of its
-    /// windows, off the main thread, show the window out of it. A Space that still lists the
-    /// window, as after a removal that did not land, or that does not read, would carry the
-    /// window into its next slide, so it leaves the pool, logged, and the quit, the guardian's
-    /// or the next start's recovery takes the window out. Another window the Space lists, as
-    /// a JankyBorders border window yet to follow its window out, is only logged.
+    /// A Space that still lists the window, or does not read, leaves the pool, since its next
+    /// slide would carry the window too (docs/geometry.md).
     private func release(_ space: UInt64, of id: WindowID) {
-        checks.async {
+        poolChecks.async {
             _ = kosmos_barrier(space)
             let members = kosmos_space_windows(space) as? [UInt32]
             guard let members, !members.contains(id) else {
@@ -205,8 +176,6 @@ final class Slides {
         }
     }
 
-    /// One frame of `display`: each window sliding there shows where its slide has it at the
-    /// time the frame shows, and a slide that is done ends.
     private func frame(_ link: CADisplayLink, on display: DisplayID) {
         let began = CACurrentMediaTime()
         let at = link.targetTimestamp
@@ -233,8 +202,6 @@ final class Slides {
         if !done.isEmpty { stopIdleLinks() }
     }
 
-    /// Starts `display`'s link unless it runs, at the display's own rate. False when no
-    /// screen has that display.
     private func startLink(on display: DisplayID) -> Bool {
         guard links[display] == nil else { return true }
         guard let screen = NSScreen.screens.first(where: { $0.displayID == display }) else { return false }
@@ -248,7 +215,6 @@ final class Slides {
         return true
     }
 
-    /// Stops the links of the displays no window slides on.
     private func stopIdleLinks() {
         let sliding = onscreen.state.withLock { Set($0.windows.values.map(\.display)) }
         for display in Array(links.keys) where !sliding.contains(display) { stopLink(display) }
@@ -266,15 +232,13 @@ final class Slides {
 }
 
 extension SlidingWindow {
-    /// Sends the transform that shows the window at `shown` from `actual`. The display links
-    /// and the reads send it under Onscreen's lock, so the last one sent is for the newest
-    /// frame.
+    /// Sent under Onscreen's lock, from the links and the reads, so the last one sent is for the
+    /// newest frame.
     fileprivate func show() {
         kosmos_space_set_transform(space, Slide.transform(showing: shown, at: actual))
     }
 }
 
-/// The sliding windows, which the display links and the reads share, and the reads.
 private final class Onscreen: Sendable {
     struct State: Sendable {
         var windows: [WindowID: SlidingWindow] = [:]
@@ -283,12 +247,11 @@ private final class Onscreen: Sendable {
 
     let state = Mutex(State())
     private let queue = DispatchQueue(label: "kosmos.slide", qos: .userInteractive)
-    /// Reads come every 0.1 ms while a window's write was queued or read back, or its frame
-    /// changed, within this long, and every 1 ms otherwise (docs/geometry.md).
+    /// Reads come every 0.1 ms this long after a window's write, read back or new frame, then
+    /// every 1 ms (docs/geometry.md).
     private static let fastFor = 0.02
 
-    /// Takes the window out of `state` and out of its Space, back at identity and alpha 1,
-    /// so it shows at its own frame. `state` comes from the lock.
+    /// `state` comes from the lock.
     static func remove(_ id: WindowID, from state: inout State) -> SlidingWindow? {
         guard let window = state.windows.removeValue(forKey: id) else { return nil }
         kosmos_space_set_transform(window.space, .identity)
@@ -298,7 +261,6 @@ private final class Onscreen: Sendable {
         return window
     }
 
-    /// Starts the reads unless they run.
     func follow() {
         let idle = state.withLock { state in
             defer { state.following = true }
@@ -307,9 +269,7 @@ private final class Onscreen: Sendable {
         if idle { queue.async { self.read() } }
     }
 
-    /// Reads the rows of the windows whose writes have not landed, as Hiding reads a batch's
-    /// Spaces, until none is left. At each new frame WindowServer gives a window, its
-    /// transform keeps it where it shows. A row missing from a read tells nothing.
+    /// A row missing from a read tells nothing.
     private func read() {
         let began = CACurrentMediaTime()
         var ids: [WindowID] = []
@@ -345,8 +305,6 @@ private final class Onscreen: Sendable {
     }
 }
 
-/// The display link's target, since CADisplayLink calls an Objective-C selector. The link
-/// runs on the main run loop.
 @MainActor
 private final class LinkTarget: NSObject {
     private let step: @MainActor (CADisplayLink) -> Void
