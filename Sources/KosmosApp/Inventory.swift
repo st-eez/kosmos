@@ -23,16 +23,35 @@ final class Inventory {
     private var spaceChangedAt: [UInt32: ContinuousClock.Instant] = [:]
     private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
-    var onManagedChange: (@MainActor (_ window: UInt32, _ pid: pid_t, _ managed: Bool) -> Void)?
-    /// Each worker report, after the inventory has applied it.
-    var onReport: (@MainActor (AXReport) -> Void)?
+    enum Event {
+        case managedChange(window: UInt32, pid: pid_t, managed: Bool)
+        /// Each worker report, after the inventory has applied it.
+        case report(AXReport)
+        /// Sent after the inventory recorded the departure or return of the app's windows.
+        case appHidden(pid: pid_t, hidden: Bool, received: ContinuousClock.Instant)
+        /// A managed window still ordered out at its look for none of the reasons with their
+        /// own reports, as a closed NSWindowController window its app keeps (docs/tree.md).
+        case keptOrderedOut(window: UInt32, orderedOut: ContinuousClock.Instant)
+        /// A destroyed candidate window counts as ordered out. Native tab switches are made of
+        /// these (docs/tree.md).
+        case orderChange(window: UInt32, pid: pid_t, orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant)
+        case fullscreenChange(window: UInt32, entered: Bool, spaceChangeBegan: ContinuousClock.Instant)
+        /// `changedAt` is nil for a frame read for a creation, a sweep, or a Space change such
+        /// as a reveal.
+        case frameChange(window: UInt32, old: CGRect, new: CGRect, changedAt: ContinuousClock.Instant?)
+        /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
+        case reordered(window: UInt32)
+        case styleChange
+    }
+    var onEvent: (@MainActor (Event) -> Void)?
     /// While locked, no window is admitted or removed, no sweep runs, and order changes wait
     /// for the unlock (docs/inventory.md).
     var sessionLocked = false {
         didSet {
             guard oldValue, !sessionLocked else { return }
             for change in heldOrder.unlocked() {
-                onOrderChange?(change.window, change.app, change.orderedIn, change.frame, change.at)
+                onEvent?(.orderChange(window: change.window, pid: change.app, orderedIn: change.orderedIn, frame: change.frame,
+                                      at: change.at))
             }
             awaitingUnlockSweep = true
         }
@@ -44,22 +63,6 @@ final class Inventory {
     private var spacesChangedSinceSweep = false
     /// A native fullscreen transition creates Spaces around its order-out (docs/tree.md).
     private(set) var spacesChangedAt: ContinuousClock.Instant?
-    /// Called after the inventory recorded the departure or return of the app's windows.
-    var onAppHidden: (@MainActor (_ pid: pid_t, _ hidden: Bool, _ received: ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out at its look for none of the reasons with their own
-    /// reports, as a closed NSWindowController window its app keeps (docs/tree.md).
-    var onKeptOrderedOut: (@MainActor (_ window: UInt32, _ orderedOut: ContinuousClock.Instant) -> Void)?
-    /// A destroyed candidate window counts as ordered out. Native tab switches are made of
-    /// these (docs/tree.md).
-    var onOrderChange: (@MainActor (_ window: UInt32, _ pid: pid_t, _ orderedIn: Bool, _ frame: CGRect,
-                                    _ at: ContinuousClock.Instant) -> Void)?
-    var onFullscreenChange: (@MainActor (_ window: UInt32, _ entered: Bool, _ spaceChangeBegan: ContinuousClock.Instant) -> Void)?
-    /// `changedAt` is nil for a frame read for a creation, a sweep, or a Space change such as
-    /// a reveal.
-    var onFrameChange: (@MainActor (_ window: UInt32, _ old: CGRect, _ new: CGRect, _ changedAt: ContinuousClock.Instant?) -> Void)?
-    /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
-    var onReordered: (@MainActor (_ window: UInt32) -> Void)?
-    var onStyleChange: (@MainActor () -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -185,7 +188,7 @@ final class Inventory {
         case .framesApplied, .framesDropped:
             break
         }
-        onReport?(report)
+        onEvent?(.report(report))
     }
 
     private func readAX(_ ids: [UInt32], pid: pid_t) {
@@ -224,7 +227,7 @@ final class Inventory {
         let changed = state ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil
         guard changed, isManaged(id) else { return }
         inventoryLog.info("\(id) \(state ? "entered" : "left", privacy: .public) native fullscreen")
-        onFullscreenChange?(id, state, since)
+        onEvent?(.fullscreenChange(window: id, entered: state, spaceChangeBegan: since))
     }
 
     /// Within the departure bound. A window ordered out in an event not handled yet counts
@@ -238,7 +241,7 @@ final class Inventory {
 
     private func readApplied() {
         for (id, orderedOut) in looks.readApplied(eventsWaiting: !pending.isEmpty) where isKeptOrderedOut(id) {
-            onKeptOrderedOut?(id, orderedOut)
+            onEvent?(.keptOrderedOut(window: id, orderedOut: orderedOut))
         }
     }
 
@@ -269,7 +272,7 @@ final class Inventory {
             if !hidden { departures.returned(id) } else if row.orderedIn { departures.left(id, at: .now) }
         }
         if !hidden { readIfUnknown(windows.filter { $0.value.pid == pid }.keys) }
-        onAppHidden?(pid, hidden, received)
+        onEvent?(.appHidden(pid: pid, hidden: hidden, received: received))
     }
 
     /// Nil info means the app did not answer, and what was known stays (docs/inventory.md).
@@ -278,7 +281,7 @@ final class Inventory {
         let wasManaged = isManaged(id)
         ax[id] = info
         if isManaged(id) != wasManaged {
-            onManagedChange?(id, pid, isManaged(id))
+            onEvent?(.managedChange(window: id, pid: pid, managed: isManaged(id)))
             inventoryLog.info("""
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
@@ -306,7 +309,7 @@ final class Inventory {
             enqueue(.read(id, .changed(at: .now)))
         case .reordered(let id):
             enqueue(.read(id, .changed(at: .now)))
-            if isManaged(id) { onReordered?(id) }
+            if isManaged(id) { onEvent?(.reordered(window: id)) }
         case .spaceMembership(let id):
             enqueue(.read(id, .spaceMembership(.now)))
         case .destroyed(let id):
@@ -404,15 +407,17 @@ final class Inventory {
         if isCandidate(row),
            heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: old?.orderedIn, frame: row.frame,
                              at: .now, locked: sessionLocked) {
-            onOrderChange?(row.id, row.pid, row.orderedIn, row.frame, .now)
+            onEvent?(.orderChange(window: row.id, pid: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now))
         }
         // Perhaps closed and kept: a conceal leaves a window ordered in, and a minimize, a hide
         // and native fullscreen have their own reports (docs/tree.md).
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { looks.orderedOut(row.id, at: .now) }
         // An app launched hidden restores its second window with no report (docs/inventory.md).
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
-        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, old.frame, row.frame, changedAt) }
-        if let old, old.level != row.level || old.cornerRadius != row.cornerRadius, isManaged(row.id) { onStyleChange?() }
+        if let old, old.frame != row.frame, isManaged(row.id) {
+            onEvent?(.frameChange(window: row.id, old: old.frame, new: row.frame, changedAt: changedAt))
+        }
+        if let old, old.level != row.level || old.cornerRadius != row.cornerRadius, isManaged(row.id) { onEvent?(.styleChange) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
@@ -444,9 +449,9 @@ final class Inventory {
         // Before the removal, so a tab that replaces this one takes its place.
         if isCandidate(row),
            heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now, locked: false) {
-            onOrderChange?(id, row.pid, false, row.frame, .now)
+            onEvent?(.orderChange(window: id, pid: row.pid, orderedIn: false, frame: row.frame, at: .now))
         }
-        if wasManaged { onManagedChange?(id, row.pid, false) }
+        if wasManaged { onEvent?(.managedChange(window: id, pid: row.pid, managed: false)) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
     }

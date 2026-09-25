@@ -113,23 +113,7 @@ final class Controller {
         rules = setup.rules
         profile = setup.profile
         self.barDisplays = barDisplays
-        inventory.onManagedChange = { [weak self] id, pid, managed in self?.managedChanged(id, pid: pid, managed) }
-        inventory.onReport = { [weak self] report in self?.handle(report) }
-        inventory.onFullscreenChange = { [weak self] id, entered, spaceChangeBegan in
-            self?.fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
-        }
-        inventory.onKeptOrderedOut = { [weak self] id, orderedOut in self?.keptOrderedOut(id, orderedOut: orderedOut) }
-        inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
-            self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
-            self?.updateBorders()
-        }
-        inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, old, frame, changedAt in
-            self?.frameChanged(id, from: old, to: frame, changedAt: changedAt)
-            self?.updateBorders()
-        }
-        inventory.onReordered = { [weak self] id in self?.borderWindows.raise(id) }
-        inventory.onStyleChange = { [weak self] in self?.updateBorders() }
+        inventory.onEvent = { [weak self] event in self?.handle(event) }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
@@ -291,6 +275,33 @@ final class Controller {
     }
 
     // MARK: Events
+
+    private func handle(_ event: Inventory.Event) {
+        switch event {
+        case .managedChange(let id, let pid, let managed):
+            managedChanged(id, pid: pid, managed)
+        case .report(let report):
+            handle(report)
+        case .appHidden(let pid, true, _):
+            appHidden(pid)
+        case .appHidden(let pid, false, let received):
+            appUnhidden(pid, at: received)
+        case .keptOrderedOut(let id, let orderedOut):
+            keptOrderedOut(id, orderedOut: orderedOut)
+        case .orderChange(let id, let pid, let orderedIn, let frame, let at):
+            orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
+            updateBorders()
+        case .fullscreenChange(let id, let entered, let spaceChangeBegan):
+            fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
+        case .frameChange(let id, let old, let frame, let changedAt):
+            frameChanged(id, from: old, to: frame, changedAt: changedAt)
+            updateBorders()
+        case .reordered(let id):
+            borderWindows.raise(id)
+        case .styleChange:
+            updateBorders()
+        }
+    }
 
     private func managedChanged(_ id: WindowID, pid: pid_t, _ managed: Bool) {
         if managed {
