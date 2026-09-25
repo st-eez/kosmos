@@ -18,8 +18,8 @@ display, and a command for a workspace another display shows only moves the focu
 [MC.tla](MC.tla) fixes a small topology: workspace 1 holds w1 and w2, workspace 2 holds
 w3, and workspace 3 is empty. App A owns w1 and w3, app B owns w2. The `displays-`
 configs use two displays: workspaces 1 = {w1} and 2 = {w3} on display 1, and workspace
-3 = {w2} on display 2, with the same apps. Each configuration bounds the user to two or
-three inputs.
+3 = {w2} on display 2, with the same apps, and so does `split-displays`. Each
+configuration bounds the user to two or three inputs.
 
 ## Running
 
@@ -28,37 +28,40 @@ three inputs.
 python3 trace.py < mixed.out              # print the counterexample step by step
 ```
 
-Java 11 or newer is required.
+Java 11 or newer is required. `run.sh` runs TLC with 4 workers, or `TLC_WORKERS`, and
+deletes its state directory when TLC exits.
 
 ## Results
 
-| Config | Inputs | Checks | Result | States |
-| --- | --- | --- | --- | --- |
-| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 |
-| `user` | commands, clicks, Command-Tab, an opened hidden window | convergence, last command wins, last activation wins, recovery path | pass | 220,819 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 |
-| `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 |
-| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 6,465 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 72 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 59 |
-| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 |
-| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 |
-| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 925,239 |
-| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 973,302 |
-| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 11,149 |
-| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,235,551 |
-| `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 |
-| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 71,139 |
-| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 |
-| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 |
-| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 |
-| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 |
-| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 |
-| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 |
-| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 |
-| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 3,506 |
-| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 7,208 |
+| Config | Inputs | Checks | Result | States | Depth |
+| --- | --- | --- | --- | --- | --- |
+| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 | 26 |
+| `user` | commands, clicks, Command-Tab, an opened hidden window | convergence, last command wins, last activation wins, recovery path | pass | 220,819 | 29 |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 | 28 |
+| `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 | 28 |
+| `hover` | commands, clicks, Command-Tab, an opened hidden window, and hover | convergence, last command wins, last activation wins, recovery path | pass | 328,029 | 29 |
+| `hover-settles` | as `hover` | every disturbance settles (liveness) | pass | 328,029 | 29 |
+| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 | 32 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 5,833 | 7 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 63 | 6 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 53 | 5 |
+| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 | 37 |
+| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 | 37 |
+| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 879,604 | 13 |
+| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 894,587 | 13 |
+| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 10,564 | 6 |
+| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,246,461 | 20 |
+| `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 | 32 |
+| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 74,684 | 15 |
+| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 | 40 |
+| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 | 26 |
+| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 | 29 |
+| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 | 26 |
+| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 | 37 |
+| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 | 37 |
+| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 | 40 |
+| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 4,031 | 8 |
+| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 7,267 | 12 |
 
 `mixed`, `conceal-first`, `fallback-user` and `displays-fallback` record trade-offs, and
 the others record the behaviour this model replaced:

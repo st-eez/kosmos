@@ -8,5 +8,7 @@ if [[ ! -f $jar ]]; then
 fi
 cfg=${1%.cfg}.cfg
 shift
-exec java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -noGenerateSpecTE \
-    -metadir "${TMPDIR:-/tmp}/tlc-states/$$" -config "$cfg" "$@" MC.tla
+meta=$(mktemp -d "${TMPDIR:-/tmp}/tlc-states.XXXXXX")
+trap 'rm -rf "$meta"' EXIT
+java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers "${TLC_WORKERS:-4}" -noGenerateSpecTE \
+    -metadir "$meta" -config "$cfg" "$@" MC.tla
