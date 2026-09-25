@@ -269,12 +269,13 @@ off the main thread).
 - A batch's completion and the focus request after it run on the main actor, so work
   queued there delays both. Three reads had kept the main actor busy after a switch. Each
   app's activation policy is now read once (section 5.1), the departure of the window key
-  before a report only when its verdict needs it (5.4), and the pointer's target frame on
-  the focus queue (5.11). Live on 2026-09-24, 40 alternating switches between two
-  workspaces of one window each, back to back under the same load (load average 5 to 8):
-  main at 636a019 took 3.53 ms from keypress to the end at the median and 8.42 ms at most,
-  and the completion waited over 1 ms for the main actor in 12 switches; with the three
-  changes (367cd28), 3.75 and 10.25 ms, and 3 such waits, so the switch time is the same
+  before a report only when its verdict needs it (5.4), and the pointer's target frame
+  comes from Kosmos's layout with no read, and never after a switch (5.11). Live on
+  2026-09-24, 40 alternating switches between two workspaces of one window each, back to
+  back under the same load (load average 5 to 8): main at 636a019 took 3.53 ms from
+  keypress to the end at the median and 8.42 ms at most, and the completion waited over
+  1 ms for the main actor in 12 switches; with the three changes (367cd28), 3.75 and
+  10.25 ms, and 3 such waits, so the switch time is the same
   within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
   but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
   10 ms stalls until 248f668 removed it. Half of the about 66 left are the 815 reads in
@@ -755,9 +756,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   PointerGate).
 - The main actor focuses the window only when all of these hold (KosmosCore's
   `FocusFollowsMouse.skip`, whose reason for skipping is logged):
-  - It is a tiled or floating window of the shown workspace. Menus, the bar, panels and
-    dialogs, the Dock, Mission Control's windows, Kosmos's own windows and the windows of a
-    workspace a switch is hiding leave focus where it is.
+  - It is a tiled or floating window of a workspace a display shows. Menus, the bar,
+    panels and dialogs, the Dock, Mission Control's windows, Kosmos's own windows and the
+    windows of a workspace a switch is hiding leave focus where it is.
   - Its app is not ignored.
   - macOS does not show a native fullscreen window's Space, the gate every focus request
     other than a command passes (section 5.4). On a fullscreen Space the only window under
@@ -778,11 +779,33 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   Control held changes nothing, so after Control is released the next movement focuses
   the window under the pointer. Nothing is focused while a mouse button is down, because a
   movement with a button down is a drag event, which the tap does not receive.
-- The pointer follows focus the other way too, with `mouse-follows-focus`. A command that
-  focuses a window moves the pointer to its center unless the pointer is already over it,
-  and so does Command-Tab to a window away from the pointer. A click happens over the
-  window or its resize region, a few points past the frame, which counts as over it, so a
-  click never moves the pointer. A hover focus never moves the pointer.
+- The pointer follows focus the other way too, with `mouse-follows-focus`, when the
+  keyboard moves focus to another window or moves the focused window and no workspace is
+  switched (KosmosCore's FocusChange). Omarchy on the development Mac centers the pointer
+  only when focus moves between windows of one workspace, and Steve's AeroSpace config
+  chained `move-mouse window-lazy-center` onto hotkey bindings only.
+  - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
+    another display shows, centers the pointer on the window it focuses.
+  - A hotkey's `move`, `swap` or `move-node-to-monitor` brings the pointer along with the
+    focused window, and `move-node-to-workspace` without `--focus-follows-window` centers
+    it on the window focused next. With focus follows mouse, a pointer left behind would
+    focus the neighbour on the next bump.
+  - Command-Tab to a window of a shown workspace centers the pointer on it. Kosmos tells
+    Command-Tab from a click, on the window or the Dock, by which came last when it handles
+    the activation: `CGEventSource.secondsSinceLastEventType` for key down against left and
+    right mouse down, in the combined session state. The read takes no event tap, and the
+    log gives both times.
+  - A workspace switch leaves the pointer where it is: `workspace` by name, `next` or
+    `prev`, `workspace-back-and-forth`, `move-node-to-workspace --focus-follows-window`, and
+    Command-Tab or a click that Kosmos follows into a hidden workspace.
+  - Every command carries its source, a hotkey or the CLI, and a command from the CLI
+    leaves the pointer, so a click on the bar's workspaces, a script or a launcher never
+    moves it. Neither does a hover focus, nor a layout, resize or `join-with` command.
+  - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
+    window. When the window moves, the frame is the one Kosmos is writing, which the app's
+    worker may not have applied yet; AeroSpace's binding slept 50 ms before it read the
+    frame. Otherwise it is the layout's frame, or a floating window's last frame the
+    inventory heard, so the move reads nothing from WindowServer and runs on the main actor.
 - Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
   the next movement as the place the pointer landed and passes nothing on, whether or not
   the move posts an event of its own. A movement the tap passed on before a command is
@@ -830,6 +853,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   ignored Google Chrome for Testing. The command `focus-follows-mouse on|off|toggle`
   switches it until the next config load.
 - Left out:
+  - The pointer after `join-with`, layout and resize commands, which can leave it over a
+    neighbour of the focused window. Steve's AeroSpace bindings left it there too; if a
+    bump then focuses the neighbour in practice, they join FocusChange's list.
   - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
     AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
     minimum distance from where the pointer last counted, in PointerGate, brings it back.

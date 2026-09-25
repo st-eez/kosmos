@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server = try IPCServer(socketPath: kosmosSocketPath(), log: { message in
                 log.notice("ipc: \(message, privacy: .public)")
             }) { [weak self] arguments in
-                self?.respond(to: arguments, received: .now) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
+                self?.respond(to: arguments, received: .now, from: .cli) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
             }
         } catch {
             log.error("socket not started: \(String(describing: error), privacy: .public)")
@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// One entry point for the socket and the hotkeys.
-    private func respond(to arguments: [String], received: ContinuousClock.Instant) -> Response {
+    private func respond(to arguments: [String], received: ContinuousClock.Instant, from source: CommandSource) -> Response {
         switch arguments {
         case ["ping"]: return Response(stdout: "pong")
         case ["version"]: return Response(stdout: kosmosVersion)
@@ -129,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let controller else {
                 return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission")
             }
-            let result = controller.run(arguments, received: received)
+            let result = controller.run(arguments, received: received, from: source)
             return result.code == 0 ? Response(stdout: result.text) : Response(exitCode: result.code, stderr: "kosmos: " + result.text)
         }
     }
@@ -219,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.focusFollowsMouse = config.focusFollowsMouse
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
-            _ = self?.respond(to: binding.arguments, received: .now)
+            _ = self?.respond(to: binding.arguments, received: .now, from: .hotkey)
         }
         self.hotkeys = hotkeys
         let problems = hotkeys.load(config.modes)

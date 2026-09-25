@@ -3,7 +3,7 @@ import CoreGraphics
 /// A checked config file. `Config.load` builds one, and every monitor, workspace and mode
 /// name in it is defined. docs/sample-config.toml is Steve's AeroSpace setup in this schema.
 public struct Config: Equatable, Sendable {
-    /// Move the mouse pointer into a window that a command or Command-Tab focused.
+    /// Move the mouse pointer into the window the keyboard focused or moved (FocusChange).
     public var mouseFollowsFocus = false
     public var focusFollowsMouse = FocusFollowsMouse()
     public var workspaces: [String] = []

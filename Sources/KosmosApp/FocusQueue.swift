@@ -2,7 +2,6 @@ import AppKit
 import CKosmos
 import KosmosCore
 import KosmosRecovery
-import KosmosSkyLight
 import Synchronization
 import os
 
@@ -48,16 +47,13 @@ final class FocusQueue: Sendable {
     /// before any report of the change, which reaches main only after the change starts.
     /// `dropped` gets that stamp when the call fails. Recording when the request is made failed
     /// TLC: a request still queued took a click on its window for its echo.
-    ///
-    /// `movePointer`: center the pointer on the window before keying it.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
-                 movePointer: Bool, generation: UInt64,
+                 generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
                  dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !concealed else { return }
-            if movePointer, case .window(let id) = key { Self.centerPointer(on: id) }
             let front = kosmos_front_pid() == pid
             if privately {
                 let stamp: ContinuousClock.Instant
@@ -114,15 +110,6 @@ final class FocusQueue: Sendable {
             finished.signal()
         }
         _ = finished.wait(timeout: .now() + .milliseconds(30))
-    }
-
-    /// Moves the pointer to the window's center unless it is already inside the window, as
-    /// AeroSpace's `move-mouse window-lazy-center` does. The frame is read here, off the main
-    /// thread: right after a switch the read waits on WindowServer's Space transaction.
-    private static func centerPointer(on window: UInt32) {
-        guard let frame = SkyLight.rows([window]).first?.frame, !frame.isEmpty,
-              let pointer = CGEvent(source: nil)?.location, !frame.contains(pointer) else { return }
-        CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     private static func onMain(_ callback: @escaping @MainActor () -> Void) {

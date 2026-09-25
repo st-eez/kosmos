@@ -69,3 +69,40 @@ extension FocusFollowsMouse {
         return nil
     }
 }
+
+/// Where a command came from. Bar clicks, scripts and launchers send theirs through the CLI.
+public enum CommandSource: Sendable {
+    case hotkey
+    case cli
+}
+
+/// A focus change that mouse-follows-focus may bring the pointer along for (DESIGN.md,
+/// section 5.11).
+public enum FocusChange: Equatable, Sendable {
+    case command(Command, from: CommandSource)
+    /// The user activated a window of a shown workspace, which Kosmos adopts. `keyboard`: a
+    /// key press came after the last click, as with Command-Tab. Otherwise a click on the
+    /// window or the Dock did it.
+    case activation(keyboard: Bool)
+
+    /// Whether the pointer goes to the focused window, unless it is over it already. It
+    /// does when the keyboard moves focus to another window, or moves the focused window,
+    /// and no workspace is switched, as in Omarchy. A hotkey's focus and move commands
+    /// qualify, across displays too, and so does sending the window to another workspace
+    /// while focus stays. A workspace switch never moves the pointer, nor does anything
+    /// from the CLI, a click, or following an activation into a hidden workspace, which
+    /// is a switch.
+    public var movesPointer: Bool {
+        switch self {
+        case .command(let command, let source):
+            guard source == .hotkey else { return false }
+            switch command {
+            case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
+            case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow
+            default: return false
+            }
+        case .activation(let keyboard):
+            return keyboard
+        }
+    }
+}

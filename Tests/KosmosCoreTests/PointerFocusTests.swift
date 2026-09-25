@@ -125,3 +125,63 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
     var s = session()
     #expect(s.perform(.focusFollowsMouse(.toggle)) == nil)
 }
+
+/// Whether mouse-follows-focus moves the pointer for a command as a binding writes it.
+private func movesPointer(_ binding: String, from source: CommandSource = .hotkey) throws -> Bool {
+    let command = try Command.parse(binding.split(separator: " ").map(String.init)).get()
+    return FocusChange.command(command, from: source).movesPointer
+}
+
+@Suite struct MouseFollowsFocusTests {
+    @Test func keyboardFocusAndMovesBringThePointerAlong() throws {
+        for binding in ["focus --boundaries all-monitors-outer-frame left", "focus right", "focus-monitor next",
+                        "move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors left",
+                        "move up", "swap down", "move-node-to-monitor --wrap-around --focus-follows-window up",
+                        "move-node-to-monitor 2",
+                        // The window leaves, and the focus goes to the next window of the workspace.
+                        "move-node-to-workspace 3"] {
+            #expect(try movesPointer(binding), "\(binding)")
+        }
+    }
+
+    @Test func workspaceSwitchesLeaveThePointer() throws {
+        for binding in ["workspace 2", "workspace next", "workspace prev", "workspace-back-and-forth",
+                        "move-node-to-workspace --focus-follows-window 2",
+                        "move-node-to-workspace --focus-follows-window next"] {
+            #expect(try !movesPointer(binding), "\(binding)")
+        }
+    }
+
+    @Test func commandsThatKeepTheFocusLeaveThePointer() throws {
+        for binding in ["join-with left", "layout tiles horizontal vertical", "layout floating tiling", "fullscreen",
+                        "resize smart +50", "balance-sizes", "flatten-workspace-tree"] {
+            #expect(try !movesPointer(binding), "\(binding)")
+        }
+    }
+
+    @Test func theCLILeavesThePointer() throws {
+        // SketchyBar's workspace pills, scripts and Raycast.
+        #expect(try !movesPointer("workspace 2", from: .cli))
+        #expect(try !movesPointer("focus left", from: .cli))
+        #expect(try !movesPointer("move right", from: .cli))
+    }
+
+    @Test func commandTabBringsThePointerAndAClickDoesNot() {
+        #expect(FocusChange.activation(keyboard: true).movesPointer)
+        #expect(!FocusChange.activation(keyboard: false).movesPointer)
+    }
+
+    @Test func aMovesPlanGivesTheFrameThePointerGoesTo() throws {
+        // The move sets no focus, and the pointer follows the window to the frame Kosmos
+        // writes, before the app has applied it.
+        var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
+        _ = s.add(1)
+        _ = s.add(2)
+        s.adopt(1)
+        let before = s.frames(of: "1")
+        let result = s.perform(.move(.right))
+        let plan = try #require(result)
+        #expect(s.focused == 1 && plan.focus == nil)
+        #expect(plan.frames[1] == before[2])
+    }
+}
