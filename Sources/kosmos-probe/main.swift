@@ -116,6 +116,8 @@
 //                                   owner, parent, level and Spaces, whether the record names
 //                                   it and whether its owner owns a recorded window. Read only:
 //                                   it changes no Space or window, opens none and takes no focus.
+//   kosmos-probe bench-windows <count> [display] | eui [pid...] | cpu <pid...>
+//                                   What script/bench-relayout.sh uses (Bench.swift).
 import AppKit
 import CKosmos
 import KosmosCore
@@ -152,8 +154,12 @@ case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) 
 case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
 case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
+case "bench-windows" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
+    benchWindows(Int(arguments.dropFirst().first!)!, on: arguments.dropFirst(2).first)
+case "eui": enhancedUserInterface(arguments.dropFirst().compactMap { pid_t($0) })
+case "cpu" where arguments.count >= 2: cpu(arguments.dropFirst().compactMap { pid_t($0) })
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...] | cpu <pid...>")
     exit(2)
 }
 
