@@ -47,7 +47,7 @@ actor AppWorker {
     static let timeout: Float = 1.0
     /// How long the worker waits for the app to perform a raise. A raise it stopped waiting
     /// for still lands when the app gets to it, and can key a window after a newer command
-    /// (tla/README.md, change 12). One that outlasts this counts as made, so its echo is
+    /// (tla/README.md, change 19, `split-user-timeout`). One that outlasts this counts as made, so its echo is
     /// still recognized, and its app is backed off. No measurement chose the 5 s.
     static let raiseTimeout: Float = 5.0
 
@@ -55,9 +55,11 @@ actor AppWorker {
     private let name: String
     private let executor: RunLoopExecutor
     /// Runs the app's AX observer, apart from the worker's calls into the app, so a focus
-    /// notification is stamped and checked against the front process when the app sends it
-    /// (tla/README.md, change 12). Checked behind a busy worker, a click inside the front
-    /// app that raced Kosmos's activation of another app was dropped.
+    /// notification is stamped and checked against the front process in its callback, which
+    /// never waits behind the worker's calls (tla/README.md, change 19). Checked behind a
+    /// busy worker, a click inside the front app that raced Kosmos's activation of another app
+    /// was dropped (`split-user-latenote`). The callback still runs some time after the app
+    /// sends the notification, and Kosmos can key or hide windows in between (change 20).
     private let observerLoop: RunLoopExecutor
     private let report: @MainActor (AXReport) -> Void
     private let app: AXUIElement

@@ -650,9 +650,11 @@ final class Controller {
         switch report.kind {
         case .backgroundFocus(let id):
             // An app that is not front changed its own focused window, as after AXRaise in
-            // it: no key window report, and never the last one seen. It can still be
-            // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe). It leaves the
-            // kill switch's count alone: a raise's report says nothing about the key record.
+            // it, or its activation read ran after it lost the front: no key window report,
+            // neither the key window last heard of nor the last report taken. It can still be
+            // Kosmos's echo, and is otherwise ignored (tla/README.md, change 17). It leaves
+            // the kill switch's count alone: a raise's report says nothing about the key
+            // record.
             guard !sessionLocked else { return }
             _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
@@ -686,7 +688,10 @@ final class Controller {
             // report that repeats the key window, that is the window before (KeyHistory).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
             // it left too. classify reads it only when the verdict depends on it. After a
-            // switch the read waited on WindowServer's Space transaction.
+            // switch the read waited on WindowServer's Space transaction. Whether the window
+            // was concealed is judged at the stamp, for a notification as for an activation
+            // read: only its notification reports a window opened inside the front app
+            // (tla/README.md, change 22).
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
                                    concealed: placed || id.map { hiding.wasConcealed($0, at: report.received) } ?? false),
