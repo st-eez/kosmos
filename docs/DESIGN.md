@@ -19,6 +19,9 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 - macOS 27 only, Apple Silicon. Swift 6.4 with a small C shim for private calls.
 - No external runtime dependencies.
 - Logical workspaces, not one macOS Space per workspace.
+- Where AeroSpace and Omarchy (Hyprland as Omarchy configures it) behave differently, Kosmos
+  follows Omarchy: focus follows mouse, where the pointer goes, and dragging windows.
+  Command names, flags and the CLI follow AeroSpace, whose syntax the configs use.
 
 ## 2. What the fork measured
 
@@ -931,12 +934,13 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 4. **Hiding and recovery.** Holding Space, guardian, durable record, switch protocol.
 5. **Focus.** Private focus path, echo classifier, empty workspaces.
 6. **Hotkeys, config and bar.** Carbon hotkeys, TOML, profiles, SketchyBar push.
-7. **Parity with AeroSpace.** Multi-monitor with display profiles that follow the
+7. **Parity.** AeroSpace's features, with Omarchy's behavior where the two differ. Multi-monitor with display profiles that follow the
    connected displays, floating windows, rules, fullscreen, returning windows, the status
    bar event, and switching over (section 5.12). Other tools keep running beside Kosmos
    until their replacement lands. Timing compared against the AeroSpace fork.
 8. **Beyond AeroSpace.** Replace what needed a workaround: focus follows mouse (retiring
-   AutoRaise) and `kosmos list-bindings` for launchers.
+   AutoRaise), moving and resizing windows with a modifier and the mouse (retiring
+   BetterTouchTool's window moving), and `kosmos list-bindings` for launchers.
 9. **Later.** A native bar as a separate process, borders from Kosmos's own model,
    persistence across restarts.
 
