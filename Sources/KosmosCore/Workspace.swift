@@ -1,26 +1,22 @@
 import CoreGraphics
 
-/// A workspace: tiled windows in a tree under one root container, floating windows, and
-/// parked windows. A parked window is out of the layout while it is minimized, hidden with
-/// its app or in native fullscreen, and remembers where to return.
-///
-/// A value type: the main actor mutates its copy, and a copy sent to another thread is a
-/// snapshot.
+/// Parked windows are minimized, hidden with their app or in native fullscreen, out of the
+/// layout until they return (docs/tree.md).
 struct Workspace: Sendable {
-    /// It may be empty or hold a single window. A root left holding a single container is
-    /// replaced by that container.
+    /// May be empty or hold one window. A root left holding a single container is replaced by
+    /// that container.
     var root: Container
     var floating: [WindowID] = []
     /// The tiled window that covers the whole display rectangle.
     var fullscreenWindow: WindowID?
     /// Oldest first.
     var parked: [Parked] = []
-    /// Where each window that left the tree to float or park returns to, oldest first.
+    /// For each window that left the tree to float or park, oldest first.
     var hints: [RestoreHint] = []
     /// Counts changes to the tree other than windows leaving, and returning with a fresh
     /// hint. A hint is fresh when no change came after it.
     var edits = 0
-    /// The clock value of each window's latest focus. Parked windows keep theirs.
+    /// Each window's latest focus on `clock`. Parked windows keep theirs.
     var stamps: [WindowID: UInt64] = [:]
     var clock: UInt64 = 0
     var lastContainerID = 0
@@ -32,17 +28,12 @@ struct Workspace: Sendable {
 
 struct Parked: Sendable {
     let window: WindowID
-    /// The window was floating, so it returns to the floating list.
+    /// It returns to the floating list.
     let floating: Bool
 }
 
-/// Where a window stood in the tree when it left, recorded as the windows it stood among,
-/// which outlive the containers around them.
-///
-/// A hint is taken from the tree with every window that has a fresh hint put back, so a
-/// window that left earlier still counts as a sibling. Windows that leave and return with
-/// no other change to the tree in between come back to the same places and sizes in any
-/// order.
+/// Where a window stood when it left the tree, as the windows it stood among, which outlive
+/// the containers around them (docs/tree.md).
 struct RestoreHint: Sendable {
     struct Level: Sendable {
         let orientation: Orientation
@@ -60,8 +51,7 @@ struct RestoreHint: Sendable {
 }
 
 extension RestoreHint {
-    /// The same hint, with `new` standing where `old` stood, as the window it is for or
-    /// among the neighbours.
+    /// With `new` standing where `old` stood, as the hint's window or a neighbour.
     func renaming(_ old: WindowID, to new: WindowID) -> RestoreHint {
         RestoreHint(window: window == old ? new : window, levels: levels.map { level in
             Level(orientation: level.orientation, slots: level.slots.map { slot in
@@ -72,18 +62,18 @@ extension RestoreHint {
 }
 
 extension Workspace {
-    /// Whether the window is tiled, floating or parked here.
+    /// Tiled, floating or parked.
     func contains(_ window: WindowID) -> Bool {
         root.path(to: window) != nil || floating.contains(window) || parked.contains { $0.window == window }
     }
 
-    /// The most recently focused window that is tiled or floating.
+    /// The most recently focused window that is tiled or floating, never a parked one.
     var focusedWindow: WindowID? {
         (root.windows + floating).filter { stamps[$0] != nil }.max { stamps[$0]! < stamps[$1]! }
     }
 
-    /// Records that a tiled or floating window took focus. Focus on another tiled window
-    /// ends fullscreen, because macOS raises the focused window over it.
+    /// Focus on another tiled window ends fullscreen, because macOS raises the focused window
+    /// over it.
     mutating func focus(_ window: WindowID) {
         let tiled = root.path(to: window) != nil
         guard tiled || floating.contains(window) else { return }
@@ -92,8 +82,6 @@ extension Workspace {
         check()
     }
 
-    /// Tiles a new window after the most recently focused tiled window, in that window's
-    /// container, with the mean share of its new siblings (i3's `tree_open_con`).
     mutating func insert(_ window: WindowID) {
         precondition(!contains(window), "window \(window) is already in the workspace")
         insertAfterMostRecent(window)
@@ -102,8 +90,6 @@ extension Workspace {
         check()
     }
 
-    /// Tiles a window at one end of the root: first when `first`, else last. A window
-    /// entering from another display arrives at the edge it crossed.
     mutating func insert(_ window: WindowID, first: Bool) {
         precondition(!contains(window), "window \(window) is already in the workspace")
         root.insert(.window(window), at: first ? 0 : root.children.count)
@@ -112,10 +98,8 @@ extension Workspace {
         check()
     }
 
-    /// Tiles a window beside `target` as Hyprland's dwindle layout drops one: the two share
-    /// the target's space equally, side by side when `orientation` is horizontal, else one
-    /// above the other, the window first when `first`. In a container of that orientation
-    /// they become siblings splitting the target's share.
+    /// The two share the target's space equally, as Hyprland's dwindle layout drops a window
+    /// (docs/displays.md). In a container of `orientation` they become siblings.
     mutating func insert(_ window: WindowID, beside target: WindowID, _ orientation: Orientation, first: Bool) {
         precondition(!contains(window), "window \(window) is already in the workspace")
         pair(window, with: target, orientation, first: first)
@@ -124,15 +108,12 @@ extension Workspace {
         check()
     }
 
-    /// Puts the window and the tiled window `target` in a new container of `orientation` in
-    /// the target's place, sharing it equally, the window first when `first`.
     private mutating func pair(_ window: WindowID, with target: WindowID, _ orientation: Orientation, first: Bool) {
         let path = root.path(to: target)!
         let pair = [Node(kind: .window(target), weight: 1), Node(kind: .window(window), weight: 1)]
         root[path.dropLast()].children[path.last!].kind = .container(makeContainer(orientation, first ? pair.reversed() : pair))
     }
 
-    /// Forgets a window. Call it only when the WindowServer reports the window gone.
     @discardableResult
     mutating func remove(_ window: WindowID) -> Bool {
         if let path = root.path(to: window) {
@@ -153,10 +134,8 @@ extension Workspace {
         return true
     }
 
-    /// Puts `new` where `old` stands, tiled, floating or parked, with its share, focus stamp
-    /// and fullscreen state: native tabs share one place. Restore hints, those of `old` and
-    /// those that count `old` among their neighbours, name `new` instead. False when `old`
-    /// is not here, or `new` is.
+    /// Native tabs share one place, so `new` takes `old`'s place, share, focus stamp,
+    /// fullscreen state and restore hints. False when `old` is not here, or `new` is.
     @discardableResult
     mutating func replace(_ old: WindowID, with new: WindowID) -> Bool {
         guard !contains(new) else { return false }
@@ -176,7 +155,6 @@ extension Workspace {
         return true
     }
 
-    /// Takes a tiled or floating window out of the layout, keeping where it stood.
     @discardableResult
     mutating func park(_ window: WindowID) -> Bool {
         if root.path(to: window) != nil {
@@ -193,10 +171,9 @@ extension Workspace {
         return true
     }
 
-    /// Returns parked windows to where they stood. They return in the reverse of the order
-    /// they parked, which undoes the parking exactly when nothing else changed, as when an
-    /// app hides and unhides its windows together. `rect` and `gaps` are the ones `frames`
-    /// gets, to keep windows at one point when a hint is stale.
+    /// The windows return in the reverse of the order they parked, which undoes the parking
+    /// exactly when nothing else changed. `rect` and `gaps` are the ones `frames` gets, for a
+    /// stale hint.
     mutating func unpark(_ windows: [WindowID], in rect: CGRect, gaps: Gaps) {
         for entry in parked.reversed() where windows.contains(entry.window) {
             parked.removeAll { $0.window == entry.window }
@@ -210,7 +187,6 @@ extension Workspace {
         check()
     }
 
-    /// Moves a tiled window to the floating list, keeping where it stood.
     @discardableResult
     mutating func float(_ window: WindowID) -> Bool {
         guard root.path(to: window) != nil else { return false }
@@ -221,8 +197,7 @@ extension Workspace {
         return true
     }
 
-    /// Tiles a floating window where it stood before it floated, or after the most recently
-    /// focused tiled window if it never was tiled. `rect` and `gaps` are as for `unpark`.
+    /// `rect` and `gaps` are as for `unpark`.
     @discardableResult
     mutating func tile(_ window: WindowID, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let index = floating.firstIndex(of: window) else { return false }
@@ -233,9 +208,8 @@ extension Workspace {
         return true
     }
 
-    /// The broken invariants: those of docs/tree.md, plus consistent focus stamps,
-    /// fullscreen window and restore hints. Empty when the workspace is sound. Every
-    /// mutation checks it in debug builds.
+    /// The broken invariants of docs/tree.md, and of the stamps, the fullscreen window and the
+    /// hints. Empty when the workspace is sound.
     func validate() -> [String] {
         var problems: [String] = []
         var places: [WindowID: Int] = [:]
@@ -290,9 +264,8 @@ extension Workspace {
         assert(validate().isEmpty, "\(validate())")
     }
 
-    /// Restores the invariants after a mutation. A root left holding a single container is
-    /// replaced by that container, as in AeroSpace, so the root's orientation is the one on
-    /// screen.
+    /// A root left holding a single container is replaced by that container, as in AeroSpace,
+    /// so the root's orientation is the one on screen.
     mutating func normalize() {
         root.normalize()
         if root.children.count == 1, case .container(let only) = root.children[0].kind {
@@ -305,7 +278,6 @@ extension Workspace {
         return Container(id: lastContainerID, orientation: orientation, children: children)
     }
 
-    /// Moves the root into a new root with `orientation` (i3's `ws_force_orientation`).
     mutating func wrapRoot(_ orientation: Orientation) {
         let old = root
         root = makeContainer(orientation, [Node(kind: .container(old), weight: 1)])
@@ -323,8 +295,8 @@ extension Workspace {
         }
     }
 
-    /// The child holding the most recently focused window, the last one on a tie
-    /// (AeroSpace's `mostRecentChild`).
+    /// The child holding the most recently focused window, the last one on a tie, as
+    /// AeroSpace's `mostRecentChild`.
     func mostRecentChild(of container: Container) -> Node? {
         var best: (node: Node, stamp: UInt64)?
         for child in container.children {
@@ -350,9 +322,8 @@ extension Workspace {
         root[path.dropLast()].insert(.window(window), at: path.last! + 1)
     }
 
-    /// Takes a tiled window out of the tree and records where it stood. Its space goes to
-    /// the children of its container that hold its nearest recorded siblings, so the
-    /// windows it shared space with take it back, and give it back when it returns.
+    /// Its space goes to the children that hold its nearest recorded siblings, which give it
+    /// back when it returns.
     mutating func detach(_ window: WindowID) {
         let hint = hint(for: window)
         hints.append(hint)
@@ -372,17 +343,8 @@ extension Workspace {
         if fullscreenWindow == window { fullscreenWindow = nil }
     }
 
-    /// Puts a window back where its hint says, or after the most recently focused tiled
-    /// window if it has none. Returning with a stale hint, or none, changes the tree like
-    /// an insert.
-    ///
-    /// A stale hint's share no longer matches the space around the window. The window then
-    /// returns beside its siblings, or after the most recently focused tiled window when
-    /// none are tiled, only if no window that had a point along each axis ends with less,
-    /// the floor resize keeps. Beside the siblings, the share halves until that holds.
-    /// Otherwise the window takes half of the window with the most room, in a new container
-    /// across that window's container. Adding a child to a container can shrink its gaps
-    /// and move every edge in it, and the new container adds a child to none.
+    /// A return with a stale hint, or none, changes the tree like an insert, and leaves every
+    /// window that had a point with one (docs/tree.md).
     mutating func restore(_ window: WindowID, in rect: CGRect, gaps: Gaps) {
         guard let index = hints.firstIndex(where: { $0.window == window }) else {
             insertAfterMostRecent(window)
@@ -412,21 +374,18 @@ extension Workspace {
                 self = attempt
                 return
             }
-            // A smaller share only helps beside the siblings, and only while the window
-            // still gets a point.
+            // A smaller share helps only beside the siblings, while the window gets a point.
             guard bySiblings, fits else { break }
             scale /= 2
         }
         split(roomiest: window, in: rect, gaps: gaps)
     }
 
-    /// Puts the window with the tiled window that has the most room, in a new container
-    /// across that window's container, so no other window moves. With nothing tiled, the
-    /// window goes into the root.
+    /// In a new container across the roomiest window's container, so no other window moves.
     private mutating func split(roomiest window: WindowID, in rect: CGRect, gaps: Gaps) {
         let frames = tileFrames(in: rect, gaps: gaps)
-        // The shorter side of each half: the length along the container, or half the
-        // length across it.
+        // The shorter side of each half, the length along the container or half the length
+        // across it.
         func room(_ id: WindowID) -> CGFloat {
             let frame = frames[id]!
             return root[root.path(to: id)!.dropLast()].orientation == .horizontal
@@ -439,10 +398,8 @@ extension Workspace {
         pair(window, with: roomiest, root[root.path(to: roomiest)!.dropLast()].orientation.opposite, first: false)
     }
 
-    /// Where the window stands in the tree with every window that has a fresh hint put
-    /// back, newest first, so a window that left earlier still counts as a sibling. Hints
-    /// taken in any order then agree on where each window goes. A stale hint no longer
-    /// matches the tree around it, so it only places its own window.
+    /// Taken with every window that has a fresh hint put back, newest first, so hints taken
+    /// in any order agree on where each window goes.
     private func hint(for window: WindowID) -> RestoreHint {
         var whole = self
         for hint in hints.reversed() where hint.edits == edits {
@@ -464,9 +421,8 @@ extension Workspace {
         level.slots.indices.filter { $0 != level.index && !level.slots[$0].windows.isDisjoint(with: tiled) }
     }
 
-    /// Puts the window at the lowest level of its hint where some of its old siblings are
-    /// tiled, with its recorded share times `scale`, or after the most recently focused
-    /// tiled window when none are.
+    /// At the lowest level of the hint with old siblings tiled, with the recorded share times
+    /// `scale`.
     private mutating func place(_ hint: RestoreHint, scale: Double = 1) {
         let tiled = Set(root.windows)
         guard let level = hint.levels.first(where: { !present($0, tiled).isEmpty }) else {
@@ -492,7 +448,6 @@ extension Workspace {
         let anchor = earlier.map { children($0).max()! } ?? children(present.first { $0 > level.index }!).min()!
 
         if container.orientation == level.orientation {
-            // Beside the anchor, with its share of the space the siblings hold.
             let index = earlier == nil ? anchor : anchor + 1
             let held = holders.reduce(0) { $0 + container.children[$1].weight }
             for holder in holders {
@@ -500,9 +455,8 @@ extension Workspace {
             }
             root[parent].children.insert(Node(kind: .window(hint.window), weight: held * share / (1 + share)), at: index)
         } else {
-            // The old container collapsed into the siblings: rebuild it around them. Once
-            // other commands moved windows between the siblings, only the group next to the
-            // nearest one goes in, never windows that were not siblings.
+            // The old container collapsed into the siblings, so rebuild it around them. After other
+            // commands moved windows between them, only the run next to the nearest one goes in.
             var run = anchor...anchor
             while holders.contains(run.lowerBound - 1) { run = (run.lowerBound - 1)...run.upperBound }
             while holders.contains(run.upperBound + 1) { run = run.lowerBound...(run.upperBound + 1) }

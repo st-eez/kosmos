@@ -1,7 +1,6 @@
 import Testing
 @testable import KosmosCore
 
-/// What `kosmos list-bindings` says about each form of each command.
 @Test func describesEachCommandForm() throws {
     let commands = [
         "workspace 1",

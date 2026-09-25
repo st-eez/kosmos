@@ -5,8 +5,10 @@
   that goes to no worker, or that a worker drops for a window it has no element for,
   makes the ledger forget the window, so its target is not left pending and the next
   write is whole.
-- When the size changes, write size, then position, then size again; otherwise write the
-  position alone. Read the frame back once per batch.
+- When the size changes, write size, then position, then size again, since an app can
+  clamp the size against the old position; otherwise write the position alone. A position
+  write queued behind a frame write that has not run becomes a whole frame write, since it
+  assumed that size had landed. Read the frame back once per batch.
 - AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display edge
   that another display adjoins, while the bottom is at or past that edge. A window moved
   at its old height from the built-in display up to the panel above it hangs past the
@@ -78,12 +80,14 @@
   then, each with a write the change counts as. So a tiled window changed in a press that
   has ended by the time the change applies goes back to its tile, as the mouse up would
   have sent it. Only the last press that ended is kept, so a change from the press before
-  it reads as one with the button up. Judged as it applied, the late echo of a hotkey's
+  it reads as one with the button up; keeping the presses back to the oldest change
+  waiting to apply would cover it. Judged as it applied, the late echo of a hotkey's
   write to the window the user holds the button in would lift it. A change that came
-  before a write was sent counts as the write's too. The write's change still records its
-  row when it differs from the frame confirmed: the row applies after the confirm and can
-  hold the app's next step, as of a live resize, whose own event then finds no
-  difference. The pointer for the resize border check is read as the change applies.
+  before a write was sent counts as the write's too; recording when each write was sent
+  would tell them apart. The write's change still records its row when it differs from
+  the frame confirmed: the row applies after the confirm and can hold the app's next step,
+  as of a live resize, whose own event then finds no difference. The pointer for the
+  resize border check is read as the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes, which do not take their app element's timeout (as paneru
   found), are covered too. Reads use the same 1 s. Each app's calls run

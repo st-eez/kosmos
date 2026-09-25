@@ -15,8 +15,8 @@ private let signposter = OSSignposter(subsystem: "io.github.st-eez.kosmos", cate
 final class Controller {
     private var session: Session
     private var ledger = FrameLedger()
-    private var reports = FocusReports<ContinuousClock.Instant>()
-    private var misses = FocusMisses<ContinuousClock.Instant>()
+    private var reports = FocusReports()
+    private var misses = FocusMisses()
     private let inventory: Inventory
     private let hiding: Hiding
     private let emptyWorkspace: EmptyWorkspaceWindow
@@ -211,7 +211,7 @@ final class Controller {
     var focusProblem: String? {
         switch focusQueue.killSwitch.offReason {
         case .crashed?: "Private focus is off after a crash inside it, until kosmos reload-config"
-        case .wrongWindows?: "Private focus is off after \(FocusMisses<ContinuousClock.Instant>.limit) wrong windows in a row, until kosmos reload-config"
+        case .wrongWindows?: "Private focus is off after \(FocusMisses.limit) wrong windows in a row, until kosmos reload-config"
         case nil: nil
         }
     }
@@ -284,15 +284,9 @@ final class Controller {
         // at the lock was dropped with the reports while locked.
         reports.forgetRequests()
         reports.commandExecuted(receivedAt: .now)
-        var plan = Session.Plan()
         // A concealed window left on a display that is gone would come back off screen from
         // recovery, so after a display change hidden workspaces are laid out on theirs now.
-        for name in session.names where displaysChanged || session.isShown(name) {
-            plan.frames.merge(session.frames(of: name)) { current, _ in current }
-        }
-        let shown = session.shownWorkspaces
-        plan.show = shown.flatMap { session.windows(of: $0) }
-        plan.hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
+        var plan = session.resyncPlan(layingOutHidden: displaysChanged)
         plan.focus = intent
         execute(plan)
     }
@@ -547,7 +541,7 @@ final class Controller {
     }
 
     /// Judged as of `changedAt`, as the inventory applies a change after an off main read.
-    /// The key tiled window lifts only once it moved whole past Session.liftDistance, so a
+    /// The key tiled window lifts only once it moved whole past TitleBarDrag.liftDistance, so a
     /// click that jitters the title bar does not lift it (docs/geometry.md, docs/displays.md).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
@@ -588,9 +582,9 @@ final class Controller {
         // WindowServer can apply a resize by the left or top edge as a move first, so the
         // pointer on a resize border marks one too. Read here, as reading it as each event
         // came would read it at every change event a switch posts.
-        let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
+        let onBorder = press == nil && CGEvent(source: nil).map { TitleBarDrag.onResizeBorder($0.location, of: frame) } == true
         let resized = press?.resized == true || onBorder || frame.size != before.size
-        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > Session.liftDistance,
+        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > TitleBarDrag.liftDistance,
            let plan = session.lift(id) {
             mouseMoved[id] = nil
             controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
@@ -688,9 +682,9 @@ final class Controller {
             // Never the key window, but it can be Kosmos's echo. It leaves the kill switch's
             // count alone, as a raise says nothing about the key record (tla/README.md, change 17).
             guard !sessionLocked else { return }
-            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
+            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .emptyWorkspace, receivedAt: report.received)
         case .focusedWindowChanged(let id):
-            let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
+            let reported: KeyWindow = id.map(KeyWindow.window) ?? .emptyWorkspace
             let repeated = key == reported
             let previous: WindowID? = if case .window(let window)? = keyHistory.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
@@ -817,11 +811,11 @@ final class Controller {
             // macOS or an app fronted an app with no key window on an empty workspace: the
             // empty workspace keys its window again, so Cmd-Q reaches no app. After a click, a
             // Command-Tab or an app's launch it is the user's choice (docs/focus.md).
-            guard report.key == .none, report.reporter != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
+            guard report.key == .emptyWorkspace, report.reporter != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
                   NSRunningApplication(processIdentifier: report.reporter)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
             else { break }
             controllerLog.notice("\(self.inventory.appIdentity(report.reporter).name ?? String(report.reporter), privacy: .public) has no key window on an empty workspace; keying its window again")
-            requestFocus(.none)
+            requestFocus(.emptyWorkspace)
         case .undecided:
             let number = held.hold(report, of: report.key)
             after(Self.grace) { controller in
@@ -881,7 +875,7 @@ final class Controller {
 
     // MARK: Plans
 
-    private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .none }
+    private var intent: KeyWindow { session.focused.map(KeyWindow.window) ?? .emptyWorkspace }
 
     private var inFullscreenSpace: Bool {
         let keyWindow: WindowID? = if case .window(let id)? = key { id } else { nil }
@@ -903,8 +897,8 @@ final class Controller {
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
-            show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
-            hide = session.names.filter { !session.isShown($0) }.flatMap { session.windows(of: $0) }
+            let resync = session.resyncPlan(layingOutHidden: false)
+            (show, hide) = (resync.show, resync.hide)
             needsResync = false
         }
         if show.isEmpty && hide.isEmpty {
@@ -1041,7 +1035,7 @@ final class Controller {
             pid = owner[id]
             privately = focusQueue.killSwitch.isOn
             touch(id)
-        case .none:
+        case .emptyWorkspace:
             // Only the private path keys Kosmos's own window, and only a crash inside it keeps
             // the path from this window (docs/focus.md).
             pid = getpid()
@@ -1068,7 +1062,7 @@ final class Controller {
         guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
               misses.willRequest(id, pid: pid, at: stamp, retry: retry) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)
-        controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
+        controllerLog.fault("private focus keyed another window \(FocusMisses.limit) times in a row; focus uses the public path")
         onFocusProblem?(focusProblem)
     }
 

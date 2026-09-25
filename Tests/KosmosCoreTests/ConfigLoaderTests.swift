@@ -48,15 +48,12 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         expected.enabled = true
         expected.ignoreApps = ["Google Chrome for Testing", "com.apple.Notes"]
         #expect(config.focusFollowsMouse == expected)
-        // Off by default.
         #expect(try #require(load("").config).focusFollowsMouse == FocusFollowsMouse())
     }
 
     @Test func borders() throws {
         let steve = try #require(load("borders = { width = 4.0, active = '#7aa2f7', inactive = '#00000000' }").config)
         #expect(steve.borders == BorderSettings(width: 4, active: BorderColor(hex: "#7aa2f7")!, inactive: .clear))
-        // On by default, as in Omarchy: 4 points in the macOS accent color around the focused
-        // window alone. False turns them off, as for animations.
         #expect(try #require(load("").config).borders == BorderSettings(width: 4, active: nil, inactive: .clear))
         #expect(try #require(load("borders = true").config).borders == BorderSettings())
         #expect(try #require(load("borders = false").config).borders == nil)
@@ -75,7 +72,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         ])
     }
 
-    /// A theme file sets the borders, as the dotfiles' theme-set links one per theme.
     @Test func includedFilesAddTheirKeys() throws {
         let files = ["theme.toml": "[borders]\nwidth = 4.0\nactive = '#7aa2f7'\n", "gaps.toml": "gaps = { inner = 10 }"]
         let result = Config.load(header + "include = ['theme.toml', 'gaps.toml']", including: { files[$0] })
@@ -86,7 +82,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(try #require(Config.load(header + "include = 'theme.toml'", including: { files[$0] }).config).borders != nil)
     }
 
-    /// Each problem names its file, the main file's first, and each file in include order.
     @Test func includeMistakes() {
         let files = [
             "theme.toml": "gaps = { inner = 5 }\nborders = { active = 'blue' }\ninclude = ['other.toml']",
@@ -107,8 +102,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "broken.toml: 1:9: error: borders: expected ']' to close the table header",
             "second.toml: 1:1: error: borders: set in 'theme.toml' too",
         ])
-        // A missing file is left out with a warning, so a fresh install loads before a theme
-        // links it, and the defaults stand in for its keys.
         let fresh = load("include = ['theme.toml']")
         #expect(fresh.diagnostics == ["3:12: warning: include[0]: cannot read 'theme.toml' in the config's directory; the config loads without it"])
         #expect(fresh.config?.borders == BorderSettings())
@@ -317,7 +310,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     }
 
     @Test func shadowedRulesAreWarnings() throws {
-        // AeroSpace's Ghostty floating rule never fired: a rule for the same bundle id came first.
         let body = """
         [[rule]]
         app-id = 'com.mitchellh.ghostty'
@@ -345,7 +337,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         workspace = '3'
         """
         let result = load(body)
-        // A warning alone leaves the config usable.
         #expect(result.config?.rules.count == 6)
         #expect(result.diagnostics == [
             "11:3: warning: rule[2]: this rule never applies: rule[0] on line 3 matches every window it matches",
@@ -371,6 +362,14 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 }
 
 @Suite struct ProfileTests {
+    @Test func bindingsNameKnownProfiles() {
+        let header = "config-version = 1\nworkspaces = ['1']\n[mode.main.binding]\nalt-b = "
+        #expect(Config.load(header + "'profile p'\n[[profile]]\nname = 'p'\n").diagnostics.isEmpty)
+        let bad = Config.load(header + "'profile q'\n[[profile]]\nname = 'p'\n")
+        #expect(bad.config == nil)
+        #expect(bad.diagnostics.map(\.message) == ["no profile named 'q'"])
+    }
+
     private static let text = """
     config-version = 1
     workspaces = ['1', '2', '3', '4']
@@ -418,8 +417,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     workspace = '2'
     """
 
-    // Steve's desk: the left panel, the main panel at the origin, and the built-in display
-    // below.
     private let builtIn = Display(id: 3, name: "Color LCD", isBuiltIn: true, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982))
     private let left = Display(id: 1, name: "VG279QE5A (2)", serial: "L", frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
     private let main = Display(id: 2, name: "VG279QE5A (1)", serial: "M", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
@@ -433,33 +430,38 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     @Test func firstProfileWhoseMonitorsAreConnectedApplies() throws {
         let config = try config()
         #expect(config.setup(for: [builtIn, left, main]).profile == "home")
-        // With the lid closed at home the built-in display is gone, and home still applies.
         #expect(config.setup(for: [main, left]).profile == "home")
-        // One panel: its name matches 'asus', and home needs both serials.
         #expect(config.setup(for: [builtIn, main]).profile == "single")
-        // With no profile that applies yet, as at launch, a profile without `when` takes
-        // every other set of displays.
+    }
+
+    @Test func theProfileWithoutWhenAppliesWhileNoneAppliesYet() throws {
+        let config = try config()
         #expect(config.setup(for: [builtIn]).profile == "laptop")
         #expect(config.setup(for: [builtIn, Display(name: "Projector")]).profile == "laptop")
-        // Once one applies, displays no `when` fits keep it.
-        #expect(config.setup(for: [builtIn, Display(name: "Projector")], keeping: "home").profile == "home")
-        // The built-in display alone gives the profile without `when`, whatever applied.
-        #expect(config.setup(for: [builtIn], keeping: "home").profile == "laptop")
-        // A profile the config no longer has gives way to the one without `when`.
-        #expect(config.setup(for: [Display(name: "Projector")], keeping: "gone").profile == "laptop")
+    }
+
+    @Test func displaysNoWhenFitsKeepTheProfileThatApplies() throws {
+        #expect(try config().setup(for: [builtIn, Display(name: "Projector")], keeping: "home").profile == "home")
+    }
+
+    @Test func theBuiltInDisplayAloneGetsTheProfileWithoutWhen() throws {
+        #expect(try config().setup(for: [builtIn], keeping: "home").profile == "laptop")
+    }
+
+    @Test func aProfileTheConfigNoLongerHasGivesWayToTheOneWithoutWhen() throws {
+        #expect(try config().setup(for: [Display(name: "Projector")], keeping: "gone").profile == "laptop")
     }
 
     @Test func workspacesGoToTheFirstConnectedMonitorInTheirList() throws {
         let config = try config()
         #expect(config.setup(for: [builtIn, left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 3])
-        // Lid closed: 3 falls back to the main panel, and 4 has no monitor, so it is free.
         #expect(config.setup(for: [left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 2])
         #expect(config.setup(for: [builtIn, main]).workspaceDisplays == ["1": 2, "2": 2, "3": 3, "4": 2])
     }
 
     @Test func aNameMatchingTwoDisplaysTakesTheLeftOne() throws {
         var config = try config()
-        config.profiles.removeFirst()   // home
+        config.profiles.removeAll { $0.name == "home" }
         let setup = config.setup(for: [main, builtIn, left])
         #expect(setup.profile == "single")
         #expect(setup.workspaceDisplays == ["1": 1, "2": 1, "3": 3, "4": 1])
@@ -468,11 +470,12 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     @Test func aForcedProfileAppliesWhateverIsConnected() throws {
         let config = try config()
         #expect(config.setup(for: [builtIn], profile: "home").profile == "home")
-        // Its monitors are not connected, so its workspaces are free.
         #expect(config.setup(for: [builtIn], profile: "home").workspaceDisplays == ["3": 3])
         #expect(config.setup(for: [builtIn, left, main], profile: "laptop").workspaces == ["1", "2"])
-        // An unknown name leaves the choice to the displays.
-        #expect(config.setup(for: [builtIn], profile: "nowhere").profile == "laptop")
+    }
+
+    @Test func anUnknownForcedProfileLeavesTheChoiceToTheDisplays() throws {
+        #expect(try config().setup(for: [builtIn], profile: "nowhere").profile == "laptop")
     }
 
     @Test func monitorsCarryTheirGapsInDisplayOrder() throws {
@@ -487,7 +490,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(setup.workspaces == ["1", "2"])
         #expect(setup.workspaceDisplays == ["1": 3, "2": 3])
         #expect(setup.mergeWorkspaces == ["3": "1", "4": "2"])
-        // The profile's Spotify rule wins, and the base Chrome rule's workspace 3 merges into 1.
         #expect(setup.rules.map(\.appID) == ["spotify", "spotify", "chrome"])
         #expect(setup.rules.first { $0.matches(appID: "spotify", appName: nil) }?.workspace == "2")
         #expect(setup.rules.first { $0.matches(appID: "chrome", appName: nil) }?.workspace == "1")
@@ -504,8 +506,8 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
     @Test func outerGapsPerMonitor() throws {
         let config = try config()
-        #expect(config.outerGaps(on: builtIn) == OuterGaps(top: 5, left: 10, bottom: 10, right: 10))
-        #expect(config.outerGaps(on: main) == OuterGaps(top: 35, left: 10, bottom: 10, right: 10))
+        #expect(config.gaps(on: builtIn).outer == Insets(top: 5, left: 10, bottom: 10, right: 10))
+        #expect(config.gaps(on: main).outer == Insets(top: 35, left: 10, bottom: 10, right: 10))
     }
 
     @Test func monitorNamesMatchIgnoringCase() {

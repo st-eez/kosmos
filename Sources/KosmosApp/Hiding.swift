@@ -168,7 +168,7 @@ private final class HidingStore: @unchecked Sendable {
     private var ledger = ConcealLedger()
     private var loaded = false
     /// Read on the main actor too.
-    let history = Mutex(ConcealHistory<ContinuousClock.Instant>())
+    let history = Mutex(ConcealHistory())
 
     init(record: RecordFile) { self.record = record }
 

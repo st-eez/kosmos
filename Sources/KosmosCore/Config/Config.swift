@@ -1,7 +1,7 @@
 import CoreGraphics
 
-/// A checked config file. `Config.load` builds one, and every monitor, workspace and mode
-/// name in it is defined. docs/sample-config.toml is Steve's AeroSpace setup in this schema.
+/// A checked config file (docs/config.md): `Config.load` builds one, and every monitor,
+/// workspace and mode name in it is defined. docs/sample-config.toml shows the schema.
 public struct Config: Equatable, Sendable {
     /// Move the mouse pointer to the focus the keyboard moved (Command.movesPointer).
     public var mouseFollowsFocus = false
@@ -30,7 +30,7 @@ public struct Config: Equatable, Sendable {
 
     public init() {}
 
-    /// What applies with no config file: workspaces 1 to 9, and no bindings, rules or profiles.
+    /// What applies with no config file.
     public static let defaults: Config = {
         var config = Config()
         config.workspaces = (1...9).map(String.init)
@@ -47,8 +47,7 @@ public struct FocusFollowsMouse: Equatable, Sendable {
 
     public init() {}
 
-    /// Whether the pointer leaves focus alone over windows of this app. Names match whole,
-    /// ignoring case.
+    /// Names match whole, ignoring case.
     public func ignores(appID: String?, appName: String?) -> Bool {
         let names = [appID, appName].compactMap { $0?.lowercased() }
         return ignoreApps.contains { names.contains($0.lowercased()) }
@@ -99,27 +98,20 @@ public enum MonitorMatch: Equatable, Sendable {
 
 public struct GapSettings: Equatable, Sendable {
     /// Points between neighboring windows.
-    public var inner = 0
+    public var inner: CGFloat = 0
     /// Points between the windows and each edge of a display.
-    public var outer = OuterGaps()
+    public var outer = Insets()
     /// Changes to `outer` on displays a named monitor matches. The first entry that matches a
     /// display applies.
     public var outerPerMonitor: [MonitorOuterGaps] = []
 }
 
-public struct OuterGaps: Equatable, Sendable {
-    public var top = 0
-    public var left = 0
-    public var bottom = 0
-    public var right = 0
-}
-
 public struct MonitorOuterGaps: Equatable, Sendable {
     public var monitor: String
-    public var top: Int?
-    public var left: Int?
-    public var bottom: Int?
-    public var right: Int?
+    public var top: CGFloat?
+    public var left: CGFloat?
+    public var bottom: CGFloat?
+    public var right: CGFloat?
 }
 
 public struct Binding: Equatable, Sendable {
@@ -133,7 +125,6 @@ public struct Binding: Equatable, Sendable {
 }
 
 public struct WindowRule: Equatable, Sendable {
-    /// Matches this bundle identifier exactly.
     public var appID: String?
     /// Matches app names that contain this text, ignoring case.
     public var appName: String?
@@ -143,7 +134,6 @@ public struct WindowRule: Equatable, Sendable {
     /// (AdmissionFocus).
     public var workspace: String?
 
-    /// Whether the rule matches a window of the app with this bundle identifier and name.
     public func matches(appID: String?, appName: String?) -> Bool {
         if let id = self.appID, id != appID { return false }
         if let text = self.appName {
@@ -153,9 +143,8 @@ public struct WindowRule: Equatable, Sendable {
     }
 
     /// Whether this rule matches every window `other` matches, so `other` never applies after
-    /// it. Every such window has `other`'s bundle identifier, when `other` names one, and a name
-    /// containing `other`'s text, so matching those two values proves it. A rule on the app
-    /// name never covers a rule on the bundle identifier alone, whose app name is unknown.
+    /// it. Names match by containment, so matching `other`'s own values proves it, and a rule on
+    /// the name never covers one on the bundle identifier alone, whose app name is unknown.
     func covers(_ other: WindowRule) -> Bool {
         matches(appID: other.appID, appName: other.appName)
     }
@@ -165,9 +154,7 @@ public struct WindowRule: Equatable, Sendable {
 /// config's value.
 public struct Profile: Equatable, Sendable {
     public var name: String
-    /// Monitor names that must all be connected. A profile without any applies to the
-    /// built-in display alone, and at launch when no other profile applies
-    /// (`Config.setup(for:)`).
+    /// Monitor names that must all be connected (`Config.setup(for:)`).
     public var when: [String] = []
     public var workspaces: [String]?
     public var workspaceMonitors: [String: [String]]?
@@ -182,26 +169,17 @@ public struct Setup: Equatable, Sendable {
     /// The profile that applies, or nil when none matches and the base config applies alone.
     public var profile: String?
     public var workspaces: [String]
-    /// The display each workspace belongs on: the first display, left to right, then top to
-    /// bottom, that the first connected monitor in the workspace's list matches. A workspace
-    /// with no connected monitor is absent, and free (docs/displays.md).
+    /// A workspace with no connected monitor in its list is absent, and free (docs/displays.md).
     public var workspaceDisplays: [String: DisplayID]
     /// Windows on a workspace missing from `workspaces` move to the workspace named here.
     public var mergeWorkspaces: [String: String]
-    /// The profile's rules, then the base rules with `mergeWorkspaces` applied to their
-    /// workspaces.
     public var rules: [WindowRule]
-    /// The displays as the session tiles them, in the order above, each with its gaps.
     public var monitors: [Monitor]
 }
 
 extension Config {
-    /// The profile that applies (docs/config.md and docs/displays.md): the one `forced` names,
-    /// as the `profile` command asks for, else the first whose `when` monitors are all
-    /// connected, else, for the built-in display alone, the first without `when`. Other
-    /// displays keep `active`, the profile that applies now, as Steve's `apply-profile.sh`
-    /// kept its profile for displays it did not know. With none active, as at launch, the
-    /// first profile without `when` applies, else the base config.
+    /// What applies to `displays` (docs/config.md): `forced` is the profile the `profile`
+    /// command names, and `active` the one that applies now, which displays no `when` fits keep.
     public func setup(for displays: [Display], profile forced: String? = nil, keeping active: String? = nil) -> Setup {
         let tiled = Monitor.arranged(displays.map { Monitor(id: $0.id, frame: $0.frame, area: $0.area, gaps: gaps(on: $0)) })
         let byID = Dictionary(displays.map { ($0.id, $0) }) { first, _ in first }
@@ -232,19 +210,13 @@ extension Config {
     }
 
     public func gaps(on display: Display) -> Gaps {
-        let outer = outerGaps(on: display)
-        return Gaps(inner: CGFloat(gaps.inner), outer: Insets(top: CGFloat(outer.top), left: CGFloat(outer.left),
-                                                              bottom: CGFloat(outer.bottom), right: CGFloat(outer.right)))
-    }
-
-    public func outerGaps(on display: Display) -> OuterGaps {
-        var gaps = self.gaps.outer
-        if let change = self.gaps.outerPerMonitor.first(where: { monitors[$0.monitor]?.matches(display) == true }) {
-            gaps.top = change.top ?? gaps.top
-            gaps.left = change.left ?? gaps.left
-            gaps.bottom = change.bottom ?? gaps.bottom
-            gaps.right = change.right ?? gaps.right
+        var outer = gaps.outer
+        if let change = gaps.outerPerMonitor.first(where: { monitors[$0.monitor]?.matches(display) == true }) {
+            outer.top = change.top ?? outer.top
+            outer.left = change.left ?? outer.left
+            outer.bottom = change.bottom ?? outer.bottom
+            outer.right = change.right ?? outer.right
         }
-        return gaps
+        return Gaps(inner: gaps.inner, outer: outer)
     }
 }

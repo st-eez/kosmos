@@ -57,8 +57,8 @@ extension Workspace {
         return seen
     }
 
-    /// Exchanges the window with the one `focus` reaches in the direction. Each takes the
-    /// other's place and share.
+    /// With the window `focus` reaches in the direction, each taking the other's place and
+    /// share.
     @discardableResult
     mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
@@ -71,17 +71,13 @@ extension Workspace {
         return true
     }
 
-    /// Moves a tiled window one step in the direction, with i3's `tree_move` (src/move.c).
-    /// In a container along the direction, it swaps with a sibling window or enters a
-    /// sibling container beside the window it borders. Otherwise it leaves for the nearest
-    /// ancestor along the direction, entering the container past its old branch if there is
-    /// one. With no such ancestor the window is at the edge of the workspace, where
-    /// `implicitContainer` first wraps the root in a new root along the direction, as i3
-    /// and AeroSpace do. Returns false at the edge otherwise, and at the end of a root
-    /// along the direction, where a move across displays goes on to the next display.
+    /// One step, as i3's `tree_move` (src/move.c). At the workspace's edge
+    /// `implicitContainer` wraps the root along the direction, as i3 and AeroSpace do. False
+    /// at the edge otherwise and at the end of a root along the direction, where a move
+    /// across displays goes on to the next display.
     @discardableResult
     mutating func move(_ window: WindowID, _ direction: Direction, implicitContainer: Bool = true) -> Bool {
-        // A lone window has nowhere to go. Wrapping the root would only flip its orientation.
+        // Wrapping a lone window's root would only flip its orientation.
         guard root.path(to: window) != nil, root.children.count > 1,
               moveTiled(window, direction, implicitContainer: implicitContainer) else { return false }
         normalize()
@@ -90,18 +86,14 @@ extension Workspace {
         return true
     }
 
-    /// Puts the window into a container with its neighbor in the direction, across the
-    /// neighbor's parent (AeroSpace's `join-with`). A neighbor that is a container already
-    /// runs across, so the window joins it. The window goes first when joining right or
-    /// down and last when joining left or up.
+    /// As AeroSpace's `join-with`. A neighbor that is a container already runs across its
+    /// parent, so the window joins it.
     @discardableResult
     mutating func joinWith(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let target = neighbor(of: window, direction) else { return false }
         let parent = target.dropLast(), index = target.last!
-        // Joining a sibling keeps the pair's combined space for the new container, so the
-        // other siblings keep their sizes and joining back out restores them exactly. Taking
-        // only the target's share gave the window's share to every sibling, and each join
-        // and unjoin grew the others.
+        // The new container keeps the pair's combined space, so the other siblings keep their
+        // sizes and joining back out restores them exactly.
         let path = root.path(to: window)!
         let carried = path.dropLast() == parent ? root[parent].children[path.last!].weight : 0
         let joined: Container
@@ -122,9 +114,7 @@ extension Workspace {
         return true
     }
 
-    /// Sets the orientation of the window's container. A container that ends up with its
-    /// parent's orientation is spliced into the parent, and so is a child container that
-    /// ends up with its orientation.
+    /// Sets the orientation of the window's container.
     @discardableResult
     mutating func layout(_ window: WindowID, _ orientation: Orientation) -> Bool {
         guard let path = root.path(to: window), root[path.dropLast()].orientation != orientation else { return false }
@@ -141,8 +131,6 @@ extension Workspace {
         return layout(window, root[path.dropLast()].orientation.opposite)
     }
 
-    /// Makes a tiled window cover the display rectangle, taking over from any other
-    /// fullscreen window, or returns it to its tile.
     @discardableResult
     mutating func toggleFullscreen(_ window: WindowID) -> Bool {
         guard root.path(to: window) != nil else { return false }
@@ -152,17 +140,8 @@ extension Workspace {
         return true
     }
 
-    /// Grows the window by `amount` points, or shrinks it when negative, taking the space
-    /// from its siblings in proportion to their shares. For a dimension across the
-    /// window's container, the nearest ancestor inside a container along the dimension
-    /// resizes. `rect` and `gaps` are the ones `frames` gets, to turn points into shares.
-    ///
-    /// The change stops where it would take a window along the dimension below its entry
-    /// in `minimums`, or below one point without one, counting windows nested in a squeezed
-    /// sibling. A window already under its limit may stay there. i3 refuses a resize past
-    /// such a limit. Stopping at the limit does as much as the key press can, so repeated
-    /// presses reach the limit exactly, and the weights never ask for less than a window
-    /// takes. Returns false when nothing could change.
+    /// Takes the space from the siblings in proportion to their shares, and stops at the
+    /// limits `change` keeps, where i3 refuses the resize (docs/tree.md).
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Bool {
         guard let path = root.path(to: window) else { return false }
@@ -188,16 +167,8 @@ extension Workspace {
         }
     }
 
-    /// Moves the window's edge on the `direction` side by `amount` points, outward when
-    /// positive, as a modifier drag with the right button does (docs/modifier-drags.md).
-    /// The neighbour `focus` finds in the direction (`neighbor(of:)`), the node next to the
-    /// window's branch in the nearest container along the direction, gives the branch the
-    /// space alone, as i3's resize with the mouse moves only the border between two
-    /// neighbours (resize_find_tiling_participants) and Hyprland's dwindle splits hold two
-    /// nodes each. Every other edge stays. Each container along the direction between that
-    /// one and the window gives the space to the window's branch alone, and its other
-    /// children keep their lengths. It stops at the limits `resize` keeps. False with no
-    /// neighbour, as at the workspace's edge, or when nothing could change.
+    /// Outward when `amount` is positive. Only the neighbour across the edge gives or takes
+    /// the space, and every other edge stays (docs/modifier-drags.md).
     @discardableResult
     mutating func moveEdge(_ window: WindowID, _ direction: Direction, by amount: CGFloat, in rect: CGRect, gaps: Gaps,
                            minimums: [WindowID: CGSize]) -> Bool {
@@ -232,11 +203,9 @@ extension Workspace {
         }
     }
 
-    /// Makes the change `apply` makes for `amount` points along `orientation`, else the most
-    /// whole points toward `amount` that keep every window along the orientation at its
-    /// entry in `minimums`, or at one point without one. A window already under its limit
-    /// may stay there. `apply` returns false when the points leave a share at or below zero.
-    /// False when nothing could change.
+    /// The change for `amount` points, else the most whole points toward it that keep every
+    /// window at its minimum, or at one point without one. A window under its limit already
+    /// may stay there. `apply` returns false for a share at or below zero.
     private mutating func change(by amount: CGFloat, along orientation: Orientation, in rect: CGRect, gaps: Gaps,
                                  minimums: [WindowID: CGSize], _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
         let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height
@@ -245,8 +214,6 @@ extension Workspace {
             return max(1, minimum.rounded(.up))
         }
         let before = tileFrames(in: rect, gaps: gaps)
-        // The workspace after a change of `points`, or nil when that takes a window below
-        // its limit.
         func changed(by points: CGFloat) -> Workspace? {
             var changed = self
             guard apply(&changed, points) else { return nil }
@@ -273,15 +240,12 @@ extension Workspace {
         return true
     }
 
-    /// Gives every child of every container an equal share.
     mutating func balanceSizes() {
         root.balance()
         edits += 1
         check()
     }
 
-    /// Puts every tiled window directly under the root in depth first order, with equal
-    /// shares.
     mutating func flattenWorkspaceTree() {
         let windows = root.windows
         root.children = windows.map { Node(kind: .window($0), weight: 1 / Double(windows.count)) }
@@ -291,9 +255,7 @@ extension Workspace {
 }
 
 extension Workspace {
-    /// The path of the node `focus` reaches in the direction: the sibling on that side of
-    /// the window, or of its nearest ancestor, in the nearest container along the direction
-    /// (i3's `get_tree_next`, AeroSpace's `closestParent(hasChildrenInDirection:)`).
+    /// The path of the node `focus` reaches in the direction, as i3's `get_tree_next`.
     func neighbor(of window: WindowID, _ direction: Direction) -> [Int]? {
         guard var path = root.path(to: window) else { return nil }
         while let index = path.popLast() {
@@ -321,7 +283,6 @@ extension Workspace {
             }
             if parent.isEmpty { return false }
         }
-        // Leave for the nearest ancestor along the direction above the window's container.
         var depth = (0..<path.count - 1).last { root[path.prefix($0)].orientation == orientation }
         if depth == nil {
             guard implicitContainer else { return false }
@@ -340,9 +301,8 @@ extension Workspace {
         return true
     }
 
-    /// The window a move lands beside when it enters `container`: the child facing the
-    /// move in a container along the direction, else the most recently focused child, down
-    /// to a window (i3's `con_descend_direction`).
+    /// The window a move lands beside when it enters `container`, as i3's
+    /// `con_descend_direction`.
     private func edgeWindow(of container: Container, _ direction: Direction) -> WindowID {
         let child: Node
         if container.orientation == direction.orientation {
@@ -356,8 +316,6 @@ extension Workspace {
         }
     }
 
-    /// Moves the window beside `target`: after it when the target's container runs across
-    /// the direction or the move goes left or up, else before it (i3's `tree_move`).
     private mutating func move(_ window: WindowID, beside target: WindowID, _ direction: Direction) {
         let path = root.path(to: window)!
         root[path.dropLast()].children.remove(at: path.last!)

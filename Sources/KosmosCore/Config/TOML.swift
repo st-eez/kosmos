@@ -1,8 +1,5 @@
-// A TOML reader for the config file, written against TOML 1.1 and kept to what the schema
-// uses. It rejects infinity and nan, dates and times, multi-line strings and non-decimal
-// integers with a diagnostic; adding one means a new branch in `value()` once a config key
-// needs it. Every key and value keeps its line and column, so the schema layer can point at
-// them.
+// A TOML 1.1 reader kept to what the schema uses. Ceiling: infinity, nan, dates, multi-line
+// strings and non-decimal integers fail; one a key needs is a branch in `value()` (docs/config.md).
 
 struct TOMLValue: Equatable {
     enum Kind: Equatable {
@@ -33,15 +30,14 @@ struct TOMLTable: Equatable {
     }
 }
 
-/// Parses a whole document and returns its root table, or the first syntax error. `file`
-/// goes into every position (SourcePosition).
+/// Throws the first syntax error. `file` goes into every position (SourcePosition).
 func parseTOML(_ text: String, file: Int = 0) throws(Diagnostic) -> TOMLTable {
     var parser = TOMLParser(text, file: file)
     return try parser.document()
 }
 
-/// A table while the document is read. TOML forbids defining a table twice, and what counts
-/// as a definition depends on how the table came to exist, so each table records its origin.
+/// TOML forbids defining a table twice, and what counts as a definition depends on how the
+/// table came to exist, so each table records its origin.
 private final class TableBuilder {
     enum Origin {
         /// Named as a prefix of a `[header]`. A later header may still define it.
@@ -174,7 +170,6 @@ private struct TOMLParser {
         while peek == " " || peek == "\t" { i += 1 }
     }
 
-    /// Consumes a line break, if the next character starts one.
     private mutating func lineBreak() throws(Diagnostic) -> Bool {
         if peek == "\r" {
             guard peek(1) == "\n" else { throw error("a carriage return must be followed by a line feed") }
@@ -186,7 +181,6 @@ private struct TOMLParser {
         return true
     }
 
-    /// Consumes spaces, a comment and the line break that end a line, or the end of the file.
     private mutating func endLine() throws(Diagnostic) {
         skipSpaces()
         try comment()
@@ -194,7 +188,6 @@ private struct TOMLParser {
         throw error("expected the end of the line, found \(describe(c))")
     }
 
-    /// Skips spaces, comments and line breaks between the elements of an array or inline table.
     private mutating func skipBlank() throws(Diagnostic) {
         repeat {
             skipSpaces()
@@ -212,7 +205,6 @@ private struct TOMLParser {
 
     // MARK: Keys and tables
 
-    /// A key of one or more dotted parts, each bare or quoted.
     private mutating func key() throws(Diagnostic) -> [(name: String, position: SourcePosition)] {
         var parts: [(String, SourcePosition)] = []
         repeat {
@@ -239,8 +231,7 @@ private struct TOMLParser {
         return parts
     }
 
-    /// A `[table]` or `[[array of tables]]` header. Returns the table that the following
-    /// key-value pairs go into, and its path.
+    /// Returns the table that the key-value pairs after the header go into, and its path.
     private mutating func header(_ root: TableBuilder) throws(Diagnostic) -> (TableBuilder, ValuePath) {
         i += 1
         let isArray = consume("[")
@@ -306,8 +297,6 @@ private struct TOMLParser {
         try insert(parts, value, into: table, at: tablePath)
     }
 
-    /// Adds a key-value pair. The parts before the last of a dotted key create tables, or
-    /// extend tables that earlier dotted keys created.
     private mutating func insert(_ parts: [(name: String, position: SourcePosition)], _ value: TOMLValue,
                                  into table: TableBuilder, at tablePath: ValuePath) throws(Diagnostic) {
         var table = table
@@ -386,7 +375,6 @@ private struct TOMLParser {
             throw error("dates and times are not supported", at: start)
         }
         if digits.contains(".") || digits.contains("e") || digits.contains("E") {
-            // An integer part, then a fraction, an exponent or both.
             let parts = digits.split(separator: "e", maxSplits: 1, omittingEmptySubsequences: false)
                 .flatMap { $0.split(separator: "E", maxSplits: 1, omittingEmptySubsequences: false) }
             let mantissa = parts[0].split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
@@ -496,7 +484,7 @@ private struct TOMLParser {
         return .array(items)
     }
 
-    /// An inline table. TOML 1.1 allows line breaks, comments and a trailing comma inside one.
+    /// TOML 1.1 allows line breaks, comments and a trailing comma in an inline table.
     private mutating func inlineTable() throws(Diagnostic) -> TOMLValue.Kind {
         let tablePath = path
         let table = TableBuilder(.inline, at: position)

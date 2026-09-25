@@ -6,8 +6,24 @@
     into the parent at unchanged on-screen sizes);
   - weights are positive fractions;
   - each window has exactly one place.
+- The layout is a pure function of the tree, the display area, the gaps and the sizes
+  windows refuse to go below ([geometry.md](geometry.md)). Frames have whole point edges,
+  and a fullscreen window gets the whole area. When a container's minimums fit, each
+  window gets at least its minimum and the rest goes by weight, as rift's
+  `solve_axis_lengths` does. The weights stay as the user set them, so they apply again
+  once a minimum stops binding. When the minimums do not fit, the container splits by
+  weight alone, and each window with a minimum takes it anyway, moved back inside the
+  tiling rectangle over its neighbours. Outer and inner gaps shrink as sway's do, to leave
+  each window 100 by 60 pt.
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
+- `resize` takes the space from the window's siblings in proportion to their shares. For
+  a dimension across the window's container, the nearest ancestor in a container along
+  the dimension resizes. It stops where it would take a window below its minimum, or
+  below one point without one, counting windows nested in a squeezed sibling, and a
+  window under its limit already may stay there. i3 refuses a resize past such a limit.
+  Stopping there does as much as the key press can, so repeated presses reach the limit
+  exactly, and the weights never ask for less than a window takes.
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, then into that sibling by focus order, as i3's does. The
   workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
@@ -50,8 +66,25 @@
   fullscreen window is not followed, because macOS shows its Space, where a switch fails.
   With no managed window keyed, Kosmos follows the app's most recently focused window.
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
-    no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
-    as at launch, is parked at once on the workspace it joins.
+    no frame. Parking asks for no focus, since macOS keys another window itself and a
+    request would pull the screen out of a native fullscreen Space. A window already
+    minimized, hidden or in fullscreen when Kosmos admits it, as at launch, is parked at
+    once on the workspace it joins.
+  - A window that leaves the tree to float or park keeps a restore hint that records the
+    windows it stood among at each level up to the root, with their shares, since windows
+    outlive the containers around them. Its space goes to the windows it shared space
+    with, which give it back when it returns. The hint is taken with every window that has
+    a fresh hint put back, so windows that leave and return with no other change to the
+    tree in between come back to the same places and sizes in any order. A hint is fresh
+    while no other change to the tree came after it (`Workspace.edits`).
+  - With a stale hint, or none, the window returns beside its old siblings, or after the
+    most recently focused tile when none is tiled, only if no window that had a point along
+    each axis ends with less, the floor `resize` keeps. Beside the siblings its share halves
+    until that holds. Otherwise it takes half of the window with the most room, in a new
+    container across that window's container, because adding a child to a container can
+    shrink its gaps and move every edge in it, and the new container adds a child to none.
+    Each stale return sees the returns before it, so a workspace a profile brings back
+    returns its windows in its own saved order.
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
     as a minimized one does, and its focus moves on as [focus.md](focus.md) says for a
     window closed and kept. When the app orders it in again it opens as a new window does

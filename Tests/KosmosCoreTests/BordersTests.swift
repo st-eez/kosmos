@@ -17,8 +17,6 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     }
 }
 
-/// The ring is what shows of JankyBorders' line below a window: the 2 of its 4 points
-/// outside the window's edge, with the window's corners on the inside.
 @Test func theRingLiesOutsideTheWindowsEdge() {
     let display = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
     let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
@@ -34,8 +32,6 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     #expect(square.cornerRadius == 0)
 }
 
-/// The border shows on the display that holds most of the window, cut to it, and a window on
-/// no display gets none.
 @Test func theBorderStaysOnTheWindowsDisplay() {
     let left = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
     let right = Monitor(id: 2, frame: CGRect(x: 1000, y: 0, width: 1000, height: 800))
@@ -71,8 +67,6 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     #expect(s.bordered == [4: true])
 }
 
-/// A tiled window the user drags by its title bar is parked, and keeps its border with the
-/// focus's color.
 @Test func aLiftedWindowKeepsTheActiveBorder() {
     var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2)

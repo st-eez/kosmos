@@ -1,12 +1,11 @@
 import CoreGraphics
 
-/// Everything a status bar draws, sent whole on every change so the bar never queries
-/// (docs/ipc.md and docs/integrations.md). A bar reads `version` first; a new version may
-/// rename or remove fields, while new fields can appear in any version.
+/// Sent whole on every change, so the bar never queries (docs/integrations.md). A bar reads
+/// `version` first: a new version may rename or remove fields, and new fields can appear in
+/// any version.
 public struct BarSnapshot: Codable, Equatable, Sendable {
     public struct Display: Codable, Equatable, Sendable {
-        /// SketchyBar's number for the display (`BarSnapshot.displayNumber`), the value an item's
-        /// `display` property takes.
+        /// SketchyBar's number for the display, the value an item's `display` property takes.
         public var id: Int
         public var name: String
 
@@ -28,7 +27,6 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
         public var name: String
         /// The `id` of its display.
         public var display: Int
-        /// On screen on its display.
         public var shown: Bool
         /// Shown on the display that has focus.
         public var focused: Bool
@@ -51,12 +49,7 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
 }
 
 extension BarSnapshot {
-    /// SketchyBar's number for a display, as `display_arrangement` in its src/display.c
-    /// computes it (SketchyBar 2.24.0): 1 when it is the only active display, otherwise one more
-    /// than its position in WindowServer's managed display list, and 0 when the list lacks it.
-    /// Kosmos reads the same list, so its numbers equal SketchyBar's in whatever order
-    /// WindowServer keeps it. Two displays with one UUID would share a number; whether macOS
-    /// gives Steve's twin panels one UUID is part of the pending desk check (docs/config.md).
+    /// SketchyBar's number for a display, from the same display list (docs/integrations.md).
     /// - Parameters:
     ///   - uuid: the display's UUID (CGDisplayCreateUUIDFromDisplayID).
     ///   - active: how many displays are active (CGGetActiveDisplayList).
@@ -68,13 +61,10 @@ extension BarSnapshot {
 }
 
 extension Session {
-    /// The bar's view of this session.
     /// - Parameters:
-    ///   - displays: each connected display as the bar numbers and names it. A workspace
-    ///     whose display is missing here gets display 0, as SketchyBar numbers a display
-    ///     it cannot find.
-    ///   - app: the name of the app that owns a window.
-    ///   - frame: where a window is, for windows the layout does not place (floating).
+    ///   - displays: a workspace whose display is missing here gets display 0, as SketchyBar
+    ///     numbers a display it cannot find.
+    ///   - frame: where a floating window is.
     public func barSnapshot(profile: String?, displays: [DisplayID: BarSnapshot.Display],
                             app: (WindowID) -> String?, frame: (WindowID) -> CGRect?) -> BarSnapshot {
         let workspaces = names.map { name -> BarSnapshot.Workspace in

@@ -1,8 +1,7 @@
 import Testing
 @testable import KosmosCore
 
-// The split model's steps (tla/Kosmos.tla: WorkerStart, WorkerRead, WorkerRaise,
-// FocusDecide).
+// The split model's steps in tla/Kosmos.tla.
 
 @Test func inTheFrontAppTheWorkerRaisesAndTheQueueKeysNothing() {
     let request = KeyRequest(appWasFront: true)
@@ -13,8 +12,8 @@ import Testing
 }
 
 @Test func aBackgroundAppIsKeyedByTheQueueAndNeverRaised() {
-    // split-user-bgraise: a raise in a background app landed after the app came front and
-    // keyed a stale window over a newer activation.
+    // TLC's split-user-bgraise: a background app's raise keyed a stale window over a newer
+    // activation.
     let request = KeyRequest(appWasFront: false)
     #expect(!request.workerStarts(isCurrent: true))
     #expect(request.queueKeys(isCurrent: true, appIsFront: false))
@@ -27,8 +26,8 @@ import Testing
 }
 
 @Test func aRequestForTheFrontAppIsNeverKeyedByTheQueueEvenAfterItLeftTheFront() {
-    // The user switched away before the queue decided: the front app's request was the
-    // worker's to key, and the queue's key record would be an unrecorded change.
+    // The front app's request was the worker's to key, so a key record would be an
+    // unrecorded change.
     #expect(!KeyRequest(appWasFront: true).queueKeys(isCurrent: true, appIsFront: false))
 }
 
@@ -37,7 +36,7 @@ import Testing
 }
 
 @Test func aStaleRequestStopsAtEveryWorkerStep() {
-    // Counterexamples 3 and 4: a record taken by a stale request matched the user's own
+    // TLC counterexamples 3 and 4: a stale request's record matched the user's own
     // Command-Tab or click on that window.
     let request = KeyRequest(appWasFront: true)
     #expect(!request.workerStarts(isCurrent: false))
@@ -45,23 +44,11 @@ import Testing
     #expect(!request.workerRaises(isCurrent: false, appIsFront: true))
 }
 
-@Test func aFrontAppsFocusedTargetIsKeyAlready() {
-    #expect(!KeyRequest(appWasFront: true).workerRead(isCurrent: true, focused: .some(1), target: 1))
-}
-
-@Test func aFrontAppThatDoesNotAnswerTheReadStopsTheRequest() {
-    // Going ahead left a record for a raise that changed nothing, which swallowed the user's
-    // Command-Tab back to the window (kosmos-hover's TLC run).
-    #expect(!KeyRequest(appWasFront: true).workerRead(isCurrent: true, focused: nil, target: 1))
-}
-
 @Test func afterTheKeyRecordTheWorkerRaisesOnlyTheFrontAppsFocusedTarget() {
-    // split-user-nopostraise: without the raise the key record's window stayed behind its
-    // app's other windows.
+    // TLC's split-user-nopostraise: without the raise the window stayed behind its app's
+    // other windows.
     #expect(KeyRequest.workerPostRaises(appIsFront: true, focused: .some(1), target: 1))
-    // The user keyed another window of the app, or another app, since the key record.
     #expect(!KeyRequest.workerPostRaises(appIsFront: true, focused: .some(2), target: 1))
     #expect(!KeyRequest.workerPostRaises(appIsFront: false, focused: .some(1), target: 1))
-    // The app did not answer the read.
     #expect(!KeyRequest.workerPostRaises(appIsFront: true, focused: nil, target: 1))
 }

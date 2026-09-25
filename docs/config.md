@@ -1,6 +1,7 @@
 # Config
 
-- A reload parses and validates the whole file, then applies it in one step. Any error
+- A reload parses and validates the whole file, then applies it in one step. Each
+  binding's command is parsed then, so a bad command is an error in the file. Any error
   keeps the running config, and a bad file at login falls back to the last good config.
 - Display profiles are built in and matched by monitor name or serial. The first profile
   whose `when` monitors are all connected applies. The first profile without `when`
@@ -46,3 +47,7 @@
   color, the accent color when left out; and `inactive`, every other window's,
   transparent by default. Colors are `#rrggbb`, or `#rrggbbaa` with the alpha last. The
   width may be a float, as JankyBorders writes it, `4.0`, so Kosmos's TOML reads floats.
+- Kosmos reads TOML with a reader of its own, as it has no external runtime dependencies
+  ([overview.md](overview.md)), written against TOML 1.1 and kept to what the schema uses.
+  Infinity, nan, dates and times, multi-line strings and hexadecimal, octal and binary
+  integers are errors. One a key comes to need is a new branch in the reader's `value()`.
