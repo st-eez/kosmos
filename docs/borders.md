@@ -48,7 +48,10 @@ frame the slide shows the window at.
   width 4 that is 2 points outside and 1 inside. The corners are concentric with the
   window's: WindowServer's corner radius for the window, read with its row
   (`SLSWindowIteratorGetCornerRadii`), plus half the width outside, and the radius less
-  1 point inside. A titled window's corners are rounded 16 points on macOS 27 (26A428,
+  1 point inside. Only the inventory's reads take the radius: it took a read of 2
+  windows' rows from 0.0138 and 0.0140 ms to 0.0152 and 0.0155 ms at the median in two
+  runs of the probe on 2026-09-25, and Slides' poll reads rows every 100 µs while a
+  write lands. A titled window's corners are rounded 16 points on macOS 27 (26A428,
   `kosmos-probe borders`), and a square window gets a square border. JankyBorders'
   `style=round` and `hidpi=off` have no key: the corners always follow the window's, and
   Core Animation draws at the display's resolution. Its square style is left out: at a

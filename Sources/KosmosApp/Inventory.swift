@@ -426,7 +426,7 @@ final class Inventory {
         })
         looks.readAsked()
         reads.async {
-            let rows = SkyLight.rows(Array(ids))
+            let rows = SkyLight.rows(Array(ids), cornerRadii: true)
             DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
         }
     }
@@ -613,7 +613,7 @@ final class Inventory {
         reads.async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
-            let rows = SkyLight.rows(listed + unlisted)
+            let rows = SkyLight.rows(listed + unlisted, cornerRadii: true)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self.finishSweep(rows) }
             }

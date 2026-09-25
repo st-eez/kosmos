@@ -6,8 +6,8 @@
 //                                   puts it directly above, what a raise of either window
 //                                   does, whether WindowServer's hit test passes through it,
 //                                   which Spaces it joins as it is ordered in and out, each
-//                                   target's corner radii and whether the radii read returns
-//                                   an array the caller owns, and what the read costs.
+//                                   target's corner radius, whether the radii read returns an
+//                                   array the caller owns, and what it adds to a read of rows.
 //   kosmos-probe borders-cpu [relayouts]
 //                                   The CPU of borders that follow relayouts of four windows
 //                                   of a child app, 12 relayouts by default, against the same
@@ -131,7 +131,7 @@ final class BorderTargets {
     let window: NSWindow
     let ring = CALayer()
 
-    init(_ behavior: NSWindow.CollectionBehavior = [.transient, .ignoresCycle]) {
+    init() {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless],
                           backing: .buffered, defer: false)
         window.isOpaque = false
@@ -140,7 +140,7 @@ final class BorderTargets {
         window.ignoresMouseEvents = true
         window.animationBehavior = .none
         window.isReleasedWhenClosed = false
-        window.collectionBehavior = behavior
+        window.collectionBehavior = [.transient, .ignoresCycle]
         let view = NSView()
         view.wantsLayer = true
         window.contentView = view
@@ -167,21 +167,6 @@ final class BorderTargets {
 /// AppKit's rectangle for a frame with the origin at the top left of the main display.
 @MainActor func appKitRect(_ frame: CGRect) -> NSRect {
     NSRect(x: frame.minX, y: NSScreen.screens[0].frame.height - frame.maxY, width: frame.width, height: frame.height)
-}
-
-/// Each window's corner radii, read with its row.
-func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
-    guard let query = SLSWindowQueryWindows(SLSMainConnectionID(), ids as CFArray, Int32(ids.count)) else { return [:] }
-    defer { query.release() }
-    guard let iterator = SLSWindowQueryResultCopyWindows(query.takeUnretainedValue()) else { return [:] }
-    defer { iterator.release() }
-    let it = iterator.takeUnretainedValue()
-    var radii: [UInt32: [Double]] = [:]
-    while SLSWindowIteratorAdvance(it) {
-        let values = SLSWindowIteratorGetCornerRadii(it)?.takeRetainedValue() as? [NSNumber] ?? []
-        radii[SLSWindowIteratorGetWindowID(it)] = values.map(\.doubleValue)
-    }
-    return radii
 }
 
 /// Runs the app's event loop for `seconds`, which delivers SkyLight's notifications too.
@@ -222,23 +207,23 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
         print("\(label), front to back: \(shown.joined(separator: ", "))")
     }
 
-    // Rows and corner radii of the child's titled windows.
-    let rows = Dictionary(SkyLight.rows([t, c]).map { ($0.id, $0) }) { first, _ in first }
-    let radii = cornerRadii([t, c])
+    // Rows and corner radii of the child's titled windows, and what reading the radii adds
+    // to a read of the rows, the two reads alternating.
+    let rows = Dictionary(SkyLight.rows([t, c], cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    let radius = rows[t]?.cornerRadius ?? 0
     for id in [t, c] {
-        print("\(id == t ? "T" : "C"): level \(rows[id]?.level ?? -1), frame \(rows[id].map { String(describing: $0.frame) } ?? "?"), corner radii \(radii[id] ?? [])")
+        print("\(id == t ? "T" : "C"): level \(rows[id]?.level ?? -1), frame \(rows[id].map { String(describing: $0.frame) } ?? "?"), corner radius \(rows[id]?.cornerRadius ?? -1)")
     }
     var plain: [Double] = [], withRadii: [Double] = []
-    for _ in 0..<200 {
+    for _ in 0..<5000 {
         var start = ContinuousClock.now
         _ = SkyLight.rows([t, c])
         plain.append(elapsed(start))
         start = .now
-        _ = SkyLight.rows([t, c])
-        _ = cornerRadii([t, c])
+        _ = SkyLight.rows([t, c], cornerRadii: true)
         withRadii.append(elapsed(start))
     }
-    print(String(format: "rows of 2 windows: %.3f ms median; rows then a second query with radii: %.3f ms median",
+    print(String(format: "rows of 2 windows: %.4f ms median, with the corner radii %.4f ms median",
                  percentile(plain, 0.5), percentile(withRadii, 0.5)))
 
     // The events WindowServer sends for T and C at each step: moved (806), resized (807),
@@ -263,7 +248,7 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
     let frame = appKitRect(rows[t]!.frame)
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
     var start = ContinuousClock.now
-    border.place(around: frame, radius: radii[t]?.first ?? 0, color: color)
+    border.place(around: frame, radius: radius, color: color)
     let placed = elapsed(start)
     start = .now
     border.window.order(.above, relativeTo: Int(t))
@@ -301,8 +286,7 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
         print("hit test \(label): \(hit == b ? "B" : hit == t ? "T" : String(hit))")
     }
 
-    // Spaces as the border is ordered out and in, with Kosmos's collection behavior and with
-    // AppKit's default.
+    // Spaces as the border is ordered out and in.
     func spaces(_ window: UInt32) -> [UInt64] { kosmos_window_spaces(window) as? [UInt64] ?? [] }
     print("T's Spaces \(spaces(t)); B's ordered in \(spaces(b))")
     border.window.orderOut(nil)
@@ -311,14 +295,6 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
     border.window.order(.above, relativeTo: Int(t))
     wait(0.1)
     print("B's ordered in again \(spaces(b))")
-    let managed = ProbeBorder([])
-    managed.place(around: frame, radius: radii[t]?.first ?? 0, color: color)
-    managed.window.order(.above, relativeTo: Int(t))
-    wait(0.1)
-    print("a border with the default collection behavior, ordered in: \(spaces(managed.id)); ordered out: ", terminator: "")
-    managed.window.orderOut(nil)
-    wait(0.1)
-    print(spaces(managed.id))
 
     // Whether a border moved to another display's Space comes back to T's when it is ordered
     // above T. The border stays at the bottom left of the built-in display, so nothing shows
@@ -334,7 +310,7 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
         border.window.order(.above, relativeTo: Int(t))
         wait(0.1)
         print("then ordered out and above T again: \(spaces(b))")
-        border.place(around: frame.offsetBy(dx: 10, dy: 0), radius: radii[t]?.first ?? 0, color: color)
+        border.place(around: frame.offsetBy(dx: 10, dy: 0), radius: radius, color: color)
         wait(0.1)
         print("then moved 10 pt: \(spaces(b))")
         SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [b] as CFArray, spaces(t).first ?? 0)
@@ -402,7 +378,7 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
                                    height: frame.height + 4 - CGFloat(index % 20))
         CATransaction.commit()
     }
-    border.place(around: frame, radius: radii[t]?.first ?? 0, color: color)
+    border.place(around: frame, radius: radius, color: color)
 
     // What a large border costs in memory: the probe's footprint before and after a border
     // around 1200 by 800 points at the bottom left of the built-in display.
@@ -501,10 +477,10 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     var updates = 0, updateTime = 0.0
     private var pending: Set<UInt32> = []
     private let borders: [UInt32: ProbeBorder]
-    private let radii: [UInt32: [Double]]
+    private let radii: [UInt32: CGFloat]
     private let color: CGColor
 
-    init(borders: [UInt32: ProbeBorder], radii: [UInt32: [Double]], color: CGColor) {
+    init(borders: [UInt32: ProbeBorder], radii: [UInt32: CGFloat], color: CGColor) {
         self.borders = borders
         self.radii = radii
         self.color = color
@@ -519,7 +495,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     private func flush() {
         let began = CACurrentMediaTime()
         for row in SkyLight.rows(Array(pending)) {
-            borders[row.id]?.place(around: appKitRect(row.frame), radius: CGFloat(radii[row.id]?.first ?? 0), color: color)
+            borders[row.id]?.place(around: appKitRect(row.frame), radius: radii[row.id] ?? 0, color: color)
         }
         pending = []
         updateTime += CACurrentMediaTime() - began
@@ -550,8 +526,8 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     print("\(relayouts) relayouts of 4 windows, \(interval) s apart; JankyBorders \(janky.map { "runs, pid \($0)" } ?? "is not running")")
     wait(0.5)
 
-    let rows = Dictionary(SkyLight.rows(targets.windows).map { ($0.id, $0) }) { first, _ in first }
-    let radii = cornerRadii(targets.windows)
+    let rows = Dictionary(SkyLight.rows(targets.windows, cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    let radii = rows.mapValues(\.cornerRadius)
     let borders = Dictionary(uniqueKeysWithValues: targets.windows.map { ($0, ProbeBorder()) })
     let follower = Follower(borders: borders, radii: radii, color: color)
     Follower.current = follower
@@ -589,7 +565,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
                     let border = borders[id]!
                     let from = border.window.frame.insetBy(dx: 2, dy: 2)
                     slide.add(border, .move(from: flipped(from), to: flipped(frame), at: CACurrentMediaTime()),
-                              radius: CGFloat(radii[id]?.first ?? 0))
+                              radius: radii[id] ?? 0)
                 }
                 slide.start()
             }
@@ -612,12 +588,12 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
           "JankyBorders \(janky == nil ? "-" : each(rest.janky, rested.janky))")
     run("relayouts, no border of the probe's")
     for (id, border) in borders {
-        border.place(around: appKitRect(rows[id]!.frame), radius: CGFloat(radii[id]?.first ?? 0), color: color)
+        border.place(around: appKitRect(rows[id]!.frame), radius: radii[id] ?? 0, color: color)
         border.window.order(.above, relativeTo: Int(id))
     }
     // Where the windows are now.
     for row in SkyLight.rows(targets.windows) {
-        borders[row.id]?.place(around: appKitRect(row.frame), radius: CGFloat(radii[row.id]?.first ?? 0), color: color)
+        borders[row.id]?.place(around: appKitRect(row.frame), radius: radii[row.id] ?? 0, color: color)
     }
     follower.on = true
     run("borders follow change events")

@@ -53,7 +53,8 @@ public struct WindowRow: Sendable, Equatable {
     public let level: Int32
     public let orderedIn: Bool
     public let frame: CGRect
-    /// The radius WindowServer rounds the window's corners by, 0 for square corners.
+    /// The radius WindowServer rounds the window's corners by, 0 for square corners or when
+    /// the read left the radii out (`SkyLight.rows`).
     public let cornerRadius: CGFloat
 }
 
@@ -107,8 +108,11 @@ public enum SkyLight {
         return ids ?? []
     }
 
-    /// Rows for the given windows. Windows that no longer exist are left out.
-    public static func rows(_ ids: [UInt32]) -> [WindowRow] {
+    /// Rows for the given windows. Windows that no longer exist are left out. `cornerRadii`
+    /// reads each window's corner radius too, which took a read of 2 windows from 14 to
+    /// 15 µs at the median (kosmos-probe borders), so only the inventory, whose rows the
+    /// borders use, reads them, and Slides' poll, which reads every 100 µs, does not.
+    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false) -> [WindowRow] {
         guard !ids.isEmpty, let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return [] }
         defer { query.release() }
         guard let iterator = SLSWindowQueryResultCopyWindows(query.takeUnretainedValue()) else { return [] }
@@ -117,7 +121,7 @@ public enum SkyLight {
         var rows: [WindowRow] = []
         while SLSWindowIteratorAdvance(it) {
             // The array is the caller's (CKosmos.h).
-            let radii = SLSWindowIteratorGetCornerRadii(it)?.takeRetainedValue() as? [NSNumber]
+            let radii = cornerRadii ? SLSWindowIteratorGetCornerRadii(it)?.takeRetainedValue() as? [NSNumber] : nil
             rows.append(WindowRow(id: SLSWindowIteratorGetWindowID(it), pid: SLSWindowIteratorGetPID(it),
                                   parent: SLSWindowIteratorGetParentID(it), level: SLSWindowIteratorGetLevel(it),
                                   orderedIn: SLSWindowIteratorGetAttributes(it) & 0x2 != 0,
