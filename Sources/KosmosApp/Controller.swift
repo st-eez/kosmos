@@ -586,7 +586,7 @@ final class Controller {
             // change would count as, so this window was not among them.
             controllerLog.info("\(id) changed during a press that has ended goes back to its tile")
             ledger.forget(id)
-            execute(session.released([id]))
+            execute(session.released([id]), animates: false)
             return
         }
         let press = mouseMoved[id]
@@ -685,11 +685,11 @@ final class Controller {
             let dropped = session.lifted
             let plan = session.drop(at: point)
             controllerLog.info("dropped \(dropped.sorted().map(String.init).joined(separator: " "), privacy: .public) at \(Int(point.x)), \(Int(point.y))")
-            execute(plan)
+            execute(plan, animates: false)
         }
         if !moved.isEmpty {
             controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
-            execute(session.released(moved))
+            execute(session.released(moved), animates: false)
         }
     }
 
@@ -929,13 +929,14 @@ final class Controller {
     /// `since` is when the command arrived, for the switch timing log. `movePointer` centers
     /// the pointer on the focus. `floatingCheck` runs the floating check for an empty plan
     /// too, as a floating window admitted to a workspace with no tiles plans nothing.
+    /// `animates` false makes every frame jump, as at a drag's drop.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
-                         movePointer: Bool = false, floatingCheck: Bool = false) {
+                         movePointer: Bool = false, floatingCheck: Bool = false, animates: Bool = true) {
         guard managing, !sessionLocked, !plan.isEmpty || floatingCheck else { return publishState() }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (DESIGN.md, section 5.2).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames, animating: animated(plan))
+        writeFrames(plan.frames, animating: animates ? animated(plan) : [])
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -1031,16 +1032,15 @@ final class Controller {
     private static let animates = ProcessInfo.processInfo.environment["KOSMOS_ANIMATE"] == "1"
 
     /// The windows whose writes in `plan` animate: ones already on screen, on a shown
-    /// workspace. A window being revealed, one concealed or on a hidden workspace, and the
-    /// one a modifier drag holds jump to their frames, as every window does in Low Power
-    /// Mode. Drags, the 100 ms retry and floating windows brought home never animate, since
-    /// they do not come through here.
+    /// workspace. A window being revealed, and one concealed or on a hidden workspace, jump
+    /// to their frames, as every window does in Low Power Mode and while a drag holds a
+    /// window, from its lift. A drag's own writes, the 100 ms retry and floating windows
+    /// brought home never come through here, and a drop passes `animates` false to execute.
     private func animated(_ plan: Session.Plan) -> Set<WindowID> {
-        guard Self.animates, !ProcessInfo.processInfo.isLowPowerModeEnabled else { return [] }
+        guard Self.animates, !dragging, !ProcessInfo.processInfo.isLowPowerModeEnabled else { return [] }
         let show = Set(plan.show)
-        let held = modifierDrag?.grab.window
         return Set(plan.frames.keys.filter { id in
-            !show.contains(id) && !placedHidden.contains(id) && !hiding.isConcealed(id) && id != held
+            !show.contains(id) && !placedHidden.contains(id) && !hiding.isConcealed(id)
                 && session.workspace(of: id).map { session.isShown($0) } == true
         })
     }

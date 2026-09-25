@@ -325,7 +325,8 @@ off the main thread).
   position only at 120 steps a second with circular easing over 0.2 s, the size once at
   the midpoint, then the ordinary write and its read back. Progress follows the clock, so a
   slow app skips steps and ends on time. A newer target starts from where the tween has the
-  window. Reveals, hidden workspaces, drags, retries and Low Power Mode jump. The ledger
+  window. Reveals, hidden workspaces, retries and Low Power Mode jump, and so does every
+  frame from a drag's lift, or a modifier drag's press, to its drop. The ledger
   keeps the target pending until the final read back, so the tween's change events are
   Kosmos's. Unmeasured: the cost per step, and a user's press on a window mid-tween, which
   `frameChanged` ignores until the tween ends.
