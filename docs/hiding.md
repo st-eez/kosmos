@@ -90,8 +90,9 @@
   restores every concealed window. Each is recorded before any window enters it. Recovery
   sets each to identity and alpha 1, takes every window out of it, since each came in
   through Kosmos (`SpaceMembers.concealed`), then destroys it with the holding Spaces and
-  reads it back. The running Kosmos's recovery after a failed batch leaves them to it,
-  recorded; the quit, the guardian and the startup recovery destroy them.
+  reads it back. The running Kosmos's recoveries, after a failed batch and when the
+  guardian keeps dying (`restoreAll`), leave them to it, recorded; the quit, the guardian
+  and the startup recovery destroy them.
 - A window that closes leaves the ledger and the record once its concealing Space no
   longer lists it. The record's slot holds about 168 windows, 165 with the 8 Spaces
   windows slide in, and filled with closed ones it would stop every conceal. A window
