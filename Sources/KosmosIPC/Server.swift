@@ -4,7 +4,6 @@ import Dispatch
 /// All socket I/O runs on the server's serial queue, which is also the actor's executor. Only
 /// the handler runs on the main actor, and waiting for it holds up no other client.
 public actor IPCServer {
-    /// For the whole request, from connecting.
     static let requestDeadline = DispatchTimeInterval.seconds(1)
 
     private let queue: DispatchSerialQueue

@@ -72,7 +72,7 @@ public enum Recovery {
             _ = kosmos_barrier(space)
         }
 
-        let handled = Set(plan.adds.values.joined()).union(plan.removals.values.joined())
+        let handled = Set(plan.adds.values.joined()).union(plan.removalsBySpace.values.joined())
         let after = SpaceMembers.read(liveSpaces, of: record)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))

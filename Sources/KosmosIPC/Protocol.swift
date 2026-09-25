@@ -114,7 +114,6 @@ func frame(_ body: [UInt8]) -> [UInt8] {
 struct FrameDecoder {
     private var buffer: [UInt8] = []
 
-    /// No bytes of an unfinished frame are waiting.
     var isEmpty: Bool { buffer.isEmpty }
 
     mutating func append(_ bytes: some Sequence<UInt8>) {

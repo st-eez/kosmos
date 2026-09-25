@@ -2,7 +2,6 @@ import Darwin
 
 /// No dispatch queues or tasks, which keeps the CLI's launch near a bare Swift binary's.
 public enum IPCClient {
-    /// From connecting to reading the first response.
     private static let timeout = Duration.seconds(5)
 
     public static func send(_ args: [String], socketPath: String) throws(IPCError) -> Response {

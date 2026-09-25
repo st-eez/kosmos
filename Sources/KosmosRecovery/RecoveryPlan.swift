@@ -1,8 +1,8 @@
 struct RecoveryPlan: Equatable {
-    /// By recorded Space.
-    var removals: [UInt64: [UInt32]] = [:]
+    var removalsBySpace: [UInt64: [UInt32]] = [:]
     /// By destination, sent before the removals. An exclusive add strips only managed Spaces,
-    /// so an added window in a recorded Space is in `removals` too (`kosmos-probe reveal`).
+    /// so an added window in a recorded Space is in `removalsBySpace` too
+    /// (`kosmos-probe reveal`).
     var adds: [UInt64: [UInt32]] = [:]
     /// Windows with nowhere to go, or whose Spaces do not read, left where they are.
     var stuck: [UInt32] = []
@@ -35,7 +35,7 @@ struct RecoveryPlan: Equatable {
         }
         for (space, windows) in members.sorted(by: { $0.key < $1.key }) {
             for window in windows where place(window) {
-                plan.removals[space, default: []].append(window)
+                plan.removalsBySpace[space, default: []].append(window)
             }
         }
         let inMembers = Set(members.values.joined())
@@ -45,14 +45,14 @@ struct RecoveryPlan: Equatable {
         return plan
     }
 
-    var windows: Set<UInt32> { Set(removals.values.joined()).union(adds.values.joined()).union(stuck) }
+    var windows: Set<UInt32> { Set(removalsBySpace.values.joined()).union(adds.values.joined()).union(stuck) }
 
     /// An added window leaves its recorded Space only once its add landed: removed from its
     /// only Space, it would land on the active Space, which can be a native fullscreen one.
     /// A member with no row leaves regardless, or a closed one would keep the record for good.
     func removals(landed: (UInt32) -> Bool) -> [UInt64: [UInt32]] {
         let failed = Set(adds.values.joined().filter { !withoutRow.contains($0) && !landed($0) })
-        return removals.mapValues { $0.filter { !failed.contains($0) } }
+        return removalsBySpace.mapValues { $0.filter { !failed.contains($0) } }
     }
 
     func isComplete(remainingMembers: Int, isOnNoSpace: (UInt32) -> Bool) -> Bool {
