@@ -24,3 +24,8 @@
   Kosmos looks a display up by UUID: its bar number and its current Space.
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
   rule shadows a later one.
+- A `[borders]` table turns on the borders Kosmos draws around windows ([borders.md](borders.md)):
+  `width`, in points, 4 by default; `active`, the focused window's color, which the table
+  must give; and `inactive`, every other window's, transparent by default. Colors are
+  `#rrggbb`, or `#rrggbbaa` with the alpha last. The width may be a float, as JankyBorders
+  writes it, `4.0`, so Kosmos's TOML reads floats.

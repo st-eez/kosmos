@@ -15,6 +15,8 @@ public struct Config: Equatable, Sendable {
     /// The monitors each workspace belongs on, in order of preference.
     public var workspaceMonitors: [String: [String]] = [:]
     public var gaps = GapSettings()
+    /// Borders around the windows on screen, or nil while they are off (docs/borders.md).
+    public var borders: BorderSettings?
     /// Each mode's bindings in file order. Kosmos starts in mode `main`.
     public var modes: [String: [Binding]] = [:]
     /// Window rules in file order. The first rule that matches a window applies.

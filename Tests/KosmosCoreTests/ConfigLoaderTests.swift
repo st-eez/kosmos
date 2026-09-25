@@ -52,6 +52,29 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(try #require(load("").config).focusFollowsMouse == FocusFollowsMouse())
     }
 
+    @Test func borders() throws {
+        let steve = try #require(load("borders = { width = 4.0, active = '#7aa2f7', inactive = '#00000000' }").config)
+        #expect(steve.borders == BorderSettings(width: 4, active: BorderColor(hex: "#7aa2f7")!, inactive: .clear))
+        // Width 4 and no inactive border unless the table says otherwise, and off with no table.
+        let table = try #require(load("[borders]\nactive = '#7aa2f7'\nwidth = 2").config)
+        #expect(table.borders == BorderSettings(width: 2, active: BorderColor(hex: "#7aa2f7")!))
+        #expect(try #require(load("[borders]\nactive = '#7aa2f7'").config).borders?.width == 4)
+        #expect(try #require(load("").config).borders == nil)
+    }
+
+    @Test func borderMistakes() {
+        #expect(load("borders = { width = 0, inactive = '#414868' }").diagnostics == [
+            "3:11: error: borders: missing key 'active', the focused window's color, such as '#7aa2f7'",
+            "3:21: error: borders.width: the width must be above 0",
+        ])
+        #expect(load("borders = { width = '4', active = '7aa2f7', inactive = '#4148', style = 'round' }").diagnostics == [
+            "3:21: error: borders.width: expected a number, found a string",
+            "3:35: error: borders.active: expected a color as '#rrggbb' or '#rrggbbaa', found '7aa2f7'",
+            "3:56: error: borders.inactive: expected a color as '#rrggbb' or '#rrggbbaa', found '#4148'",
+            "3:65: error: borders.style: unknown key",
+        ])
+    }
+
     @Test func focusFollowsMouseMistakes() {
         #expect(load("""
             focus-follows-mouse = 'on'

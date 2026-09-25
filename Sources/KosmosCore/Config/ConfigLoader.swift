@@ -35,7 +35,7 @@ private struct ConfigDecoder {
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
             "config-version", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
-            "mouse-modifier", "workspaces", "monitors", "workspace-monitor", "gaps", "mode", "rule", "profile",
+            "mouse-modifier", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "mode", "rule", "profile",
         ])
         var config = Config()
 
@@ -78,6 +78,9 @@ private struct ConfigDecoder {
         }
         if let entry = root["gaps"] {
             config.gaps = gaps(entry.value, path.key(entry.key))
+        }
+        if let entry = root["borders"] {
+            config.borders = borders(entry.value, path.key(entry.key))
         }
         if let entry = root["mode"] {
             config.modes = modes(entry.value, path.key(entry.key))
@@ -212,6 +215,36 @@ private struct ConfigDecoder {
             return nil
         }
         return points
+    }
+
+    private mutating func borders(_ value: TOMLValue, _ path: ValuePath) -> BorderSettings? {
+        guard let table = table(value, path, allowed: ["width", "active", "inactive"]) else { return nil }
+        var settings = BorderSettings(active: .clear)
+        if let entry = table["width"], let width = number(entry.value, path.key(entry.key)) {
+            if width > 0 {
+                settings.width = width
+            } else {
+                fail("the width must be above 0", at: entry.value.position, path.key(entry.key))
+            }
+        }
+        guard let active = table["active"] else {
+            fail("missing key 'active', the focused window's color, such as '#7aa2f7'", at: value.position, path)
+            return nil
+        }
+        settings.active = color(active.value, path.key(active.key)) ?? .clear
+        if let entry = table["inactive"] {
+            settings.inactive = color(entry.value, path.key(entry.key)) ?? .clear
+        }
+        return settings
+    }
+
+    private mutating func color(_ value: TOMLValue, _ path: ValuePath) -> BorderColor? {
+        guard let text = string(value, path) else { return nil }
+        guard let color = BorderColor(hex: text) else {
+            fail("expected a color as '#rrggbb' or '#rrggbbaa', found '\(text)'", at: value.position, path)
+            return nil
+        }
+        return color
     }
 
     private mutating func modes(_ value: TOMLValue, _ path: ValuePath) -> [String: [Binding]] {
@@ -472,6 +505,17 @@ private struct ConfigDecoder {
         return integer
     }
 
+    /// An integer or a float.
+    private mutating func number(_ value: TOMLValue, _ path: ValuePath) -> Double? {
+        switch value.kind {
+        case .integer(let integer): return Double(integer)
+        case .float(let float): return float
+        default:
+            fail("expected a number, found \(kindName(value))", at: value.position, path)
+            return nil
+        }
+    }
+
     private mutating func boolean(_ value: TOMLValue, _ path: ValuePath) -> Bool? {
         guard case .boolean(let boolean) = value.kind else {
             fail("expected true or false, found \(kindName(value))", at: value.position, path)
@@ -506,6 +550,7 @@ private func kindName(_ value: TOMLValue) -> String {
     switch value.kind {
     case .string: "a string"
     case .integer: "an integer"
+    case .float: "a float"
     case .boolean: "a boolean"
     case .array: "an array"
     case .table: "a table"
