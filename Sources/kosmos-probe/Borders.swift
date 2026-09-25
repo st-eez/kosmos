@@ -15,11 +15,14 @@ import CKosmos
 import KosmosCore
 import KosmosSkyLight
 
+extension NSScreen {
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    }
+}
+
 @MainActor func builtInScreen() -> NSScreen {
-    NSScreen.screens.first { screen in
-        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-        return CGDisplayIsBuiltin(id) != 0
-    } ?? NSScreen.main ?? NSScreen.screens[0]
+    NSScreen.screens.first { CGDisplayIsBuiltin($0.displayID) != 0 } ?? NSScreen.main ?? NSScreen.screens[0]
 }
 
 /// The second of the two layouts changes each column's width and each row's height, so every
@@ -58,6 +61,10 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
                 MainActor.assumeIsolated {
                     if words.count == 2, words[0] == "front", let id = Int(words[1]) {
                         windows.first { $0.windowNumber == id }?.orderFrontRegardless()
+                    } else if words.count == 6, words[0] == "frame", let id = Int(words[1]) {
+                        let n = words.dropFirst(2).compactMap { Double($0) }
+                        windows.first { $0.windowNumber == id }?.setFrame(NSRect(x: n[0], y: n[1], width: n[2], height: n[3]), display: true)
+                        print("done")
                     } else if words.count == 2, words[0] == "layout", let n = Int(words[1]) {
                         for (window, frame) in zip(windows, targetLayout(n, count: windows.count, in: area)) {
                             window.setFrame(frame, display: true)

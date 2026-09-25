@@ -42,6 +42,7 @@ public struct Displays: Sendable {
     }
 
     public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.ordinarySpaces)) }
+    public func ordinarySpaces(on id: CGDirectDisplayID) -> [UInt64] { display(for: id)?.ordinarySpaces ?? [] }
     var fullscreenSpaces: Set<UInt64> { Set(displays.flatMap(\.fullscreenSpaces)) }
     var allSpaces: [UInt64] { displays.flatMap(\.allSpaces) }
 
