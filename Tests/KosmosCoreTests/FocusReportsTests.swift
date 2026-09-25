@@ -133,13 +133,68 @@ import Testing
     #expect(reports.classify(.window(3), receivedAt: 14, onShownWorkspace: false, concealed: true, keyLeft: .unknown) == .reassert)
 }
 
+// Change 12: a focus request of Kosmos's misses. Fronting another window of the app that
+// is already key leaves that app's key window, which the app reports again.
+
+@Test func aRepeatOfAConcealedKeyWindowDuringOurRequestToItsAppIsAMiss() {
+    var reports = FocusReports<Int>()
+    // Kosmos switched to 1 and requested Ghostty's 86737; Ghostty kept 90919, concealed on 3
+    // by the switch, and reported it again.
+    reports.focusRequested(.window(86737), app: 100, at: 10)
+    let miss = reports.miss(.window(90919), app: 100, repeated: true, receivedAt: 11)
+    #expect(miss == .retry)
+    #expect(reports.classify(.window(90919), receivedAt: 11, onShownWorkspace: false, concealed: true,
+                             miss: miss, keyLeft: .stayed) == .reassert)
+}
+
+@Test func aMissIsRetriedOnceThenTheKeyWindowIsAccepted() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(86737), app: 100, at: 10)
+    #expect(reports.miss(.window(90919), app: 100, repeated: true, receivedAt: 11) == .retry)
+    reports.focusRequested(.window(86737), app: 100, at: 12)   // the retry
+    let second = reports.miss(.window(90919), app: 100, repeated: true, receivedAt: 13)
+    #expect(second == .accept)
+    #expect(reports.classify(.window(90919), receivedAt: 13, onShownWorkspace: false, concealed: true,
+                             miss: second, keyLeft: .stayed) == .ignore)
+    // A new intent may retry again.
+    reports.focusRequested(.window(5), app: 100, at: 14)
+    #expect(reports.miss(.window(90919), app: 100, repeated: true, receivedAt: 15) == .retry)
+}
+
+@Test func aMissOnTheShownWorkspaceIsNotTheUsersChoiceEither() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(2), app: 100, at: 10)
+    let miss = reports.miss(.window(1), app: 100, repeated: true, receivedAt: 11)
+    #expect(reports.classify(.window(1), receivedAt: 11, onShownWorkspace: true, concealed: false,
+                             miss: miss, keyLeft: .stayed) == .reassert)
+    reports.focusRequested(.window(2), app: 100, at: 12)
+    let accepted = reports.miss(.window(1), app: 100, repeated: true, receivedAt: 13)
+    #expect(reports.classify(.window(1), receivedAt: 13, onShownWorkspace: true, concealed: false,
+                             miss: accepted, keyLeft: .stayed) == .adopt(1))
+}
+
+@Test func aMissedRequestNoLongerTakesAReportOfItsWindowForItsEcho() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 100, at: 10)
+    reports.focusRequested(.window(1), app: 100, at: 11)   // a second request, performed later
+    #expect(reports.miss(.window(3), app: 100, repeated: true, receivedAt: 12) == .retry)
+    // The later request still comes back as an echo; once it did, the user's report of 1 is
+    // the user's.
+    #expect(reports.classify(.window(1), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+    #expect(reports.classify(.window(1), receivedAt: 14, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(1))
+}
+
 @Test func openingAConcealedWindowOfTheRequestedAppIsTheUsersChoice() {
     var reports = FocusReports<Int>()
     // `open a.pdf` fronts Preview's concealed window 3 while Kosmos's request for Preview's
-    // window 1 is on its way: the user opened it, and Kosmos follows.
+    // window 1 is on its way: a key change, not a repeat, so it is followed.
     reports.focusRequested(.window(1), app: 100, at: 10)
+    let miss = reports.miss(.window(3), app: 100, repeated: false, receivedAt: 11)
+    #expect(miss == .none)
     #expect(reports.classify(.window(3), receivedAt: 11, onShownWorkspace: false, concealed: true,
-                             keyLeft: .stayed) == .follow(3))
+                             miss: miss, keyLeft: .stayed) == .follow(3))
+    // A repeat with no request to that app awaiting its echo is no miss either.
+    #expect(reports.miss(.window(7), app: 200, repeated: true, receivedAt: 12) == .none)
 }
 
 @Test func aClickOnAWindowRecoveryShowedIsFollowed() {
@@ -217,6 +272,27 @@ import Testing
     #expect(!other && echo)
     // Consumed: a later report of window 1 is the user's.
     #expect(reports.classify(.window(1), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
+}
+
+@Test func aBackgroundEchoOfTheRetriedWindowEndsTheRetry() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 11) == .retry)
+    reports.focusRequested(.window(1), app: 7, at: 12)
+    let echo = reports.consumeEcho(.window(1), receivedAt: 13)
+    #expect(echo)
+    // The retry keyed window 1, so a later miss of it is retried again.
+    reports.focusRequested(.window(1), app: 7, at: 20)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 21) == .retry)
+}
+
+@Test func forgettingRequestsEndsTheRetry() {
+    var reports = FocusReports<Int>()
+    reports.focusRequested(.window(1), app: 7, at: 10)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 11) == .retry)
+    reports.forgetRequests()
+    reports.focusRequested(.window(1), app: 7, at: 20)
+    #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 21) == .retry)
 }
 
 @Test func onlyAVerdictThatDependsOnTheDepartureReadsIt() {

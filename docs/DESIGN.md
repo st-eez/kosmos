@@ -509,19 +509,14 @@ off the main thread).
     its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
     happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
     1, where macOS keyed Ghostty.
-  - No report is taken for a miss of Kosmos's request. The miss rule took a report that
-    repeats the key window, while a request to another window of that app awaits its echo,
-    for a miss, and requested the focus again. It belonged to the key record inside the
-    front app, which keys nothing there (`kosmos-probe keying`, 0 of 20): live, Kosmos
-    fronted Ghostty for a window of workspace 1, Ghostty reported the window a switch had
-    just concealed on workspace 3, and Kosmos followed it there. The worker's AXRaise keys
-    the window inside the front app now, 20 times in 20, and the key record activates a
-    background app with the named window, 10 times in 10, so requests do not miss. Reports
-    of different apps also arrive out of order, and the rule took the activation read of a
-    Command-Tab, which repeats the window its own notification just reported, for a miss of
-    an older request to that app, and lost the Command-Tab (tla/README.md, change 21,
-    `split-user-missrule`). The rule is gone, and with it a held report's repeat after a
-    miss. The kill switch still counts wrong windows.
+  - A report that repeats the key window Kosmos last heard of, while a request of Kosmos's
+    to another window of that app awaits its echo, is a miss of that request, not the
+    user's choice: the app kept its key window, or keyed another one itself before
+    reporting the requested one. Preview re-keyed its main window within about 40 ms of a
+    hover keying its second window (live, 2026-09-24 at 23:56). The missed request never
+    comes back, so it leaves the expected echoes. Kosmos requests the focus again, once
+    for each requested window; if that misses too, it leaves the key window where macOS
+    put it. A report that repeats the held window leaves the hold standing.
   - A visible window of a workspace that no display shows is key only during a switch:
     macOS re-keyed after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,
@@ -651,7 +646,8 @@ off the main thread).
     window; inside the front app the raise keys it. A request misses when its app reports
     another of its windows key, and neither an echo of any request nor a report of the
     requested window arrives first, before Kosmos's next request. A background report that
-    consumes the echo leaves the count alone. Five misses in a row turn the path off. On this Mac AXRaise and then the
+    consumes the echo leaves the count alone. A miss and a retry that misses too count as
+    one miss. Five misses in a row turn the path off. On this Mac AXRaise and then the
     private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
     between two windows of the active app, so the miss rate is at most about 5% at 95%
     confidence, and five misses in a row at 5% come once in about 3 million runs. Those
@@ -785,6 +781,18 @@ off the main thread).
     that second, with no report of a next key window, reads as macOS's re-key, and Kosmos
     keeps its workspace. The live evidence: a Command-Tab to another workspace ignored just
     after the key window closed or minimized.
+  - Dropping the miss rule (change 21). The rule dates from the key record inside the
+    front app, which keys nothing there (section 2): live, Kosmos fronted Ghostty for a
+    window of workspace 1, Ghostty reported the window a switch had just concealed on
+    workspace 3, and Kosmos followed it there. The worker's raise keys that window now.
+    The activation read of a Command-Tab repeats the window its own notification just
+    reported, so the rule takes it for a miss of an older request to that app, and the
+    Command-Tab is lost (`split-user-missrule`). Dropping the rule comes only with the
+    rule above that an activation read matches its app's key record whatever window it
+    reads. On the private path the miss rule is what clears a key record whose echo never
+    comes, as when Preview re-keyed its main window, and without either that record
+    swallows the user's later report of its window. The live evidence: a Command-Tab lost
+    as a miss, with "focus request missed" logged for the window it reached.
   - Reports overtaken by a newer one (changes 19 to 21). A report stamped before the last
     report Kosmos adopted or followed is ignored, as is one stamped before a held report,
     which it would otherwise end and replace: the user clicked a window of one app, then of
@@ -867,7 +875,7 @@ off the main thread).
     fill the display, so a fullscreen switch passes none.
   - macOS can report the new tab key before the switch pairs, when the tab has no place.
     Kosmos decides that report again once the tab takes its place, as a report of a placed
-    window: the kill switch counts it, and it can answer
+    window, with any miss found when it came: the kill switch counts it, and it can answer
     a public request. It follows the tab to a place on a hidden workspace. The window key
     before it is the deselected tab, which did not depart. A report that comes after the
     tab took a place on a hidden workspace, before its conceal completed, is followed at

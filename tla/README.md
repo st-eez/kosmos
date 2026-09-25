@@ -1,8 +1,8 @@
 # TLA+ spec of the workspace switch
 
-The code implements changes 1 to 18 below, without change 12's miss rule, which change 21
-drops, and the parts of changes 19 to 24 that [DESIGN.md](../docs/DESIGN.md) 5.4
-describes; its Deferred list names the rules of those changes the code leaves out.
+The code implements changes 1 to 18 below, and the parts of changes 19 to 24 that
+[DESIGN.md](../docs/DESIGN.md) 5.4 describes; its Deferred list names the rules of those
+changes the code leaves out, change 21's drop of change 12's miss rule among them.
 
 [Kosmos.tla](Kosmos.tla) specifies the switch protocol and focus classification from
 [DESIGN.md](../docs/DESIGN.md), sections 4.3 and 5.4. It models three queues: the main

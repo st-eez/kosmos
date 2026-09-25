@@ -436,7 +436,7 @@ final class Controller {
             unplacedKey = nil
             placedHidden.remove(new)
             decidePlaced(KeyReport(key: report.key, received: report.received, pid: report.pid, previous: report.previous,
-                                   concealed: session.workspace(of: new).map { !session.isShown($0) } ?? false),
+                                   concealed: session.workspace(of: new).map { !session.isShown($0) } ?? false, miss: report.miss),
                          keyLeft: .stayed)
         }
         return true
@@ -658,6 +658,7 @@ final class Controller {
             _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
+            let repeated = key == reported
             let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
@@ -667,13 +668,18 @@ final class Controller {
             if let previous, awaitingKey?.window == previous, !reports.isEcho(reported, receivedAt: report.received) {
                 awaitingKey = nil
             }
+            let miss = reports.miss(reported, app: id.flatMap { owner[$0] ?? inventory.windows[$0]?.pid },
+                                    repeated: repeated, receivedAt: report.received)
+            if miss != .none {
+                controllerLog.notice("focus request missed: \(String(describing: reported), privacy: .public) again, \(String(describing: miss), privacy: .public)")
+            }
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
             // A tab with no place yet is decided when it takes one.
             if let id, session.workspace(of: id) == nil || session.isParked(id) {
                 unplacedKey = session.workspace(of: id) == nil
                     ? KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
-                                concealed: false) : nil
+                                concealed: false, miss: miss) : nil
                 // A native fullscreen window Kosmos keyed, as when the pointer entered it:
                 // the report is that request's echo.
                 if session.isParked(id), reports.consumeEcho(reported, receivedAt: report.received) {
@@ -682,6 +688,7 @@ final class Controller {
                 return
             }
             unplacedKey = nil
+            if held.holds(reported, repeated: repeated) { return }
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4). For a
             // report that repeats the key window, that is the window before (KeyHistory).
@@ -693,7 +700,7 @@ final class Controller {
             // (tla/README.md, change 22).
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
-                                   concealed: placed || id.map { hiding.wasConcealed($0, at: report.received) } ?? false),
+                                   concealed: placed || id.map { hiding.wasConcealed($0, at: report.received) } ?? false, miss: miss),
                          keyLeft: placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
             depart([id])
@@ -737,6 +744,8 @@ final class Controller {
         let previous: WindowID?
         /// The reported window was concealed at the report's stamp.
         let concealed: Bool
+        /// Whether it is a miss of Kosmos's own request.
+        let miss: Miss
     }
 
     /// How long a report waits to learn whether the window key before it left. macOS keyed
@@ -763,7 +772,7 @@ final class Controller {
         // reaches them (needsResync).
         let verdict = reports.classify(report.key, receivedAt: report.received,
                                        onShownWorkspace: id.flatMap(session.workspace(of:)).map(session.isShown) ?? false,
-                                       concealed: report.concealed, recovered: needsResync, keyLeft: keyLeft())
+                                       concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft())
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report
         // of no key window leave it held.
@@ -788,12 +797,12 @@ final class Controller {
             controllerLog.notice("\(self.inventory.appIdentity(report.pid).name ?? String(report.pid), privacy: .public) has no key window on an empty workspace; keying its window again")
             requestFocus(.none)
         case .undecided:
-            let number = held.hold(report)
+            let number = held.hold(report, of: report.key)
             after(Self.grace) { controller in
                 if let report = controller.held.expire(number) { controller.decideHeld(report) }
             }
         case .reassert:
-            requestFocus(intent)
+            requestFocus(intent, retry: report.miss == .retry)
         case .adopt(let window):
             session.adopt(window)
             touch(window)
@@ -951,8 +960,9 @@ final class Controller {
         }
     }
 
-    /// Every focus request goes through here. `fromCommand`: a command asked for it.
-    private func requestFocus(_ target: KeyWindow, fromCommand: Bool = false) {
+    /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
+    /// it follows a miss, which the kill switch then counts once.
+    private func requestFocus(_ target: KeyWindow, fromCommand: Bool = false, retry: Bool = false) {
         // While observing, the other window manager owns focus too.
         guard managing, !sessionLocked else { return }
         // Focusing a desktop window takes the user out of a fullscreen Space: only a command
@@ -984,7 +994,7 @@ final class Controller {
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately,
                            concealed: concealed, generation: focusQueue.newGeneration(),
                            performing: { [weak self] stamp, path in
-                               self?.performing(target, pid: pid, path: path, at: stamp)
+                               self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
                            dropped: { [weak self] stamp in
                                self?.reports.requestDropped(target, at: stamp)
@@ -995,10 +1005,11 @@ final class Controller {
     /// A call that changes the key window to `target` is about to be made: records the echo
     /// that will come back, inexact for the public activation, and counts the private key
     /// record toward the kill switch (DESIGN.md, section 5.4).
-    private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, at stamp: ContinuousClock.Instant) {
+    private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, retry: Bool,
+                            at stamp: ContinuousClock.Instant) {
         reports.focusRequested(target, app: pid, at: stamp, publicly: path == .activation)
         guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
-              misses.willRequest(id, pid: pid, at: stamp) else { return }
+              misses.willRequest(id, pid: pid, at: stamp, retry: retry) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)
         controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
         onFocusProblem?(focusProblem)
