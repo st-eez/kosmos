@@ -886,6 +886,12 @@ final class Controller {
             controllerLog.notice("held focus report \(String(describing: report.key), privacy: .public): dropped, its window left, after \(after, privacy: .public) ms")
             return
         }
+        // A later report moved the key window on, as Kosmos's own echo does when an app it
+        // activated keys its last key window first and then the requested one.
+        if report.key != key {
+            controllerLog.notice("held focus report \(String(describing: report.key), privacy: .public): dropped, \(String(describing: self.key), privacy: .public) is key now, after \(after, privacy: .public) ms")
+            return
+        }
         guard let previous = report.previous else { return }
         let left = inventory.leftScreen(previous)
         controllerLog.notice("""
