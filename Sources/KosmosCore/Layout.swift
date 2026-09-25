@@ -39,7 +39,7 @@ extension Workspace {
     /// with a minimum takes it anyway, moved back inside the tiling rectangle where it would
     /// leave it, over its neighbors.
     func frames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
-        var frames = layout(in: rect, gaps: gaps, minimums: minimums)
+        var frames = splitFrames(in: rect, gaps: gaps, minimums: minimums)
         let area = tilingRect(rect, gaps.outer)
         for (id, minimum) in minimums {
             if let frame = frames[id] { frames[id] = grow(frame, to: minimum, within: area) }
@@ -51,10 +51,10 @@ extension Workspace {
     /// The frame of every tiled window's tile by weight alone, with no minimums and none
     /// fullscreen: the sizes the weights stand for.
     func tileFrames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
-        layout(in: rect, gaps: gaps, minimums: [:])
+        splitFrames(in: rect, gaps: gaps, minimums: [:])
     }
 
-    private func layout(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
+    private func splitFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         func place(_ container: Container, in rect: CGRect) {
             let least = container.children.map { minimumLength(of: $0, along: container.orientation, minimums, gap: gaps.inner) }
