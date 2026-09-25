@@ -1576,7 +1576,10 @@ nonisolated(unsafe) var eventTime = DateFormatter()
                 print("  \(id): no row, recorded \(recorded.contains(id))")
                 continue
             }
-            let app = NSRunningApplication(processIdentifier: row.pid)?.localizedName ?? "?"
+            // A command line tool, as borders, has no NSRunningApplication.
+            var name = [CChar](repeating: 0, count: 256)
+            let app = NSRunningApplication(processIdentifier: row.pid)?.localizedName
+                ?? (proc_name(row.pid, &name, UInt32(name.count)) > 0 ? name.withUnsafeBufferPointer { String(cString: $0.baseAddress!) } : "?")
             let spaces = (kosmos_window_spaces(id) as? [UInt64]).map { "\($0)" } ?? "unread"
             let ownsRecorded = ProcessIdentity.of(row.pid).map { apps.contains($0) }.map { "\($0)" } ?? "unread"
             print("  \(id): pid \(row.pid) \(app), parent \(row.parent), level \(row.level), Spaces \(spaces), "

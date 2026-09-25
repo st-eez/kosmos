@@ -40,8 +40,8 @@ public struct SpaceMembers: Equatable, Sendable {
     /// an app that owns a recorded one; a child of a concealed window, as the Open or Save
     /// panel of a sandboxed app, which the panel service owns; and a member `rows` did not
     /// find, since the Space just listed it and the read must have failed. Another process
-    /// can add windows of its own to a holding Space, as WindowManager.app appears to for
-    /// Mission Control's placeholders (DESIGN.md, section 5.3). Kosmos never concealed them,
+    /// can have windows of its own in a holding Space, as JankyBorders' border windows follow
+    /// the windows they border into it (DESIGN.md, section 5.3). Kosmos never concealed them,
     /// so recovery and the ledger leave them out.
     static func concealed(_ members: [UInt64: [UInt32]], by record: RecoveryRecord,
                           rows: ([UInt32]) -> [UInt32: Row]) -> [UInt64: [UInt32]] {

@@ -362,9 +362,9 @@ off the main thread).
   the record. It removes an added window from a recorded Space only
   once the add landed, and keeps the record while a concealed window is left there. Every
   step can safely run twice.
-- Recovery leaves in its Space a window whose process owns no recorded window, such as
-  the Mission Control placeholders described below, and so does the ledger rebuilt after
-  an incomplete recovery. Whether a destroy takes away a Space that still holds such
+- Recovery leaves in its Space a window whose process owns no recorded window, such as a
+  JankyBorders border window (below), and so does the ledger rebuilt after an incomplete
+  recovery. Whether a destroy takes away a Space that still holds such
   a window is unconfirmed, since the destroy's return says only that it was sent. So
   recovery sends a barrier after the destroys and reads each Space back. That read is the
   measurement: a Space still there is logged and stays in the record, with no windows, for
@@ -404,7 +404,12 @@ off the main thread).
     the probe's windows left it. After the first run their ids were gone, and a live
     window with a neighbouring id was WindowManager's "App Icon Window" at layer 17. From
     that neighbour alone, WindowManager appears to draw the placeholders as windows of its
-    own and add them to the holding Space.
+    own and add them to the holding Space. This did not reproduce live: `kosmos-probe
+    holding`, read once a second before, during and after Mission Control with Kosmos's
+    own concealed windows in its holding Space, found no WindowManager or Dock window
+    there, and the only windows Kosmos had not recorded were JankyBorders' border windows,
+    which follow the windows they border into the holding Space and out again (September
+    25, 2026).
 
 ### 5.4 Focus
 
