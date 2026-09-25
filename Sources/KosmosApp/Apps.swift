@@ -63,7 +63,8 @@ final class Apps {
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            appsLog.error("\(name, privacy: .public) did not answer Accessibility in 1 s; asking every 0.5 s")
+            let reason = await worker.startFailure
+            appsLog.error("\(name, privacy: .public) did not start in 1 s (\(reason, privacy: .public)); asking every 0.5 s")
             await worker.askLater()
         }
     }

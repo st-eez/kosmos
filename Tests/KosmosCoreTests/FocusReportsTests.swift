@@ -320,3 +320,27 @@ import Testing
     #expect(reports.classify(.none, receivedAt: 14, onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
     #expect(reads == 2)
 }
+
+@Test func admissionFollowsOnlyAWindowItsAppKeyedSinceLaunch() {
+    func decide(keyed: Bool = true, shown: Bool = false, parked: Bool = false, atLaunch: Bool = false,
+                locked: Bool = false) -> AdmissionFocus {
+        AdmissionFocus.decide(keyed: keyed, shown: shown, parked: parked, atLaunch: atLaunch, locked: locked)
+    }
+    // Live, 2026-09-25: Chrome launched on workspace 8, and a rule put its first window on
+    // workspace 4, which no display showed. Kosmos concealed the window and keyed Claude
+    // again, so Steve pressed alt-4 himself. The report that waited for the place is decided
+    // as one of a concealed window whose key window before it stayed, which follows.
+    #expect(decide() == .placedHidden)
+    // A window no report named, as one a background app opened: a report before its conceal
+    // completes is decided the same way.
+    #expect(decide(keyed: false) == .placedHidden)
+    // On a shown workspace, as with a rule that names no workspace, it becomes the focus
+    // there, at launch too.
+    #expect(decide(shown: true) == .adopt)
+    #expect(decide(shown: true, atLaunch: true) == .adopt)
+    #expect(decide(keyed: false, shown: true) == .none)
+    // Kosmos's launch sweep, a parked window and a locked session follow nothing.
+    #expect(decide(atLaunch: true) == .none)
+    #expect(decide(parked: true) == .none)
+    #expect(decide(locked: true) == .none)
+}

@@ -66,6 +66,8 @@ actor AppWorker {
     private let app: AXUIElement
     private var observer: AXObserver?
     private var started = false
+    /// Why the last start failed, for the log after the launch retries.
+    private(set) var startFailure = "no answer"
     private var elements: [UInt32: AXUIElement] = [:]
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
@@ -98,19 +100,32 @@ actor AppWorker {
             guard AXObserverCreate(pid, { _, element, notification, refcon in
                 guard let refcon else { return }
                 Unmanaged<AppWorker>.fromOpaque(refcon).takeUnretainedValue().observed(notification as String, element)
-            }, &created) == .success, let created else { return false }
+            }, &created) == .success, let created else { startFailure = "observer not created"; return false }
             observer = created
             CFRunLoopAddSource(observerLoop.runLoop, AXObserverGetRunLoopSource(created), .defaultMode)
         }
         for notification in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
             let result = observe(app, notification)
-            if result != .success, result != .notificationAlreadyRegistered { return false }
+            if result != .success, result != .notificationAlreadyRegistered {
+                startFailure = "\(notification) not registered, AXError \(result.rawValue)"
+                return false
+            }
         }
         // A call that timed out above leaves the worker to the probe.
-        guard trackWindows(), !backoff.backedOff else { return false }
+        guard trackWindows(), !backoff.backedOff else {
+            startFailure = backoff.backedOff ? "timed out" : "window list not read"
+            return false
+        }
         started = true
-        send(.answering)
+        reportAnswering()
         return true
+    }
+
+    /// Reports `answering`, then the app's focused window (docs/geometry.md).
+    private func reportAnswering() {
+        send(.answering)
+        guard let window = focusedWindow() else { return }
+        send(kosmos_front_pid() == pid ? .focusedWindowChanged(window) : .backgroundFocus(window))
     }
 
     /// Tracks every window the app lists. False when the app did not answer.
@@ -135,8 +150,10 @@ actor AppWorker {
     /// app did not answer; the caller keeps what it knew, since an unanswered read never makes
     /// a window unmanaged. Windows the app did not list when the worker started, nor report
     /// created, are looked for in its list again, once for all of them, as for an app
-    /// launched hidden once it unhides.
+    /// launched hidden once it unhides. Before the worker starts it knows no window, so a
+    /// window is admitted only after its app's focused window is reported (docs/geometry.md).
     func info(_ ids: [UInt32]) -> [UInt32: AXWindowInfo] {
+        guard started else { return [:] }
         if ids.contains(where: { elements[$0] == nil }) { _ = trackWindows() }
         var infos: [UInt32: AXWindowInfo] = [:]
         for id in ids { infos[id] = info(id) }
@@ -490,9 +507,7 @@ actor AppWorker {
     /// One read with a 50 ms timeout. Any answer lets calls go again. A worker that has not
     /// started starts; one that has tracks the windows created meanwhile and writes the held
     /// frames. If none of those calls timed out and the worker has started, asking stops and
-    /// the worker reports `answering`, which `start` also does. Focus changes the worker could
-    /// not read meanwhile, such as a Command-Tab to the app, are lost, so while the app is the
-    /// front process its focused window is reported as a key window report.
+    /// the worker reports `answering`, as `start` does.
     private func askAgain() {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
@@ -507,8 +522,7 @@ actor AppWorker {
         guard backoff.settled(started: started) else { return }   // asked again at the next tick
         if let probe { CFRunLoopTimerInvalidate(probe) }
         probe = nil
-        if wasStarted { send(.answering) }
-        if kosmos_front_pid() == pid, let window = focusedWindow() { send(.focusedWindowChanged(window)) }
+        if wasStarted { reportAnswering() }
         if let since {
             log.notice("\(self.name, privacy: .public) answers Accessibility again after \((ContinuousClock.now - since).formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public)")
         }

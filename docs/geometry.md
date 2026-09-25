@@ -85,6 +85,20 @@
   app's role with a 50 ms timeout every 0.5 s. When the app answers, the worker tracks the
   windows created meanwhile and writes the held frames. It stops asking and reports that
   the app answers only if none of those calls timed out, and the inventory then reads the
-  facts it could not read before. A focus change during the backoff went unread, so while
-  the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
-  left to the launch retries.
+  facts it could not read before. A launching app fails fast and is left to the launch
+  retries.
+- A worker that starts, or whose app answers again, reports the app's focused window after
+  `answering`. A focus change the worker could not read is lost otherwise: one during the
+  backoff, as a Command-Tab to the app, and one before the observer was registered, as a
+  launching app's first window, whose activation read got no answer while the app
+  launched (focus.md). The app can leave the front while the worker reads, so the report
+  is a key window report only when the app is front after the read, and a background one
+  otherwise, as for an activation read. A worker answers no read of a window's facts
+  before it starts, and the inventory admits a window only once it has them, so the report
+  comes before the admission of the window it names. Read before the start, between two
+  launch retries, the facts let Kosmos admit a launching app's window and conceal it on a
+  rule's hidden workspace before the report said the app had keyed it. The ceiling: an app
+  that answers reads but refuses the observer's registration, or whose window list read
+  fails, has none of its windows managed, where before it was managed without
+  notifications. None has been seen; the log after the launch retries names the failing
+  step.

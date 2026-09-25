@@ -133,7 +133,8 @@ public struct WindowRule: Equatable, Sendable {
     public var appName: String?
     /// Float the window, or tile it when false.
     public var float: Bool?
-    /// Put the window on this workspace.
+    /// Put the window on this workspace, which Kosmos shows when the window's app keyed it
+    /// (AdmissionFocus).
     public var workspace: String?
 
     /// Whether the rule matches a window of the app with this bundle identifier and name.

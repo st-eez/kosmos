@@ -20,6 +20,22 @@
 - A new window joins the workspace a rule names, else the focused workspace. A window that
   was there when Kosmos launched joins the workspace shown on the display under its
   center, so each keeps its display. AeroSpace does the same (MacWindow.swift).
+- When the front app keyed the new window, as when the user launched or activated the app,
+  and the rule's workspace is hidden, Kosmos shows that workspace on its display, focuses
+  the window, and moves the pointer as for a Command-Tab to a concealed window (focus.md
+  and focus-follows-mouse.md). Hyprland's `workspace` window rule does the same: the
+  window opens on that workspace and Hyprland switches to it, unless the rule adds
+  `silent` (Hyprland wiki, Window Rules). A window its app opens in the background
+  changes no workspace. The ceiling: a launch by an agent or a script that brings the app
+  front also follows, since its app keys the window as one the user launched does, and
+  Kosmos does not tell who asked for a launch. The upgrade path is a `silent` rule option,
+  as Hyprland's `workspace N silent`, added when a real case needs it.
+  Kosmos's launch sweep follows no window. The key window it finds becomes the focus if
+  its workspace is shown, and a follow during the sweep would change the workspace a
+  display shows while the sweep still places windows by the display under them, so where
+  a window lands would depend on the order apps answer Accessibility. The cost: after a
+  relaunch, a key window that a rule puts on a hidden workspace is concealed, and Kosmos
+  keys the focused workspace's window.
 - A window a rule floats joins its workspace's floating windows and never the tree, so it
   keeps the frame its app gave it and no tile moves, on a hidden workspace and at launch
   too. Kosmos logs that frame at admission. A new Finder window on the left panel had come

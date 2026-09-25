@@ -46,6 +46,35 @@ public enum Miss: Equatable, Sendable {
     case accept
 }
 
+/// What admitting a window does with the focus (docs/focus.md and docs/displays.md). A
+/// window its app keyed before Kosmos gave it a place, as a launching app keys its first
+/// window, is the user's choice.
+public enum AdmissionFocus: Equatable, Sendable {
+    case none
+    /// The window was key before it had a place, on a shown workspace: it becomes the focus
+    /// there.
+    case adopt
+    /// The window's place is on a hidden workspace. Its key window report, one that waited
+    /// for the place or one that comes before its conceal completes, is decided as one of a
+    /// concealed window whose key window before it stayed, which Kosmos follows as it
+    /// follows a Command-Tab.
+    case placedHidden
+
+    /// - Parameters:
+    ///   - keyed: the window is the key window Kosmos last heard of, which only the front
+    ///     app reports: its app keyed it before Kosmos gave it a place.
+    ///   - shown: its place is on a workspace a display shows.
+    ///   - parked: it waits parked, as a window minimized, hidden with its app or in native
+    ///     fullscreen when Kosmos admits it, and its return decides the focus.
+    ///   - atLaunch: it was there when Kosmos launched, and the launch sweep follows none.
+    ///   - locked: the session is locked, and Kosmos ignores focus reports.
+    public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
+        guard !locked, !parked else { return .none }
+        if shown { return keyed ? .adopt : .none }
+        return atLaunch ? .none : .placedHidden
+    }
+}
+
 /// Whether macOS shows a native fullscreen window's Space: that window is key, or a window
 /// Kosmos does not manage is key and its app owns one, as the fullscreen app's panel or
 /// dialog. Only a command then requests focus, since focusing a desktop window takes the
