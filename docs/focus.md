@@ -252,8 +252,8 @@
     trials raised first and posted a down and up record pair. Kosmos's own sequence, the
     down record alone to a background app, keyed the named window in every trial ([overview.md, section 2](overview.md#2-what-the-fork-measured)).
     The public path chose the wrong window in 9 of 9 trials, so a false trip costs more
-    than a few late wrong windows
-    (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
+    than a few late wrong windows ([overview.md, section 3](overview.md#3-primitive-decisions);
+    AutoRaise trials of September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
 - AXRaise runs on the app's worker, inside the front app, where only it keys a window, and
@@ -270,7 +270,7 @@
   public path on the app's worker: make the window the app's main window, raise it, then
   activate the app. Each step can wait out the timeout on a slow app, so each first checks
   that the request is still current: a request stale before its record does nothing, and
-  one that goes stale after it stops and keeps the record for any report its steps cause.
+  one that goes stale after its record stops and keeps it for any report its steps cause.
   A background accessory app with no window, as Kosmos is, made another app the front
   process in 10 of 10 trials with each of `activate`, yielding and then
   `activate(from:)` itself, and `activate(from:)` the front app, and Finder in 10 of 10
