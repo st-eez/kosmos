@@ -675,29 +675,14 @@ public struct Session: Sendable {
     }
 
     /// The user let go of the left button after resizing tiled windows of shown workspaces
-    /// by their edges, each from `before` to `after`. An edge that moved more than 5 pt
-    /// while the opposite edge stayed moves the tile's edge as far, as AeroSpace's
-    /// resizeWithMouse turns it into weights (Workspace.moveEdge). A window whose edges
-    /// both moved on an axis, as in a zoom, or whose center is off its workspace's display
-    /// goes back to its tile, and so does one of a workspace in Kosmos's fullscreen. The
-    /// plan has their workspaces' frames (DESIGN.md, section 5.2).
-    public mutating func released(_ windows: [WindowID: (before: CGRect, after: CGRect)]) -> Plan {
+    /// by their edges. Each goes back to its tile, as Omarchy leaves Hyprland's
+    /// `resize_on_border` off so a tile's edge resizes nothing. The plan has their
+    /// workspaces' frames (DESIGN.md, section 5.2).
+    public func released(_ windows: Set<WindowID>) -> Plan {
         var changed: Set<String> = []
-        for (window, move) in windows {
+        for window in windows {
             guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { continue }
             changed.insert(name)
-            let monitor = monitor(of: name)
-            let (before, after) = move
-            guard workspaces[name]!.fullscreenWindow == nil, monitor.frame.contains(CGPoint(x: after.midX, y: after.midY)) else { continue }
-            let axes: [[(Direction, CGFloat)]] = [
-                [(.left, before.minX - after.minX), (.right, after.maxX - before.maxX)],
-                [(.up, before.minY - after.minY), (.down, after.maxY - before.maxY)],
-            ]
-            for edges in axes {
-                let moved = edges.filter { abs($0.1) > 5 }
-                guard moved.count == 1 else { continue }
-                workspaces[name]!.moveEdge(window, moved[0].0, by: moved[0].1, in: monitor.area, gaps: monitor.gaps, minimums: minimums)
-            }
         }
         var plan = Plan()
         for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }

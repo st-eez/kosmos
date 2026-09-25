@@ -54,9 +54,9 @@ final class Controller {
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
-    /// Tiled windows the user resized by their edges with the left button, with their frames
-    /// before, for when it comes up.
-    private var mouseMoved: [WindowID: CGRect] = [:]
+    /// Tiled windows the user resized by their edges with the left button down, which go
+    /// back to their tiles when it comes up.
+    private var mouseResized: Set<WindowID> = []
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -423,8 +423,9 @@ final class Controller {
     /// Kosmos's in flight: the frame ledger records it. A `.changed` event for the key
     /// window with the left button down is the user's, as AeroSpace's
     /// isManipulatedWithMouse has it: a tiled window moved whole is lifted out of the layout
-    /// until the button comes up, one resized waits for it (leftMouseUp), and a floating
-    /// window may join another display's workspace (DESIGN.md, sections 5.2 and 5.13).
+    /// until the button comes up, one resized goes back to its tile then (leftMouseUp), and a
+    /// floating window may join another display's workspace (DESIGN.md, sections 5.2 and
+    /// 5.13).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
@@ -434,19 +435,19 @@ final class Controller {
             guard let plan = session.dragged(id, to: frame) else { return }
             controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
             execute(plan)
-        } else if mouseMoved[id] == nil {
+        } else if !mouseResized.contains(id) {
             if old.size == frame.size, let plan = session.lift(id) {
                 controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
                 execute(plan)
             } else {
-                mouseMoved[id] = old
+                mouseResized.insert(id)
             }
         }
     }
 
     /// The left button came up at `point`. A lifted window tiles where it was dropped
-    /// (Session.drop), and tiled windows the user resized by their edges keep that size
-    /// (Session.released).
+    /// (Session.drop), and tiled windows the user resized by their edges go back to their
+    /// tiles (Session.released).
     private func leftMouseUp(at point: CGPoint?) {
         guard managing, !sessionLocked else { return }
         if !session.lifted.isEmpty, let point = point ?? CGEvent(source: nil)?.location {
@@ -457,19 +458,14 @@ final class Controller {
             controllerLog.info("dropped \(dropped.sorted().map(String.init).joined(separator: " "), privacy: .public) at \(Int(point.x)), \(Int(point.y))")
             execute(plan)
         }
-        guard !mouseMoved.isEmpty else { return }
-        let moved = mouseMoved
-        mouseMoved = [:]
-        let now = Dictionary(SkyLight.rows(Array(moved.keys)).map { ($0.id, $0.frame) }) { first, _ in first }
-        // Each gets a whole frame write: a position write sized by frames observed in the
-        // drag could land before macOS's shrink to fit the display at the drop, and the
-        // ledger would take that shrink for a refusal.
-        for id in moved.keys { ledger.forget(id) }
-        let plan = session.released(Dictionary(uniqueKeysWithValues: moved.compactMap { id, before in
-            now[id].map { (id, (before: before, after: $0)) }
-        }))
-        controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the mouse")
-        execute(plan)
+        guard !mouseResized.isEmpty else { return }
+        let resized = mouseResized
+        mouseResized = []
+        // Whole frame writes: the resize can have gone on past the last frame the ledger
+        // heard of.
+        for id in resized { ledger.forget(id) }
+        controllerLog.info("left mouse up: \(resized.count) tiled windows resized by their edges go back to their tiles")
+        execute(session.released(resized))
     }
 
     private func handle(_ report: AXReport) {

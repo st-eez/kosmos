@@ -213,16 +213,13 @@ off the main thread).
   ends that refusal, so the next layout writes the target again. A concealed window's
   frame reads as off every display and is left out.
 - A tiled window the user resizes by its edges, as a change event reports it while the
-  window is key and the left button is down, keeps that size when the button comes up,
-  which an `NSEvent` global monitor hears, as AeroSpace's GlobalObserver does. Each edge
-  that moved more than 5 pt while the opposite edge stayed moves the tile's edge as far:
-  the nearest container along it with windows beyond takes the space from them in
-  proportion to their shares, and each container in between keeps its other windows'
-  lengths, as AeroSpace's `resizeWithMouse` turns edges into weights. The resize
-  command's limits hold. A resize that moved both edges of an axis, as a title bar double
-  click's zoom does, or left the window's center off its workspace's display goes back to
-  its tile. A window dragged by its title bar leaves the layout until it is dropped
-  (section 5.13).
+  window is key and the left button is down, goes back to its tile when the button comes
+  up, which an `NSEvent` global monitor hears, as AeroSpace's GlobalObserver does. Omarchy
+  leaves Hyprland's `resize_on_border` off, so a tile's edges resize nothing there, and
+  macOS gives Kosmos no way to stop such a resize. The ledger forgets the window first,
+  so it gets a whole frame write. The resize command sizes tiles, and a floating window
+  keeps the size the user gives it. A window dragged by its title bar leaves the layout
+  until it is dropped (section 5.13).
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -891,7 +888,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     frame when revealed there;
   - how many notifications a hotplug posts, and whether the holding Space survives one;
   - whether WindowServer reports a dragged window's moves while the left button is still
-    down, which lifting a dragged tiled window, keeping a resize by its edges and
+    down, which lifting a dragged tiled window, undoing a tile's resize by its edges and
     rebinding a dragged floating window need;
   - whether macOS keeps the twin panels' left and main places across replugs without
     BetterDisplay, which decides whether a placement step stays;
@@ -946,6 +943,6 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 
 ## 8. Left out of the first version
 
-Scrolling and BSP layouts, tabbed and stacked title bars, an embedded scripting language,
-window title matchers, marks, persistence across restarts, and one macOS Space per
-workspace.
+Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles with the mouse
+(section 5.2), an embedded scripting language, window title matchers, marks, persistence
+across restarts, and one macOS Space per workspace.
