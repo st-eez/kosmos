@@ -51,7 +51,6 @@ private func comboError(_ text: String) -> String? {
         #expect(altH.physicalKey(layout: [:]) == PhysicalKey(code: 4, modifiers: .alt))
         // Dvorak types h with the key a US keyboard has j on.
         #expect(altH.physicalKey(layout: dvorak) == PhysicalKey(code: 38, modifiers: .alt))
-        // Arrows are in one place on every layout.
         #expect(try combo("alt-left").physicalKey(layout: dvorak).code == 123)
         // French types 1 only with Shift, so alt-1 keeps its US place on the number row.
         #expect(try combo("alt-1").physicalKey(layout: french).code == 18)

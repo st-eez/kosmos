@@ -11,7 +11,6 @@ public enum Command: Equatable, Sendable {
 
     /// Where `focus` and `move` stop, AeroSpace's `--boundaries` and `--boundaries-action`.
     public enum Boundaries: Equatable, Sendable {
-        /// The edge of the workspace.
         case workspace
         /// The edge of the outermost display in the direction: at the edge of the
         /// workspace, go on to the next display.
@@ -82,11 +81,8 @@ public enum Command: Equatable, Sendable {
         case "workspace-back-and-forth":
             return rest.isEmpty ? .success(.workspaceBackAndForth) : usage
         case "focus", "move":
-            // AeroSpace's --boundaries, whose default is the workspace, and its
-            // --boundaries-action, before or after the direction. AeroSpace wraps only focus;
-            // Kosmos wraps a move too, as Steve's `move || move-node-to-monitor --wrap-around`
-            // binding did. A move takes only the wrap; no binding needs AeroSpace's `stop` or
-            // `fail` for one.
+            // AeroSpace's --boundaries and --boundaries-action, before or after the direction. A
+            // move takes only the wrap, which AeroSpace gives focus alone (docs/displays.md).
             var across = false, wraps = false, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
@@ -162,7 +158,6 @@ public enum Command: Equatable, Sendable {
                 + "[--wrap-around] <left|right|up|down|next|prev|number>"
             guard let options = options(rest, movesNode: movesNode, wraps: true), options.targets.count == 1,
                   let target = monitor(options.targets[0]) else { return fail(usageText) }
-            // As in AeroSpace, wrapping needs an order to wrap in.
             if options.wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
             return .success(movesNode
                 ? .moveNodeToMonitor(target, focusFollowsWindow: options.follow, wrapAround: options.wrap, window: options.window)
@@ -178,9 +173,7 @@ public enum Command: Equatable, Sendable {
         }
     }
 
-    /// The options among `words`: `--focus-follows-window` and `--window-id <id>` when
-    /// `movesNode`, and `--wrap-around` when `wraps`. Every other word is a target. Nil when
-    /// `--window-id` has no id.
+    /// Nil when `--window-id` has no id.
     private static func options(_ words: [String], movesNode: Bool, wraps: Bool)
         -> (follow: Bool, wrap: Bool, window: WindowID?, targets: [String])? {
         var options: (follow: Bool, wrap: Bool, window: WindowID?, targets: [String]) = (false, false, nil, [])

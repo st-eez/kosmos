@@ -1,12 +1,9 @@
 import CoreGraphics
 
 extension Config {
-    /// Parses and checks a whole config file and the files its `include` names, which `read`
-    /// returns the text of, by the name the file gives, or nil when it cannot. `config` is
+    /// `read` returns the text of a file `include` names, or nil when it cannot. `config` is
     /// nil when any diagnostic is an error, so a caller applies all of the files or none of
-    /// them; warnings can come with a config. Diagnostics are in file order, the main file's
-    /// first. Binding commands go through `Command.parse`, so a bad command fails the load
-    /// instead of the key press.
+    /// them (docs/config.md). Diagnostics are in file order, the main file's first.
     public static func load(_ text: String, including read: (String) -> String? = { _ in nil })
         -> (config: Config?, diagnostics: [Diagnostic]) {
         var root: TOMLTable
@@ -27,8 +24,7 @@ extension Config {
     }
 }
 
-/// Checks the TOML tree against the schema. It reports every problem it finds and returns a
-/// config that is complete only when it reported no error.
+/// Reports every problem it finds; the config it returns is complete only when none is an error.
 private struct ConfigDecoder {
     typealias Located = (value: String, position: SourcePosition, path: ValuePath)
 
@@ -39,11 +35,8 @@ private struct ConfigDecoder {
     /// Profiles that `profile` bindings name, checked once every profile is known.
     private var profileTargets: [Located] = []
 
-    /// Adds the top-level keys of each file the root's `include` names to the root, and
-    /// returns the files' names in order, the first being file 1 (SourcePosition). Each is a
-    /// file in the main file's directory. An included file sets keys the main file and the
-    /// files before it leave out, and includes nothing. A file that cannot be read is left
-    /// out with a warning.
+    /// Adds the top-level keys of each included file to the root (docs/config.md), and returns
+    /// the files' names, file 1 first (SourcePosition.file).
     mutating func include(into root: inout TOMLTable, read: (String) -> String?) -> [String] {
         guard let entry = root["include"], let paths = stringOrList(entry.value, ValuePath().key(entry.key)) else { return [] }
         var files: [String] = []
@@ -53,7 +46,6 @@ private struct ConfigDecoder {
                 continue
             }
             files.append(path.value)
-            // Missing, as before a theme links it on a fresh install, the file is left out.
             guard let text = read(path.value) else {
                 warn("cannot read '\(path.value)' in the config's directory; the config loads without it",
                      at: path.position, path.path)
@@ -272,8 +264,6 @@ private struct ConfigDecoder {
         return CGFloat(points)
     }
 
-    /// `true`, the default, or a table of settings turns borders on, and `false` off, as
-    /// `animations` takes true or false.
     private mutating func borders(_ value: TOMLValue, _ path: ValuePath) -> BorderSettings? {
         switch value.kind {
         case .boolean(let on): return on ? BorderSettings() : nil
@@ -361,8 +351,8 @@ private struct ConfigDecoder {
         return modes
     }
 
-    /// A command and its arguments, after `Command.parse` accepts them. The string splits at
-    /// whitespace with no quoting; no command takes an argument that contains a space.
+    /// The string splits at whitespace with no quoting: no command takes an argument that
+    /// contains a space.
     private mutating func command(_ value: TOMLValue, _ path: ValuePath) -> (arguments: [String], command: Command)? {
         guard case .string = value.kind else {
             fail("expected a command as a string, found \(kindName(value))", at: value.position, path)
@@ -379,7 +369,6 @@ private struct ConfigDecoder {
         }
     }
 
-    /// Rules in file order, with a warning for each rule an earlier one shadows.
     private mutating func rules(_ value: TOMLValue, _ path: ValuePath, workspaces: [String], scope: String)
         -> [(rule: WindowRule, position: SourcePosition, path: ValuePath)]
     {
@@ -482,9 +471,8 @@ private struct ConfigDecoder {
             }
             profiles.append((profile, item.position, profilePath))
         }
-        // An earlier profile whose `when` monitors are all among a later one's holds whenever
-        // the later one does, so the later one never applies. One without `when` applies
-        // only when none with it does, and the first of those wins.
+        // Profiles without `when` apply only when none with it does, so they shadow only each
+        // other.
         func shadows(_ earlier: Profile, _ later: Profile) -> Bool {
             if earlier.when.isEmpty || later.when.isEmpty { return earlier.when.isEmpty && later.when.isEmpty }
             return Set(earlier.when).isSubset(of: later.when)
@@ -523,8 +511,7 @@ private struct ConfigDecoder {
         }
     }
 
-    /// A table, after reporting each key outside `allowed`. Tables keyed by names the user
-    /// chooses, such as [monitors], pass no `allowed` list.
+    /// Tables keyed by names the user chooses, such as [monitors], pass no `allowed` list.
     private mutating func table(_ value: TOMLValue, _ path: ValuePath, allowed: [String]? = nil) -> TOMLTable? {
         guard case .table(let table) = value.kind else {
             fail("expected a table, found \(kindName(value))", at: value.position, path)
@@ -546,7 +533,7 @@ private struct ConfigDecoder {
         return items
     }
 
-    /// A non-empty string. No key accepts an empty one.
+    /// No key accepts an empty string.
     private mutating func string(_ value: TOMLValue, _ path: ValuePath) -> String? {
         guard case .string(let string) = value.kind else {
             fail("expected a string, found \(kindName(value))", at: value.position, path)
@@ -567,7 +554,6 @@ private struct ConfigDecoder {
         return integer
     }
 
-    /// An integer or a float.
     private mutating func number(_ value: TOMLValue, _ path: ValuePath) -> Double? {
         switch value.kind {
         case .integer(let integer): return Double(integer)
@@ -586,7 +572,6 @@ private struct ConfigDecoder {
         return boolean
     }
 
-    /// One string, or a non-empty array of them.
     private mutating func stringOrList(_ value: TOMLValue, _ path: ValuePath) -> [Located]? {
         switch value.kind {
         case .string:
