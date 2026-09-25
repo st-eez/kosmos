@@ -41,9 +41,8 @@ extension Workspace {
     /// ancestor along the direction, entering the container past its old branch if there is
     /// one. With no such ancestor the window is at the edge of the workspace, where
     /// `implicitContainer` first wraps the root in a new root along the direction, as i3
-    /// and AeroSpace's default `--boundaries-action create-implicit-container` do. Returns
-    /// false at the edge otherwise, and at the end of a root along the direction, where a
-    /// move with `--boundaries all-monitors-outer-frame` goes on to the next display.
+    /// and AeroSpace do. Returns false at the edge otherwise, and at the end of a root
+    /// along the direction, where a move across displays goes on to the next display.
     @discardableResult
     mutating func move(_ window: WindowID, _ direction: Direction, implicitContainer: Bool = true) -> Bool {
         // A lone window has nowhere to go. Wrapping the root would only flip its orientation.
