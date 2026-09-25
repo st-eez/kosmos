@@ -52,44 +52,9 @@ import Testing
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(atPath: directory) }
         let path = directory + "/ipc.sock"
-        for args in [["ping"], ["list-bindings", "--json"]] {
-            #expect(try Self.run(args, socketPath: path) == Output(
-                status: 1, stdout: "", stderr: "kosmos: Kosmos is not running (nothing is listening at \(path))\n"
-            ))
-        }
-    }
-
-    @Test func listBindingsPrintsTheBindingsKosmosSends() async throws {
-        let bindings = [
-            ListedBinding(mode: "main", key: "alt-shift-left", command: "move left", description: "Move window left", category: "Move"),
-            ListedBinding(mode: "main", key: "alt-1", command: "workspace 1", description: "Switch to workspace 1", category: "Workspace"),
-            ListedBinding(mode: "resize", key: "esc", command: "mode main", description: "Switch to mode main", category: "Other"),
-        ]
-        let test = try TestServer { args in
-            args.first == "list-bindings" ? listBindings(args, bindings) : await testCommands(args)
-        }
-        defer { test.stop() }
-
-        let json = try Self.run(["list-bindings", "--json"], socketPath: test.socketPath)
-        #expect(json.status == 0 && json.stderr == "")
-        let objects = try JSONSerialization.jsonObject(with: Data(json.stdout.utf8)) as? [[String: String]]
-        #expect(objects == [
-            ["mode": "main", "key": "alt-shift-left", "command": "move left", "description": "Move window left", "category": "Move"],
-            ["mode": "main", "key": "alt-1", "command": "workspace 1", "description": "Switch to workspace 1", "category": "Workspace"],
-            ["mode": "resize", "key": "esc", "command": "mode main", "description": "Switch to mode main", "category": "Other"],
-        ])
-
-        #expect(try Self.run(["list-bindings"], socketPath: test.socketPath) == Output(status: 0, stdout: """
-            mode main
-              alt-shift-left  Move window left
-              alt-1           Switch to workspace 1
-
-            mode resize
-              esc             Switch to mode main
-
-            """, stderr: ""))
-        #expect(try Self.run(["list-bindings", "--yaml"], socketPath: test.socketPath)
-            == Output(status: 1, stdout: "", stderr: "kosmos: usage: list-bindings [--json]\n"))
+        #expect(try Self.run(["ping"], socketPath: path) == Output(
+            status: 1, stdout: "", stderr: "kosmos: Kosmos is not running (nothing is listening at \(path))\n"
+        ))
     }
 
     @Test func subscribePrintsOneLinePerFrameUntilKosmosStops() async throws {

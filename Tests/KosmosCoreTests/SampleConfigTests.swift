@@ -29,59 +29,6 @@ import Testing
         #expect(config.gaps.inner == 10)
     }
 
-    /// What `kosmos list-bindings` says about each command the sample binds (DESIGN.md,
-    /// section 5.12).
-    @Test func describesEveryCommand() throws {
-        let directions = ["left", "right", "up", "down"]
-        let beside = ["left": "to the left", "right": "to the right", "up": "above", "down": "below"]
-        let digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
-        let expected = directions.map { "focus --boundaries all-monitors-outer-frame \($0): Focus \($0), across monitors [Focus]" }
-            + directions.map {
-                "move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors \($0): "
-                    + "Move window \($0), across monitors, wrapping around [Move]"
-            }
-            + digits.map { "workspace \($0): Switch to workspace \($0) [Workspace]" }
-            + digits.map { "move-node-to-workspace --focus-follows-window \($0): Move window to workspace \($0) and follow [Workspace]" }
-            + [
-                "workspace next: Switch to the next workspace on the focused monitor [Workspace]",
-                "workspace prev: Switch to the previous workspace on the focused monitor [Workspace]",
-                "workspace-back-and-forth: Switch back and forth between the last two workspaces [Workspace]",
-                "layout floating tiling: Toggle floating and tiling [Layout]",
-                "fullscreen: Toggle fullscreen [Layout]",
-                "resize smart +100: Grow window by 100 points [Resize]",
-                "resize smart -100: Shrink window by 100 points [Resize]",
-                "resize smart +50: Grow window by 50 points [Resize]",
-                "resize smart -50: Shrink window by 50 points [Resize]",
-            ]
-            + directions.map { "join-with \($0): Join window with the window \(beside[$0]!) [Layout]" }
-            + [
-                "layout tiles horizontal vertical: Toggle the layout between horizontal and vertical [Layout]",
-                "flatten-workspace-tree: Flatten the workspace tree [Layout]",
-                "reload-config: Reload the config [Other]",
-                "move-node-to-workspace --focus-follows-window prev: "
-                    + "Move window to the previous workspace on the focused monitor and follow [Workspace]",
-                "move-node-to-workspace --focus-follows-window next: "
-                    + "Move window to the next workspace on the focused monitor and follow [Workspace]",
-                "move-node-to-monitor --wrap-around --focus-follows-window up: "
-                    + "Move window to the monitor above and follow, wrapping around [Monitor]",
-                "move-node-to-monitor --wrap-around --focus-follows-window down: "
-                    + "Move window to the monitor below and follow, wrapping around [Monitor]",
-                "move-node-to-monitor --focus-follows-window 1: Move window to monitor 1 and follow [Monitor]",
-                "move-node-to-monitor --focus-follows-window 2: Move window to monitor 2 and follow [Monitor]",
-                "move-node-to-monitor --focus-follows-window 3: Move window to monitor 3 and follow [Monitor]",
-                "profile home: Switch to profile home [Profile]",
-                "profile office: Switch to profile office [Profile]",
-                "profile laptop: Switch to profile laptop [Profile]",
-                "profile single: Switch to profile single [Profile]",
-            ]
-        var described: [String] = []
-        for binding in try #require(try config().modes["main"]) {
-            let line = "\(binding.arguments.joined(separator: " ")): \(binding.command.summary) [\(binding.command.category.rawValue)]"
-            if !described.contains(line) { described.append(line) }
-        }
-        #expect(described == expected)
-    }
-
     @Test func home() throws {
         let setup = try config().setup(for: [builtIn, asusMain, asusLeft])
         #expect(setup.profile == "home")

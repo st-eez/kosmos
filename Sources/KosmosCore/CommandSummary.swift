@@ -4,33 +4,24 @@ import CoreGraphics
 // the loaded bindings instead of keeping its own copy (DESIGN.md, section 5.12).
 
 extension Command {
-    /// A group for launchers, by what the command acts on. Moving a window to a workspace or
-    /// a monitor goes with the other workspace or monitor commands.
-    public enum Category: String, Sendable {
-        case focus = "Focus"
-        case move = "Move"
-        case workspace = "Workspace"
-        case monitor = "Monitor"
-        case layout = "Layout"
-        case resize = "Resize"
-        case profile = "Profile"
-        case other = "Other"
-    }
-
-    public var category: Category {
+    /// A group for launchers, by what the command acts on: Focus, Move, Workspace, Monitor,
+    /// Layout, Resize, Profile or Other. Moving a window to a workspace or a monitor goes with
+    /// the other workspace or monitor commands.
+    public var category: String {
         switch self {
-        case .focus: .focus
-        case .move, .swap: .move
-        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace: .workspace
-        case .focusMonitor, .moveNodeToMonitor: .monitor
-        case .layout, .fullscreen, .joinWith, .flattenWorkspaceTree: .layout
-        case .resize, .balanceSizes: .resize
-        case .profile: .profile
-        case .reloadConfig, .mode: .other
+        case .focus: "Focus"
+        case .move, .swap: "Move"
+        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace: "Workspace"
+        case .focusMonitor, .moveNodeToMonitor: "Monitor"
+        case .layout, .fullscreen, .joinWith, .flattenWorkspaceTree: "Layout"
+        case .resize, .balanceSizes: "Resize"
+        case .profile: "Profile"
+        case .reloadConfig, .mode: "Other"
         }
     }
 
-    /// A short description for people, such as "Focus left, across monitors".
+    /// A short description for people, such as "Focus left, across monitors". It leaves out a
+    /// window given with `--window-id`, which no binding names.
     public var summary: String {
         switch self {
         case .workspace(let target):
@@ -45,8 +36,8 @@ extension Command {
             "Swap window with the window \(Self.beside(direction))"
         case .joinWith(let direction):
             "Join window with the window \(Self.beside(direction))"
-        case .moveNodeToWorkspace(let target, let follow, let window):
-            "Move \(Self.name(window)) to \(Self.name(target))\(follow ? " and follow" : "")"
+        case .moveNodeToWorkspace(let target, let follow, _):
+            "Move window to \(Self.name(target))\(follow ? " and follow" : "")"
         case .layout(.orientation(let orientation)):
             "Set the layout to \(orientation == .horizontal ? "horizontal" : "vertical")"
         case .layout(.toggleOrientation):
@@ -67,8 +58,8 @@ extension Command {
             "Switch to mode \(name)"
         case .focusMonitor(let target, let wrap):
             "Focus \(Self.name(target))\(wrap ? ", wrapping around" : "")"
-        case .moveNodeToMonitor(let target, let follow, let wrap, let window):
-            "Move \(Self.name(window)) to \(Self.name(target))\(follow ? " and follow" : "")\(wrap ? ", wrapping around" : "")"
+        case .moveNodeToMonitor(let target, let follow, let wrap, _):
+            "Move window to \(Self.name(target))\(follow ? " and follow" : "")\(wrap ? ", wrapping around" : "")"
         case .profile(let name):
             "Switch to profile \(name)"
         }
@@ -89,10 +80,6 @@ extension Command {
         case .previous: "the previous monitor"
         case .number(let number): "monitor \(number)"
         }
-    }
-
-    private static func name(_ window: WindowID?) -> String {
-        window.map { "window \($0)" } ?? "window"
     }
 
     private static func name(_ dimension: ResizeDimension) -> String {

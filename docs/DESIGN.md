@@ -738,12 +738,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   (section 5.13). A binding runs `profile <name>` where one ran `set-profile.sh`.
 - **Launchers and cheat sheets.** `kosmos list-bindings` asks the running Kosmos for the
   bindings it has loaded, so a launcher's keybinding list reads them instead of keeping its
-  own copy, as the Raycast keybinds extension in Steve's dotfiles does. It lists every mode,
-  main first and then the others by name, each in file order. Plain, it prints each mode's
-  name and then one line per binding with its key and a description, the descriptions
-  aligned. With `--json` it prints one array of objects with five strings: `mode`; `key`, as
-  the config writes it, such as `alt-shift-left`; `command`, its words as the CLI takes
-  them; `description`; and `category`.
+  own copy, as the Raycast keybinds extension in Steve's dotfiles does. It prints one JSON
+  array of objects with four strings: `mode`; `key`, as the config writes it, such as
+  `alt-shift-left`; `description`; and `category`. Mode main comes first, then the other
+  modes by name, each in file order.
   - KosmosCore writes the description and the category from the parsed command
     (`Command.summary` and `Command.category`), so the config holds no descriptions:
     `focus --boundaries all-monitors-outer-frame left` is "Focus left, across monitors" in
