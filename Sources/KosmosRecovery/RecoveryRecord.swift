@@ -63,6 +63,8 @@ public struct RecoveryRecord: Equatable, Sendable {
     }
 
     public var windowServer: ProcessIdentity
+    /// Written and never read. It goes at the next format version, which it should not force
+    /// alone: a version 1 reader returns nil for another version, which reads as nothing recorded.
     public var manager: ProcessIdentity
     /// Spaces Kosmos created. Each is recorded before any window enters it.
     public var spaces: [UInt64]
@@ -108,7 +110,8 @@ public struct RecoveryRecord: Equatable, Sendable {
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"
     static let version: UInt32 = 1
 
-    /// The decoder's limits; a record beyond them could be written but not read back.
+    /// The decoder's limits. `encoded()` keeps to them, so every record written reads back;
+    /// windows fill a slot at about 168, long before maxWindows.
     static let maxSpaces = 64
     static let maxWindows = 4096
 
