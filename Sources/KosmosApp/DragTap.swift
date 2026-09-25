@@ -81,22 +81,38 @@ final class DragTap: Sendable {
         case .leftMouseUp, .rightMouseUp:
             outcome = gate.withLock { $0.released(type == .leftMouseUp ? .left : .right, at: event.location) }
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            // WindowServer turns off a tap whose thread falls behind. A mouse up it let pass
-            // meanwhile ends its drag at the button's next press (DragGate.pressed).
-            dragLog.notice("drag tap turned off by WindowServer (\(type.rawValue)); turning it on again")
-            if let port { CGEvent.tapEnable(tap: port, enable: true) }
+            turnOnAgain(type)
             return false
         default:
             return false
         }
         if !heard.exchange(true, ordering: .relaxed) { dragLog.notice("drag tap receiving events") }
         if let window = outcome.passedOver { dragLog.info("modifier press over \(window), which Kosmos does not manage: passed on") }
+        post(outcome)
+        return outcome.take
+    }
+
+    /// WindowServer turns off a tap whose thread falls behind, and events pass untouched
+    /// until it is on again. A button whose mouse up passed meanwhile is up by then, and its
+    /// drag ends where the pointer is. A mouse up missed otherwise ends its drag at the
+    /// button's next press (DragGate.pressed).
+    private func turnOnAgain(_ type: CGEventType) {
+        dragLog.notice("drag tap turned off by WindowServer (\(type.rawValue)); turning it on again")
+        guard let port else { return }
+        CGEvent.tapEnable(tap: port, enable: true)
+        let point = CGEvent(source: nil)?.location ?? .zero
+        for button in gate.withLock({ $0.held }) {
+            guard !CGEventSource.buttonState(.combinedSessionState, button: button == .left ? .left : .right) else { continue }
+            post(gate.withLock { $0.released(button, at: point) })
+        }
+    }
+
+    private func post(_ outcome: DragGate.Outcome) {
         let stamp = ContinuousClock.now
         let (began, moved, ended) = (self.began, self.moved, self.ended)
         // In this order: a press can end one drag and begin the next.
         if let end = outcome.ended { DispatchQueue.main.async { MainActor.assumeIsolated { ended(end) } } }
         if let grab = outcome.began { DispatchQueue.main.async { MainActor.assumeIsolated { began(grab, stamp) } } }
         if let number = outcome.moved { DispatchQueue.main.async { MainActor.assumeIsolated { moved(number) } } }
-        return outcome.take
     }
 }

@@ -1111,14 +1111,15 @@ final class Controller {
     // MARK: Modifier drags
 
     /// A press with the modifier began a drag of a window the tap took for managed
-    /// (DESIGN.md, section 5.14). The window takes the focus, as a command stamped when the
-    /// tap saw the press, as Hyprland's dragBegin focuses the window, and the drag waits for
-    /// the pointer to go past the lift distance. A window no longer tiled or floating on a
-    /// shown workspace is left alone, its press taken all the same.
+    /// (DESIGN.md, section 5.14). The window takes the focus, as Hyprland's dragBegin focuses
+    /// the window it grabs, through a command stamped when the tap saw the press, and the
+    /// drag waits for the pointer to go past the lift distance. A window no longer tiled or
+    /// floating on a shown workspace, or one pressed while the session is locked, is left
+    /// alone, its press taken all the same.
     private func dragBegan(_ grab: DragGate.Grab, at stamp: ContinuousClock.Instant) {
         guard managing, !sessionLocked, let frame = inventory.windows[grab.window]?.frame,
               let drag = session.beginDrag(grab, frame: frame) else {
-            dragLog.info("modifier press on \(grab.window), which is not tiled or floating on a shown workspace: nothing to drag")
+            dragLog.info("modifier press on \(grab.window): no tiled or floating window of a shown workspace, nothing to drag")
             return
         }
         modifierDrag = drag

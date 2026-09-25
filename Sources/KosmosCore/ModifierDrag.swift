@@ -63,7 +63,7 @@ public struct DragGate: Sendable {
     public var windows: Set<WindowID> = []
     public private(set) var grab: Grab?
     /// Buttons whose press Kosmos took, until their mouse up.
-    private var held: Set<DragButton> = []
+    public private(set) var held: Set<DragButton> = []
     /// Where the pointer last moved during the drag.
     private var last: CGPoint?
     /// A movement waits for the main actor, which takes only the latest.

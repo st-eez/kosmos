@@ -1393,9 +1393,10 @@ pointer gets none of the drag's events.
   Kosmos's own. The log names each modifier press passed on for its window.
 - Kosmos takes the press, the drag's movements and that button's mouse up whatever the
   modifiers are by then, and a press of the other button during the drag with its own
-  mouse up. WindowServer turns off a tap that falls behind, and Kosmos turns it on again.
-  A mouse up that passed meanwhile ends the drag at the button's next press, where the
-  pointer last moved; a hotkey ends it at once.
+  mouse up. WindowServer turns off a tap that falls behind, and events pass untouched
+  until Kosmos turns it on again; a drag whose button is up by then ends where the pointer
+  is. A mouse up missed any other way ends the drag at the button's next press, where the
+  pointer last moved, and a hotkey ends it at once.
 - Movements coalesce. The tap tells the main actor once and keeps the latest point until
   the main actor takes it, so a busy main actor gets fewer points, each the newest.
 - The press focuses the window, as a command stamped when the tap saw it, as Hyprland's
