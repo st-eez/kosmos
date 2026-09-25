@@ -337,17 +337,22 @@ actor AppWorker {
         queuedWrites = [:]
         let now = CFAbsoluteTimeGetCurrent()
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
-        for (id, entry) in writes {
+        for (id, var entry) in writes {
             guard let element = elements[id] else { continue }
+            // The ledger chose a position write assuming the size of the target before it had
+            // landed. A tween under way may not have written that size yet, so its write
+            // stands in for a queued one, as in `setFrames`.
+            let running = tweens[id]
+            if let running { entry.write = entry.write.replacing(running.write, target: entry.target) }
             // An animated write starts where the window is, or where a tween under way has
             // it. Its read back and report come when the tween ends, so the ledger keeps the
             // target pending and every change event on the way counts as Kosmos's write.
-            if entry.animate, let from = tweens[id].map({ $0.tween.frame(at: now) }) ?? frame(element) {
+            if entry.animate, let from = running.map({ $0.tween.frame(at: now) }) ?? frame(element) {
                 let to = switch entry.write {
-                case .position(let origin): CGRect(origin: origin, size: from.size)
+                case .position(let origin): CGRect(origin: origin, size: running?.tween.to.size ?? from.size)
                 case .frame(let frame): frame
                 }
-                let tween = tweens[id].map { $0.tween.retargeted(to: to, at: now) }
+                let tween = running.map { $0.tween.retargeted(to: to, at: now) }
                     ?? Tween(from: from, to: to, start: now, duration: Self.tweenDuration)
                 tweens[id] = (tween, entry.write, entry.target)
                 startTweenTimer()
