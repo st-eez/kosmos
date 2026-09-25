@@ -262,7 +262,7 @@ extension Workspace {
     /// The path of the node `focus` reaches in the direction: the sibling on that side of
     /// the window, or of its nearest ancestor, in the nearest container along the direction
     /// (i3's `get_tree_next`, AeroSpace's `closestParent(hasChildrenInDirection:)`).
-    private func neighbor(of window: WindowID, _ direction: Direction) -> [Int]? {
+    func neighbor(of window: WindowID, _ direction: Direction) -> [Int]? {
         guard var path = root.path(to: window) else { return nil }
         while let index = path.popLast() {
             let container = root[path[...]], sibling = index + direction.step

@@ -15,6 +15,14 @@ public enum Direction: Sendable {
     /// Right and down point toward later children.
     var isForward: Bool { self == .right || self == .down }
     var step: Int { isForward ? 1 : -1 }
+    var opposite: Direction {
+        switch self {
+        case .left: .right
+        case .right: .left
+        case .up: .down
+        case .down: .up
+        }
+    }
 }
 
 /// A window or a container in a workspace tree, with its share of the parent.
