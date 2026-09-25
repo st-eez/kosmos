@@ -84,8 +84,8 @@ final class Borders {
         let border = UInt32(window.windowNumber)
         spaces.async {
             let ordinary = Displays.current().ordinarySpaces
-            let targetSpaces = (kosmos_window_spaces(target) as? [UInt64] ?? []).filter(ordinary.contains)
-            let borderSpaces = kosmos_window_spaces(border) as? [UInt64] ?? []
+            let targetSpaces = (SkyLight.spaces(of: target) ?? []).filter(ordinary.contains)
+            let borderSpaces = SkyLight.spaces(of: border) ?? []
             guard let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) else { return }
             SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
             bordersLog.info("border \(border) of \(target) moved from Spaces \(borderSpaces, privacy: .public) to \(space)")

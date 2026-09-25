@@ -3,10 +3,9 @@ import CoreGraphics
 import Foundation
 import IOKit
 
-/// What tells connected displays apart: the EDID serial that monitor matchers use, and the
-/// UUIDs that SketchyBar numbers displays by. `kosmos-probe displays` prints all of it.
+/// `kosmos-probe displays` prints what these read for each display.
 public enum DisplayIdentity {
-    /// The active displays, main display first (CGGetActiveDisplayList).
+    /// Main display first.
     public static func active() -> [CGDirectDisplayID] {
         var count: UInt32 = 0
         guard CGGetActiveDisplayList(0, nil, &count) == .success else { return [] }
@@ -20,24 +19,13 @@ public enum DisplayIdentity {
         return CFUUIDCreateString(nil, uuid) as String?
     }
 
-    /// Display UUIDs in the order SketchyBar numbers them (SLSCopyManagedDisplays).
+    /// Display UUIDs in the order SketchyBar numbers them.
     public static func managed() -> [String] {
         SLSCopyManagedDisplays(SkyLight.connection)?.takeRetainedValue() as? [String] ?? []
     }
 
-    /// The EDID alphanumeric serial number, such as `T9LMTF156633`, or nil when the display's
-    /// EDID has none, as built-in displays do.
-    ///
-    /// The display controller publishes the serial on the framebuffer that drives the display,
-    /// and CoreDisplay names that framebuffer by its registry path, such as
-    /// `IOService:/AppleARMPE/arm-io@10F00000/AppleH15IO/disp0@7C000000/IOMobileFramebufferShim`.
-    /// Each display has its own framebuffer, so two identical monitors should read the serials
-    /// of their own panels. Matching by EDID fields cannot tell them apart: Steve's twin
-    /// VG279QE5A panels share one EDID UUID, and CGDisplaySerialNumber, the EDID's numeric
-    /// serial, is zero on both. Verified so far on the built-in display only, whose framebuffer
-    /// has no serial; the twins wait on a run of `kosmos-probe displays` at Steve's desk
-    /// (docs/config.md). When CoreDisplay stops naming the framebuffer, this returns
-    /// nil and serial matchers match nothing.
+    /// The EDID alphanumeric serial, from the framebuffer CoreDisplay names for the display, so
+    /// twin monitors read their own (docs/config.md). Nil when the EDID has none.
     public static func serial(of display: CGDirectDisplayID) -> String? {
         let info = CoreDisplay_DisplayCreateInfoDictionary(display)?.takeRetainedValue() as? [String: Any]
         guard let path = info?["IODisplayLocation"] as? String else { return nil }

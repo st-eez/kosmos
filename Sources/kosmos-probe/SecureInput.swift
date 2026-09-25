@@ -1,20 +1,8 @@
 // kosmos-probe secure-input: which Carbon hotkeys fire while Secure Input is on, and the
-// WindowServer events that report it turning on and off (docs/hotkeys.md).
-//
-// The probe registers each key below as an exclusive hotkey, and its window asks the person
-// at the keyboard to press each one twice: with Secure Input off, and with the probe's own
-// password field focused. Every press lands in the probe's own window: a hotkey that fires
-// consumes the key, and one that does not lets the key reach the window, where a local
-// monitor sees it. So each press has an answer without a timeout.
-//
-// Real presses only. Synthetic presses gave a different answer depending on how the event
-// was built, and they type into whatever app is in front if the probe loses focus.
-//
-// Secure Input ends when its holder exits, so a crash or a kill leaves it off: a throwaway
-// program that exited while holding it through EnableSecureEventInput released it, with
-// event 753 at the exit (measured September 24, 2026). AppKit's password field uses the
-// same call; AppKit imports EnableSecureEventInput and DisableSecureEventInput from
-// HIToolbox (`dyld_info -imports`, macOS 27). The probe also stops itself with an alarm.
+// WindowServer events that report it (docs/hotkeys.md). Its window asks for a real press of
+// each key twice, with Secure Input off and with its password field focused; Return skips a
+// key. Secure Input ends with its holder, so a crash leaves it off, and an alarm stops the
+// probe after 10 minutes.
 import AppKit
 import Carbon.HIToolbox
 import CKosmos
@@ -60,7 +48,6 @@ private enum Phase: CaseIterable {
         }
     }
 
-    /// What the window says about the phase.
     var explanation: String {
         switch self {
         case .off: "Secure Input is off"
@@ -162,8 +149,7 @@ private func stamp() -> String {
     exit(0)
 }
 
-/// Runs the event loop until the condition holds or the timeout passes. Returns whether the
-/// condition held.
+/// Returns whether the condition held before the timeout.
 @MainActor @discardableResult
 private func pump(until condition: () -> Bool, timeout: Double) -> Bool {
     let deadline = Date(timeIntervalSinceNow: timeout)

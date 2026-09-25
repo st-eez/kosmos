@@ -1,9 +1,11 @@
 # Distribution
 
-- Kosmos ships the way AeroSpace does: a zip on GitHub releases holding `Kosmos.app` and
-  `bin/kosmos`, installed with a cask from Kosmos's own Homebrew tap. The cask removes the
-  quarantine attribute and links the CLI. There is no App Store build; its sandbox forbids
-  controlling other apps' windows.
+- Kosmos is planned to ship the way AeroSpace does: a zip on GitHub releases holding
+  `Kosmos.app` and `bin/kosmos`, installed with a cask from Kosmos's own Homebrew tap. The
+  cask would remove the quarantine attribute and link the CLI. Neither the release nor the
+  cask exists yet; `script/bundle.sh` builds the zip's layout, and `script/install.sh`
+  installs from a checkout ([INSTALL.md](INSTALL.md)). There is no App Store build; its
+  sandbox forbids controlling other apps' windows.
 - Builds are signed with one stable certificate, so the designated requirement and the
   Accessibility grant survive updates. An ad hoc signature changes with every build and
   makes macOS ask for Accessibility again.

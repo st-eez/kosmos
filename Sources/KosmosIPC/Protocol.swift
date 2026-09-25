@@ -1,30 +1,19 @@
 import Darwin
 
-// The wire format. Each message is a frame, made of a 4 byte length in network byte order and
-// then that many bytes of body. A client sends one request frame. The server answers with one
-// response frame and closes, or, for a subscription, sends a response frame and then one frame
-// per published payload until either side closes.
-//
-// Request bodies:  {"args":["workspace","3"],"protocol":1}  or  {"protocol":1,"subscribe":true}
-// Response bodies: {"exitCode":0,"stderr":"","stdout":"pong"}
+// The wire format is in docs/ipc.md.
 
-/// The request format revision. A request with another revision gets an error response.
 let protocolVersion = 1
 
-/// The largest frame body either side accepts. It is far above any request, response or
-/// snapshot, and it stops a garbage length from making a reader buffer gigabytes.
+/// Far above any message, so a garbage length cannot make a reader buffer gigabytes.
 let maxFrameLength = 16 << 20
 
-/// The path Kosmos.app serves and the CLI connects to, in the user's 0700 Kosmos directory.
-/// The home directory comes from `$HOME` when it is set, because `getpwuid` asks the directory
-/// service and adds about 0.75 ms to a CLI launch (measured).
+/// `$HOME` first: `getpwuid` asks the directory service, which adds about 0.75 ms to a CLI
+/// launch.
 public func kosmosSocketPath() -> String {
     let home = getenv("HOME").map { String(cString: $0) } ?? String(cString: getpwuid(getuid()).pointee.pw_dir)
     return home + "/Library/Application Support/Kosmos/ipc.sock"
 }
 
-/// The app's answer to a command. The CLI prints `stdout` and `stderr`, each followed by a
-/// newline when it is not empty, and exits with `exitCode`.
 public struct Response: Equatable, Sendable {
     public var exitCode: Int32
     public var stdout: String
@@ -117,26 +106,21 @@ extension Response {
     }
 }
 
-/// Prefixes `body` with its length.
 func frame(_ body: [UInt8]) -> [UInt8] {
     let length = UInt32(body.count)
     return [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: length >> $0) } + body
 }
 
-/// Splits a byte stream into frame bodies. Append bytes as they arrive, then call `next()`
-/// until it returns nil.
 struct FrameDecoder {
     private var buffer: [UInt8] = []
 
-    /// True when no bytes of an unfinished frame are waiting.
     var isEmpty: Bool { buffer.isEmpty }
 
     mutating func append(_ bytes: some Sequence<UInt8>) {
         buffer += bytes
     }
 
-    /// The next complete frame body, or nil until more bytes arrive. Throws as soon as a
-    /// length above `maxFrameLength` arrives.
+    /// Throws as soon as a length above `maxFrameLength` arrives.
     mutating func next() throws(IPCError) -> [UInt8]? {
         guard buffer.count >= 4 else { return nil }
         let length = buffer[0..<4].reduce(0) { $0 << 8 | Int($1) }
@@ -150,7 +134,6 @@ struct FrameDecoder {
     }
 }
 
-/// Calls `body` with a Unix socket address for `path`.
 func withSocketAddress<T>(_ path: String, _ body: (UnsafePointer<sockaddr>, socklen_t) -> T) throws(IPCError) -> T {
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
