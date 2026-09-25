@@ -115,17 +115,7 @@ final class Controller {
         self.barDisplays = barDisplays
         inventory.onEvent = { [weak self] event in self?.handle(event) }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
-        // AppKit calls a global monitor's handler on the main thread.
-        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let point = event.cgEvent?.location else { return }
-            // A global event has no window, so its location is on the screen.
-            let location = event.locationInWindow
-            MainActor.assumeIsolated { self?.leftMouseDown(at: point, location: location) }
-        }
-        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            let point = event.cgEvent?.location
-            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point) }
-        }
+        watchLeftButton()
     }
 
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
@@ -627,6 +617,20 @@ final class Controller {
         guard dragging else { return }
         controllerLog.info("hotkey during a drag: the window drops where the pointer is")
         leftMouseUp(at: nil)
+    }
+
+    private func watchLeftButton() {
+        // AppKit calls a global monitor's handler on the main thread.
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let point = event.cgEvent?.location else { return }
+            // A global event has no window, so its location is on the screen.
+            let location = event.locationInWindow
+            MainActor.assumeIsolated { self?.leftMouseDown(at: point, location: location) }
+        }
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            let point = event.cgEvent?.location
+            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point) }
+        }
     }
 
     /// `location` is `point` in AppKit's coordinates. kosmos_make_key posts a mouse down far
