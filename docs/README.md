@@ -22,8 +22,9 @@ prefix.
   window slides.
   Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
   `KosmosCore/LeftButton.swift`, `KosmosCore/Slide.swift`, `KosmosApp/AppWorker.swift`,
-  `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`, `script/bench-relayout.sh`,
-  `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`.
+  `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
+  `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
   Control.
@@ -36,7 +37,9 @@ prefix.
   workspace's window.
   Code: `KosmosApp/FocusQueue.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/FocusKillSwitch.swift`, `KosmosApp/EmptyWorkspaceWindow.swift`,
-  `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`, `KosmosCore/FocusReports.swift`,
+  `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`,
+  `KosmosApp/Controller+KeyReports.swift`, `KosmosApp/Controller+Windows.swift`,
+  `KosmosApp/UserInput.swift`, `KosmosCore/FocusReports.swift`,
   `KosmosCore/KeyRequest.swift`, `KosmosCore/FocusRead.swift`,
   `KosmosCore/FocusMisses.swift`, `KosmosCore/Departures.swift`,
   `KosmosCore/ConcealHistory.swift`, `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
@@ -44,7 +47,7 @@ prefix.
   minimize, a hide or native fullscreen, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
   `KosmosCore/TreeCommands.swift`, `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`,
-  `KosmosCore/Tabs.swift`, `KosmosApp/Controller.swift`, `kosmos-probe/Tree.swift`.
+  `KosmosCore/Tabs.swift`, `KosmosApp/Controller+Windows.swift`, `kosmos-probe/Tree.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
   shows Secure Input and its holder.
   Code: `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,
@@ -69,7 +72,9 @@ prefix.
 - [focus-follows-mouse.md](focus-follows-mouse.md): hover focus from a pointer event tap,
   the pointer following keyboard focus, and whether the tap needs Input Monitoring.
   Code: `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
-  `KosmosApp/Controller.swift`, `KosmosCore/Config/Config.swift`.
+  `KosmosApp/Controller+Pointer.swift`, `KosmosApp/Controller+KeyReports.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/UserInput.swift`,
+  `KosmosCore/Config/Config.swift`.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
@@ -81,17 +86,19 @@ prefix.
   `KosmosCore/Session+Drags.swift`, `KosmosCore/Monitor.swift`,
   `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
   `KosmosSkyLight/Displays.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,
   `KosmosCore/Session+Drags.swift`, `KosmosCore/TreeCommands.swift`,
-  `KosmosApp/Controller.swift`.
+  `KosmosApp/Controller+Mouse.swift`.
 - [borders.md](borders.md): borders around windows in windows of Kosmos's own, which
   windows get one, their shape, stacking and Spaces, how they follow frames, focus and
   slides, and what they cost against JankyBorders.
   Code: `KosmosCore/Borders.swift`, `KosmosApp/Borders.swift`, `KosmosApp/Controller.swift`,
-  `KosmosApp/Slides.swift`, `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosApp/Slides.swift`,
+  `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`,
   `kosmos-probe/BorderHop.swift`.
 
 Other docs:

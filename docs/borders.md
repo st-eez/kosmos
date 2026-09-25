@@ -75,7 +75,7 @@ state, and during a slide the frame the slide shows the window at.
   below the child's other window that covered it, so a window over the target covers its
   border too. When the child raised its window, WindowServer posted 808 (reordered) and
   815 for it and left the border below, under the other window the raise put the target
-  over. So at each 808 for a managed window the inventory calls `onReordered`, and Kosmos
+  over. So at each 808 for a managed window the inventory sends `.reordered`, and Kosmos
   orders that window's border above it again: 0.024 ms at the median over 100 orders.
   Ordering the border posted no event for the target, so the two never feed each other.
   The border's window level is its target's. Setting another level can move the border

@@ -41,7 +41,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
   - No process other than the front one and Kosmos holds the key window
-    (`Controller.keyHolderApartFromFront`). With Raycast, Spotlight (whose process is
+    (`UserInput.keyHolderApartFromFront`). With Raycast, Spotlight (whose process is
     "Siri", an accessory app), Notification Center or Control Center open, the front
     process stayed Ghostty and only the process holding the key window changed
     (`kosmos-probe key-holder`, 90 s at the desk on 2026-09-24). Focusing a window would
