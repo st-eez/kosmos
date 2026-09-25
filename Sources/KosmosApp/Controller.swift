@@ -350,8 +350,10 @@ final class Controller {
         // A window there at launch joins the workspace of the display under it; a later one
         // joins the focused workspace, as in AeroSpace (DESIGN.md, section 5.13).
         let center = inventory.wasThereAtLaunch(id) ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
-        var plan = session.add(id, to: rule?.workspace, at: center)
-        if rule?.float == true { plan.frames.merge(session.float(id).frames) { _, new in new } }
+        var plan = session.add(id, to: rule?.workspace, at: center, floating: rule?.float == true)
+        if rule?.float == true, let frame = inventory.windows[id]?.frame {
+            controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
+        }
         if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
                                                minimized: inventory.isMinimized(id),
                                                appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {

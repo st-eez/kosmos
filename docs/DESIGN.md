@@ -1335,6 +1335,18 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - A new window joins the workspace a rule names, else the focused workspace. A window that
   was there when Kosmos launched joins the workspace shown on the display under its
   center, so each keeps its display. AeroSpace does the same (MacWindow.swift).
+- A window a rule floats joins the floating windows of its workspace and never its tree,
+  so Kosmos writes it no frame and no tile moves. It keeps the frame its app gave it, as a
+  floating window does in Hyprland, and Kosmos logs that frame at admission. Kosmos admits
+  a window once Accessibility reads its subrole (section 5.1) and applies the rule in that
+  step, so a window whose app answers late gets no frame while it waits. The same holds on
+  a hidden workspace, where the window is concealed where its app put it, and at launch,
+  where the rule applies again. A window the user floated with `layout floating tiling`
+  tiles again after a relaunch, as Kosmos keeps nothing across restarts (section 8).
+  Until September 25, 2026, Kosmos tiled such a window and then floated it, and the
+  tile's frame went out with the plan. A new Finder window on the left panel came up at
+  the tile a third window beside Preview and Ghostty would have had, behind Ghostty's
+  tile (live log).
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which
