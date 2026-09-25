@@ -383,6 +383,7 @@ actor AppWorker {
             requeue(id, entry)
             return nil
         }
+        var sets = if case .position = entry.write { 1 } else { 3 }
         // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
         // window still taller refused the height (DESIGN.md, section 5.2).
         if case .frame(let target) = entry.write, readBack.height > target.height + FrameLedger.slack {
@@ -394,8 +395,11 @@ actor AppWorker {
                 return nil
             }
             readBack = retried
+            sets += 2
             log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
         }
+        // script/bench-relayout.sh counts these lines and the tweens' below.
+        log.info("\(id) written in \(sets) sets")
         return (id, entry.target, readBack)
     }
 
@@ -435,7 +439,8 @@ actor AppWorker {
                 tweens[id] = nil
                 if let result = apply(id, element, (entry.write, entry.target, false)) { results.append(result) }
                 let late = (now - entry.tween.start - entry.tween.duration) * 1000
-                log.info("\(id) animated in \(entry.tween.steps) steps, final write \(late, format: .fixed(precision: 1)) ms after due")
+                let sets = entry.tween.steps + (entry.tween.sized ? 2 : 0)   // the midpoint writes three
+                log.info("\(id) animated in \(entry.tween.steps) steps (\(sets) sets), final write \(late, format: .fixed(precision: 1)) ms after due")
             }
         }
         if tweens.isEmpty { stopTweenTimer() }
