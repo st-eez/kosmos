@@ -43,24 +43,15 @@ public struct DepartureLog: Sendable {
 /// timer, so a timer of a replaced or ended hold decides nothing.
 public struct HeldReport<Report: Sendable>: Sendable {
     public private(set) var report: Report?
-    private var key: KeyWindow?
     private var number = 0
 
     public init() {}
 
-    /// Holds `report` of `key` in place of any held one, and returns the number of its grace
-    /// timer.
-    public mutating func hold(_ report: Report, of key: KeyWindow) -> Int {
+    /// Holds `report` in place of any held one, and returns the number of its grace timer.
+    public mutating func hold(_ report: Report) -> Int {
         number += 1
         self.report = report
-        self.key = key
         return number
-    }
-
-    /// A report that repeats the held window is the same activation, as after a miss: it
-    /// leaves the hold standing.
-    public func holds(_ key: KeyWindow, repeated: Bool) -> Bool {
-        repeated && report != nil && self.key == key
     }
 
     /// A newer activation of a window ends the hold. Returns the report it ended.

@@ -39,22 +39,19 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
 
 @Test func aHeldReportIsDecidedOnceByItsGrace() {
     var held = HeldReport<String>()
-    let first = held.hold("Ghostty", of: .window(3))
-    #expect(held.holds(.window(3), repeated: true))    // the same activation again
-    #expect(!held.holds(.window(3), repeated: false))  // a new key change of the window
+    let first = held.hold("Ghostty")
     #expect(held.expire(first) == "Ghostty")
     #expect(held.expire(first) == nil)
 }
 
 @Test func aReplacedOrEndedHoldIsNotDecidedByAnOldGrace() {
     var held = HeldReport<String>()
-    let first = held.hold("Ghostty", of: .window(3))
-    let second = held.hold("Helium", of: .window(4))   // a newer report of a window to hold
+    let first = held.hold("Ghostty")
+    let second = held.hold("Helium")   // a newer report of a window to hold
     #expect(held.expire(first) == nil)
     #expect(held.report == "Helium")
     #expect(held.end() == "Helium")                    // a newer activation
     #expect(held.expire(second) == nil)
-    #expect(!held.holds(.window(4), repeated: true))
 }
 
 @Test func aDepartureOfTheFocusWaitsOnlyForAKeyReportThatIsComing() {

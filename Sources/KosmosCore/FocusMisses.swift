@@ -23,11 +23,8 @@ public struct FocusMisses<Stamp: Comparable & Sendable>: Sendable {
     public init() {}
 
     /// Records a private request for `window` of app `pid`, and judges the one before it.
-    /// Returns true when that one was the `limit`th miss in a row. A `retry` of a missed
-    /// request (FocusReports.miss) is the same focus attempt: the missed request stays
-    /// pending, so the attempt counts at most once.
-    public mutating func willRequest(_ window: UInt32, pid: Int32, at stamp: Stamp, retry: Bool = false) -> Bool {
-        if retry, pending?.wrongWindow == true { return false }
+    /// Returns true when that one was the `limit`th miss in a row.
+    public mutating func willRequest(_ window: UInt32, pid: Int32, at stamp: Stamp) -> Bool {
         if pending?.wrongWindow == true { inARow += 1 }
         pending = (window, pid, stamp, false)
         return inARow >= Self.limit

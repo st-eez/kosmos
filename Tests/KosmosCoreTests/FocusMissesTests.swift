@@ -18,20 +18,6 @@ private func miss(_ misses: inout FocusMisses<Int>, at: Int, reported: UInt32 = 
     #expect(tripped)
 }
 
-@Test func aMissAndItsRetryCountOnce() {
-    var misses = FocusMisses<Int>()
-    for attempt in 0..<FocusMisses<Int>.limit {
-        // The request keys window 9, and so does its retry.
-        let request = misses.willRequest(5, pid: 1, at: attempt * 10)
-        misses.reported(.window(9), pid: 1, receivedAt: attempt * 10 + 1, echo: false)
-        let retry = misses.willRequest(5, pid: 1, at: attempt * 10 + 2, retry: true)
-        misses.reported(.window(9), pid: 1, receivedAt: attempt * 10 + 3, echo: false)
-        #expect(!request && !retry)
-    }
-    let tripped = misses.willRequest(5, pid: 1, at: 100)
-    #expect(tripped)
-}
-
 @Test func anEchoClearsTheCount() {
     var misses = FocusMisses<Int>()
     for request in 0..<4 { _ = miss(&misses, at: request * 10) }
