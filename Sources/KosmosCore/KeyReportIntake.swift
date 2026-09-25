@@ -111,7 +111,8 @@ public struct KeyReportIntake: Sendable {
     private let ownApp: Int32
     private var keyHistory = KeyHistory()
     /// The last key report of a window with no place, or parked as closed and kept, decided
-    /// when the window takes a place (docs/focus.md).
+    /// when the window takes a place. A report that would end a held one ends it too
+    /// (docs/focus.md).
     private var unplaced: Report?
     /// Admitted on a shown workspace before their apps keyed them (AdmissionFocus.awaitKey).
     /// A report within `keyAfterAdmission` brings the pointer (docs/focus-follows-mouse.md).
@@ -155,16 +156,16 @@ public struct KeyReportIntake: Sendable {
         // Space or just before it returns. A window with no place, or closed and kept, is
         // decided when it takes one.
         if let id, facts.workspace(id) == nil || facts.isParked(id) {
-            unplaced = facts.workspace(id) == nil || facts.closedByApp(id)
-                ? Report(key: reported, received: stamp, reporter: reporter, previous: previous, concealed: false, miss: miss)
-                : nil
+            if facts.workspace(id) == nil || facts.closedByApp(id) {
+                unplaced = Report(key: reported, received: stamp, reporter: reporter, previous: previous, concealed: false,
+                                  miss: miss)
+            }
             // Kosmos keyed a native fullscreen window, as for hover focus: this is its echo.
             if facts.isParked(id), reports.consumeEcho(reported, receivedAt: stamp) {
                 misses.reported(reported, pid: reporter, receivedAt: stamp, echo: true)
             }
             return .none
         }
-        unplaced = nil
         if held.holds(reported, repeated: repeated) { return .none }
         // Whether the key window before this report just left the screen is read only when
         // the verdict needs it, as the read can wait on a switch's Space transaction.
@@ -181,8 +182,9 @@ public struct KeyReportIntake: Sendable {
     /// Admits `window`. The report its app keyed it by before it had a place waits for
     /// `placed` when Kosmos follows it to a hidden workspace, and is dropped otherwise.
     public mutating func admit(_ window: WindowID, atLaunch: Bool, at now: ContinuousClock.Instant,
-                               facts: Facts) -> (focus: AdmissionFocus, bringsPointer: Bool) {
-        let focus = AdmissionFocus.decide(keyed: key == .window(window),
+                               facts: Facts, reports: FocusReports) -> (focus: AdmissionFocus, bringsPointer: Bool) {
+        let keyed = unplaced.map { $0.key == .window(window) && !reports.isStale($0.received) } ?? false
+        let focus = AdmissionFocus.decide(keyed: keyed,
                                           shown: facts.workspace(window).map(facts.isShown) == true,
                                           parked: facts.isParked(window), atLaunch: atLaunch, locked: facts.locked)
         switch focus {
@@ -286,7 +288,10 @@ public struct KeyReportIntake: Sendable {
                                        concealed: report.concealed, recovered: facts.recovered, miss: report.miss,
                                        keyLeft: keyLeft())
         facts.note(.verdict(report.key, verdict))
-        if id != nil, verdict != .echo, let ended = held.end() { facts.note(.replaced(held: ended, by: report.key)) }
+        if id != nil, verdict != .echo {
+            unplaced = nil
+            if let ended = held.end() { facts.note(.replaced(held: ended, by: report.key)) }
+        }
         switch verdict {
         case .echo:
             return .none

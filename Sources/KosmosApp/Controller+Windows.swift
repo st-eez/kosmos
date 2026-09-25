@@ -78,7 +78,7 @@ extension Controller {
             plan.frames = session.park([id]).frames
             plan.hide.removeAll { $0 == id }
         }
-        let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
+        let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts, reports: reports)
         if focus == .adopt { session.adopt(id) }
         execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: atLaunch ? nil : id)
         // The follow's switch reveals the window the plan conceals.

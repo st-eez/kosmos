@@ -49,8 +49,11 @@
   - A window the front app keyed before Kosmos admitted it, as a launching app keys its
     first window, is the user's choice too, and its report waits for the window's place
     (`AdmissionFocus`). So does the key report of a window closed and kept, which takes a
-    place as a new window when its app opens it again ([tree.md](tree.md)). On a shown
-    workspace the window becomes the focus. On a hidden one, which only a rule names for a
+    place as a new window when its app opens it again ([tree.md](tree.md)). Only a report
+    that would end a held report (below) ends the wait: a report of another placed window
+    that is not Kosmos's echo. Kosmos's echo, a report of no key window and a parked
+    window's report leave the wait, as they leave a hold. On a shown workspace the window
+    becomes the focus. On a hidden one, which only a rule names for a
     new window, the report is decided as one of a concealed window whose key window before
     it stayed, since an app keys a window it opens, and Kosmos follows it there
     (displays.md). A report that comes after the admission and

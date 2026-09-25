@@ -48,8 +48,8 @@ public enum AdmissionFocus: Equatable, Sendable {
     /// Kosmos follows its key report there, as it follows a Command-Tab (docs/focus.md).
     case placedHidden
 
-    /// `keyed`: the window is the key window Kosmos last heard of. A parked window's return
-    /// decides the focus instead.
+    /// `keyed`: its app keyed it before it had a place, and no command came since. A parked
+    /// window's return decides the focus instead.
     public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
         guard !locked, !parked else { return .none }
         if shown { return keyed ? .adopt : atLaunch ? .none : .awaitKey }

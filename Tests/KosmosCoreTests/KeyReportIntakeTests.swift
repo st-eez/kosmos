@@ -77,7 +77,7 @@ private struct Replay {
     mutating func admit(_ window: WindowID, atLaunch: Bool = false, at milliseconds: Int)
         -> (focus: AdmissionFocus, bringsPointer: Bool) {
         let facts = facts
-        return intake.admit(window, atLaunch: atLaunch, at: ms(milliseconds), facts: facts)
+        return intake.admit(window, atLaunch: atLaunch, at: ms(milliseconds), facts: facts, reports: reports)
     }
 
     mutating func placed(_ window: WindowID) -> KeyReportIntake.Action {
@@ -252,17 +252,56 @@ private struct Replay {
     #expect(replay.placed(30) == .follow(30, bringsPointer: true))
 }
 
-@Test func aReportOfAWindowParkedForAnotherReasonLeavesNoReportWaiting() {
+@Test func onlyAReportThatWouldEndAHeldOneEndsTheWaitingReport() {
+    // As for a held report, a report of no key window, Kosmos's echo or a parked window's
+    // report leaves it (docs/focus.md).
     var replay = Replay(windows: [11: ("1", ghostty), 30: ("1", activityMonitor), 31: ("1", preview)],
-                        parked: [30, 31], closedByApp: [30])
+                        parked: [30, 31], closedByApp: [30], intent: .window(11))
     _ = replay.heard(.window(11), from: ghostty, at: -100)
     #expect(replay.heard(.window(30), from: activityMonitor, at: 10) == .none)
     // 31 is minimized, and macOS keys it just before it returns.
     #expect(replay.heard(.window(31), from: preview, at: 20) == .none)
+    #expect(replay.heard(.noWindow, from: finder, at: 22) == .none)
+    replay.requested(.window(11), app: ghostty, at: 24)
+    #expect(replay.heard(.window(11), from: ghostty, at: 26) == .none)
     replay.parked = [31]
     replay.closedByApp = []
-    #expect(replay.admit(30, at: 30).focus == .awaitKey)
-    #expect(replay.placed(30) == .none)
+    #expect(replay.admit(30, at: 30).focus == .adopt)
+    // A report of another window ends it.
+    #expect(replay.heard(.window(32), from: preview, at: 40) == .none)
+    replay.windows[32] = ("1", preview)
+    #expect(replay.heard(.window(11), from: ghostty, at: 50) == .adopt(11, bringsPointer: false))
+    #expect(replay.admit(32, at: 60).focus == .awaitKey)
+}
+
+@Test func kosmossEchoAfterTheWaitingReportLeavesItToTheAdmission() {
+    // Kosmos keyed Claude again before Chrome's first window, keyed at launch, was admitted
+    // to workspace 4, which no display shows (docs/focus.md).
+    var replay = Replay(windows: [80: ("8", claude)], shown: ["1", "8"])
+    _ = replay.heard(.window(80), from: claude, at: -100)
+    replay.requested(.window(80), app: claude, at: 5)
+    #expect(replay.heard(.window(70), from: chrome, at: 10) == .none)
+    #expect(replay.heard(.window(80), from: claude, at: 15) == .none)
+    replay.windows[70] = ("4", chrome)
+    #expect(replay.admit(70, at: 20).focus == .placedHidden)
+    #expect(replay.placed(70) == .follow(70, bringsPointer: true))
+    // On a shown workspace it takes the focus.
+    replay.requested(.window(70), app: chrome, at: 25)
+    #expect(replay.heard(.window(71), from: chrome, at: 30) == .none)
+    #expect(replay.heard(.window(70), from: chrome, at: 35) == .none)
+    replay.windows[71] = ("8", chrome)
+    #expect(replay.admit(71, at: 40).focus == .adopt)
+}
+
+@Test func aCommandAfterTheWaitingReportWinsAtTheAdmission() {
+    // As over a Command-Tab (docs/focus.md).
+    var replay = Replay(windows: [11: ("1", ghostty)])
+    _ = replay.heard(.window(11), from: ghostty, at: -100)
+    #expect(replay.heard(.window(12), from: ghostty, at: 10) == .none)
+    replay.command(at: 15)
+    replay.windows[12] = ("1", ghostty)
+    #expect(replay.admit(12, at: 20).focus == .awaitKey)
+    #expect(replay.placed(12) == .none)
 }
 
 @Test func aParkedWindowsReportOnlyConsumesItsEcho() {
