@@ -47,6 +47,19 @@ final class PointerTap: Sendable {
         pointerLog.notice("pointer tap created; Input Monitoring granted: \(CGPreflightListenEventAccess(), privacy: .public)")
     }
 
+    /// Stops the tap for good, so a new one can replace it. The port is invalidated on the
+    /// tap's thread, and the block holds this object until then, so no callback outlives it.
+    func stop() {
+        guard let port else { return }
+        enabled.store(false, ordering: .relaxed)
+        CGEvent.tapEnable(tap: port, enable: false)
+        executor.perform { [self] in
+            if let port = self.port { CFMachPortInvalidate(port) }
+            executor.stop()
+        }
+        pointerLog.notice("pointer tap stopped")
+    }
+
     /// The window the pointer was in at the last movement that counted.
     var window: UInt32? { gate.withLock { $0.window } }
 

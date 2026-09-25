@@ -40,9 +40,11 @@ registration through it.
 
 Kosmos needs Accessibility permission for itself. Started from `/Applications` by Finder,
 `open` or launchd, Kosmos is its own responsible process, so macOS checks its own grant and
-never the terminal's. On the first launch without a grant, Kosmos opens a window whose
-button adds Kosmos to System Settings > Privacy & Security > Accessibility. Turn the switch
-on and Kosmos starts managing windows within a second; it needs no restart.
+never the terminal's. On the first launch without a grant, Kosmos opens its setup window,
+whose Open Settings button adds Kosmos to System Settings > Privacy & Security >
+Accessibility. Turn the switch on and Kosmos starts managing windows within half a second;
+it needs no restart. With focus follows mouse on, the window also asks for Input
+Monitoring while Kosmos does not have it.
 
 macOS keeps the grant for the app's designated requirement, which names the bundle
 identifier and the signing certificate:
