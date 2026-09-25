@@ -1,7 +1,8 @@
 // Draws the app icon: the cosmos as one matte sphere, split once, with the cut the only light.
-// Renders the macOS iconset from vectors at every size, so nothing is downsampled.
+// Renders the macOS iconset from vectors at every size, so nothing is downsampled. The result
+// is checked in as Resources/Kosmos.icns; after a change here, regenerate it with
 //
-//   swift script/icon.swift OUT.iconset && iconutil -c icns OUT.iconset
+//   swift script/icon.swift /tmp/Kosmos.iconset && iconutil -c icns /tmp/Kosmos.iconset -o Resources/Kosmos.icns
 //
 // The body follows macOS 27's icon mask, measured from Terminal's icon at 1024 px: 824 wide
 // with a 100 px margin, corners a superellipse quarter 34% of the side across, exponent 2.78.

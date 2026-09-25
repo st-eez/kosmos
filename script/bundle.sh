@@ -22,9 +22,8 @@ app=$dist/Kosmos.app
 rm -rf "$dist"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Library/LaunchAgents" "$app/Contents/Resources" "$dist/bin"
 sed "s/VERSION/$version/g" Resources/Info.plist > "$app/Contents/Info.plist"
-# The app icon, drawn from vectors at every size.
-swift script/icon.swift "$dist/Kosmos.iconset"
-iconutil -c icns "$dist/Kosmos.iconset" -o "$app/Contents/Resources/Kosmos.icns"
+# The app icon; script/icon.swift regenerates it when the design changes.
+cp Resources/Kosmos.icns "$app/Contents/Resources/"
 # The launch at login agent, registered through SMAppService.
 cp Resources/io.github.st-eez.kosmos.plist "$app/Contents/Library/LaunchAgents/"
 cp "$bin/KosmosApp" "$app/Contents/MacOS/Kosmos"
