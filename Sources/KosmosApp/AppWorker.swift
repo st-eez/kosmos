@@ -271,24 +271,24 @@ actor AppWorker {
                 set(element, kAXPositionAttribute, frame.origin)
                 set(element, kAXSizeAttribute, frame.size)
             }
-            // A write the app did not answer waits, with the ones after it, for the app to
-            // answer again.
-            if backoff.backedOff {
+            // A write or read the app did not answer waits, with the ones after it, for the
+            // app to answer again. One whose read failed otherwise waits for the app's next
+            // frame write: dropped, it would leave the ledger's target pending for good.
+            guard !backoff.backedOff, var readBack = frame(element) else {
                 queuedWrites[id] = entry
                 continue
             }
-            guard var readBack = frame(element) else { continue }
             // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
             // window still taller has a minimum (DESIGN.md, section 5.2).
             if case .frame(let target) = entry.write, readBack.height > target.height + FrameLedger.slack {
                 let kept = readBack.height
                 set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))
                 set(element, kAXSizeAttribute, target.size)
-                if backoff.backedOff {
+                guard !backoff.backedOff, let retried = frame(element) else {
                     queuedWrites[id] = entry
                     continue
                 }
-                readBack = frame(element) ?? readBack
+                readBack = retried
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
             results.append((id, entry.target, readBack))
