@@ -29,7 +29,7 @@ extension Controller {
             wasConcealed: { self.hiding.wasConcealed($0, at: $1) }, leftScreen: { self.inventory.leftScreen($0) },
             app: { self.owner[$0] ?? self.inventory.windows[$0]?.pid },
             intent: session.intent, locked: sessionLocked, recovered: needsResync, mouseFollowsFocus: mouseFollowsFocus,
-            leftButtonDown: { UserInput.leftButtonDown }, pickedAwayFromPointer: { self.pickedAwayFromPointer() },
+            pointer: pointerReadings,
             userPressedJustBefore: { UserInput.userPressedJustBefore() },
             launchedSinceEmptyWorkspaceKeyed: {
                 NSRunningApplication(processIdentifier: $0)?.launchDate.map { $0 > self.emptyWorkspaceKeyed } == true

@@ -126,15 +126,28 @@ public enum CommandSource: Sendable {
 /// What moved the focus, for mouse-follows-focus (docs/focus-follows-mouse.md).
 public enum FocusChange: Sendable {
     case command(Command, from: CommandSource)
+    /// `atLaunch`: the window was there when Kosmos launched.
+    case admission(AdmissionFocus, atLaunch: Bool)
+    /// Kosmos adopts or follows the key window its app reported. `admitted`: a new window,
+    /// keyed as Kosmos admitted it (KeyReportIntake.Report).
+    case keyReport(admitted: Bool)
+    /// Parked windows came back. `followed`: Kosmos follows one of them, with no command since.
+    case returned(followed: Bool)
 }
 
 /// The user's input as the app reads it. The rule reads each only for a change that needs it.
 public struct PointerReadings {
     /// The focus is on another display than the pointer (Session.focusIsOnAnotherDisplay).
     public var focusOnAnotherDisplay: () -> Bool
+    public var leftButtonDown: () -> Bool
+    /// Whether the last left mouse down landed on the Dock, read with the input.
+    public var activation: () -> (input: ActivationInput, onDock: Bool)
 
-    public init(focusOnAnotherDisplay: @escaping () -> Bool) {
+    public init(focusOnAnotherDisplay: @escaping () -> Bool, leftButtonDown: @escaping () -> Bool,
+                activation: @escaping () -> (input: ActivationInput, onDock: Bool)) {
         self.focusOnAnotherDisplay = focusOnAnotherDisplay
+        self.leftButtonDown = leftButtonDown
+        self.activation = activation
     }
 }
 
@@ -152,6 +165,15 @@ extension FocusChange {
             case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || input.focusOnAnotherDisplay()
             default: return false
             }
+        case .admission(let focus, let atLaunch):
+            return focus == .adopt && !atLaunch && !input.leftButtonDown()
+        case .keyReport(admitted: true):
+            return !input.leftButtonDown()
+        case .keyReport(admitted: false), .returned(followed: true):
+            let (activation, onDock) = input.activation()
+            return activation.bringsPointer(onDock: onDock)
+        case .returned(followed: false):
+            return false
         }
     }
 }

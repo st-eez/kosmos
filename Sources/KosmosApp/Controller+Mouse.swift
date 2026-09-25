@@ -181,7 +181,7 @@ extension Controller {
         }
         modifierDrag = drag
         slides?.end(grab.window, "as a modifier drag took it")
-        // A Dock click before this press no longer brings the pointer (pickedAwayFromPointer).
+        // A Dock click before this press no longer brings the pointer (ActivationInput.bringsPointer).
         clickedWindow = 0
         dragLog.info("""
             modifier drag of \(grab.window) with the \(grab.button == .left ? "left" : "right", privacy: .public) button, \

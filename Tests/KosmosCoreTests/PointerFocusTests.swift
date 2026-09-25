@@ -218,15 +218,27 @@ private func command(_ binding: String) throws -> Command {
     try Command.parse(binding.split(separator: " ").map(String.init)).get()
 }
 
+private let commandTab = ActivationInput(key: 0.2, leftClick: 3600, rightClick: 3600, moved: 4)
+/// In a window unless it landed on the Dock.
+private let leftClick = ActivationInput(key: 30, leftClick: 0.3, rightClick: 3600, moved: 0.05)
+
 /// The user's input as the pointer rule reads it, and the readings it took.
 private final class Input {
-    enum Reading { case display }
+    enum Reading { case display, leftButton, activation }
 
     var focusOnAnotherDisplay = false
+    var leftButtonDown = false
+    var activation = (input: leftClick, onDock: false)
     var read: [Reading] = []
 
     var readings: PointerReadings {
-        PointerReadings(focusOnAnotherDisplay: { self.read.append(.display); return self.focusOnAnotherDisplay })
+        PointerReadings(focusOnAnotherDisplay: { self.read.append(.display); return self.focusOnAnotherDisplay },
+                        leftButtonDown: { self.read.append(.leftButton); return self.leftButtonDown },
+                        activation: { self.read.append(.activation); return self.activation })
+    }
+
+    func moves(after change: FocusChange, mouseFollowsFocus: Bool = true) -> Bool {
+        change.movesPointer(mouseFollowsFocus: mouseFollowsFocus, reading: readings)
     }
 }
 
@@ -235,8 +247,7 @@ private func movesPointer(_ binding: String, from source: CommandSource = .hotke
                           mouseFollowsFocus: Bool = true) throws -> Bool {
     let input = Input()
     input.focusOnAnotherDisplay = toAnotherDisplay
-    return try FocusChange.command(command(binding), from: source)
-        .movesPointer(mouseFollowsFocus: mouseFollowsFocus, reading: input.readings)
+    return try input.moves(after: .command(command(binding), from: source), mouseFollowsFocus: mouseFollowsFocus)
 }
 
 /// Over workspace 1 of the `desk()` below.
@@ -298,17 +309,72 @@ private func desk() -> Session {
         for binding in ["focus left", "move right", "workspace 2", "move-node-to-workspace 3"] {
             #expect(try !movesPointer(binding, toAnotherDisplay: true, mouseFollowsFocus: false), "\(binding)")
         }
+        let input = Input()
+        input.activation = (commandTab, false)
+        for change in [FocusChange.admission(.adopt, atLaunch: false), .keyReport(admitted: true), .keyReport(admitted: false),
+                       .returned(followed: true)] {
+            #expect(!input.moves(after: change, mouseFollowsFocus: false), "\(change)")
+        }
+        #expect(input.read.isEmpty)
     }
 
     @Test func onlyAWorkspaceCommandReadsWhereThePointerIs() throws {
         let input = Input()
         for (binding, source, on) in [("workspace 2", CommandSource.cli, true), ("workspace 2", .hotkey, false),
                                       ("focus left", .hotkey, true), ("join-with left", .hotkey, true)] {
-            _ = try FocusChange.command(command(binding), from: source).movesPointer(mouseFollowsFocus: on, reading: input.readings)
+            _ = try input.moves(after: .command(command(binding), from: source), mouseFollowsFocus: on)
         }
         #expect(input.read.isEmpty)
-        _ = try FocusChange.command(command("workspace 2"), from: .hotkey).movesPointer(mouseFollowsFocus: true, reading: input.readings)
+        _ = try input.moves(after: .command(command("workspace 2"), from: .hotkey))
         #expect(input.read == [.display])
+    }
+
+    @Test func aNewWindowItsAppKeyedBringsThePointer() {
+        let input = Input()
+        #expect(input.moves(after: .admission(.adopt, atLaunch: false)))
+        #expect(input.read == [.leftButton])
+        // At startup the pointer stays put. A window its app has not keyed yet, or one on a
+        // hidden workspace, waits for its key report.
+        #expect(!input.moves(after: .admission(.adopt, atLaunch: true)))
+        for focus in [AdmissionFocus.none, .awaitKey, .placedHidden] {
+            #expect(!input.moves(after: .admission(focus, atLaunch: false)), "\(focus)")
+        }
+        #expect(input.read == [.leftButton])
+        // A native tab dragged out of its group, with the drag still on.
+        input.leftButtonDown = true
+        #expect(!input.moves(after: .admission(.adopt, atLaunch: false)))
+    }
+
+    @Test func aKeyReportOfANewWindowBringsThePointerUnlessTheLeftButtonIsDown() {
+        // Whatever input came before, as a launch keys its first window seconds after the
+        // launcher's hotkey.
+        let input = Input()
+        #expect(input.moves(after: .keyReport(admitted: true)))
+        input.leftButtonDown = true
+        #expect(!input.moves(after: .keyReport(admitted: true)))
+        #expect(input.read == [.leftButton, .leftButton])
+    }
+
+    @Test func commandTabOrADockClickBringsThePointerToTheWindowMacOSKeyed() {
+        // A key report Kosmos adopts or follows, and a return Kosmos follows.
+        for change in [FocusChange.keyReport(admitted: false), .returned(followed: true)] {
+            let input = Input()
+            // A click in the window, on a bar pill or on a link that opens another app.
+            #expect(!input.moves(after: change), "\(change)")
+            input.activation = (commandTab, false)
+            #expect(input.moves(after: change), "\(change)")
+            input.activation = (leftClick, true)
+            #expect(input.moves(after: change), "\(change)")
+            #expect(input.read == [.activation, .activation, .activation], "\(change)")
+        }
+    }
+
+    @Test func aReturnKosmosDoesNotFollowLeavesThePointer() {
+        // A command came after the return, or Kosmos follows none of the windows.
+        let input = Input()
+        input.activation = (commandTab, false)
+        #expect(!input.moves(after: .returned(followed: false)))
+        #expect(input.read.isEmpty)
     }
 
     @Test func aSwitchToTheWorkspaceAnotherDisplayShowsBringsThePointerThere() throws {

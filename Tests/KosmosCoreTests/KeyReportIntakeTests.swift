@@ -18,6 +18,10 @@ private let claude: Int32 = 800
 
 private func ms(_ milliseconds: Int) -> ContinuousClock.Instant { t0 + .milliseconds(milliseconds) }
 
+private let commandTab = ActivationInput(key: 0.2, leftClick: 3600, rightClick: 3600, moved: 4)
+/// In a window.
+private let click = ActivationInput(key: 30, leftClick: 0.3, rightClick: 3600, moved: 0.05)
+
 private final class Log {
     var notes: [KeyReportIntake.Note] = []
     /// Reads of whether a window left the screen, which can wait on WindowServer.
@@ -61,7 +65,8 @@ private struct Replay {
             wasConcealed: { conceals.wasConcealed($0, at: $1, now: concealed.contains($0)) },
             leftScreen: { log.departureReads += 1; return left.contains($0) }, app: { windows[$0]?.app },
             intent: intent, locked: locked, recovered: false, mouseFollowsFocus: mouseFollowsFocus,
-            leftButtonDown: { leftButtonDown }, pickedAwayFromPointer: { pickedAway },
+            pointer: PointerReadings(focusOnAnotherDisplay: { false }, leftButtonDown: { leftButtonDown },
+                                     activation: { (pickedAway ? commandTab : click, onDock: false) }),
             userPressedJustBefore: { pressedJustBefore }, launchedSinceEmptyWorkspaceKeyed: { launched.contains($0) },
             note: { log.notes.append($0) })
     }
