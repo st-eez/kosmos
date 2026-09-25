@@ -24,7 +24,9 @@
 //                                   a running Kosmos leaves alone, never activated. Prints
 //                                   their ids. Lines on stdin: `front <id>` orders a window
 //                                   front, `layout <n>` moves every window to layout n of
-//                                   two and prints `done`. Quits at the end of stdin.
+//                                   two and prints `done`, `frame <id> <x> <y> <w> <h>` sets
+//                                   a window's frame in AppKit's coordinates and prints
+//                                   `done`. Quits at the end of stdin.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -72,6 +74,10 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
                 MainActor.assumeIsolated {
                     if words.count == 2, words[0] == "front", let id = Int(words[1]) {
                         windows.first { $0.windowNumber == id }?.orderFrontRegardless()
+                    } else if words.count == 6, words[0] == "frame", let id = Int(words[1]) {
+                        let n = words.dropFirst(2).compactMap { Double($0) }
+                        windows.first { $0.windowNumber == id }?.setFrame(NSRect(x: n[0], y: n[1], width: n[2], height: n[3]), display: true)
+                        print("done")
                     } else if words.count == 2, words[0] == "layout", let n = Int(words[1]) {
                         for (window, frame) in zip(windows, targetLayout(n, count: windows.count, in: area)) {
                             window.setFrame(frame, display: true)

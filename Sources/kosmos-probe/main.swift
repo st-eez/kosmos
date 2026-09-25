@@ -120,6 +120,8 @@
 //                                   What script/bench-relayout.sh uses (Bench.swift).
 //   kosmos-probe borders | borders-cpu [relayouts]
 //                                   What Kosmos's border windows need and cost (Borders.swift).
+//   kosmos-probe border-hop [one|per-display] [hops] | border-watch <window> [seconds]
+//                                   A border that moves between displays (BorderHop.swift).
 import AppKit
 import CKosmos
 import KosmosCore
@@ -161,10 +163,14 @@ case "bench-windows" where arguments.count >= 2 && Int(arguments.dropFirst().fir
 case "eui": enhancedUserInterface(arguments.dropFirst().compactMap { pid_t($0) })
 case "borders": borders()
 case "borders-cpu": bordersCPU(relayouts: arguments.dropFirst().first.flatMap(Int.init) ?? 12)
+case "border-hop": borderHop(perDisplay: arguments.dropFirst().first == "per-display",
+                              hops: arguments.dropFirst(2).first.flatMap(Int.init) ?? 8)
+case "border-watch" where arguments.count >= 2 && UInt32(arguments.dropFirst().first!) != nil:
+    borderWatch(UInt32(arguments.dropFirst().first!)!, seconds: arguments.dropFirst(2).first.flatMap(Double.init) ?? 60)
 case "border-targets" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
     borderTargets(Int(arguments.dropFirst().first!)!)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...] | borders | borders-cpu [relayouts]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...] | borders | borders-cpu [relayouts] | border-hop [one|per-display] [hops] | border-watch <window> [seconds]")
     exit(2)
 }
 
