@@ -1,19 +1,26 @@
 extension Config {
-    /// Parses and checks a whole config file. `config` is nil when any diagnostic is an error,
-    /// so a caller applies all of a file or none of it; warnings can come with a config.
-    /// Diagnostics are in file order. Binding commands go through `Command.parse`, so a bad
-    /// command fails the load instead of the key press.
-    public static func load(_ text: String) -> (config: Config?, diagnostics: [Diagnostic]) {
-        let root: TOMLTable
+    /// Parses and checks a whole config file and the files its `include` names, which `read`
+    /// returns the text of, by the path the file gives, or nil when it cannot. `config` is
+    /// nil when any diagnostic is an error, so a caller applies all of the files or none of
+    /// them; warnings can come with a config. Diagnostics are in file order, the main file's
+    /// first. Binding commands go through `Command.parse`, so a bad command fails the load
+    /// instead of the key press.
+    public static func load(_ text: String, including read: (String) -> String? = { _ in nil })
+        -> (config: Config?, diagnostics: [Diagnostic]) {
+        var root: TOMLTable
         do {
             root = try parseTOML(text)
         } catch {
             return (nil, [error])
         }
         var decoder = ConfigDecoder()
+        let files = decoder.include(into: &root, read: read)
         let config = decoder.config(root)
         // The sort is stable, so problems at one position keep the order they were found in.
-        let diagnostics = decoder.diagnostics.sorted { $0.position < $1.position }
+        var diagnostics = decoder.diagnostics.sorted { $0.position < $1.position }
+        for index in diagnostics.indices where diagnostics[index].position.file > 0 {
+            diagnostics[index].file = files[diagnostics[index].position.file - 1]
+        }
         return (diagnostics.contains { $0.severity == .error } ? nil : config, diagnostics)
     }
 }
@@ -30,11 +37,52 @@ private struct ConfigDecoder {
     /// Profiles that `profile` bindings name, checked once every profile is known.
     private var profileTargets: [Located] = []
 
+    /// Adds the top-level keys of each file the root's `include` names to the root, and
+    /// returns the files' paths in order, the first being file 1 (SourcePosition). A path is
+    /// relative to the main file's directory and stays inside it, so a copy of the directory
+    /// loads the same (ConfigFile's last good config). An included file sets keys the main
+    /// file and the files before it leave out, and includes nothing.
+    mutating func include(into root: inout TOMLTable, read: (String) -> String?) -> [String] {
+        guard let entry = root["include"], let paths = stringOrList(entry.value, ValuePath().key(entry.key)) else { return [] }
+        var files: [String] = []
+        for path in paths {
+            let parts = path.value.split(separator: "/", omittingEmptySubsequences: false)
+            guard !path.value.hasPrefix("/"), !path.value.hasPrefix("~"), !parts.contains(".."), !parts.contains("") else {
+                fail("name a file in the config's directory, such as 'theme.toml'", at: path.position, path.path)
+                continue
+            }
+            files.append(path.value)
+            guard let text = read(path.value) else {
+                fail("cannot read '\(path.value)' in the config's directory", at: path.position, path.path)
+                continue
+            }
+            let table: TOMLTable
+            do {
+                table = try parseTOML(text, file: files.count)
+            } catch {
+                diagnostics.append(error)
+                continue
+            }
+            for entry in table.entries {
+                let keyPath = ValuePath().key(entry.key)
+                if entry.key == "include" || entry.key == "config-version" {
+                    fail("'\(entry.key)' belongs in the main config file", at: entry.keyPosition, keyPath)
+                } else if let first = root[entry.key] {
+                    let file = first.keyPosition.file == 0 ? "the main config file" : "'\(files[first.keyPosition.file - 1])'"
+                    fail("set in \(file) too", at: entry.keyPosition, keyPath)
+                } else {
+                    root.entries.append(entry)
+                }
+            }
+        }
+        return files
+    }
+
     mutating func config(_ root: TOMLTable) -> Config {
         let path = ValuePath()
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
-            "config-version", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
+            "config-version", "include", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
             "mouse-modifier", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "mode", "rule", "profile",
         ])
         var config = Config()

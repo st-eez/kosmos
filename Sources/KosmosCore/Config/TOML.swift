@@ -33,9 +33,10 @@ struct TOMLTable: Equatable {
     }
 }
 
-/// Parses a whole document and returns its root table, or the first syntax error.
-func parseTOML(_ text: String) throws(Diagnostic) -> TOMLTable {
-    var parser = TOMLParser(text)
+/// Parses a whole document and returns its root table, or the first syntax error. `file`
+/// goes into every position (SourcePosition).
+func parseTOML(_ text: String, file: Int = 0) throws(Diagnostic) -> TOMLTable {
+    var parser = TOMLParser(text, file: file)
     return try parser.document()
 }
 
@@ -108,10 +109,12 @@ private struct TOMLParser {
     private var i = 0
     private var line = 1
     private var lineStart = 0
+    private let file: Int
     /// The key being read, for diagnostics.
     private var path = ValuePath()
 
-    init(_ text: String) {
+    init(_ text: String, file: Int) {
+        self.file = file
         self.text = Array(text.unicodeScalars)
         if self.text.first == "\u{FEFF}" {
             i = 1
@@ -142,7 +145,7 @@ private struct TOMLParser {
     // MARK: Lines and positions
 
     private var position: SourcePosition {
-        SourcePosition(line: line, column: i - lineStart + 1)
+        SourcePosition(line: line, column: i - lineStart + 1, file: file)
     }
 
     private var peek: Unicode.Scalar? {

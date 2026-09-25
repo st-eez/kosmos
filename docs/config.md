@@ -24,6 +24,12 @@
   Kosmos looks a display up by UUID: its bar number and its current Space.
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
   rule shadows a later one.
+- `include` names files in the config's directory whose top-level keys join the config's,
+  as Hyprland's `source` brings an Omarchy theme's colors into its config. A key set in
+  two files is an error, an included file includes nothing and sets no `config-version`,
+  and each problem names its file. A reload reads every file again. At launch, broken
+  files fall back to a copy of the config's directory as it last loaded, which is why a
+  path cannot leave the directory.
 - A `[borders]` table turns on the borders Kosmos draws around windows ([borders.md](borders.md)):
   `width`, in points, 4 by default; `active`, the focused window's color, which the table
   must give; and `inactive`, every other window's, transparent by default. Colors are

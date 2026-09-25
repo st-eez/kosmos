@@ -75,6 +75,42 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         ])
     }
 
+    /// A theme file sets the borders, as the dotfiles' theme-set links one per theme.
+    @Test func includedFilesAddTheirKeys() throws {
+        let files = ["theme.toml": "[borders]\nwidth = 4.0\nactive = '#7aa2f7'\n", "more/gaps.toml": "gaps = { inner = 10 }"]
+        let result = Config.load(header + "include = ['theme.toml', 'more/gaps.toml']", including: { files[$0] })
+        #expect(result.diagnostics.isEmpty)
+        let config = try #require(result.config)
+        #expect(config.borders == BorderSettings(width: 4, active: BorderColor(hex: "#7aa2f7")!))
+        #expect(config.gaps.inner == 10)
+        #expect(try #require(Config.load(header + "include = 'theme.toml'", including: { files[$0] }).config).borders != nil)
+    }
+
+    /// Each problem names its file, the main file's first, and each file in include order.
+    @Test func includeMistakes() {
+        let files = [
+            "theme.toml": "gaps = { inner = 5 }\nborders = { active = 'blue' }\ninclude = ['other.toml']",
+            "broken.toml": "[borders\n",
+            "second.toml": "borders = { active = '#7aa2f7' }",
+        ]
+        let result = Config.load(header + "include = ['theme.toml', 'missing.toml', '../up.toml', '/abs.toml', 'broken.toml', 'second.toml']\ngaps = { inner = 'x' }",
+                                 including: { files[$0] })
+        #expect(result.config == nil)
+        #expect(result.diagnostics.map { "\($0.file ?? "main"): \($0)" } == [
+            "main: 3:26: error: include[1]: cannot read 'missing.toml' in the config's directory",
+            "main: 3:42: error: include[2]: name a file in the config's directory, such as 'theme.toml'",
+            "main: 3:56: error: include[3]: name a file in the config's directory, such as 'theme.toml'",
+            "main: 4:18: error: gaps.inner: expected an integer, found a string",
+            "theme.toml: 1:1: error: gaps: set in the main config file too",
+            "theme.toml: 2:22: error: borders.active: expected a color as '#rrggbb' or '#rrggbbaa', found 'blue'",
+            "theme.toml: 3:1: error: include: 'include' belongs in the main config file",
+            "broken.toml: 1:9: error: borders: expected ']' to close the table header",
+            "second.toml: 1:1: error: borders: set in 'theme.toml' too",
+        ])
+        // With no reader, as for docs/sample-config.toml, every include is unreadable.
+        #expect(load("include = ['theme.toml']").diagnostics == ["3:12: error: include[0]: cannot read 'theme.toml' in the config's directory"])
+    }
+
     @Test func focusFollowsMouseMistakes() {
         #expect(load("""
             focus-follows-mouse = 'on'

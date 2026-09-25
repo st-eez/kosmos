@@ -10,8 +10,10 @@ enum ConfigFile {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/kosmos/kosmos.toml")
     }
 
-    /// The last file that loaded without errors, used when the file is broken at launch.
-    static var lastGood: URL { KosmosFiles.support.appending(path: "last-good.toml") }
+    /// A copy of the config file and the files it includes as they last loaded without
+    /// errors, used when they are broken at launch. Includes stay inside the config's
+    /// directory, so they resolve the same in the copy.
+    static var lastGood: URL { KosmosFiles.support.appending(path: "last-good", directoryHint: .isDirectory) }
 
     struct Loaded {
         /// Nil when there is nothing to apply.
@@ -24,7 +26,8 @@ enum ConfigFile {
         var source = "the config file"
     }
 
-    /// Reads and checks the config. At launch a broken file falls back to the last good one.
+    /// Reads and checks the config and the files it includes. At launch broken files fall
+    /// back to the last good ones.
     static func load(atLaunch: Bool) -> Loaded {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return Loaded(config: nil, warnings: ["no config at \(url.path); using workspaces 1 to 9 and no bindings"],
@@ -33,20 +36,41 @@ enum ConfigFile {
         var loaded = Loaded()
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
-            let (config, diagnostics) = Config.load(text)
-            loaded.errors = diagnostics.filter { $0.severity == .error }.map { "\(url.path):\($0)" }
-            loaded.warnings = diagnostics.filter { $0.severity != .error }.map { "\(url.path):\($0)" }
+            let directory = url.deletingLastPathComponent()
+            var included: [String: String] = [:]
+            let (config, diagnostics) = Config.load(text) { path in
+                let text = try? String(contentsOf: directory.appending(path: path), encoding: .utf8)
+                included[path] = text
+                return text
+            }
+            func located(_ diagnostic: Diagnostic) -> String {
+                "\(diagnostic.file.map { directory.appending(path: $0).path } ?? url.path):\(diagnostic)"
+            }
+            loaded.errors = diagnostics.filter { $0.severity == .error }.map(located)
+            loaded.warnings = diagnostics.filter { $0.severity != .error }.map(located)
             loaded.config = config
-            if config != nil { try? text.write(to: lastGood, atomically: true, encoding: .utf8) }
+            if config != nil { saveLastGood([url.lastPathComponent: text].merging(included) { main, _ in main }) }
         } catch {
             loaded.errors = ["cannot read \(url.path): \(error.localizedDescription)"]
         }
-        if loaded.config == nil, atLaunch, let text = try? String(contentsOf: lastGood, encoding: .utf8),
-           let config = Config.load(text).config {
+        if loaded.config == nil, atLaunch,
+           let text = try? String(contentsOf: lastGood.appending(path: url.lastPathComponent), encoding: .utf8),
+           let config = Config.load(text, including: { try? String(contentsOf: lastGood.appending(path: $0), encoding: .utf8) }).config {
             loaded.config = config
             loaded.source = "the last good config"
         }
         return loaded
+    }
+
+    /// Replaces the last good copy with `files`, by their paths in the config's directory.
+    private static func saveLastGood(_ files: [String: String]) {
+        let manager = FileManager.default
+        try? manager.removeItem(at: lastGood)
+        for (path, text) in files {
+            let file = lastGood.appending(path: path)
+            try? manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? text.write(to: file, atomically: true, encoding: .utf8)
+        }
     }
 
     /// The connected displays, as the config's monitor matchers and the session see them.
