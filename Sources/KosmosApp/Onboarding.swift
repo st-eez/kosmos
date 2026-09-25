@@ -14,6 +14,7 @@ final class Onboarding {
     }
 
     private let window = SetupWindow()
+    private let icon: NSImage = NSApp.applicationIconImage
     private var state: State
     /// Input Monitoring stays listed from the check that finds it missing until focus
     /// follows mouse turns off, so its grant shows as a checkmark.
@@ -35,7 +36,7 @@ final class Onboarding {
         self.check = check
         self.finished = finished
         window.closedWithKey = closedWithKey
-        window.setContent(Self.content(for: state))
+        window.setContent(Self.content(for: state, icon: icon))
         window.center()
         startChecking()
     }
@@ -73,7 +74,7 @@ final class Onboarding {
         }
         if next != state {
             state = next
-            window.setContent(Self.content(for: state))
+            window.setContent(Self.content(for: state, icon: icon))
         }
         guard state.granted else { return }
         // Everything listed is granted: the window says Kosmos is running and closes 1.5 s later.
@@ -117,8 +118,9 @@ extension Onboarding {
         }
     }
 
-    /// The window's content at `state`, which `onboarding-snapshot` also draws.
-    static func content(for state: State) -> NSView {
+    /// The window's content at `state`, headed by the app `icon`, which `onboarding-snapshot`
+    /// also draws.
+    static func content(for state: State, icon: NSImage) -> NSView {
         let title = NSTextField(labelWithString: "Set up Kosmos")
         title.font = .systemFont(ofSize: 22, weight: .bold)
         let summary = NSTextField(wrappingLabelWithString: "Kosmos needs your permission to tile your windows.")
@@ -155,7 +157,11 @@ extension Onboarding {
             list.bottomAnchor.constraint(equalTo: group.bottomAnchor),
         ])
 
-        let mark = mark()
+        let mark = NSImageView(image: icon)
+        mark.imageScaling = .scaleProportionallyUpOrDown
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        mark.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        mark.heightAnchor.constraint(equalToConstant: 64).isActive = true
         let root = NSStackView(views: [mark, title, summary, group, footer(for: state)])
         root.orientation = .vertical
         root.alignment = .centerX
@@ -169,39 +175,6 @@ extension Onboarding {
         root.widthAnchor.constraint(equalToConstant: width).isActive = true
         group.widthAnchor.constraint(equalToConstant: width - 2 * margin).isActive = true
         return root
-    }
-
-    /// Kosmos's mark until it has an app icon: three tiles, as the layout splits a display,
-    /// on an indigo square.
-    private static func mark() -> NSView {
-        Drawing(size: NSSize(width: 64, height: 64)) { bounds in
-            let square = bounds.insetBy(dx: 4, dy: 4)
-            let path = NSBezierPath(roundedRect: square, xRadius: 12.5, yRadius: 12.5)
-            NSGraphicsContext.saveGraphicsState()
-            let shadow = NSShadow()
-            shadow.shadowColor = .black.withAlphaComponent(0.3)
-            shadow.shadowOffset = NSSize(width: 0, height: -1)
-            shadow.shadowBlurRadius = 2.5
-            shadow.set()
-            NSColor.black.setFill()
-            path.fill()
-            NSGraphicsContext.restoreGraphicsState()
-            NSGradient(starting: NSColor(srgbRed: 0.47, green: 0.44, blue: 1, alpha: 1),
-                       ending: NSColor(srgbRed: 0.27, green: 0.19, blue: 0.76, alpha: 1))?.draw(in: path, angle: -90)
-
-            let inner = square.insetBy(dx: 11, dy: 11)
-            let gap: CGFloat = 3
-            let half = (inner.width - gap) / 2
-            let tiles = [
-                (NSRect(x: inner.minX, y: inner.minY, width: half, height: inner.height), 1.0),
-                (NSRect(x: inner.maxX - half, y: inner.maxY - half, width: half, height: half), 0.8),
-                (NSRect(x: inner.maxX - half, y: inner.minY, width: half, height: half), 0.62),
-            ]
-            for (tile, alpha) in tiles {
-                NSColor.white.withAlphaComponent(alpha).setFill()
-                NSBezierPath(roundedRect: tile, xRadius: 2.5, yRadius: 2.5).fill()
-            }
-        }
     }
 
     private static func row(_ permission: Permission, granted: Bool, takesReturn: Bool) -> NSView {
@@ -293,11 +266,17 @@ extension Onboarding {
 
 extension Onboarding {
     /// `Kosmos onboarding-snapshot <directory>`: draws the window in each state, in light and
-    /// dark mode, into PNG files in the directory. The window is never shown.
+    /// dark mode, into PNG files in the directory. The window is never shown. Run from the
+    /// repository root: outside the bundle the app icon is the generic executable icon, so the
+    /// snapshot reads the checked-in file.
     static func snapshot(_ arguments: [String]) -> Int32 {
         guard arguments.count == 1 else {
             FileHandle.standardError.write(Data("usage: Kosmos onboarding-snapshot <directory>\n".utf8))
             return 2
+        }
+        guard let icon = NSImage(contentsOfFile: "Resources/Kosmos.icns") else {
+            FileHandle.standardError.write(Data("Resources/Kosmos.icns not found: run from the repository root\n".utf8))
+            return 1
         }
         let directory = URL(filePath: arguments[0], directoryHint: .isDirectory)
         let states: [(String, State)] = [
@@ -311,7 +290,7 @@ extension Onboarding {
                 for (appearance, mode) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
                     let window = SetupWindow()
                     window.appearance = NSAppearance(named: appearance)
-                    window.setContent(content(for: state))
+                    window.setContent(content(for: state, icon: icon))
                     // The frame view, so the picture has the title bar's close button.
                     let view = window.contentView!.superview!
                     let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
