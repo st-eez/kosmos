@@ -5,27 +5,21 @@ import os
 private let lockLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "lock")
 
 /// Follows the screen lock, fast user switching and wake (docs/inventory.md).
-/// loginwindow posts com.apple.screenIsLocked and com.apple.screenIsUnlocked; the macOS 27
-/// (26A428) loginwindow binary still names both, and alt-tab and rift listen for them.
-/// NSWorkspace reports session switches. The session dictionary gives the state at launch,
-/// as alt-tab seeds it, and is read every 5 s while locked, so a missed unlock cannot stop
-/// Kosmos for good.
 @MainActor
 final class LockWatch: NSObject {
     private var state = LockState()
+    /// Reads the session dictionary every 5 s while locked, so a missed unlock cannot stop
+    /// Kosmos for good.
     private var check: Timer?
-    /// The resync after a wake, held until the wake's other notifications are in.
     private var wakeResync: DispatchWorkItem?
 
-    /// Called with true when the session locks, and with false when it unlocks or the Mac or
-    /// its displays wake while it is unlocked.
+    /// Also called with false when the Mac or its displays wake while unlocked.
     var onChange: (@MainActor (_ locked: Bool) -> Void)?
-    var isLocked: Bool { state.isLocked }
 
     func start() {
         apply(Self.read())
         // AppKit holds distributed notifications for an app that is not active unless they
-        // are delivered immediately. Kosmos is active only while onboarding shows.
+        // are delivered immediately.
         let distributed = DistributedNotificationCenter.default()
         distributed.addObserver(self, selector: #selector(screenLocked), name: Notification.Name("com.apple.screenIsLocked"),
                                 object: nil, suspensionBehavior: .deliverImmediately)
@@ -69,9 +63,8 @@ final class LockWatch: NSObject {
         }
     }
 
-    /// A wake can post both didWake and screensDidWake. Each one restarts a 0.5 s wait, so a
-    /// burst gets one resync. The wait is a guess; the log gives the gap between the two. A
-    /// wake while locked waits for the unlock.
+    /// A wake can post both didWake and screensDidWake, so each restarts a 0.5 s wait. No
+    /// measurement chose the 0.5 s; the log gives the gap between the two.
     private func woke(_ name: Notification.Name) {
         lockLog.notice("\(name.rawValue, privacy: .public)")
         wakeResync?.cancel()
@@ -86,10 +79,8 @@ final class LockWatch: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: resync)
     }
 
-    /// Whether the screen is locked and whether this session has the console. Unlocked, the
-    /// dictionary on this Mac has no lock key at all, and a missing key reads as unlocked.
-    /// Whether the key is there while locked is open (docs/inventory.md): each read logs
-    /// the lock and console keys, so a lock test settles it.
+    /// A missing lock key reads as unlocked. Whether the key is there while locked is open,
+    /// and each read logs the keys to settle it (docs/inventory.md).
     private static func read() -> LockState.Signal {
         let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
         let keys = session.filter { $0.key.localizedCaseInsensitiveContains("lock") || $0.key == "kCGSSessionOnConsoleKey" }

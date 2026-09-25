@@ -1,19 +1,9 @@
 import AppKit
 import Synchronization
 
-/// The window an empty workspace keys, so keystrokes reach no hidden window (docs/focus.md).
-/// An app fronted with every window concealed keyed one of them, fronted with
-/// no window brought forward or not, so no app with a concealed window can be the target.
-/// Kosmos cannot activate itself either; the focus queue keys this window by the private
-/// path, which a background accessory app did for a window of its own in 10 of 10 trials
-/// (`kosmos-probe keying`, September 24, 2026).
-///
-/// It is 1 by 1 point at the bottom left corner of the display it is placed on, borderless,
-/// clear and transparent, ignores the mouse, joins every Space and stays out of the window
-/// cycle and Mission Control. The inventory tracks only regular apps' windows, and Kosmos
-/// is an accessory app, so Kosmos never manages or conceals it. It swallows every key and
-/// key equivalent: Kosmos has no main menu, and a key no responder takes would beep.
-/// Kosmos's hotkeys are Carbon hotkeys, which fire before the key reaches any window.
+/// The window an empty workspace keys, so keystrokes reach no hidden window. An app with a
+/// concealed window keys that window when fronted, and only the private key record keys this
+/// one (docs/focus.md).
 final class EmptyWorkspaceWindow: NSWindow {
     /// What the focus queue needs of the window, from any thread.
     final class Target: Sendable {
@@ -25,8 +15,7 @@ final class EmptyWorkspaceWindow: NSWindow {
     }
 
     private(set) var target: Target!
-    /// Called when the window becomes key, with when: the key window report for an empty
-    /// workspace, as Kosmos has no worker reporting its own windows.
+    /// The key window report for an empty workspace, as no worker reports Kosmos's windows.
     var onKey: (@MainActor (ContinuousClock.Instant) -> Void)?
 
     override var canBecomeKey: Bool { true }
@@ -45,13 +34,11 @@ final class EmptyWorkspaceWindow: NSWindow {
         target = Target(window: UInt32(windowNumber))
     }
 
-    /// Moves the window to the bottom left corner of `display`, given in the top left origin
-    /// coordinates Accessibility uses. With displays that have separate Spaces, keying the
-    /// window makes its display the active one, which takes the menu bar and the next new
-    /// window, so it sits on the display the empty workspace is on.
+    /// `display` is in Accessibility's coordinates. Keying the window makes its display the
+    /// active one, so it sits on the empty workspace's display (docs/focus.md).
     func place(on display: CGRect) {
-        guard let primary = NSScreen.screens.first else { return }
-        let origin = NSPoint(x: display.minX, y: primary.frame.height - display.maxY)
+        guard !NSScreen.screens.isEmpty else { return }
+        let origin = NSScreen.flipped(display).origin
         if frame.origin != origin { setFrameOrigin(origin) }
     }
 
@@ -66,6 +53,7 @@ final class EmptyWorkspaceWindow: NSWindow {
         target.isKey.store(false, ordering: .relaxed)
     }
 
+    // Kosmos has no main menu, so a key no responder takes would beep.
     override func keyDown(with event: NSEvent) {}
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool { true }

@@ -2,7 +2,9 @@
 
 - Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
   at 8 µs per call, and a key whose command changed stays registered, since Kosmos looks
-  up the command when the key is pressed.
+  up the command when the key is pressed. WindowServer matches the keys itself, so a
+  keystroke that is no binding never reaches Kosmos, and Carbon sends no key repeats, so a
+  binding fires once per press.
 - Each binding names a physical key on the current keyboard layout: a key named by a
   character is the one that types it unshifted, else its key on a US keyboard. So two
   bindings of a mode can name one key; the first registers, and the log names the other
@@ -10,6 +12,16 @@
   has 6 on, which types §, the key `alt-sectionSign` names. Keypad keys stay out of the
   layout's table: on French and Czech layouts only the keypad types a digit unshifted, so
   `alt-1` names the number row key, which a laptop has.
+- Each hotkey is registered exclusive. Another app's exclusive hotkey on the same
+  combination makes the registration fail, and Kosmos reports it; a shared registration
+  would give the key to both apps.
+- WindowServer and the Dock take a macOS keyboard shortcut before any app's hotkey, so a
+  load reports each binding that an enabled shortcut in System Settings also uses. The
+  ceiling: macOS lists arrow and function keys with the fn flag, which may mean the Globe
+  key or only the flag those keys always carry. Kosmos never registers fn, so those
+  shortcuts never compare equal, and a clash on an arrow or function key goes unreported.
+  A probe that settles what the flag means would let arrows be compared with fn masked
+  out.
 - Secure Input (a password field in any app) stops some hotkeys. `kosmos-probe
   secure-input` registers ten test hotkeys, and its window asks for a real press of each
   with Secure Input off and with its own password field focused. A hotkey that fires

@@ -13,28 +13,28 @@ extension Workspace {
     /// Focuses the window next to `window` in the direction and returns it, or returns nil
     /// at the edge of the workspace. Like i3's `focus`, it walks up to the nearest container
     /// that runs along the direction and has a sibling on that side, then descends into the
-    /// sibling by focus order. `frames` holds where the floating windows are
+    /// sibling by focus order. `frame` gives where a floating window is
     /// (`withFloatingTiled`), and `rect`, `gaps` and `minimums` are the ones
     /// `frames(in:gaps:minimums:)` gets.
-    mutating func focus(_ direction: Direction, from window: WindowID, frames: [WindowID: CGRect],
+    mutating func focus(_ direction: Direction, from window: WindowID, frame: (WindowID) -> CGRect?,
                         in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
-        let seen = withFloatingTiled(frames, in: rect, gaps: gaps, minimums: minimums)
+        let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
         guard let path = seen.neighbor(of: window, direction) else { return nil }
         let target = seen.mostRecentWindow(in: seen.root.node(at: path))
         focus(target)
         return target
     }
 
-    /// The workspace with each floating window that has a frame in `frames` tiled where
-    /// AeroSpace's `focus` counts it, for a focus in a direction (docs/tree.md).
-    func withFloatingTiled(_ frames: [WindowID: CGRect], in rect: CGRect, gaps: Gaps,
+    /// The workspace with each floating window that `frame` places tiled where AeroSpace's
+    /// `focus` counts it, for a focus in a direction (docs/tree.md).
+    func withFloatingTiled(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
                            minimums: [WindowID: CGSize]) -> Workspace {
         let area = tilingRect(rect, gaps.outer)
         let shares = tileFrames(in: rect, gaps: Gaps(outer: gaps.outer))
         let tiles = self.frames(in: rect, gaps: gaps, minimums: minimums)
         var places: [(window: WindowID, container: Int, index: Int, along: CGFloat)] = []
         for window in floating {
-            guard let frame = frames[window] else { continue }
+            guard let frame = frame(window) else { continue }
             let center = CGPoint(x: frame.midX, y: frame.midY)
             // The share under the center, whose right and bottom edges belong to the next
             // one. With no tiles there is none, and the window goes first in the root.

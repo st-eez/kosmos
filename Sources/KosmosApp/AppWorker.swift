@@ -3,22 +3,21 @@ import CKosmos
 import KosmosCore
 import Synchronization
 
-/// What an app's worker tells the main actor. Each report is stamped on receipt, so the
-/// main actor can order it against commands (docs/focus.md).
+/// Stamped on receipt, so the main actor can order it against commands (docs/focus.md).
 struct AXReport: Sendable {
     enum Kind: Sendable {
         case windowCreated(UInt32)
         case windowDestroyed(UInt32)
         /// The key window: the focused window of the app that is front.
         case focusedWindowChanged(UInt32?)
-        /// The focused window of an app that is not front when it reports it, as after
-        /// AXRaise in it. It is no key window report, but it can be Kosmos's echo.
+        /// The focused window of an app that is not front, as after AXRaise in it: no key
+        /// window report, but it can be Kosmos's echo.
         case backgroundFocus(UInt32?)
         case minimized(UInt32, Bool)
-        /// Frames read back after writes, with the target each write aimed for.
         case framesApplied([(id: UInt32, target: CGRect, readBack: CGRect)])
-        /// The app answers Accessibility: it started, or answered again after a timeout.
-        /// Reads that failed before can be made again.
+        /// Windows whose frame writes the worker dropped, as it knows no element for them.
+        case framesDropped([UInt32])
+        /// The app started, or answers again after a timeout: reads that failed can be made again.
         case answering
     }
 
@@ -27,59 +26,41 @@ struct AXReport: Sendable {
     let received: ContinuousClock.Instant
 }
 
-/// Accessibility facts about one window.
 struct AXWindowInfo: Sendable {
     let role: String?
     let subrole: String?
     var minimized: Bool
 }
 
-/// Owns one app's Accessibility elements and observer on the app's own thread. It never
-/// touches the model: it reports to the main actor and answers reads.
-///
-/// An app that lets a call wait out the messaging timeout is backed off: the worker makes no
-/// call to it, keeps only the newest frame target of each window, and asks it for its role
-/// with a 50 ms timeout every 0.5 s. When it answers, the worker writes the held frames and
-/// reports `answering` (docs/geometry.md).
+/// One app's Accessibility elements and observer, on a thread of the app's own, so a hung app
+/// blocks only itself. An app that waits out the timeout is backed off (docs/geometry.md).
 actor AppWorker {
-    /// Every call waits this long at most, set system wide in `Apps.start`. A call to a hung
-    /// app returns kAXErrorCannotComplete 5 ms after its timeout; with none set, macOS 27
-    /// waits 1.5 s (`kosmos-probe ax-timeout`).
+    /// Set system wide in `Apps.start`. With none set, macOS 27 waits 1.5 s on a hung app
+    /// (docs/overview.md, section 2).
     static let timeout: Float = 1.0
-    /// How long the worker waits for the app to perform a raise. A raise it stopped waiting
-    /// for still lands when the app gets to it, and can key a window after a newer command
-    /// (tla/README.md, change 19, `split-user-timeout`). One that outlasts this counts as
-    /// made, so its echo is still recognized, and its app is backed off. No measurement chose
-    /// the 5 s.
+    /// A raise that outlasts this still counts as made and can still land (docs/focus.md).
+    /// No measurement chose the 5 s.
     static let raiseTimeout: Float = 5.0
 
     let pid: pid_t
     private let name: String
     private let executor: RunLoopExecutor
-    /// Runs the app's AX observer, apart from the worker's calls into the app, so a focus
-    /// notification is stamped and checked against the front process in its callback, which
-    /// never waits behind the worker's calls (tla/README.md, change 19). Checked behind a
-    /// busy worker, a click inside the front app that raced Kosmos's activation of another app
-    /// was dropped (`split-user-latenote`). The callback still runs some time after the app
-    /// sends the notification, and Kosmos can key or hide windows in between (change 20).
+    /// Apart from the worker's calls, so a focus notification is stamped and checked against
+    /// the front process without waiting behind them (docs/focus.md; tla/README.md, change 19).
     private let observerLoop: RunLoopExecutor
     private let report: @MainActor (AXReport) -> Void
     private let app: AXUIElement
     private var observer: AXObserver?
     private var started = false
-    /// Why the last start failed, for the log after the launch retries.
     private(set) var startFailure = "no answer"
     private var elements: [UInt32: AXUIElement] = [:]
-    /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
     private var backoff = AXBackoff()
-    /// `backoff.backedOff` for the main actor, which slides no window of an app that does not
-    /// answer (Controller.motions).
+    /// `backoff.backedOff`, for the main actor (Controller.motions).
     private nonisolated let backedOff = Atomic(false)
-    /// Runs while `backoff` is asking.
-    private var probe: CFRunLoopTimer?
-    private let probeElement: AXUIElement
+    private var askTimer: CFRunLoopTimer?
+    private let askElement: AXUIElement
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
 
@@ -90,14 +71,12 @@ actor AppWorker {
         executor = RunLoopExecutor(name: "kosmos.ax.\(name)")
         observerLoop = RunLoopExecutor(name: "kosmos.ax.\(name).observer")
         app = AXUIElementCreateApplication(pid)
-        probeElement = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(probeElement, 0.05)
+        askElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(askElement, 0.05)
     }
 
-    /// Registers the app's observer and reads its current windows, then reports `answering`.
-    /// Returns false when the app does not answer Accessibility yet.
+    /// False while the app does not answer Accessibility yet.
     func start() -> Bool {
-        // The launch retries and the probe can both get here.
         guard !started else { return true }
         if observer == nil {
             var created: AXObserver?
@@ -115,7 +94,7 @@ actor AppWorker {
                 return false
             }
         }
-        // A call that timed out above leaves the worker to the probe.
+        // A call that timed out above leaves the worker to askAgain.
         guard trackWindows(), !backoff.backedOff else {
             startFailure = backoff.backedOff ? "timed out" : "window list not read"
             return false
@@ -125,14 +104,15 @@ actor AppWorker {
         return true
     }
 
-    /// Reports `answering`, then the app's focused window (docs/geometry.md).
+    /// The focused window follows `answering`: a focus change the worker could not read is
+    /// lost otherwise (docs/geometry.md).
     private func reportAnswering() {
         send(.answering)
         guard let window = focusedWindow() else { return }
         send(kosmos_front_pid() == pid ? .focusedWindowChanged(window) : .backgroundFocus(window))
     }
 
-    /// Tracks every window the app lists. False when the app did not answer.
+    /// False when the app did not answer.
     private func trackWindows() -> Bool {
         let windows: CFTypeRef?
         do { windows = try copy(app, kAXWindowsAttribute) } catch { return false }
@@ -142,20 +122,16 @@ actor AppWorker {
 
     func stop() {
         if let observer { CFRunLoopRemoveSource(observerLoop.runLoop, AXObserverGetRunLoopSource(observer), .defaultMode) }
-        if let probe { CFRunLoopTimerInvalidate(probe) }
+        if let askTimer { CFRunLoopTimerInvalidate(askTimer) }
         observer = nil
-        probe = nil
+        askTimer = nil
         elements = [:]
         observerLoop.stop()
         executor.stop()
     }
 
-    /// The facts of each window the worker knows. A window missing is unknown to it, or its
-    /// app did not answer; the caller keeps what it knew, since an unanswered read never makes
-    /// a window unmanaged. Windows the app did not list when the worker started, nor report
-    /// created, are looked for in its list again, once for all of them, as for an app
-    /// launched hidden once it unhides. Before the worker starts it knows no window, so a
-    /// window is admitted only after its app's focused window is reported (docs/geometry.md).
+    /// Answers for no window before the worker starts, so a window is admitted only after its
+    /// app's focused window is reported (docs/geometry.md).
     func info(_ ids: [UInt32]) -> [UInt32: AXWindowInfo] {
         guard started else { return [:] }
         if ids.contains(where: { elements[$0] == nil }) { _ = trackWindows() }
@@ -175,13 +151,9 @@ actor AppWorker {
         }
     }
 
-    var windowIDs: [UInt32] { Array(elements.keys) }
-
-    /// Whether calls go to the app: it is not backed off.
     nonisolated var answers: Bool { !backedOff.load(ordering: .relaxed) }
 
-    /// The app's focused window, which is nil when it has none. The outer nil means the app
-    /// did not answer, so its focus is unknown.
+    /// The outer nil means the app did not answer; the inner nil, that it has no focused window.
     func focusedWindow() -> UInt32?? {
         do {
             guard let element = try copy(app, kAXFocusedWindowAttribute) else { return .some(nil) }
@@ -192,29 +164,21 @@ actor AppWorker {
         }
     }
 
-    /// Starts asking the app every 0.5 s, for an app that did not answer during its launch
-    /// retries.
     func askLater() {
         guard !started, backoff.notStarted() else { return }
-        scheduleProbe()
+        startAsking()
     }
 
-    /// Queues frame writes from any thread, in the order of the calls. A Task per batch
-    /// could run an older batch last and leave a stale frame.
+    /// In call order: a Task per batch could run an older batch last and leave a stale frame.
     nonisolated func enqueueFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
         executor.perform { self.assumeIsolated { $0.setFrames(writes) } }
     }
 
-    /// The worker's part of a private focus request for a window, as one job the focus queue
-    /// waits on at most 30 ms (FocusQueue.swift). Its steps are the split model's `WorkerStart`,
-    /// `WorkerRead` and `WorkerRaise` (KosmosCore's KeyRequest), and it acts only for the front
-    /// app, where the raise keys the window. The generation is checked at each step. Just
-    /// before AXRaise the worker records the echo through `performing`, which reaches the
-    /// main actor before any report of the raise. A read with no answer stops the request,
-    /// and a raise that cannot land forgets its record through `dropped`.
+    /// The split model's `WorkerStart`, `WorkerRead` and `WorkerRaise` (KosmosCore's
+    /// KeyRequest). `performing` records the echo just before AXRaise (docs/focus.md).
     nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool, request: KeyRequest,
                                     performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
-                                    dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                    forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                     done: @escaping @Sendable () -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
@@ -228,26 +192,17 @@ actor AppWorker {
                 else { return }
                 let stamp = ContinuousClock.now
                 performing(stamp)
-                if !worker.raiseWindow(id) { dropped(stamp) }
+                if !worker.raiseWindow(id) { forgetRecord(stamp) }
             }
         }
     }
 
-    /// The raise after the queue's key record for this background app (`WorkerPost`,
-    /// KosmosCore's KeyRequest), which brings the keyed window to the top of its app. The key
-    /// record alone put it on top 0 times in 20, the key record then AXRaise 20 times in 20
-    /// (`kosmos-probe keying`). The echo is recorded through `performing` just before the
-    /// raise, as the raise keys the window again if the user keyed another window of the app
-    /// first. Once the raise has returned and the worker has read the app's focused window,
-    /// `raised` tells the main actor to forget the record if no report used it
-    /// (tla/README.md, change 23).
+    /// `WorkerPost` (KosmosCore's KeyRequest): the key record leaves the window where it sits
+    /// in its app's stacking order, and this raise brings it up (docs/focus.md).
     ///
-    /// The ceiling: the raise's report hops to the main actor from the observer's thread, and
-    /// `raised` from the worker's, so the report can arrive after its record is forgotten and
-    /// read as the user's choice of the window. The spec has the app's callbacks for the raise
-    /// run before the worker's read, as they run before its activation read. The upgrade is
-    /// to forget the record only once the observer has handled the notifications the app sent
-    /// before answering the read (docs/focus.md).
+    /// Ceiling: `raised` can reach the main actor before the raise's report, which then reads
+    /// as the user's choice. Forgetting the record only once the observer has handled the
+    /// app's earlier notifications would close that (docs/focus.md).
     nonisolated func raiseAfterKeyRecord(_ id: UInt32, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                          raised: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
@@ -256,8 +211,7 @@ actor AppWorker {
                 let front = kosmos_front_pid() == worker.pid
                 guard worker.elements[id] != nil,
                       KeyRequest.workerPostRaises(appIsFront: front, focused: focused, target: id) else {
-                    // Logged to tell a read that came before the app handled the key record
-                    // from the user moving on (docs/focus.md).
+                    // Tells a read that beat the key record from the user moving on (docs/focus.md).
                     let seen = focused.map { $0.map(String.init) ?? "none" } ?? "no answer"
                     log.info("\(worker.name, privacy: .public) raise after the key record of \(id) skipped: front \(front), focused \(seen, privacy: .public)")
                     return
@@ -271,24 +225,12 @@ actor AppWorker {
         }
     }
 
-    /// Reads the app's focused window for the focus queue, which waits for it at most 30 ms.
-    /// `done` gets nil when the app did not answer.
-    nonisolated func readFocusedWindow(_ done: @escaping @Sendable (UInt32??) -> Void) {
-        executor.perform { self.assumeIsolated { done($0.focusedWindow()) } }
-    }
-
-    /// The public focus path for a window, for when the private one is off or its call fails
-    /// (docs/focus.md), as one job: skips a target that is key already, records the
-    /// echo through `performing`, makes the window its app's main window and raises it, then
-    /// activates the app. The app keys a window of its own choosing, on this Mac often another
-    /// one (wm-research focus note, section 4). Each step can wait up to the timeout on a slow
-    /// app, so each is preceded by a check that no newer focus intent exists: a request stale
-    /// before its record does nothing, and one that turns stale after it stops and keeps the
-    /// record for any report its steps cause. `dropped` gets the record's stamp when the
-    /// activation fails.
+    /// The public path, where the app chooses its key window (docs/focus.md). Each step can
+    /// wait out the timeout, so each first checks the request is current; one that went stale
+    /// after its record keeps the record for the reports its steps cause.
     nonisolated func focusPublicly(_ id: UInt32, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
                                    performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
-                                   dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
+                                   forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
@@ -302,7 +244,7 @@ actor AppWorker {
                 guard isCurrent() else { return }
                 worker.raiseWindow(id)
                 guard isCurrent() else { return }
-                if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { dropped(stamp) }
+                if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { forgetRecord(stamp) }
             }
         }
     }
@@ -311,9 +253,8 @@ actor AppWorker {
         log.notice("\(self.name, privacy: .public) did not answer the focused window read; focus on \(id) stops")
     }
 
-    /// Raises the window and waits for the app to perform it, for up to `raiseTimeout`.
-    /// Returns false when no raise can land: the app refused it or failed at once, or the
-    /// worker made no call. A raise that timed out can still land and counts as made.
+    /// False when no raise can land: the app refused it or failed at once, or no call was made.
+    /// A raise that timed out can still land, and counts as made.
     @discardableResult
     private func raiseWindow(_ id: UInt32) -> Bool {
         guard let element = elements[id] else { return false }
@@ -330,8 +271,6 @@ actor AppWorker {
         return error == .success || waitedOut
     }
 
-    /// Queues frame writes. Writes queued before the drain runs are merged, so each window
-    /// gets only its newest target.
     func setFrames(_ writes: [UInt32: (write: FrameWrite, target: CGRect)]) {
         queuedWrites.merge(writes) { queued, new in (new.write.replacing(queued.write, target: new.target), new.target) }
         guard !drainScheduled else { return }
@@ -345,8 +284,12 @@ actor AppWorker {
         let writes = queuedWrites
         queuedWrites = [:]
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
+        var dropped: [UInt32] = []
         for (id, entry) in writes {
-            guard let element = elements[id] else { continue }
+            guard let element = elements[id] else {
+                dropped.append(id)
+                continue
+            }
             let start = ContinuousClock.now
             switch entry.write {
             case .position(let origin):
@@ -356,9 +299,7 @@ actor AppWorker {
                 set(element, kAXPositionAttribute, frame.origin)
                 set(element, kAXSizeAttribute, frame.size)
             }
-            // A write or read the app did not answer waits, with the ones after it, for the
-            // app to answer again. One whose read failed otherwise waits for the app's next
-            // frame write: dropped, it would leave the ledger's target pending for good.
+            // Kept for the next drain: when the app answers again, or at its next frame write.
             guard !backoff.backedOff, var readBack = frame(element) else {
                 queuedWrites[id] = entry
                 continue
@@ -377,10 +318,12 @@ actor AppWorker {
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
             // script/bench-relayout.sh counts these lines.
-            let spent = ContinuousClock.now - start
-            let ms = Double(spent.components.seconds) * 1000 + Double(spent.components.attoseconds) / 1e15
-            log.info("\(id) written, AX time \(ms, format: .fixed(precision: 2)) ms")
+            log.info("\(id) written, AX time \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 2)) ms")
             results.append((id, entry.target, readBack))
+        }
+        if !dropped.isEmpty {
+            log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
+            send(.framesDropped(dropped))
         }
         if !results.isEmpty { send(.framesApplied(results)) }
     }
@@ -410,11 +353,8 @@ actor AppWorker {
         return CGRect(origin: origin, size: size)
     }
 
-    /// An observer callback, on the observer's thread. A focus change is stamped and checked
-    /// against the front process here, before anything that can wait on the app: only the
-    /// front app's focused window is the key window (tla/Kosmos.tla, Observe). Its window
-    /// id is asked of the app on this thread, which a slow app delays only for its own
-    /// notifications. Everything else goes to the worker, in order.
+    /// On the observer's thread: a focus change is stamped and checked against the front
+    /// process before anything that can wait on the app (tla/Kosmos.tla, Observe).
     private nonisolated func observed(_ notification: String, _ element: AXUIElement) {
         nonisolated(unsafe) let element = element
         if notification == kAXFocusedWindowChangedNotification {
@@ -445,13 +385,10 @@ actor AppWorker {
         }
     }
 
-    /// Caches a window element under its WindowServer id and observes it. Before the
-    /// observer exists nothing is cached, so `start` still observes the window. Nor is a
-    /// window cached when a registration timed out: the windows tracked again after the app
-    /// answers, in `askAgain`, register it then, so its minimize is not missed for good.
+    /// Caches nothing before the observer exists or when a registration timed out, so a later
+    /// track registers the window's notifications again and no minimize is missed for good.
     @discardableResult
     private func track(_ element: AXUIElement) -> UInt32? {
-        // A cached element needs no round trip, so listing the windows again costs one call.
         guard let id = id(of: element) else { return nil }
         guard observer != nil else { return id }
         if elements[id] == nil {
@@ -469,13 +406,12 @@ actor AppWorker {
         ax { AXObserverAddNotification(observer!, element, notification as CFString, Unmanaged.passUnretained(self).toOpaque()) }
     }
 
-    /// A tracked window's id without a round trip to the app, so a notification that arrives
-    /// while the app is backed off still names its window; otherwise the app's answer.
+    /// A tracked window's id needs no round trip, so a notification during a backoff still
+    /// names its window.
     private func id(of element: AXUIElement) -> UInt32? {
         elements.first { CFEqual($0.value, element) }?.key ?? windowID(element)
     }
 
-    /// Asks the app, so it waits out the timeout when the app hangs.
     private func windowID(_ element: AXUIElement) -> UInt32? {
         var id: UInt32 = 0
         return ax { _AXUIElementGetWindow(element, &id) } == .success && id != 0 ? id : nil
@@ -483,8 +419,6 @@ actor AppWorker {
 
     private struct NoAnswer: Error {}
 
-    /// An attribute's value, or nil when it has none. Throws when the app did not answer, the
-    /// element is gone, or the app is backed off.
     private func copy(_ element: AXUIElement, _ attribute: String) throws(NoAnswer) -> CFTypeRef? {
         var value: CFTypeRef?
         switch ax({ AXUIElementCopyAttributeValue(element, attribute as CFString, &value) }) {
@@ -494,36 +428,32 @@ actor AppWorker {
         }
     }
 
-    /// Makes one Accessibility call, unless the app is backed off. A call that waited out at
-    /// least half the timeout backs the app off. An app still launching fails in under 9 ms
-    /// (`kosmos-probe ax-timeout`) and is left to the launch retries.
+    /// An app still launching fails in under 9 ms, so only a call that waited out half the
+    /// timeout backs its app off (docs/geometry.md).
     private func ax(_ call: () -> AXError) -> AXError {
         guard !backoff.backedOff else { return .cannotComplete }
         let start = ContinuousClock.now
         let result = call()
         if result == .cannotComplete, ContinuousClock.now - start > .seconds(Double(Self.timeout) / 2) {
             log.notice("\(self.name, privacy: .public) did not answer Accessibility in \(Self.timeout, format: .fixed(precision: 1)) s; asking every 0.5 s")
-            if backoff.timedOut(at: start) { scheduleProbe() }
+            if backoff.timedOut(at: start) { startAsking() }
             backedOff.store(true, ordering: .relaxed)
         }
         return result
     }
 
-    private func scheduleProbe() {
+    private func startAsking() {
         let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + 0.5, 0.5, 0, 0) { [weak self] _ in
             self?.assumeIsolated { $0.askAgain() }
         }
         CFRunLoopAddTimer(executor.runLoop, timer, .defaultMode)
-        probe = timer
+        askTimer = timer
     }
 
-    /// One read with a 50 ms timeout. Any answer lets calls go again. A worker that has not
-    /// started starts; one that has tracks the windows created meanwhile and writes the held
-    /// frames. If none of those calls timed out and the worker has started, asking stops and
-    /// the worker reports `answering`, as `start` does.
+    /// Any answer but a timeout lets calls go again (docs/geometry.md).
     private func askAgain() {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
+        guard AXUIElementCopyAttributeValue(askElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
         let since = backoff.answered()
         backedOff.store(false, ordering: .relaxed)
         let wasStarted = started
@@ -534,8 +464,8 @@ actor AppWorker {
             _ = start()
         }
         guard backoff.settled(started: started) else { return }   // asked again at the next tick
-        if let probe { CFRunLoopTimerInvalidate(probe) }
-        probe = nil
+        if let askTimer { CFRunLoopTimerInvalidate(askTimer) }
+        askTimer = nil
         if wasStarted { reportAnswering() }
         if let since {
             log.notice("\(self.name, privacy: .public) answers Accessibility again after \((ContinuousClock.now - since).formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public)")
@@ -548,6 +478,6 @@ actor AppWorker {
 
     private nonisolated func deliver(_ report: AXReport) {
         let deliver = self.report
-        DispatchQueue.main.async { MainActor.assumeIsolated { deliver(report) } }
+        onMain { deliver(report) }
     }
 }

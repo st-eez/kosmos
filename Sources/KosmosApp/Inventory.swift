@@ -6,43 +6,28 @@ import os
 private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "inventory")
 
 /// Every window of a regular app, tracked from WindowServer events. Only WindowServer
-/// evidence or app exit removes a window (docs/inventory.md). Whether a window could be
-/// tiled is a property of its row: apps such as Helium change a window's level while it
-/// lives, and dropping it would lose it until the next sweep.
-///
-/// Observer mode: nothing here changes a window. The sweep counts what the events missed,
-/// which is the measurement this milestone exists for.
+/// evidence or app exit removes a window, and one that stops being a candidate stays
+/// (docs/inventory.md).
 @MainActor
 final class Inventory {
     private(set) var windows: [UInt32: WindowRow] = [:]
-    /// Accessibility facts for windows whose app's worker knows them.
     private var ax: [UInt32: AXWindowInfo] = [:]
     private(set) var focused: UInt32?
-    /// The app that reported `focused`.
-    private var focusedApp: pid_t?
-    /// Windows in a native fullscreen Space.
+    private var focusReporter: pid_t?
     private(set) var fullscreen: Set<UInt32> = []
-    /// How long a departure counts as just now, for the report of the next key window and
-    /// for focus requests. After a minimize, the next key window was reported 0.73 s after
-    /// Accessibility reported the minimize (the live log with the departures probe).
+    /// Outlasts macOS's report of the next key window after a minimize, 0.73 s (docs/focus.md).
     static let departureBound: Duration = .seconds(1)
-    /// When windows left the screen: closed, minimized, or hidden with their app.
     private var departures = DepartureLog(bound: departureBound)
-    /// When each window's Space membership first changed since its fullscreen state was last
-    /// read. A window leaving fullscreen leaves its Space before it joins the desktop's, and
-    /// its return dates from the first of those events.
+    /// A window leaving fullscreen leaves its Space before it joins the desktop's, and its
+    /// return dates from the first of those changes (docs/tree.md).
     private var spaceChangedAt: [UInt32: ContinuousClock.Instant] = [:]
-    /// Space queries for fullscreen checks, in the order the events asked for them.
     private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
-    /// A window became managed (true) or stopped being managed (false).
-    var onManagedChange: (@MainActor (UInt32, pid_t, Bool) -> Void)?
-    /// Focus, minimize and frame reports, after the inventory has seen them.
+    var onManagedChange: (@MainActor (_ window: UInt32, _ pid: pid_t, _ managed: Bool) -> Void)?
+    /// Each worker report, after the inventory has applied it.
     var onReport: (@MainActor (AXReport) -> Void)?
-    /// While the session is locked or switched out, no window is admitted or removed and no
-    /// sweep runs; the sweep after the unlock catches up (docs/inventory.md). Updates to
-    /// known windows still apply. Order changes are held with their times and reported at
-    /// the unlock (HeldOrder). The Controller reads it too.
+    /// While locked, no window is admitted or removed, no sweep runs, and order changes wait
+    /// for the unlock (docs/inventory.md).
     var sessionLocked = false {
         didSet {
             guard oldValue, !sessionLocked else { return }
@@ -53,112 +38,73 @@ final class Inventory {
         }
     }
     private var heldOrder = HeldOrder()
-    /// Windows first seen while locked, with their rows. The unlock sweep admits them; until
-    /// then they are watched, so their order changes are held as they happen.
     private var arrivedWhileLocked: [UInt32: WindowRow] = [:]
-    /// Known windows destroyed while locked, or whose app exited then. The unlock sweep
-    /// removes them, and no event was missed.
     private var removedWhileLocked: Set<UInt32> = []
-    /// From the unlock until the sweep after it, which admits and removes the windows the
-    /// lock held back.
     private var awaitingUnlockSweep = false
-    /// A Space was created or destroyed, or the active Space changed, since the last sweep.
-    private var spacesChanged = false
-    /// When the last such event came, on any display. A native fullscreen transition
-    /// creates Spaces around its order-out (ClosedAndKept).
+    private var spacesChangedSinceSweep = false
+    /// A native fullscreen transition creates Spaces around its order-out (docs/tree.md).
     private(set) var spacesChangedAt: ContinuousClock.Instant?
-    /// An app hid (true) or came back (false), after the inventory recorded it, and when
-    /// NSWorkspace said so.
-    var onAppHidden: (@MainActor (pid_t, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window still ordered out at its look (ClosedAndKept.Looks), for none of the
-    /// reasons with their own reports: its app closed it and kept it, as NSWindowController
-    /// does, or deselected its native tab. With when the inventory saw it ordered out.
-    var onKeptOrderedOut: (@MainActor (UInt32, ContinuousClock.Instant) -> Void)?
-    /// A candidate window was ordered in (true) or out (false), or destroyed while ordered
-    /// in (false), with its frame, and when: what a switch between native tabs is made of.
-    var onOrderChange: (@MainActor (UInt32, pid_t, Bool, CGRect, ContinuousClock.Instant) -> Void)?
-    /// A managed window entered (true) or left (false) native fullscreen, and when its Space
-    /// membership started to change.
-    var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window moved or resized, with its frame before and now, and when the
-    /// `.changed` event that reported it came, or nil: a Space change, as a reveal makes, a
-    /// creation or a sweep can read a new frame too.
-    var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, ContinuousClock.Instant?) -> Void)?
-    /// WindowServer ordered a managed window above or below others, as its app raising it
-    /// does, which leaves its border below it (docs/borders.md).
-    var onReordered: (@MainActor (UInt32) -> Void)?
-    /// WindowServer reported another level or corner radius for a managed window, which its
-    /// border takes (docs/borders.md).
+    /// Called after the inventory recorded the departure or return of the app's windows.
+    var onAppHidden: (@MainActor (_ pid: pid_t, _ hidden: Bool, _ received: ContinuousClock.Instant) -> Void)?
+    /// A managed window still ordered out at its look for none of the reasons with their own
+    /// reports, as a closed NSWindowController window its app keeps (docs/tree.md).
+    var onKeptOrderedOut: (@MainActor (_ window: UInt32, _ orderedOut: ContinuousClock.Instant) -> Void)?
+    /// A destroyed candidate window counts as ordered out. Native tab switches are made of
+    /// these (docs/tree.md).
+    var onOrderChange: (@MainActor (_ window: UInt32, _ pid: pid_t, _ orderedIn: Bool, _ frame: CGRect,
+                                    _ at: ContinuousClock.Instant) -> Void)?
+    var onFullscreenChange: (@MainActor (_ window: UInt32, _ entered: Bool, _ spaceChangeBegan: ContinuousClock.Instant) -> Void)?
+    /// `changedAt` is nil for a frame read for a creation, a sweep, or a Space change such as
+    /// a reveal.
+    var onFrameChange: (@MainActor (_ window: UInt32, _ old: CGRect, _ new: CGRect, _ changedAt: ContinuousClock.Instant?) -> Void)?
+    /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
+    var onReordered: (@MainActor (_ window: UInt32) -> Void)?
     var onStyleChange: (@MainActor () -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
-    /// The app's bundle identifier and name, for window rules.
     func appIdentity(_ pid: pid_t) -> (bundleID: String?, name: String?) {
         if let identity = apps.identity(pid) { return identity }
         let app = NSRunningApplication(processIdentifier: pid)
         return (app?.bundleIdentifier, app?.localizedName)
     }
     private var watchPending = false
-    /// Windows that events changed while a sweep was running. The sweep's snapshot is older
-    /// than those events, so it skips them. Nil when no sweep is running.
+    /// Nil while no sweep runs. A sweep skips these, as its snapshot predates their events.
     private var touchedDuringSweep: Set<UInt32>?
-    /// A sweep was asked for while one ran. The running sweep's snapshot may be older than
-    /// what asked, such as the last Space event of a burst, so one more runs after it.
     private var sweepAgain = false
     private var swept = false
-    /// The windows the first sweep found, which were there before Kosmos launched.
-    private var atLaunch: Set<UInt32> = []
-    private(set) var missedByEvents = 0
-    /// When a sweep last counted each window as missed by events. An event for one within
-    /// `lateBound` is logged, as it may be the event for the change the sweep read, late.
-    private var countedMissed: [UInt32: ContinuousClock.Instant] = [:]
+    private var presentAtStart: Set<UInt32> = []
+    private var markedMissed: [UInt32: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)
-    /// Whether each process is a regular app, false for a process LaunchServices does not
-    /// know, such as JankyBorders. LaunchServices answers each read with a synchronous XPC
-    /// call, which a sample of workspace switches caught on the main thread at every window
-    /// event and at every row of a sweep (2026-09-24), so each process is read once: from the
-    /// running apps at start, as it launches, or at its first window. Its exit source drops
-    /// it: NSWorkspace reports no exit of a background-only or LSUIElement app, and pids come
-    /// round again, about every 7 hours on the development Mac.
+    /// Read once for each process, as each read is a synchronous LaunchServices call, and
+    /// dropped by its exit source (docs/inventory.md).
     ///
-    /// Ceiling: an app that changes its activation policy while it runs keeps the policy read
-    /// first, as it keeps the Accessibility worker Apps gave it by its policy at launch.
-    /// Observing each app's activationPolicy with key-value observing would follow a change.
+    /// Ceiling: an app that changes its activation policy while it runs keeps the first one.
+    /// Observing activationPolicy with key-value observing would follow a change.
     private var regularApps: [pid_t: Bool] = [:]
     private var exitSources: [pid_t: any DispatchSourceProcess] = [:]
-    /// Apps whose launch found them regular after their windows were left out, until the
-    /// sweep that admits those windows, which then counts none of them as missed by events.
-    private var launchedLate: Set<pid_t> = []
-    /// What the inventory does after applying a window's row read for an event.
+    private var foundRegularAtLaunch: Set<pid_t> = []
     private enum FollowUp: Sendable {
         case none
-        /// Ask Accessibility about the window if its facts are unknown.
         case readIfUnknown
-        /// Its Space membership changed at that time.
         case spaceMembership(ContinuousClock.Instant)
-        /// A `.changed` event came at that time: it moved, resized, or was ordered in, out
-        /// or again.
         case changed(at: ContinuousClock.Instant)
     }
     private enum PendingEvent: Sendable {
-        /// Read the window's row, apply it, then the follow-up.
         case read(UInt32, FollowUp)
         case destroyed(UInt32)
         case appExited(pid_t)
     }
-    /// Window events waiting for the next read, in the order they came. Sweeps read on
-    /// `reads` too, so every result reaches the main actor in read order (docs/inventory.md).
     private var pending: [PendingEvent] = []
+    /// Sweeps read here too, so every result reaches the main actor in read order
+    /// (docs/inventory.md).
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
-    /// Managed windows seen ordered out, until their look (ClosedAndKept.Looks).
     private var looks = ClosedAndKept.Looks()
 
-    /// WindowServer tracking needs no permission and starts at once.
     func start() {
         SkyLight.subscribe { [weak self] event in self?.handle(event) }
         // NSRunningApplication(processIdentifier:) returned nil for a running app at startup
-        // (Apps), so the running apps come from their list.
+        // (docs/inventory.md).
         for app in NSWorkspace.shared.runningApplications {
             remember(app.processIdentifier, regular: app.activationPolicy == .regular)
         }
@@ -181,33 +127,24 @@ final class Inventory {
                 MainActor.assumeIsolated { self?.appHidden(pid, hidden, at: received) }
             }
         }
-        // Events drive the inventory. Launch, a Space change, an unlock and a wake sweep as a
-        // backstop, as yabai and rift do; there is no timer (docs/inventory.md).
         sweep()
     }
 
-    /// Starts the per-app Accessibility workers. Needs the Accessibility grant. Each worker
-    /// reports `answering` once it starts, and its app's windows are read then.
+    /// Needs the Accessibility grant.
     func startAccessibility() {
         apps.start()
     }
 
-    /// A window is managed when it is a candidate and Accessibility calls it a standard
-    /// window. Dialog and popup heuristics come with tiling.
     func isManaged(_ id: UInt32) -> Bool {
         guard let row = windows[id] else { return false }
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
 
-    /// Whether the first sweep found the window: it was there before Kosmos launched.
-    func wasThereAtLaunch(_ id: UInt32) -> Bool { atLaunch.contains(id) }
+    func wasThereAtLaunch(_ id: UInt32) -> Bool { presentAtStart.contains(id) }
 
-    /// Whether the window is minimized, as Accessibility read it with the window's other
-    /// facts and as each minimize report since says.
     func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
 
-    /// Kosmos's own window became key, for an empty workspace: the key window report no
-    /// worker sends, as Kosmos keeps none for itself. It names no window.
+    /// The key window report for Kosmos's own window, which no worker sends.
     func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
         handle(AXReport(pid: getpid(), kind: .focusedWindowChanged(nil), received: stamp))
     }
@@ -220,17 +157,15 @@ final class Inventory {
         case .answering:
             readIfUnknown(windows.filter { $0.value.pid == report.pid }.keys)
         case .windowDestroyed(let id):
-            // AX alone never removes a window; WindowServer decides.
+            // AX alone never removes a window (docs/inventory.md).
             enqueue(.read(id, .none))
         case .focusedWindowChanged(let id):
             // The worker knows a window its app reports focused.
             if let id { readIfUnknown([id]) }
-            // Repeats still go to the controller, which counts echoes. No key window is logged
-            // again when another app reports it, as an app with no window after Kosmos's empty
-            // workspace window.
-            if id != focused || (id == nil && report.pid != focusedApp) {
+            // Repeats still go to the controller, which counts echoes.
+            if id != focused || (id == nil && report.pid != focusReporter) {
                 focused = id
-                focusedApp = report.pid
+                focusReporter = report.pid
                 let name = appName(report.pid)
                 if let id {
                     inventoryLog.info("focus \(id) \(name, privacy: .public) managed \(self.isManaged(id))")
@@ -247,14 +182,12 @@ final class Inventory {
             if !minimized, let row = windows[id] { readAX([id], pid: row.pid) }
         case .backgroundFocus(let id):
             if let id { readIfUnknown([id]) }
-        case .framesApplied:
+        case .framesApplied, .framesDropped:
             break
         }
         onReport?(report)
     }
 
-    /// Reads windows of one app in one job on its worker, which lists the app's windows
-    /// again at most once for them.
     private func readAX(_ ids: [UInt32], pid: pid_t) {
         guard let worker = apps.worker(pid) else { return }
         Task {
@@ -268,11 +201,6 @@ final class Inventory {
         }
     }
 
-    /// Candidates whose facts no read has returned yet, one job for each app. Terminal,
-    /// launched hidden, restored a window that no read answered for and no creation report
-    /// named while it stayed hidden (live log, September 24, 2026): its unhide, a focus
-    /// report naming the window, its order-in or Space change, and the sweep after a Space
-    /// change read it again (docs/inventory.md).
     private func readIfUnknown(_ ids: some Sequence<UInt32>) {
         var unknown: [pid_t: [UInt32]] = [:]
         for id in ids {
@@ -282,9 +210,8 @@ final class Inventory {
         for (pid, ids) in unknown { readAX(ids, pid: pid) }
     }
 
-    /// A native fullscreen window moves to a Space of its own, which SkyLight reports as a
-    /// Space membership change (the fullscreen probe in kosmos-probe). Accessibility has no
-    /// notification for it.
+    /// Accessibility has no notification for native fullscreen, which SkyLight reports as a
+    /// Space membership change (docs/tree.md).
     private func fullscreenState(_ id: UInt32) async -> Bool? {
         await withCheckedContinuation { continuation in
             spaceQueue.async { continuation.resume(returning: Displays.isFullscreen(id)) }
@@ -300,9 +227,8 @@ final class Inventory {
         onFullscreenChange?(id, state, since)
     }
 
-    /// Whether the window left the screen within the departure bound: it closed, minimized,
-    /// or hid with its app. WindowServer may have ordered it out in an event not handled
-    /// yet, which counts as now.
+    /// Within the departure bound. A window ordered out in an event not handled yet counts
+    /// as leaving now.
     func leftScreen(_ id: UInt32) -> Bool {
         if let left = departures.justLeft(id, at: .now) { return left }
         guard windows[id]?.orderedIn == true else { return false }
@@ -310,37 +236,29 @@ final class Inventory {
         return !row.orderedIn
     }
 
-    /// A read was applied: the windows whose look is due are looked at (ClosedAndKept.Looks).
     private func readApplied() {
         for (id, orderedOut) in looks.readApplied(eventsWaiting: !pending.isEmpty) where isKeptOrderedOut(id) {
             onKeptOrderedOut?(id, orderedOut)
         }
     }
 
-    /// Whether the managed window is ordered out for none of the reasons with their own
-    /// reports. While the session is locked, and until the sweep after the unlock, no window
-    /// counts, as none is removed: whether the lock screen orders windows out is unmeasured.
-    /// That sweep checks every window still ordered out again.
+    /// None counts until the sweep after an unlock: whether the lock screen orders windows out
+    /// is unmeasured (docs/tree.md).
     func isKeptOrderedOut(_ id: UInt32) -> Bool {
         guard !sessionLocked, !awaitingUnlockSweep, let row = windows[id], !row.orderedIn, isManaged(id), !isMinimized(id)
         else { return false }
         return NSRunningApplication(processIdentifier: row.pid)?.isHidden != true && !fullscreen.contains(id)
     }
 
-    /// Whether the app has a candidate window ordered out besides `window`, as a native tab
-    /// group's deselected tabs are.
     func hasOrderedOutWindows(_ pid: pid_t, besides window: UInt32) -> Bool {
         windows.values.contains { $0.pid == pid && $0.id != window && !$0.orderedIn && isCandidate($0) }
     }
 
-    /// The app's candidate windows besides `window`, for the departure of its key window.
     func otherWindows(of pid: pid_t, besides window: UInt32) -> [DepartureFocus.OtherWindow] {
         windows.values.filter { $0.pid == pid && $0.id != window && isCandidate($0) }
             .map { DepartureFocus.OtherWindow(orderedIn: $0.orderedIn, minimized: isMinimized($0.id)) }
     }
 
-    /// An app hid or came back. Its windows leave or return with it, and the controller hears
-    /// of it after the record changed.
     private func appHidden(_ pid: pid_t, _ hidden: Bool, at received: ContinuousClock.Instant) {
         inventoryLog.info("\(self.appName(pid), privacy: .public) \(hidden ? "hid" : "unhid", privacy: .public)")
         for (id, row) in windows where row.pid == pid {
@@ -350,7 +268,7 @@ final class Inventory {
         onAppHidden?(pid, hidden, received)
     }
 
-    /// Nil info means the app did not answer; what was known stays (docs/inventory.md).
+    /// Nil info means the app did not answer, and what was known stays (docs/inventory.md).
     private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
         guard let info, let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)
@@ -367,8 +285,8 @@ final class Inventory {
 
     private func handle(_ event: WindowServerEvent) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
-        if let id = event.window, let counted = countedMissed.removeValue(forKey: id) {
-            let after = ContinuousClock.now - counted
+        if let id = event.window, let marked = markedMissed.removeValue(forKey: id) {
+            let after = ContinuousClock.now - marked
             if after < Self.lateBound {
                 inventoryLog.notice("""
                     event \(String(describing: event), privacy: .public) came \
@@ -390,7 +308,7 @@ final class Inventory {
         case .destroyed(let id):
             enqueue(.destroyed(id))
         case .spacesChanged:
-            spacesChanged = true
+            spacesChangedSinceSweep = true
             spacesChangedAt = .now
             sweep()
         case .frontAppChanged:
@@ -398,9 +316,8 @@ final class Inventory {
         }
     }
 
-    /// Holds the event for the read after this run loop turn. A window it names, or a known
-    /// window of an app that exited, counts as changed during a running sweep from now, as
-    /// the sweep's snapshot may predate the change.
+    /// The windows the event names count as changed during a running sweep from now, as the
+    /// sweep's snapshot may predate the change.
     private func enqueue(_ event: PendingEvent) {
         switch event {
         case .read(let id, _), .destroyed(let id): touchedDuringSweep?.insert(id)
@@ -409,13 +326,11 @@ final class Inventory {
         if pending.isEmpty {
             // Queued after the events already on the main queue, such as the rest of
             // SkyLight's batch, so one read covers them.
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.flushReads() } }
+            onMain { self.flushReads() }
         }
         pending.append(event)
     }
 
-    /// Reads the rows of every window the waiting events name in one query on `reads`, then
-    /// applies the events in the order they came.
     private func flushReads() {
         guard !pending.isEmpty else { return }
         let events = pending
@@ -427,7 +342,7 @@ final class Inventory {
         looks.readAsked()
         reads.async {
             let rows = SkyLight.rows(Array(ids), cornerRadii: true)
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
+            onMain { self.applyReads(events, rows) }
         }
     }
 
@@ -438,7 +353,7 @@ final class Inventory {
             switch event {
             case .read(let id, let followUp):
                 if let row = rows[id] {
-                    if case .changed(let at) = followUp { apply(row, changed: at) } else { apply(row) }
+                    if case .changed(let at) = followUp { apply(row, changedAt: at) } else { apply(row) }
                 } else {
                     remove(id, reason: "gone")
                 }
@@ -467,12 +382,10 @@ final class Inventory {
         }
     }
 
-    /// `changed`: when the `.changed` event that asked for the read came.
-    private func apply(_ row: WindowRow, changed: ContinuousClock.Instant? = nil) {
+    private func apply(_ row: WindowRow, changedAt: ContinuousClock.Instant? = nil) {
         touchedDuringSweep?.insert(row.id)
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
-            // The unlock sweep admits it. Its order changes are held till then.
             if arrivedWhileLocked.updateValue(row, forKey: row.id) == nil { scheduleWatch() }
             if isCandidate(row) {
                 _ = heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: nil, frame: row.frame,
@@ -489,13 +402,12 @@ final class Inventory {
                              at: .now, locked: sessionLocked) {
             onOrderChange?(row.id, row.pid, row.orderedIn, row.frame, .now)
         }
-        // Perhaps closed and kept by its app. Concealing a window leaves it ordered in (the
-        // reveal probe), and a minimize, a hide and native fullscreen have their own reports.
+        // Perhaps closed and kept: a conceal leaves a window ordered in, and a minimize, a hide
+        // and native fullscreen have their own reports (docs/tree.md).
         if old?.orderedIn == true, !row.orderedIn, isManaged(row.id) { looks.orderedOut(row.id, at: .now) }
-        // Shown now, as the second window an app launched hidden restored, with no report of
-        // its own.
+        // An app launched hidden restores its second window with no report (docs/inventory.md).
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
-        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, old.frame, row.frame, changed) }
+        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, old.frame, row.frame, changedAt) }
         if let old, old.level != row.level || old.cornerRadius != row.cornerRadius, isManaged(row.id) { onStyleChange?() }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
@@ -510,7 +422,6 @@ final class Inventory {
 
     private func remove(_ id: UInt32, reason: StaticString) {
         guard !sessionLocked else {
-            // The unlock sweep removes it. Its order change is held now, with its time.
             if windows[id] != nil { removedWhileLocked.insert(id) }
             if let row = windows[id], isCandidate(row) {
                 _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now, locked: true)
@@ -547,13 +458,11 @@ final class Inventory {
         return regular
     }
 
-    /// Keeps whether the process is a regular app until it exits. A process that exited
-    /// before its source started reports its exit at once (checked on macOS 27).
+    /// A process that exited before its source started reports its exit at once (macOS 27).
     private func remember(_ pid: pid_t, regular: Bool) {
         regularApps[pid] = regular
-        // WindowServer names pid 0 as the owner of some windows (2 of 34 rows on the
-        // development Mac), and dispatch aborts on a process source for pid 0 or less. Such a
-        // pid is no app: its false stays cached and never needs dropping.
+        // WindowServer names pid 0 as the owner of some windows, and dispatch aborts on a
+        // process source for pid 0 or less. Such a pid's false stays cached.
         guard pid > 0, exitSources[pid] == nil else { return }
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         source.setEventHandler { [weak self] in
@@ -566,17 +475,14 @@ final class Inventory {
         source.resume()
     }
 
-    /// An app that turns out regular at its launch may have had windows left out before, as
-    /// not regular or unknown to LaunchServices; a sweep admits them.
     private func launched(_ pid: pid_t, regular: Bool) {
         let wasRegular = regularApps[pid]
         remember(pid, regular: regular)
         guard regular, wasRegular == false else { return }
-        launchedLate.insert(pid)
+        foundRegularAtLaunch.insert(pid)
         sweep()
     }
 
-    /// Parentless level 0 windows. Accessibility role checks come with the per-app workers.
     private func isCandidate(_ row: WindowRow) -> Bool {
         row.parent == 0 && row.level == 0
     }
@@ -585,24 +491,17 @@ final class Inventory {
         appIdentity(pid).name ?? "?"
     }
 
-    /// Sends the whole watch list once per run loop turn, however many windows changed.
     private func scheduleWatch() {
         guard !watchPending else { return }
         watchPending = true
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                self.watchPending = false
-                SkyLight.watch(Array(Set(self.windows.keys).union(self.arrivedWhileLocked.keys)))
-            }
+        onMain {
+            self.watchPending = false
+            SkyLight.watch(Array(Set(self.windows.keys).union(self.arrivedWhileLocked.keys)))
         }
     }
 
-    /// Diffs every window WindowServer knows against the inventory. The Space list omits
-    /// windows that are on no Space, such as one created but not yet shown, so tracked
-    /// windows missing from it are queried directly before they count as gone, and so are
-    /// windows first seen while locked, which an unlock sweep admits even when ordered out.
-    /// The queries can block during a Space transition, so they run off the main thread,
-    /// after the reads for events already waiting.
+    /// The Space list omits windows on no Space, so tracked windows missing from it are read
+    /// directly. The reads can block during a Space transition (docs/inventory.md).
     func sweep() {
         guard !sessionLocked else { return }
         guard touchedDuringSweep == nil else { sweepAgain = true; return }
@@ -614,15 +513,12 @@ final class Inventory {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
             let rows = SkyLight.rows(listed + unlisted, cornerRadii: true)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { self.finishSweep(rows) }
-            }
+            onMain { self.finishSweep(rows) }
         }
     }
 
-    /// Ceiling: an event handled after this, for a change the sweep's snapshot already had,
-    /// came late and still counts as missed. Such an event within `lateBound` is logged, so
-    /// the count can be corrected by eye.
+    /// Ceiling: an event handled after this for a change the snapshot already had came late,
+    /// and its window is still logged as missed; the late event's own log line tells them apart.
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
@@ -631,62 +527,50 @@ final class Inventory {
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
-        countedMissed = countedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
-        // Windows the lock held back were reported, and so were those of an app found regular
-        // only at its launch, so the sweep does not count them.
+        markedMissed = markedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
-            if swept, arrivedWhileLocked[row.id] == nil, !launchedLate.contains(row.pid) {
-                countMissed(row.id)
+            let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)
+            if swept, !reported {
+                markedMissed[row.id] = .now
                 inventoryLog.notice("sweep found \(row.id), missed by events")
             }
             apply(row)
         }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
             if !removedWhileLocked.contains(id) {
-                countMissed(id)
+                markedMissed[id] = .now
                 inventoryLog.notice("sweep lost \(id), missed by events")
             }
             remove(id, reason: "absent from sweep")
         }
-        // A known window whose order or candidate status the sweep corrects is one an event
-        // missed too.
         for row in rows {
             guard let old = windows[row.id] else { continue }
             apply(row)
             guard let new = windows[row.id], new.orderedIn != old.orderedIn || isCandidate(new) != isCandidate(old) else { continue }
-            countMissed(row.id)
+            markedMissed[row.id] = .now
             inventoryLog.notice("""
                 sweep corrected \(row.id), missed by events: \(self.appName(row.pid), privacy: .public) \
                 ordered in \(old.orderedIn) to \(new.orderedIn), level \(old.level) to \(new.level), \
                 parent \(old.parent) to \(new.parent)
                 """)
         }
-        // Accessibility lists no window on a Space that is not shown, such as another
-        // fullscreen Space, so only the sweep after a Space change asks again, and only
-        // for windows ordered in. The others wait for a focus report or their unhide. When
-        // another sweep follows this one, that sweep asks instead, later in the Space change.
-        if spacesChanged, !sweepAgain {
-            spacesChanged = false
+        // Accessibility lists no window on a Space that is not shown, so only the last sweep of
+        // a Space change asks again, for the windows ordered in (docs/inventory.md).
+        if spacesChangedSinceSweep, !sweepAgain {
+            spacesChangedSinceSweep = false
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
-        // A sweep that follows was asked for after this one's snapshot, so it may be the one
-        // that finds a late app's windows.
-        if !sweepAgain { launchedLate = [] }
-        if !swept { atLaunch = seen }
+        // A sweep that follows was asked for after this snapshot, and may find the late windows.
+        if !sweepAgain { foundRegularAtLaunch = [] }
+        if !swept { presentAtStart = seen }
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false
             arrivedWhileLocked = [:]
             removedWhileLocked = []
             heldOrder.swept()
-            // No window counted as closed and kept since the lock: check each one still out,
-            // now that the switches the lock held have paired.
+            // None counted as closed and kept while locked. The held tab switches have paired now.
             for (id, row) in windows where !row.orderedIn && isManaged(id) { looks.orderedOut(id, at: .now) }
         }
-    }
-
-    private func countMissed(_ id: UInt32) {
-        missedByEvents += 1
-        countedMissed[id] = .now
     }
 }

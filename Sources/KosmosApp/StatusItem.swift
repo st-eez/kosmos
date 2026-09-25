@@ -2,15 +2,12 @@ import AppKit
 import KosmosIPC
 import ServiceManagement
 
-/// A static menu bar icon. It changes only when Kosmos's state changes, never during a
-/// command, because a status item that changes width makes the menu bar lay itself out
-/// again (docs/overview.md, section 2). The menu is built when it opens.
+/// Its image changes with Kosmos's state and never during a command: a status item that
+/// changes width makes the menu bar lay itself out again (docs/overview.md, section 2).
 @MainActor
 final class StatusItem: NSObject, NSMenuDelegate {
     var accessibilityMissing = false { didSet { updateImage() } }
-    /// Config errors and hotkeys that could not be registered, shown in the menu.
     var problems: [String] = [] { didSet { updateImage() } }
-    /// The holder of Secure Input while it is on.
     var secureInput: SecureInput? { didSet { updateImage() } }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -25,8 +22,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
         updateImage()
     }
 
-    /// Waiting for Accessibility outranks Secure Input, which explains keys that do nothing
-    /// right now; problems come next, then running normally, shown as the app icon's mark.
+    /// Secure Input outranks problems, as it explains keys that do nothing right now.
     private func updateImage() {
         let name = accessibilityMissing ? "exclamationmark.triangle"
             : secureInput != nil ? "lock.square"
@@ -38,9 +34,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
         item.button?.image = image
     }
 
-    /// The app icon in one colour: a disc split by its seam. Drawn from vectors at the size
-    /// and weight of the menu bar's SF Symbols, with the seam on whole pixels at 1x and 2x, and
-    /// a template so the menu bar tints it, highlighted or not.
+    /// The app icon's mark, a disc split by its seam, at the size of the menu bar's SF Symbols,
+    /// with the seam on whole pixels at 1x and 2x.
     private static let mark: NSImage = {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
             let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: 14, height: 14))
@@ -77,7 +72,6 @@ final class StatusItem: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: "Quit Kosmos", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
-    /// Shows SMAppService's status as it is when the menu opens.
     private func launchAtLoginItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         item.target = self
