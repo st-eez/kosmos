@@ -88,9 +88,8 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// A window for an empty workspace to key: 1 by 1 point at the main screen's bottom left,
-/// borderless, clear and transparent, ignoring the mouse, on every Space, and out of the
-/// window cycle. A borderless window cannot become key unless it says so.
+/// A copy of KosmosApp's EmptyWorkspaceWindow, which the probe cannot import. It has
+/// drifted: it lacks `.transient`. A borderless window cannot become key unless it says so.
 final class InvisibleWindow: NSWindow {
     override var canBecomeKey: Bool { true }
 
