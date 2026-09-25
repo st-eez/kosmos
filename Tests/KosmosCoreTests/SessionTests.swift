@@ -62,7 +62,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func switchToAnEmptyWorkspaceFocusesNothing() {
     var s = session()
     _ = s.add(1)
-    #expect(s.perform(.workspace(.named("3")))?.focus == .emptyWorkspace)
+    #expect(s.perform(.workspace(.named("3")))?.focus == .noWindow)
 }
 
 @Test func switchToTheShownWorkspaceDoesNothing() {

@@ -91,7 +91,7 @@ import Testing
     }
 }
 
-/// AeroSpace's placement marks the floating window most recently focused (docs/tree.md).
+/// 9 counts by its own focus, older than 3's (docs/tree.md).
 @Test func focusDescendsByEachWindowsOwnFocusOrder() {
     var workspace = Workspace("h[1 v[2 3]]")
     workspace.floating = [9]

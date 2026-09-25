@@ -2,8 +2,7 @@ import CoreGraphics
 
 /// The config's `borders` (docs/borders.md).
 public struct BorderSettings: Equatable, Sendable {
-    /// JankyBorders' `width`, whose line is centered on the window's edge with the inner half
-    /// under the window, so the border is the outer half.
+    /// In points, of which the half outside the window's edge shows (docs/borders.md).
     public var width: Double
     /// Nil for the macOS accent color.
     public var active: BorderColor?

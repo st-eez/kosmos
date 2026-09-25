@@ -52,9 +52,9 @@ import Testing
 
 @Test func emptyWorkspaceFocusIsAnEchoAndOtherwiseIgnored() {
     var reports = FocusReports()
-    reports.focusRequested(.emptyWorkspace, app: nil, at: t0 + .milliseconds(10))
-    #expect(reports.classify(.emptyWorkspace, receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .echo)
-    #expect(reports.classify(.emptyWorkspace, receivedAt: t0 + .milliseconds(12), onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .ignore)
+    reports.focusRequested(.noWindow, app: nil, at: t0 + .milliseconds(10))
+    #expect(reports.classify(.noWindow, receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .echo)
+    #expect(reports.classify(.noWindow, receivedAt: t0 + .milliseconds(12), onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .ignore)
 }
 
 @Test func droppedRequestDoesNotSwallowAUserReport() {
@@ -80,7 +80,7 @@ import Testing
 
 @Test func noKeyWindowAfterTheKeyWindowLeavesFocusesTheWorkspaceAgain() {
     var reports = FocusReports()
-    #expect(reports.classify(.emptyWorkspace, receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: false, keyLeft: .left) == .reassert)
+    #expect(reports.classify(.noWindow, receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: false, keyLeft: .left) == .reassert)
 }
 
 @Test func ownRequestStillComesBackAsAnEchoAfterTheKeyWindowLeaves() {
@@ -106,7 +106,7 @@ import Testing
 @Test func aReportThatDependsOnAnUnknownDepartureIsHeld() {
     var reports = FocusReports()
     #expect(reports.classify(.window(3), receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: true, keyLeft: .unknown) == .undecided)
-    #expect(reports.classify(.emptyWorkspace, receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: false, keyLeft: .unknown) == .ignore)
+    #expect(reports.classify(.noWindow, receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: false, keyLeft: .unknown) == .ignore)
     #expect(reports.classify(.window(3), receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: true, keyLeft: .left) == .reassert)
     #expect(reports.classify(.window(3), receivedAt: t0 + .milliseconds(11), onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(3))
 }
@@ -206,7 +206,7 @@ import Testing
     #expect(showsFullscreenSpace(key: .window(9), keyManaged: false, keyApp: 100, fullscreen: fullscreen))
     #expect(!showsFullscreenSpace(key: .window(6), keyManaged: true, keyApp: 100, fullscreen: fullscreen))
     #expect(!showsFullscreenSpace(key: .window(9), keyManaged: false, keyApp: 200, fullscreen: fullscreen))
-    #expect(!showsFullscreenSpace(key: .emptyWorkspace, keyManaged: false, keyApp: nil, fullscreen: fullscreen))
+    #expect(!showsFullscreenSpace(key: .noWindow, keyManaged: false, keyApp: nil, fullscreen: fullscreen))
 }
 
 @Test func anEchoIsKnownBeforeItIsClassified() {
@@ -287,7 +287,7 @@ import Testing
     #expect(reports.classify(.window(2), receivedAt: t0 + .milliseconds(12), onShownWorkspace: true, concealed: false, keyLeft: departure(.left)) == .adopt(2))
     #expect(reads == 0)
     #expect(reports.classify(.window(3), receivedAt: t0 + .milliseconds(13), onShownWorkspace: false, concealed: true, keyLeft: departure(.left)) == .reassert)
-    #expect(reports.classify(.emptyWorkspace, receivedAt: t0 + .milliseconds(14), onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
+    #expect(reports.classify(.noWindow, receivedAt: t0 + .milliseconds(14), onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
     #expect(reads == 2)
 }
 
@@ -318,8 +318,8 @@ import Testing
     #expect(keys.heard(.window(1)) == .window(2))
     #expect(keys.heard(.window(3)) == .window(1))
     #expect(keys.key == .window(3))
-    #expect(keys.heard(.emptyWorkspace) == .window(3))
-    #expect(keys.heard(.emptyWorkspace) == .emptyWorkspace)
+    #expect(keys.heard(.noWindow) == .window(3))
+    #expect(keys.heard(.noWindow) == .noWindow)
 }
 
 @Test func aHeldReportIsDecidedOnceByItsGrace() {

@@ -59,8 +59,8 @@ pointer gets none of the drag's events.
   drag lags, coalescing the movements comes back with that measurement.
 - The press focuses the window, as a command stamped when the tap saw it, as Hyprland's
   `dragBegin` focuses the window it grabs. Nothing moves until the pointer is more than
-  10 pt from the press, as for the title-bar lift (`TitleBarDrag.liftDistance`); from then on
-  the window catches up with the pointer and follows it. Omarchy leaves
+  10 pt from the press, as for the title-bar lift (`TitleBarDrag.dragThreshold`); from then
+  on the window catches up with the pointer and follows it. Omarchy leaves
   `binds:drag_threshold` at 0, so Hyprland lifts at the press.
 - The left button lifts a tiled window as a title-bar drag does ([displays.md](displays.md)): the other
   windows fill its space, it drops at the mouse up by the same dwindle rule, and a hotkey
@@ -79,8 +79,8 @@ pointer gets none of the drag's events.
   splits do, and stops at the minimums `resize` keeps. An edge stopped at a limit follows
   the pointer back.
 - The right button on a floating window moves the edges at the corner nearest the press
-  and keeps the others, never below the window's recorded minimum or 20 pt, Hyprland's
-  `MIN_WINDOW_SIZE`.
+  and keeps the others, never below the window's recorded minimum or 20 pt
+  (`ModifierDrag.smallestSide`), Hyprland's `MIN_WINDOW_SIZE`.
 - Each movement writes frames and does nothing else. A plan carried out per movement
   would read every shown floating window's frame from WindowServer ([displays.md](displays.md)), and
   that check leaves the dragged window where the drag puts it. The bar hears of a resize

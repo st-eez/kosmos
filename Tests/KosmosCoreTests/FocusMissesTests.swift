@@ -108,7 +108,7 @@ private func miss(_ misses: inout FocusMisses, at: ContinuousClock.Instant, repo
     var misses = FocusMisses()
     for request in 0..<10 {
         _ = misses.willRequest(5, pid: 1, at: t0 + .milliseconds(request * 10))
-        if request.isMultiple(of: 2) { misses.reported(.emptyWorkspace, pid: 1, receivedAt: t0 + .milliseconds(request * 10 + 1), echo: false) }
+        if request.isMultiple(of: 2) { misses.reported(.noWindow, pid: 1, receivedAt: t0 + .milliseconds(request * 10 + 1), echo: false) }
     }
     #expect(misses.inARow == 0)
 }

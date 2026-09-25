@@ -26,7 +26,9 @@
   Spaces. The built-in display's framebuffer has no serial. When CoreDisplay stops naming
   the framebuffer, the read returns nil and serial matchers match nothing.
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
-  rule shadows a later one.
+  rule shadows a later one: it matches the later rule's own app id and name, since names
+  match by containment. A rule on the name never shadows one on the bundle identifier
+  alone, whose app name is unknown.
 - `animations` is on by default, as in Omarchy: windows slide to the frames a relayout
   gives them and new windows pop in ([geometry.md](geometry.md)). `animations = false`
   turns both off, and a reload that turns them off ends every slide at once.
@@ -34,11 +36,11 @@
   keys join the config's, as Hyprland's `source` brings an Omarchy theme's colors into its
   config. The files are checked with the same schema. A key set in two files is an error,
   an included file includes nothing and sets no `config-version`, and each problem names
-  its file. A file that cannot be read is left out with a warning, so a fresh install
-  loads before a theme links its file, and the defaults stand in for its keys. A reload
-  reads every file again. The last good config keeps the main file alone, so a broken
-  config at launch falls back to it without its includes, whose keys take their
-  defaults.
+  its file, the main file's problems first. A file that cannot be read is left out with a
+  warning, so a fresh install loads before a theme links its file, and the defaults stand
+  in for its keys. A reload reads every file again. The last good config keeps the main
+  file alone, so a broken config at launch falls back to it without its includes, whose
+  keys take their defaults.
 - Borders are on by default, as in Omarchy ([borders.md](borders.md)): a ring in the
   macOS accent color around the focused window, and none around the others.
   `borders = false` turns them off, as `animations = false` turns off slides. A

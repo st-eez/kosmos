@@ -1,7 +1,7 @@
 import CoreGraphics
 
-/// The frame a window shows at through its Space's transform, and the Space's alpha, eased
-/// as Omarchy animates Hyprland's windows (docs/geometry.md).
+/// The frame a window shows at through its Space's transform, and the Space's alpha
+/// (docs/geometry.md).
 public struct Slide: Equatable, Sendable {
     public static let moveDuration = 0.38
     public static let popDuration = 0.41
@@ -44,7 +44,7 @@ public struct Slide: Equatable, Sendable {
         return CGAffineTransform(a: sx, b: 0, c: 0, d: sy, tx: (actual.minX - shown.minX) * sx, ty: (actual.minY - shown.minY) * sy)
     }
 
-    /// Omarchy's easeOutQuint, cubic-bezier(0.23, 1, 0.32, 1): the curve's y where its x is `t`.
+    /// cubic-bezier(0.23, 1, 0.32, 1): the curve's y where its x is `t`.
     public static func ease(_ t: Double) -> Double {
         guard t > 0 else { return 0 }
         guard t < 1 else { return 1 }

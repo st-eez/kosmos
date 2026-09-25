@@ -44,7 +44,6 @@ public struct Session: Sendable {
     var shown: [DisplayID: String] = [:]
     /// Among the connected displays. A workspace left out is free.
     var assigned: [String: DisplayID] = [:]
-    /// A display always shows it.
     public internal(set) var focusedWorkspace: String
     var previous: String?
     var home: [WindowID: String] = [:]
@@ -57,7 +56,7 @@ public struct Session: Sendable {
     var mergedAway: [String: Workspace] = [:]
     /// The workspace a profile merged each window out of. A window the user moves or closes
     /// leaves it.
-    var merged: [WindowID: String] = [:]
+    var mergedFrom: [WindowID: String] = [:]
     /// The workspace a display showed before it left, or before a profile left that
     /// workspace out.
     var shownBefore: [DisplayID: String] = [:]
@@ -83,6 +82,8 @@ public struct Session: Sendable {
     public func workspace(of window: WindowID) -> String? { home[window] }
 
     public var focused: WindowID? { workspaces[focusedWorkspace]!.focusedWindow }
+
+    public var intent: KeyWindow { focused.map(KeyWindow.window) ?? .noWindow }
 
     // MARK: Displays
 
@@ -123,7 +124,7 @@ public struct Session: Sendable {
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
-        for (window, origin) in merged {
+        for (window, origin) in mergedFrom {
             if home[window] == nil { problems.append("merged window \(window) belongs to no workspace") }
             if mergedAway[origin]?.contains(window) != true { problems.append("merged window \(window) is not in \(origin)") }
         }
@@ -161,8 +162,7 @@ public struct Session: Sendable {
         return workspace.frames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
-    /// A window has one workspace, so the workspaces' frames never share a key.
-    public func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
+    func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
         names.reduce(into: [:]) { frames, name in frames.merge(self.frames(of: name)) { current, _ in current } }
     }
 
@@ -182,7 +182,6 @@ public struct Session: Sendable {
         guard home[window] == nil else { return Plan() }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
-        // As in i3, a workspace with windows always has a focused one.
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan(frames: frames(of: target))
@@ -194,19 +193,18 @@ public struct Session: Sendable {
         defer { check() }
         guard let name = home.removeValue(forKey: window) else { return Plan() }
         minimums[window] = nil
-        merged[window] = nil
+        mergedFrom[window] = nil
         parkedConcealed.remove(window)
         lifted.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan(frames: frames(of: name))
-        if wasFocused { plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace }
+        if wasFocused { plan.focus = intent }
         return plan
     }
 
-    /// Native tabs share one place, and `new`, the tab just selected, takes `old`'s
-    /// (docs/tree.md). It inherits a tiled `old`'s minimum, as tabs share a size; a fullscreen
-    /// tab's would fill the display. Nil when `old` holds no place.
+    /// `new`, the tab just selected, takes `old`'s place and a tiled `old`'s minimum
+    /// (docs/tree.md). Nil when `old` holds no place.
     public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
@@ -223,8 +221,8 @@ public struct Session: Sendable {
         home[old] = nil
         home[new] = name
         if let minimum = minimums.removeValue(forKey: old), !parked { minimums[new] = minimum }
-        merged[new] = merged.removeValue(forKey: old)
-        if let origin = merged[new] {
+        mergedFrom[new] = mergedFrom.removeValue(forKey: old)
+        if let origin = mergedFrom[new] {
             mergedAway[origin]?.remove(new)
             mergedAway[origin]?.replace(old, with: new)
         }
@@ -268,7 +266,7 @@ public struct Session: Sendable {
             workspaces[focusedWorkspace]!.focus(window)
             plan.focus = .window(window)
         }
-        plan.frames.merge(frames(of: changed)) { current, _ in current }
+        plan.frames = frames(of: changed)
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
@@ -340,9 +338,8 @@ public struct Session: Sendable {
 
     // MARK: Commands
 
-    /// Carries out a command. Nil when it does not apply, such as a focus at the edge.
-    /// `frame` gives where a window is now, for a focus in a direction
-    /// (Workspace.withFloatingTiled).
+    /// Nil when the command does not apply, such as a focus at the edge. `frame` gives where
+    /// a window is now, for a focus in a direction (docs/tree.md).
     public mutating func perform(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         defer { check() }
         switch command {
@@ -353,7 +350,6 @@ public struct Session: Sendable {
             guard let previous, previous != focusedWorkspace else { return nil }
             return reach(previous)
         case .moveNodeToWorkspace(let target, let follow, let chosen):
-            // A minimized or hidden window stays where it will return to.
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
@@ -361,10 +357,7 @@ public struct Session: Sendable {
             return performOnFocused(command, frame: frame)
                 ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
         case .move(let direction, let boundaries) where boundaries != .workspace:
-            // At the edge of the workspace the window crosses to the next display, as in
-            // AeroSpace.
             if let plan = performOnFocused(command) { return plan }
-            // A floating window has no edge to cross, as in AeroSpace.
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
             return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
                                               wrapAround: boundaries == .allMonitorsWrapping))
@@ -427,8 +420,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// AeroSpace creates a workspace on demand. Kosmos's are the profile's, so a command that
-    /// names another fails (docs/config.md).
+    /// The workspaces are the profile's, so a command that names another fails
+    /// (docs/config.md).
     public func missingWorkspace(in command: Command) -> String? {
         switch command {
         case .workspace(.named(let name)), .moveNodeToWorkspace(.named(let name), _, _):
@@ -443,7 +436,6 @@ public struct Session: Sendable {
         case .named(let name):
             return workspaces[name] != nil ? name : nil
         case .next, .previous:
-            // The focused display's workspaces, as AeroSpace walks them.
             let cycle = names.filter { monitor(of: $0).id == focusedDisplay }
             let index = cycle.firstIndex(of: focusedWorkspace)!
             let step = target == .next ? 1 : -1
@@ -461,7 +453,7 @@ public struct Session: Sendable {
         focusedWorkspace = name
         if focused == nil, let first = windows(of: name).first { workspaces[name]!.focus(first) }
         var plan = Plan()
-        plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
+        plan.focus = intent
         return plan
     }
 
@@ -475,7 +467,7 @@ public struct Session: Sendable {
         focusedWorkspace = name
         if focused == nil, let first = plan.show.first { workspaces[name]!.focus(first) }
         plan.frames = frames(of: name)
-        plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
+        plan.focus = intent
         return plan
     }
 
@@ -487,7 +479,7 @@ public struct Session: Sendable {
         let onScreen = isShown(source)
         let floating = workspaces[source]!.floating.contains(window)
         _ = workspaces[source]!.remove(window)
-        merged[window] = nil
+        mergedFrom[window] = nil
         if let entering, !floating {
             let orientation = workspaces[name]!.root.orientation
             workspaces[name]!.insert(window, first: entering.isForward && orientation == entering.orientation)
@@ -505,15 +497,14 @@ public struct Session: Sendable {
         if onScreen, !isShown(name) { plan.hide.append(window) }
         if !onScreen, isShown(name) { plan.show.append(window) }
         if !following, wasFocused || name == focusedWorkspace {
-            plan.focus = focused.map(KeyWindow.window) ?? .emptyWorkspace
+            plan.focus = intent
         }
-        plan.frames.merge(frames(of: [source, name])) { current, _ in current }
+        plan.frames = frames(of: [source, name])
         return plan
     }
 
-    /// The windows of `hide` that lose their ordinary Space as they are concealed. macOS would
-    /// key one on the current display over its app's latest window, shown on another display
-    /// (docs/hiding.md and docs/displays.md).
+    /// The windows of `hide` that lose their ordinary Space as they are concealed
+    /// (docs/displays.md).
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
         guard monitors.count > 1 else { return [] }
         return Set(hide.filter { window in
@@ -525,9 +516,8 @@ public struct Session: Sendable {
 
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
-    /// Targets for the floating windows of shown workspaces that sit on a display showing
-    /// another workspace, as AeroSpace's layoutFloatingWindow moves them (docs/displays.md). A
-    /// concealed window's center is on no display, so it stays.
+    /// Targets for the shown workspaces' floating windows on a display showing another workspace
+    /// (docs/displays.md). A concealed window's center is on no display, so it stays.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {

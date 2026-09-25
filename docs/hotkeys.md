@@ -11,7 +11,9 @@
   as left out. On a French layout 6 needs Shift, so `alt-6` takes the key a US keyboard
   has 6 on, which types §, the key `alt-sectionSign` names. Keypad keys stay out of the
   layout's table: on French and Czech layouts only the keypad types a digit unshifted, so
-  `alt-1` names the number row key, which a laptop has.
+  `alt-1` names the number row key, which a laptop has. Letters and digits name
+  themselves, and punctuation takes AeroSpace's names, such as `minus` and
+  `leftSquareBracket`.
 - Each hotkey is registered exclusive. Another app's exclusive hotkey on the same
   combination makes the registration fail, and Kosmos reports it; a shared registration
   would give the key to both apps.

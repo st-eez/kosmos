@@ -98,8 +98,8 @@ extension Workspace {
         check()
     }
 
-    /// The two share the target's space equally, as Hyprland's dwindle layout drops a window
-    /// (docs/displays.md). In a container of `orientation` they become siblings.
+    /// The two share the target's space equally (docs/displays.md). In a container of
+    /// `orientation` they become siblings.
     mutating func insert(_ window: WindowID, beside target: WindowID, _ orientation: Orientation, first: Bool) {
         precondition(!contains(window), "window \(window) is already in the workspace")
         pair(window, with: target, orientation, first: first)
@@ -171,9 +171,8 @@ extension Workspace {
         return true
     }
 
-    /// The windows return in the reverse of the order they parked, which undoes the parking
-    /// exactly when nothing else changed. `rect` and `gaps` are the ones `frames` gets, for a
-    /// stale hint.
+    /// The windows return in the reverse of the order they parked (docs/tree.md). `rect` and
+    /// `gaps` are the ones `frames` gets, for a stale hint.
     mutating func unpark(_ windows: [WindowID], in rect: CGRect, gaps: Gaps) {
         for entry in parked.reversed() where windows.contains(entry.window) {
             parked.removeAll { $0.window == entry.window }
@@ -264,8 +263,6 @@ extension Workspace {
         assert(validate().isEmpty, "\(validate())")
     }
 
-    /// A root left holding a single container is replaced by that container, as in AeroSpace,
-    /// so the root's orientation is the one on screen.
     mutating func normalize() {
         root.normalize()
         if root.children.count == 1, case .container(let only) = root.children[0].kind {
@@ -295,8 +292,7 @@ extension Workspace {
         }
     }
 
-    /// The child holding the most recently focused window, the last one on a tie, as
-    /// AeroSpace's `mostRecentChild`.
+    /// The child holding the most recently focused window, the last one on a tie.
     func mostRecentChild(of container: Container) -> Node? {
         var best: (node: Node, stamp: UInt64)?
         for child in container.children {

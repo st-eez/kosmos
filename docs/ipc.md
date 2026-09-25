@@ -11,7 +11,9 @@
   response.
 - A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
   SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar applies
-  snapshots by sequence number and never queries Kosmos.
+  snapshots by sequence number and never queries Kosmos. A bar reads the snapshot's
+  `version` first: a new version may rename or remove fields, and new fields can appear in
+  any version.
 - The message has the format SketchyBar's own CLI sends, which SketchyBar documents
   nowhere: the arguments joined by NUL, with one more NUL at the end, in one out of line
   descriptor.

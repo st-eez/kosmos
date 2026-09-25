@@ -41,7 +41,7 @@ final class FocusQueue: Sendable {
                     Self.wait(for: worker, id, isCurrent, request, performing: raising, forgetRecord: forgettingRecord)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     stamp = ContinuousClock.now
-                case .emptyWorkspace:
+                case .noWindow:
                     // `FocusStart` for Kosmos's own window.
                     if front, emptyWorkspace.isKey.load(ordering: .relaxed) { return }
                     stamp = ContinuousClock.now
@@ -50,7 +50,7 @@ final class FocusQueue: Sendable {
                 let performed = killSwitch.guarded {
                     switch key {
                     case .window(let id): kosmos_make_key(pid, id)
-                    case .emptyWorkspace: kosmos_make_key(pid, emptyWorkspace.window)
+                    case .noWindow: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
                 if performed {
@@ -69,7 +69,7 @@ final class FocusQueue: Sendable {
                 worker?.focusPublicly(id, readFocus: front, isCurrent: isCurrent,
                                       performing: { stamp in onMain { performing(stamp, .activation) } },
                                       forgetRecord: forgettingRecord)
-            case .emptyWorkspace:
+            case .noWindow:
                 // No public call keys Kosmos's own window (docs/focus.md).
                 focusLog.notice("the empty workspace keys nothing: the private path is off after a crash, or its call failed")
             }

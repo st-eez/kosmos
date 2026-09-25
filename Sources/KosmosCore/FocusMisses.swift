@@ -1,6 +1,5 @@
 /// Counts private focus requests that keyed another window of their app, so the private
-/// path can turn itself off (docs/focus.md, the kill switch). Any echo clears the count, and
-/// a request with no report neither misses nor clears it.
+/// path can turn itself off (docs/focus.md, the kill switch).
 public struct FocusMisses: Sendable {
     /// The private path keyed the right window in 60 of 60 trials, a miss rate of at most 5%,
     /// so five misses in a row come once in about 3 million runs (docs/focus.md).
