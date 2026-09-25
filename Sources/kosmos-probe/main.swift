@@ -116,6 +116,9 @@
 //                                   owner, parent, level and Spaces, whether the record names
 //                                   it and whether its owner owns a recorded window. Read only:
 //                                   it changes no Space or window, opens none and takes no focus.
+//   kosmos-probe float-layer        Can a Space shown above the desktop Space keep another
+//                                   app's floating window above its tiled ones, however the
+//                                   tiles are ordered (FloatLayer.swift)?
 import AppKit
 import CKosmos
 import KosmosCore
@@ -152,8 +155,10 @@ case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) 
 case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
 case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
+case "float-stub": floatStub(Array(arguments.dropFirst()))
+case "float-layer": floatLayer()
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | float-layer")
     exit(2)
 }
 
@@ -992,11 +997,17 @@ final class KeyStub {
     private(set) var windows: [UInt32] = []
     var pid: pid_t { process.processIdentifier }
 
-    init(_ name: String, _ offsets: [String]) {
+    convenience init(_ name: String, _ offsets: [String]) {
+        self.init(name, arguments: ["key-stub", name] + offsets)
+    }
+
+    /// Runs the probe with `arguments` as a stub that prints its window ids on its first line
+    /// and exits when its standard input closes.
+    init(_ name: String, arguments: [String]) {
         self.name = name
         process = Process()
         process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        process.arguments = ["key-stub", name] + offsets
+        process.arguments = arguments
         input = Pipe()
         output = Pipe()
         process.standardInput = input
@@ -1015,6 +1026,12 @@ final class KeyStub {
         let text = String(decoding: buffer[buffer.startIndex..<end], as: UTF8.self)
         buffer.removeSubrange(buffer.startIndex...end)
         return text
+    }
+
+    /// Sends one command and returns the stub's one line reply.
+    func send(_ command: String) -> String {
+        input.fileHandleForWriting.write(Data("\(command)\n".utf8))
+        return line()
     }
 
     /// Activates the app from its own background thread. Returns what `activate` returned.
