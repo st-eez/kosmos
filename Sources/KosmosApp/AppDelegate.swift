@@ -104,28 +104,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func respond(to arguments: [String], received: ContinuousClock.Instant, from source: CommandSource) -> Response {
-        switch arguments {
-        case ["ping"]: return Response(stdout: "pong")
-        case ["version"]: return Response(stdout: kosmosVersion)
-        case ["reload-config"]:
-            guard let controller else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
-            guard controller.managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
+        if let query = Query(arguments) { return answer(query) }
+        switch Command.parse(arguments) {
+        case .success(let command): return run(command, received: received, from: source)
+        case .failure(let error): return controller == nil ? Self.waiting : failure(error.message)
+        }
+    }
+
+    private static let waiting = Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission")
+
+    private func failure(_ message: String) -> Response {
+        Response(exitCode: 1, stderr: "kosmos: " + message)
+    }
+
+    private func answer(_ query: Query) -> Response {
+        switch (query, controller) {
+        case (.ping, _): Response(stdout: "pong")
+        case (.version, _): Response(stdout: kosmosVersion)
+        case (.listBindings, _): listBindings()
+        case (_, nil): Self.waiting
+        case (.state, let controller?): Response(stdout: String(decoding: controller.stateJSON(), as: UTF8.self))
+        case (.listWorkspaces, let controller?): Response(stdout: controller.listWorkspaces())
+        case (.listWindows, let controller?): Response(stdout: controller.listWindows())
+        }
+    }
+
+    private func run(_ command: Command, received: ContinuousClock.Instant, from source: CommandSource) -> Response {
+        if case .mode(let name) = command { return switchMode(to: name) }
+        guard let controller else { return Self.waiting }
+        // Changing the model without moving windows would leave the two apart.
+        guard controller.managing else { return failure("observing only while another window manager runs") }
+        switch command {
+        case .reloadConfig:
             controller.turnOnPrivateFocus()
             let (applied, messages) = reloadConfig(ConfigFile.load(atLaunch: false), atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
-        case ["list-bindings"]:
-            return listBindings()
+        case .profile(let name):
+            return applyProfile(name)
         default:
-            switch Command.parse(arguments) {
-            case .success(.mode(let name)): return switchMode(to: name)
-            case .success(.profile(let name)): return applyProfile(name)
-            default: break
-            }
-            guard let controller else {
-                return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission")
-            }
-            let result = controller.run(arguments, received: received, from: source)
-            return result.code == 0 ? Response(stdout: result.text) : Response(exitCode: result.code, stderr: "kosmos: " + result.text)
+            return controller.run(command, received: received, from: source).map(failure) ?? Response()
         }
     }
 
@@ -137,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func listBindings() -> Response {
-        guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
+        guard let hotkeys else { return failure("no hotkeys are registered") }
         let modes = hotkeys.modes.sorted { ($0.key == "main" ? 0 : 1, $0.key) < ($1.key == "main" ? 0 : 1, $1.key) }
         let bindings = modes.flatMap { mode, bindings in
             bindings.map { ListedBinding(mode: mode, key: $0.key, description: $0.command.summary, category: $0.command.category) }
@@ -148,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchMode(to name: String) -> Response {
-        guard let hotkeys else { return Response(exitCode: 1, stderr: "kosmos: no hotkeys are registered") }
+        guard let hotkeys else { return failure("no hotkeys are registered") }
         // The command reports its own problems; the status item keeps the ones a load found,
         // so its icon never changes during a command.
         let problems = hotkeys.switchMode(to: name)
@@ -158,11 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The profile holds until the displays change or the config reloads (docs/displays.md).
     private func applyProfile(_ name: String) -> Response {
-        guard let controller else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
-        guard controller.managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
-        guard config.profiles.contains(where: { $0.name == name }) else {
-            return Response(exitCode: 1, stderr: "kosmos: no profile named '\(name)'")
-        }
+        guard config.profiles.contains(where: { $0.name == name }) else { return failure("no profile named '\(name)'") }
         forcedProfile = name
         applyDisplays()
         return Response()
