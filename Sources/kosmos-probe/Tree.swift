@@ -50,54 +50,36 @@ import KosmosSkyLight
     exit(0)
 }
 
-nonisolated(unsafe) var fullscreenStart = ContinuousClock.now
-nonisolated(unsafe) var probeWindow: UInt32 = 0
-
 @MainActor func fullscreen() -> Never {
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let child = Process()
-    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    child.arguments = ["fullscreen-window"] + (CommandLine.arguments.contains("dry") ? ["dry"] : [])
-    let pipe = Pipe()
-    child.standardOutput = pipe
-    try! child.run()
-    var line = Data()
-    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
-    probeWindow = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
-    fullscreenStart = .now
-    print("window \(probeWindow), pid \(child.processIdentifier)")
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty { print(String(format: "%7.1f ms child: ", elapsed(fullscreenStart)) + text) }
-    }
-    for id: UInt32 in [1325, 1326, 1327, 1328, 1401, 806, 807, 808, 815, 816] {
-        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
-            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
-            func u32(_ offset: Int) -> UInt32 { bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : 0 }
-            func u64(_ offset: Int) -> UInt64 { bytes.count >= offset + 8 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt64.self) : 0 }
-            switch id {
-            case 1325, 1326:
-                guard u32(8) == probeWindow else { return }
-                print(String(format: "%7.1f ms event %d space %llu", elapsed(fullscreenStart), id, u64(0)))
-                // The check the inventory makes on these events, off the main thread.
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let state = Displays.isFullscreen(probeWindow).map { "\($0)" } ?? "nil (no Space)"
-                    print(String(format: "%7.1f ms   Displays.isFullscreen: ", elapsed(fullscreenStart)) + state)
-                }
-            case 1327, 1328:
-                print(String(format: "%7.1f ms event %d space %llu", elapsed(fullscreenStart), id, u64(0)))
-            case 1401:
-                print(String(format: "%7.1f ms event 1401", elapsed(fullscreenStart)))
-            default:
-                guard u32(0) == probeWindow else { return }
-                print(String(format: "%7.1f ms event %d", elapsed(fullscreenStart), id))
+    let child = Child(["fullscreen-window"] + (CommandLine.arguments.contains("dry") ? ["dry"] : []))
+    let window = child.readWindows()[0]
+    let start = ContinuousClock.now
+    print("window \(window), pid \(child.pid)")
+    child.onLines { print(String(format: "%7.1f ms child: ", elapsed(start)) + $0) }
+    WindowServerEvent.register([1325, 1326, 1327, 1328, 1401, 806, 807, 808, 815, 816]) { id, named, payload in
+        let space = payload.count >= 8 ? payload.loadUnaligned(as: UInt64.self) : 0
+        switch id {
+        case 1325, 1326:
+            guard named == window else { return }
+            print(String(format: "%7.1f ms event %d space %llu", elapsed(start), id, space))
+            // The check the inventory makes on these events, off the main thread.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let state = Displays.isFullscreen(window).map { "\($0)" } ?? "nil (no Space)"
+                print(String(format: "%7.1f ms   Displays.isFullscreen: ", elapsed(start)) + state)
             }
-        }, id, nil)
+        case 1327, 1328:
+            print(String(format: "%7.1f ms event %d space %llu", elapsed(start), id, space))
+        case 1401:
+            print(String(format: "%7.1f ms event 1401", elapsed(start)))
+        default:
+            guard named == window else { return }
+            print(String(format: "%7.1f ms event %d", elapsed(start), id))
+        }
     }
-    var ids = [probeWindow]
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &ids, 1)
+    SkyLight.watch([window])
     DispatchQueue.main.asyncAfter(deadline: .now() + 10) { exit(0) }
     app.run()
     exit(0)
@@ -144,38 +126,18 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
     exit(0)
 }
 
-nonisolated(unsafe) var departureWindows: Set<UInt32> = []
-
 @MainActor func departures() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let child = Process()
-    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    child.arguments = ["departures-window"]
-    let pipe = Pipe()
-    child.standardOutput = pipe
-    try! child.run()
-    var line = Data()
-    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
-    let ids = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
-    departureWindows = Set(ids)
-    print("windows A \(ids[0]) B \(ids[1]), pid \(child.processIdentifier)")
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty { print(text) }
+    let child = Child(["departures-window"])
+    let ids = child.readWindows()
+    print("windows A \(ids[0]) B \(ids[1]), pid \(child.pid)")
+    child.onLines { print($0) }
+    WindowServerEvent.register([804, 806, 807, 808, 815, 816, 1325, 1326]) { id, window, _ in
+        guard let window, ids.contains(window) else { return }
+        print(String(format: "%.1f event %d window %d", uptime(), id, window))
     }
-    for id: UInt32 in [804, 806, 807, 808, 815, 816, 1325, 1326] {
-        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
-            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
-            let window: UInt32 = id >= 1325
-                ? (bytes.count >= 12 ? bytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self) : 0)
-                : (bytes.count >= 4 ? bytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self) : 0)
-            guard departureWindows.contains(window) else { return }
-            print(String(format: "%.1f event %d window %d", uptime(), id, window))
-        }, id, nil)
-    }
-    var watched = ids
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    SkyLight.watch(ids)
     let center = NSWorkspace.shared.notificationCenter
     for name in [NSWorkspace.didHideApplicationNotification, NSWorkspace.didActivateApplicationNotification,
                  NSWorkspace.didDeactivateApplicationNotification] {
@@ -239,43 +201,27 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    let child = Process()
-    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    child.arguments = ["tabs-window"]
-    let pipe = Pipe()
-    child.standardOutput = pipe
-    try! child.run()
-    var line = Data()
-    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
-    tabWindows = String(decoding: line, as: UTF8.self).split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
+    let child = Child(["tabs-window"])
+    tabWindows = child.readWindows()
     print("tab A \(tabWindows[0]), tab B \(tabWindows[1]), selected B")
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-        let text = String(decoding: handle.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty { print(text) }
-    }
+    child.onLines { print($0) }
     // 1325 and 1326: a window joins or leaves a Space; 815 and 816: ordered in or out.
-    for id: UInt32 in [815, 816, 1325, 1326] {
-        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
-            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
-            let offset = id >= 1325 ? 8 : 0
-            let window: UInt32 = bytes.count >= offset + 4 ? bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self) : 0
-            guard tabWindows.contains(window) else { return }
-            // The frame the inventory reads when this event reaches it.
-            let frame = SkyLight.rows([window]).first.map { "\($0.frame)" } ?? "no row"
-            print(String(format: "%.1f event %d tab %@ frame %@", uptime(), id, window == tabWindows[0] ? "A" : "B", frame))
-        }, id, nil)
+    WindowServerEvent.register([815, 816, 1325, 1326]) { id, window, _ in
+        guard let window, tabWindows.contains(window) else { return }
+        // The frame the inventory reads when this event reaches it.
+        let frame = SkyLight.rows([window]).first.map { "\($0.frame)" } ?? "no row"
+        print(String(format: "%.1f event %d tab %@ frame %@", uptime(), id, window == tabWindows[0] ? "A" : "B", frame))
     }
-    var watched = tabWindows
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    SkyLight.watch(tabWindows)
     // The child's focused window as Accessibility reports it, only when trusted: the probe
     // never asks for the permission.
     var observer: AXObserver?
-    if AXIsProcessTrusted(), AXObserverCreate(child.processIdentifier, { _, element, _, _ in
+    if AXIsProcessTrusted(), AXObserverCreate(child.pid, { _, element, _, _ in
         var id: UInt32 = 0
         _ = _AXUIElementGetWindow(element, &id)
         print(String(format: "%.1f AX focused window tab %@", uptime(), id == tabWindows[0] ? "A" : id == tabWindows[1] ? "B" : "\(id)"))
     }, &observer) == .success, let observer {
-        AXObserverAddNotification(observer, AXUIElementCreateApplication(child.processIdentifier),
+        AXObserverAddNotification(observer, AXUIElementCreateApplication(child.pid),
                                   kAXFocusedWindowChangedNotification as CFString, nil)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         print("Accessibility trusted: focus changes print (none while the child cannot be key)")

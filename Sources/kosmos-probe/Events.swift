@@ -42,34 +42,22 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
         }, id, nil)
         if result == .success { registered += 1 }
     }
-    let child = Process()
-    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    child.arguments = ["hidden-window", "levels"] + CommandLine.arguments.dropFirst(2)
-    let pipe = Pipe()
-    child.standardOutput = pipe
-    try! child.run()
-    var line = Data()
-    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
-    let window = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
-    var watched = [window]
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, 1)
-    print("window \(window), pid \(child.processIdentifier); \(registered) of \(ids.count) notifications registered")
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-        let data = handle.availableData
-        guard !data.isEmpty else { handle.readabilityHandler = nil; return }
-        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
-            let fields = line.split(separator: " ")   // "<uptime> level <level>"
-            guard fields.count == 3, let at = Double(fields[0]), let level = Int32(fields[2]) else { continue }
-            // AppKit sends the level to WindowServer after the setter returns.
-            var landed: Double?
-            while landed == nil, uptime() - at < 500 {
-                if SkyLight.rows([window]).first?.level == level { landed = uptime() } else { usleep(500) }
-            }
-            let text = "child sets level \(level); WindowServer reads it "
-                + (landed.map { String(format: "%.1f ms later", $0 - at) } ?? "not within 500 ms")
-            let step = (at: at, landed: landed ?? at, text: text)
-            DispatchQueue.main.async { levelSteps.append(step) }
+    let child = Child(["hidden-window", "levels"] + CommandLine.arguments.dropFirst(2))
+    let window = child.readWindows()[0]
+    SkyLight.watch([window])
+    print("window \(window), pid \(child.pid); \(registered) of \(ids.count) notifications registered")
+    child.onLines { line in
+        let fields = line.split(separator: " ")   // "<uptime> level <level>"
+        guard fields.count == 3, let at = Double(fields[0]), let level = Int32(fields[2]) else { return }
+        // AppKit sends the level to WindowServer after the setter returns.
+        var landed: Double?
+        while landed == nil, uptime() - at < 500 {
+            if SkyLight.rows([window]).first?.level == level { landed = uptime() } else { usleep(500) }
         }
+        let text = "child sets level \(level); WindowServer reads it "
+            + (landed.map { String(format: "%.1f ms later", $0 - at) } ?? "not within 500 ms")
+        let step = (at: at, landed: landed ?? at, text: text)
+        DispatchQueue.main.async { levelSteps.append(step) }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
         reportLevels(window, start: start)
@@ -110,17 +98,13 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    for id in WindowServerEvent.ids {
-        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
-            let at = Date()
-            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
-            let payload = bytes.prefix(16).map { String(format: "%02x", $0) }.joined()
-            let window = WindowServerEvent(id: id, payload: bytes)?.window
-            DispatchQueue.main.async { MainActor.assumeIsolated { printEvent(id, window: window, payload: payload, at: at) } }
-        }, id, nil)
+    WindowServerEvent.register(WindowServerEvent.ids) { id, window, payload in
+        let at = Date()
+        let bytes = payload.prefix(16).map { String(format: "%02x", $0) }.joined()
+        DispatchQueue.main.async { MainActor.assumeIsolated { printEvent(id, window: window, payload: bytes, at: at) } }
     }
-    var watched = SkyLight.allWindowIDs()
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    let watched = SkyLight.allWindowIDs()
+    SkyLight.watch(watched)
     print("watching \(watched.count) windows for \(seconds) s")
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
     app.run()

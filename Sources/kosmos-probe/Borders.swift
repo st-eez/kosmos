@@ -87,42 +87,6 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     exit(0)
 }
 
-/// A child app's windows, driven through its standard input.
-final class BorderTargets {
-    let process = Process()
-    private(set) var windows: [UInt32] = []
-    private let input = Pipe(), output = Pipe()
-    private var buffer = Data()
-
-    init(_ count: Int) {
-        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        process.arguments = ["border-targets", String(count)]
-        process.standardInput = input
-        process.standardOutput = output
-        try! process.run()
-        windows = line().split(separator: " ").compactMap { UInt32($0) }
-    }
-
-    func line() -> String {
-        while !buffer.contains(UInt8(ascii: "\n")) {
-            let chunk = output.fileHandleForReading.availableData
-            guard !chunk.isEmpty else { print("targets exited"); exit(1) }
-            buffer.append(chunk)
-        }
-        let end = buffer.firstIndex(of: UInt8(ascii: "\n"))!
-        let text = String(decoding: buffer[buffer.startIndex..<end], as: UTF8.self)
-        buffer.removeSubrange(buffer.startIndex...end)
-        return text
-    }
-
-    func send(_ text: String) { input.fileHandleForWriting.write(Data((text + "\n").utf8)) }
-
-    func quit() {
-        try? input.fileHandleForWriting.close()
-        process.waitUntilExit()
-    }
-}
-
 /// A border window as Kosmos makes one: borderless, clear, click-through, out of the window
 /// cycle and Mission Control, and never key. The ring is a layer's border, `width / 2`
 /// wide, from half the width outside the target's frame in to its edge, its corners
@@ -181,8 +145,9 @@ final class BorderTargets {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     func wait(_ seconds: Double) { pumpEvents(seconds) }
-    let targets = BorderTargets(2)
-    let (t, c) = (targets.windows[0], targets.windows[1])
+    let targets = Child(["border-targets", "2"])
+    let windows = targets.readWindows()
+    let (t, c) = (windows[0], windows[1])
     wait(0.3)
     let jankyPID = NSWorkspace.shared.runningApplications.first { $0.executableURL?.lastPathComponent == "borders" }?.processIdentifier
     func name(_ window: UInt32, _ pid: pid_t, _ border: UInt32) -> String {
@@ -229,15 +194,11 @@ final class BorderTargets {
     // The events WindowServer sends for T and C at each step: moved (806), resized (807),
     // reordered (808), ordered in (815) and out (816).
     stepEvents = []
-    for id: UInt32 in [806, 807, 808, 815, 816] {
-        SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
-            guard let data, length >= 4 else { return }
-            let window = data.loadUnaligned(as: UInt32.self)
-            DispatchQueue.main.async { stepEvents.append((id, window)) }
-        }, id, nil)
+    WindowServerEvent.register([806, 807, 808, 815, 816]) { id, window, _ in
+        guard let window else { return }
+        DispatchQueue.main.async { stepEvents.append((id, window)) }
     }
-    var watched = [t, c]
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, 2)
+    SkyLight.watch([t, c])
     func events() -> String {
         defer { stepEvents = [] }
         return stepEvents.isEmpty ? "no events" : "events " + stepEvents.map { "\($0.id) for \($0.window == t ? "T" : $0.window == c ? "C" : String($0.window))" }.joined(separator: ", ")
@@ -515,32 +476,29 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
         return pid_t(String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             .split(separator: "\n").first ?? "")
     }
-    let targets = BorderTargets(4)
+    let targets = Child(["border-targets", "4"])
+    let windows = targets.readWindows()
     let windowServer = pid("WindowServer"), janky = pid("borders")
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
     let interval = 0.5
     print("\(relayouts) relayouts of 4 windows, \(interval) s apart; JankyBorders \(janky.map { "runs, pid \($0)" } ?? "is not running")")
     wait(0.5)
 
-    let rows = Dictionary(SkyLight.rows(targets.windows, cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    let rows = Dictionary(SkyLight.rows(windows, cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
     let radii = rows.mapValues(\.cornerRadius)
-    let borders = Dictionary(uniqueKeysWithValues: targets.windows.map { ($0, ProbeBorder()) })
+    let borders = Dictionary(uniqueKeysWithValues: windows.map { ($0, ProbeBorder()) })
     let follower = Follower(borders: borders, radii: radii, color: color)
     Follower.current = follower
     // Move and resize events for the child's windows, on the probe's own connection.
-    for id: UInt32 in [806, 807] {
-        SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { _, data, length, _, _ in
-            guard let data, length >= 4 else { return }
-            let window = data.loadUnaligned(as: UInt32.self)
-            DispatchQueue.main.async { MainActor.assumeIsolated { Follower.current?.heard(window) } }
-        }, id, nil)
+    WindowServerEvent.register([806, 807]) { _, window, _ in
+        guard let window else { return }
+        DispatchQueue.main.async { MainActor.assumeIsolated { Follower.current?.heard(window) } }
     }
-    var watched = targets.windows
-    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    SkyLight.watch(windows)
 
     struct Reading { var probe = 0.0, child = 0.0, windowServer = 0.0, janky = 0.0 }
     func read() -> Reading {
-        Reading(probe: rusageCPU(getpid()) ?? 0, child: rusageCPU(targets.process.processIdentifier) ?? 0,
+        Reading(probe: rusageCPU(getpid()) ?? 0, child: rusageCPU(targets.pid) ?? 0,
                 windowServer: windowServer.flatMap(psCPU) ?? 0, janky: janky.flatMap(rusageCPU) ?? 0)
     }
     func each(_ a: Double, _ b: Double) -> String { String(format: "%6.2f", (b - a) / Double(relayouts)) }
@@ -557,7 +515,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
                 let next = targetLayout(layout, count: 4, in: builtInScreen().visibleFrame)
                 let top = NSScreen.screens[0].frame.height
                 func flipped(_ rect: NSRect) -> CGRect { CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height) }
-                for (id, frame) in zip(targets.windows, next) {
+                for (id, frame) in zip(windows, next) {
                     let border = borders[id]!
                     let from = border.window.frame.insetBy(dx: 2, dy: 2)
                     slide.add(border, .move(from: flipped(from), to: flipped(frame), at: CACurrentMediaTime()),
@@ -588,7 +546,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
         border.window.order(.above, relativeTo: Int(id))
     }
     // Where the windows are now.
-    for row in SkyLight.rows(targets.windows) {
+    for row in SkyLight.rows(windows) {
         borders[row.id]?.place(around: appKitRect(row.frame), radius: radii[row.id] ?? 0, color: color)
     }
     follower.on = true

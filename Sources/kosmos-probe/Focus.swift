@@ -150,67 +150,45 @@ enum ActivationWay: String, CaseIterable {
 
 final class KeyStub {
     let name: String
-    let process: Process
-    /// Held open for the stub's lifetime; the stub exits when it closes.
-    let input: Pipe
-    let output: Pipe
-    private var buffer = Data()
-    private(set) var windows: [UInt32] = []
-    var pid: pid_t { process.processIdentifier }
+    /// The stub exits when its standard input closes.
+    let child: Child
+    let windows: [UInt32]
+    var pid: pid_t { child.pid }
 
     init(_ name: String, _ offsets: [String]) {
         self.name = name
-        process = Process()
-        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        process.arguments = ["key-stub", name] + offsets
-        input = Pipe()
-        output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        try! process.run()
-        windows = line().split(whereSeparator: \.isWhitespace).compactMap { UInt32($0) }
-    }
-
-    func line() -> String {
-        while !buffer.contains(UInt8(ascii: "\n")) {
-            let chunk = output.fileHandleForReading.availableData
-            guard !chunk.isEmpty else { print("stub \(name) exited"); exit(1) }
-            buffer.append(chunk)
-        }
-        let end = buffer.firstIndex(of: UInt8(ascii: "\n"))!
-        let text = String(decoding: buffer[buffer.startIndex..<end], as: UTF8.self)
-        buffer.removeSubrange(buffer.startIndex...end)
-        return text
+        child = Child(["key-stub", name] + offsets)
+        windows = child.readWindows()
     }
 
     /// Activates the app from its own background thread. Returns what `activate` returned.
     func activateItself() -> Bool {
-        input.fileHandleForWriting.write(Data("activate\n".utf8))
-        return line() == "true"
+        child.send("activate")
+        return child.line() == "true"
     }
 
     /// Opens an InvisibleWindow in the stub and returns its id.
     func openInvisibleWindow() -> UInt32 {
-        input.fileHandleForWriting.write(Data("invisible\n".utf8))
-        return UInt32(line()) ?? 0
+        child.send("invisible")
+        return UInt32(child.line()) ?? 0
     }
 
     /// Keys a window of the stub's own by the private path, from the stub's background thread.
     func keyOwnWindow(_ id: UInt32) -> Bool {
-        input.fileHandleForWriting.write(Data("key-self \(id)\n".utf8))
-        return line() == "true"
+        child.send("key-self \(id)")
+        return child.line() == "true"
     }
 
     /// Activates another app from the stub's background thread. Returns what the call returned.
     func activate(_ pid: pid_t, _ way: ActivationWay) -> Bool {
-        input.fileHandleForWriting.write(Data("activate \(way.rawValue) \(pid)\n".utf8))
-        return line() == "true"
+        child.send("activate \(way.rawValue) \(pid)")
+        return child.line() == "true"
     }
 
     /// The window the app itself holds key, from AppKit, or nil.
     func appKey() -> UInt32? {
-        input.fileHandleForWriting.write(Data("key\n".utf8))
-        return UInt32(line()).flatMap { $0 == 0 ? nil : $0 }
+        child.send("key")
+        return UInt32(child.line()).flatMap { $0 == 0 ? nil : $0 }
     }
 
     func label(_ window: UInt32?) -> String {
@@ -274,8 +252,8 @@ final class FocusNotes: @unchecked Sendable {
     notes.watch(a.pid)
     notes.watch(b.pid)
     defer {
-        a.process.terminate()
-        b.process.terminate()
+        a.child.terminate()
+        b.child.terminate()
         if let before, let beforeWindow { _ = kosmos_make_key(before, beforeWindow) }
     }
     wait(0.5)
@@ -395,7 +373,7 @@ final class FocusNotes: @unchecked Sendable {
     // does that for every target. Then the private front with no key window, which the
     // private path uses for an empty workspace. B is front before each try.
     let s = KeyStub("S", [])
-    defer { s.process.terminate() }
+    defer { s.child.terminate() }
     let finderPid = finder ? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier : nil
     var targets: [(name: String, pid: pid_t)] = [("A", a.pid)]
     if let finderPid { targets.append(("Finder", finderPid)) }

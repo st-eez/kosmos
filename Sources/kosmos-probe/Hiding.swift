@@ -71,19 +71,12 @@ import KosmosSkyLight
     exit(0)
 }
 
-/// Runs `command` (`panel` or `hidden-window`) in a child process and returns its window.
-func spawnPanel(_ command: String = "panel") -> (Process, UInt32) {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-    process.arguments = [command]
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    try! process.run()
-    var line = Data()
-    while !line.contains(UInt8(ascii: "\n")) { line.append(pipe.fileHandleForReading.availableData) }
-    let id = UInt32(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))!
+/// Runs `command` (`panel` or `hidden-window`) as a child and returns it with its window.
+func spawnPanel(_ command: String = "panel") -> (Child, UInt32) {
+    let child = Child([command])
+    let window = child.readWindows()[0]
     Thread.sleep(forTimeInterval: 0.3)   // let the panel reach the screen
-    return (process, id)
+    return (child, window)
 }
 
 func barrier(cycles: Int) {
@@ -134,7 +127,7 @@ func surviveKill() -> Never {
     guard case .nothingRecorded = Recovery.run(file: file) else { print("a previous record needed recovery; run again"); exit(1) }
 
     let (panel, window) = spawnPanel()
-    print("panel pid \(panel.processIdentifier) window \(window)")
+    print("panel pid \(panel.pid) window \(window)")
     let guardian = Process()
     guardian.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appending(path: "kosmos-guardian")
     guardian.arguments = ["watch", String(getpid())]
@@ -149,7 +142,7 @@ func surviveKill() -> Never {
     let space = kosmos_holding_create()
     record.spaces = [space]
     let original = SkyLight.spaces(of: window)?.first ?? 0
-    record.windows = [.init(id: window, owner: ProcessIdentity.of(panel.processIdentifier)!, originalSpace: original)]
+    record.windows = [.init(id: window, owner: ProcessIdentity.of(panel.pid)!, originalSpace: original)]
     file.publish(record)
 
     var ids = [window]
