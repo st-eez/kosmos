@@ -7,29 +7,31 @@ prefix.
 - [overview.md](overview.md): the goal and constraints, what the AeroSpace fork measured,
   the primitive decisions, the processes, threads and queues, a workspace switch,
   verification, milestones and what the first version leaves out. Read it first.
-  `KosmosApp/Controller.swift`, `KosmosApp/RunLoopExecutor.swift`,
-  `KosmosApp/Guardian.swift`, `kosmos-guardian/main.swift`, `KosmosApp/LaunchAtLogin.swift`,
-  `kosmos-probe/`.
+  Code: `KosmosApp/Controller.swift`, `KosmosApp/RunLoopExecutor.swift`,
+  `KosmosApp/Guardian.swift`, `kosmos-guardian/main.swift`,
+  `KosmosApp/LaunchAtLogin.swift`, `kosmos-probe/`.
 - [inventory.md](inventory.md): how Kosmos tracks windows from WindowServer, Accessibility
   and NSWorkspace events, the sweeps, the screen lock and wake, and which new windows it
   manages.
-  `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
-  `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`, `KosmosCore/LockState.swift`,
-  `KosmosSkyLight/SkyLight.swift`.
+  Code: `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
+  `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
+  `KosmosCore/LockState.swift`, `KosmosSkyLight/SkyLight.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, and Accessibility timeouts and backoff.
-  `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
-  `KosmosCore/LeftButton.swift`, `KosmosApp/AppWorker.swift`, `KosmosApp/Controller.swift`.
+  Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
+  `KosmosCore/LeftButton.swift`, `KosmosApp/AppWorker.swift`,
+  `KosmosApp/Controller.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
   Control.
-  `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`, `kosmos-guardian/main.swift`,
-  `KosmosCore/ConcealLedger.swift`, `KosmosRecovery/`, `KosmosSkyLight/Displays.swift`,
-  `CKosmos/KosmosBridge.m`, `kosmos-probe/MissionControl.swift`.
+  Code: `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`,
+  `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosRecovery/`,
+  `KosmosSkyLight/Displays.swift`, `CKosmos/KosmosBridge.m`,
+  `kosmos-probe/MissionControl.swift`.
 - [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, the
   private focus path with its kill switch and public fallback, departures, and the empty
   workspace's window.
-  `KosmosApp/FocusQueue.swift`, `KosmosApp/AppWorker.swift`,
+  Code: `KosmosApp/FocusQueue.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/FocusKillSwitch.swift`, `KosmosApp/EmptyWorkspaceWindow.swift`,
   `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`, `KosmosCore/FocusReports.swift`,
   `KosmosCore/KeyRequest.swift`, `KosmosCore/FocusRead.swift`,
@@ -37,47 +39,48 @@ prefix.
   `KosmosCore/ConcealHistory.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, and native tabs.
-  `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`, `KosmosCore/Commands.swift`,
-  `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`, `KosmosCore/Tabs.swift`,
-  `KosmosApp/Controller.swift`.
+  Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
+  `KosmosCore/Commands.swift`, `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`,
+  `KosmosCore/Tabs.swift`, `KosmosApp/Controller.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
   shows Secure Input and its holder.
-  `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,
+  Code: `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,
   `KosmosCore/Config/KeyCombo.swift`, `KosmosCore/Config/KeyboardLayout.swift`,
   `KosmosApp/AppDelegate.swift`, `kosmos-probe/SecureInput.swift`.
 - [ipc.md](ipc.md): the socket, the CLI and the snapshots pushed to SketchyBar.
-  `KosmosIPC/`, `kosmos/main.swift`, `KosmosApp/BarPush.swift`,
+  Code: `KosmosIPC/`, `kosmos/main.swift`, `KosmosApp/BarPush.swift`,
   `KosmosCore/BarSnapshot.swift`, `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
   workspaces a profile leaves out, and window rules.
-  `KosmosCore/Config/`, `KosmosApp/ConfigFile.swift`,
+  Code: `KosmosCore/Config/`, `KosmosApp/ConfigFile.swift`,
   `KosmosSkyLight/DisplayIdentity.swift`.
 - [onboarding.md](onboarding.md): the status item, the setup window that asks for
   permissions, and launch at login.
-  `KosmosApp/StatusItem.swift`, `KosmosApp/Onboarding.swift`,
+  Code: `KosmosApp/StatusItem.swift`, `KosmosApp/Onboarding.swift`,
   `KosmosApp/LaunchAtLogin.swift`.
 - [distribution.md](distribution.md): the release zip and Homebrew cask, signing,
   notarization and the app icon.
-  `script/bundle.sh`, `script/install.sh`, `script/test-install.sh`,
+  Code: `script/bundle.sh`, `script/install.sh`, `script/test-install.sh`,
   `script/icon.swift`, `Resources/`, `KosmosIPC/Version.swift`.
 - [focus-follows-mouse.md](focus-follows-mouse.md): hover focus from a pointer event tap,
   the pointer following keyboard focus, and whether the tap needs Input Monitoring.
-  `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
+  Code: `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
   `KosmosApp/Controller.swift`, `KosmosCore/Config/Config.swift`.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
-  `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
+  Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
   `KosmosApp/BarPush.swift`, `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`.
 - [displays.md](displays.md): the display orders, workspaces assigned to displays, the
   monitor commands, display changes, floating windows across displays, and dragging a
   tiled window by its title bar.
-  `KosmosCore/Session.swift`, `KosmosCore/Monitor.swift`, `KosmosCore/Command.swift`,
-  `KosmosCore/Config/Config.swift`, `KosmosApp/AppDelegate.swift`,
-  `KosmosApp/Controller.swift`, `KosmosSkyLight/Displays.swift`.
+  Code: `KosmosCore/Session.swift`, `KosmosCore/Monitor.swift`,
+  `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
+  `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
+  `KosmosSkyLight/Displays.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
-  `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`, `KosmosCore/Session.swift`,
-  `KosmosCore/Commands.swift`, `KosmosApp/Controller.swift`.
+  Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,
+  `KosmosCore/Session.swift`, `KosmosCore/Commands.swift`, `KosmosApp/Controller.swift`.
 
 Other docs:
 
