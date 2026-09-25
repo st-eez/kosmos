@@ -320,17 +320,18 @@ off the main thread).
   the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
   left to the launch retries.
 
-- **Animation trial**, behind `KOSMOS_ANIMATE=1`, after rift's `animation.rs`. A command's
+- **Animation trial**, behind `KOSMOS_ANIMATE=1`, after rift's `animation.rs`. A plan's
   write to a window already on screen, on a shown workspace, tweens on the app's worker:
   position only at 120 steps a second with circular easing over 0.2 s, the size once at
-  the midpoint, then the ordinary write and its read back. Progress follows the clock, so a
-  slow app skips steps and ends on time. A newer target starts from where the tween has the
-  window. Reveals, hidden workspaces, retries and Low Power Mode jump, and so does every
-  frame from a drag's lift, or a modifier drag's press, to its drop. The ledger
-  keeps the target pending until the final read back, so the tween's change events are
-  Kosmos's. Unmeasured: the cost per step, which `script/bench-relayout.sh` times against
-  instant moves, and a user's press on a window mid-tween, which `frameChanged` ignores
-  until the tween ends.
+  the midpoint, then the ordinary write and its read back. Progress follows the uptime
+  clock, so a slow app skips steps and ends on time. A newer target starts a new tween from
+  where the running one has the window. Reveals, hidden workspaces, the 100 ms retry and
+  floating windows brought home jump. So do a drag's own writes, at each movement and for the edges a right drag moves,
+  and the window a modifier drag holds. The relayout at a lift, a drop, and tiles sent
+  back after an edge resize are plans, and animate. The ledger keeps the target pending
+  until the final read back, so the tween's change events are Kosmos's. Unmeasured: the
+  cost per step, which `script/bench-relayout.sh` times against instant moves, and a
+  user's press on a window mid-tween, which `frameChanged` ignores until the tween ends.
 
 ### 5.3 Hiding and recovery
 
