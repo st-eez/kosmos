@@ -753,7 +753,7 @@ final class Controller {
             }
             // Dialogs and panels are not managed; their focus is theirs. A parked window is
             // key in its own fullscreen Space, or just before it returns, which follows it.
-            // A tab with no place yet is decided when it takes one.
+            // A window with no place yet is decided when it takes one.
             if let id, session.workspace(of: id) == nil || session.isParked(id) {
                 unplacedKey = session.workspace(of: id) == nil
                     ? KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
@@ -843,8 +843,11 @@ final class Controller {
 
     /// Acts on a key window report. A report whose verdict depends on a departure that is
     /// not known yet is held until the departure arrives or the grace ends
-    /// (tla/Kosmos.tla, Adopt and Hold).
+    /// (tla/Kosmos.tla, Adopt and Hold). While the session is locked no report is decided:
+    /// a held report's grace or a tab switch can end during a lock, and a follow then would
+    /// change the session's workspace while no batch runs.
     private func decide(_ report: KeyReport, keyLeft: @autoclosure () -> Departure) {
+        guard !sessionLocked else { return }   // resync requests the intent again
         let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
         // After a failed batch, recovery showed the windows of hidden workspaces, so a click
         // reaches them (needsResync).
