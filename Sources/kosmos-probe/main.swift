@@ -1,56 +1,51 @@
 // Probes for private behaviour the design depends on. Each probe touches only windows it
-// creates itself.
-//
-//   kosmos-probe secure-input       Which Carbon hotkeys fire while Secure Input is on, from
-//                                   real key presses its window asks for (SecureInput.swift).
-//   kosmos-probe mission-control [seconds]
-//                                   Which Mission Control signals arrive (MissionControl.swift).
-//   kosmos-probe bench-windows <count> [display] | eui [pid...]
-//                                   What script/bench-relayout.sh uses (Bench.swift).
-//   kosmos-probe borders | borders-cpu [relayouts]
-//                                   What Kosmos's border windows need and cost (Borders.swift).
+// creates itself, and the header of its file says what it measures.
 import AppKit
-import CKosmos
-import KosmosCore
-import KosmosIPC
-import KosmosRecovery
-import KosmosSkyLight
 
 setvbuf(stdout, nil, _IOLBF, 0)
-let arguments = CommandLine.arguments.dropFirst()
 
-switch arguments.first {
-case "panel": showPanel()
-case "barrier": barrier(cycles: arguments.dropFirst().first.flatMap(Int.init) ?? 50)
-case "survive-kill": surviveKill()
-case "destroyed-space": destroyedSpace()
-case "fullscreen-window": fullscreenWindow()
-case "fullscreen": fullscreen()
-case "departures-window": departuresWindow()
-case "departures": departures()
-case "tabs-window": tabsWindow()
-case "tabs": tabs(conceal: arguments.dropFirst().first)
-case "hidden-window": showHiddenWindow(levels: arguments.dropFirst().first == "levels")
-case "reveal": reveal()
-case "displays": displays()
-case "secure-input": secureInput()
-case "ax-child": axChild()
-case "ax-timeout": axTimeout()
-case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
-case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3, finder: arguments.contains("finder"))
-case "level": levels()
-case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
-case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
-case "holding": holding()
-case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
-case "bench-windows" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
-    benchWindows(Int(arguments.dropFirst().first!)!, on: arguments.dropFirst(2).first)
-case "eui": enhancedUserInterface(arguments.dropFirst().compactMap { pid_t($0) })
-case "borders": borders()
-case "borders-cpu": bordersCPU(relayouts: arguments.dropFirst().first.flatMap(Int.init) ?? 12)
-case "border-targets" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
-    borderTargets(Int(arguments.dropFirst().first!)!)
-default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | destroyed-space | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...] | borders | borders-cpu [relayouts]")
+/// Each probe with its usage, then the children the probes run, which have none.
+let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void)] = [
+    ("barrier", "barrier [cycles]", { barrier(cycles: $0.first.flatMap(Int.init) ?? 50) }),
+    ("survive-kill", "survive-kill", { _ in surviveKill() }),
+    ("destroyed-space", "destroyed-space", { _ in destroyedSpace() }),
+    ("reveal", "reveal", { _ in reveal() }),
+    ("holding", "holding", { _ in holding() }),
+    ("fullscreen", "fullscreen [dry]", { _ in fullscreen() }),
+    ("departures", "departures", { _ in departures() }),
+    ("tabs", "tabs [strip|keep]", { tabs(conceal: $0.first) }),
+    ("level", "level [onscreen|opaque]", { _ in levels() }),
+    ("events", "events [seconds]", { events(seconds: $0.first.flatMap(Double.init) ?? 30) }),
+    ("keying", "keying [rounds] [finder]", { keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder")) }),
+    ("key-holder", "key-holder [seconds]", { keyHolder(seconds: $0.first.flatMap(Double.init) ?? 30) }),
+    ("ax-timeout", "ax-timeout", { _ in axTimeout() }),
+    ("displays", "displays", { _ in displays() }),
+    ("secure-input", "secure-input", { _ in secureInput() }),
+    ("mission-control", "mission-control [seconds]", { missionControl(seconds: $0.first.flatMap(Double.init) ?? 120) }),
+    ("bench-windows", "bench-windows <count> [display]", { arguments in
+        guard let count = arguments.first.flatMap(Int.init) else { usage() }
+        benchWindows(count, on: arguments.dropFirst().first)
+    }),
+    ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
+    ("borders", "borders", { _ in borders() }),
+    ("borders-cpu", "borders-cpu [relayouts]", { bordersCPU(relayouts: $0.first.flatMap(Int.init) ?? 12) }),
+    ("panel", nil, { _ in showPanel() }),
+    ("hidden-window", nil, { showHiddenWindow(levels: $0.first == "levels") }),
+    ("fullscreen-window", nil, { _ in fullscreenWindow() }),
+    ("departures-window", nil, { _ in departuresWindow() }),
+    ("tabs-window", nil, { _ in tabsWindow() }),
+    ("ax-child", nil, { _ in axChild() }),
+    ("key-stub", nil, { keyStub($0.first ?? "S", Array($0.dropFirst())) }),
+    ("border-targets", nil, { arguments in
+        guard let count = arguments.first.flatMap(Int.init) else { usage() }
+        borderTargets(count)
+    }),
+]
+
+func usage() -> Never {
+    print("usage: kosmos-probe " + commands.compactMap(\.usage).joined(separator: " | "))
     exit(2)
 }
+
+guard let command = commands.first(where: { $0.name == CommandLine.arguments.dropFirst().first }) else { usage() }
+command.run(Array(CommandLine.arguments.dropFirst(2)))
