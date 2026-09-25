@@ -57,8 +57,8 @@ final class Controller {
     private enum Placed { case admitted, tab }
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
     /// request against, which the focus queue decides when the request runs.
-    private var keys = KeyHistory()
-    private var key: KeyWindow? { keys.key }
+    private var keyHistory = KeyHistory()
+    private var key: KeyWindow? { keyHistory.key }
     /// When Kosmos's empty workspace window last became key, on the clock app launch dates use.
     private var emptyWorkspaceKeyed = Date.distantPast
     /// A report whose verdict waits for the departure of the window key before it
@@ -67,7 +67,7 @@ final class Controller {
     /// A departure that waits for macOS's report of the next key window: the key window that
     /// left, and the number of the departure's timer.
     private var awaitingKey: (window: WindowID, number: Int)?
-    private var departures = 0
+    private var departureNumber = 0
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
@@ -542,7 +542,7 @@ final class Controller {
         // plan conceals it afresh when its place is on a hidden workspace.
         hiding.forget([old, new])
         ledger.forget(new)
-        if key == .window(old) { keys.key = .window(new) }
+        if key == .window(old) { keyHistory.key = .window(new) }
         execute(plan)
         // macOS reported the new tab key before it had a place. It is the user's or the
         // app's choice, followed if the place is on a hidden workspace; the window key
@@ -613,8 +613,8 @@ final class Controller {
             requestFocus(intent)
         case .afterKeyReport:
             guard case .window(let keyWindow)? = key else { break }
-            departures += 1
-            let number = departures
+            departureNumber += 1
+            let number = departureNumber
             awaitingKey = (keyWindow, number)
             after(Inventory.departureBound) { controller in
                 guard controller.awaitingKey?.number == number else { return }
@@ -824,7 +824,7 @@ final class Controller {
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
             let repeated = key == reported
-            let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
+            let previous: WindowID? = if case .window(let window)? = keyHistory.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
             // Its app keyed a window Kosmos admitted within the last second.
