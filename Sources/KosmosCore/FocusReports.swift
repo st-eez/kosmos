@@ -20,6 +20,9 @@ public enum ReportVerdict: Equatable, Sendable {
     case follow(UInt32)
     /// No key window and nothing to do.
     case ignore
+    /// Stamped before the last report Kosmos adopted or followed: reports of different apps
+    /// arrive out of order, and the newer one decided. Nothing to do.
+    case overtaken
     /// The verdict depends on whether the window key before the report left the screen,
     /// which is not known yet: hold the report until the departure arrives or a short grace
     /// ends, then classify it again (tla/Kosmos.tla, Hold).
@@ -54,6 +57,10 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// `publicly`: the public path made the request.
     private var expected: [(key: KeyWindow, app: Int32?, requested: Stamp, publicly: Bool)] = []
     private var lastCommand: Stamp?
+    /// The stamp of the last report Kosmos adopted or followed as the user's. A report that
+    /// only made Kosmos request its intent again does not count: it would overtake an older
+    /// report that still has to be followed (tla/README.md, change 20).
+    private var lastTaken: Stamp?
 
     public init() {}
 
@@ -131,15 +138,21 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
                                   concealed: Bool, recovered: Bool = false,
                                   keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if consumeEcho(key, receivedAt: stamp) { return .echo }
+        if let lastTaken, stamp < lastTaken { return .overtaken }
         if isStale(stamp) { return .reassert }
         // No key window: if the key window left, its departure focuses when this came
         // first.
         guard case .window(let id) = key else { return keyLeft() == .left ? .reassert : .ignore }
-        if onShownWorkspace { return .adopt(id) }
+        if onShownWorkspace {
+            lastTaken = stamp
+            return .adopt(id)
+        }
         guard concealed || recovered else { return .reassert }
         switch keyLeft() {
         case .left: return .reassert
-        case .stayed: return .follow(id)
+        case .stayed:
+            lastTaken = stamp
+            return .follow(id)
         case .unknown: return .undecided
         }
     }
