@@ -68,7 +68,7 @@ public struct RecoveryRecord: Equatable, Sendable {
     public var spaces: [UInt64]
     /// Windows recorded before their first hide.
     public var windows: [Window]
-    /// Spaces the slide trial moves windows in, shown in place at level 1 (docs/hiding.md).
+    /// Spaces windows slide in, shown in place at level 1 (docs/hiding.md).
     /// Each is recorded before any window enters it, and every window in one is Kosmos's to
     /// take out.
     public var animationSpaces: [UInt64]

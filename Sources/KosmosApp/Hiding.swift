@@ -54,11 +54,11 @@ final class Hiding {
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
-    /// Whether the guardian would recover windows now, should Kosmos die: the slide trial
-    /// moves windows through its Spaces only then.
+    /// Whether the guardian would recover windows now, should Kosmos die: windows slide
+    /// through the pool's Spaces only then (Slides).
     var guardianReady: Bool { guardian.isReady }
 
-    /// Creates `count` Spaces for the slide trial at `level` on the bridge queue, each
+    /// Creates `count` Spaces for windows to slide in at `level` on the bridge queue, each
     /// recorded before any window enters it, and hands the ones created to `done`.
     func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
         let store = self.store
@@ -158,7 +158,7 @@ final class Hiding {
     }
 
     /// Waits for queued batches, then restores every concealed window and destroys every
-    /// Space, the slide trial's too. For quit.
+    /// Space, the ones windows slide in too. For quit.
     func recoverNow() -> Recovery.Outcome {
         let store = self.store
         return bridge.sync { store.recover(keepingAnimationSpaces: false) }
@@ -352,8 +352,8 @@ private final class HidingStore: @unchecked Sendable {
         return false
     }
 
-    /// Creates Spaces for the slide trial, recorded before any window enters them. Returns
-    /// the ones created, none when the record cannot take them.
+    /// Creates Spaces for windows to slide in, recorded before any window enters them.
+    /// Returns the ones created, none when the record cannot take them.
     func createAnimationSpaces(_ count: Int, level: Int32) -> [UInt64] {
         guard load() else { return [] }
         let created = (0..<count).map { _ in kosmos_float_space_create(level) }.filter { $0 != 0 }

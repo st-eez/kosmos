@@ -1,6 +1,7 @@
 import AppKit
 import CKosmos
 import KosmosCore
+import Synchronization
 
 /// What an app's worker tells the main actor. Each report is stamped on receipt, so the
 /// main actor can order it against commands (docs/focus.md).
@@ -73,6 +74,9 @@ actor AppWorker {
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
     private var backoff = AXBackoff<ContinuousClock.Instant>()
+    /// `backoff.backedOff` for the main actor, which slides no window of an app that does not
+    /// answer (Controller.motions).
+    private nonisolated let backedOff = Atomic(false)
     /// Runs while `backoff` is asking.
     private var probe: CFRunLoopTimer?
     private let probeElement: AXUIElement
@@ -172,6 +176,9 @@ actor AppWorker {
     }
 
     var windowIDs: [UInt32] { Array(elements.keys) }
+
+    /// Whether calls go to the app: it is not backed off.
+    nonisolated var answers: Bool { !backedOff.load(ordering: .relaxed) }
 
     /// The app's focused window, which is nil when it has none. The outer nil means the app
     /// did not answer, so its focus is unknown.
@@ -500,6 +507,7 @@ actor AppWorker {
         if result == .cannotComplete, ContinuousClock.now - start > .seconds(Double(Self.timeout) / 2) {
             log.notice("\(self.name, privacy: .public) did not answer Accessibility in \(Self.timeout, format: .fixed(precision: 1)) s; asking every 0.5 s")
             if backoff.timedOut(at: start) { scheduleProbe() }
+            backedOff.store(true, ordering: .relaxed)
         }
         return result
     }
@@ -520,6 +528,7 @@ actor AppWorker {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
         let since = backoff.answered()
+        backedOff.store(false, ordering: .relaxed)
         let wasStarted = started
         if wasStarted {
             _ = trackWindows()

@@ -102,7 +102,7 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(record.encoded() == expected)
 }
 
-/// The slide trial's Spaces follow the version 1 layout, which a record without them keeps
+/// The animation Spaces follow the version 1 layout, which a record without them keeps
 /// byte for byte. A reader that predates them stops before them and still restores every
 /// concealed window, so they need no new version.
 @Test func animationSpacesFollowTheWindows() throws {
