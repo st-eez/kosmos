@@ -116,6 +116,19 @@
 //                                   owner, parent, level and Spaces, whether the record names
 //                                   it and whether its owner owns a recorded window. Read only:
 //                                   it changes no Space or window, opens none and takes no focus.
+//   kosmos-probe bench-windows <count> [display]
+//                                   Windows for script/bench-relayout.sh, which runs this from
+//                                   a bundle so macOS takes it for a regular app from launch
+//                                   and a running Kosmos tiles them. Opens count standard
+//                                   windows, titled and resizable, on the display of that
+//                                   name as `kosmos state` gives it, else the main one, and
+//                                   never activates the app. Prints their ids on one line,
+//                                   then `frame <id> <x> <y> <w> <h> <time>` at each new
+//                                   frame, with Kosmos's coordinates and the wall clock that
+//                                   bash's EPOCHREALTIME reads. Lines on stdin: `close <id>`
+//                                   closes a window, and `open` opens one where the last
+//                                   closed one was and prints `opened <id> <time>`. Quits at
+//                                   the end of stdin.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -152,8 +165,10 @@ case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) 
 case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
 case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
+case "bench-windows" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
+    benchWindows(Int(arguments.dropFirst().first!)!, on: arguments.dropFirst(2).first)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display]")
     exit(2)
 }
 
@@ -1596,5 +1611,76 @@ nonisolated(unsafe) var eventTime = DateFormatter()
             print("  \(id): pid \(row.pid) \(app), parent \(row.parent), level \(row.level), Spaces \(spaces), "
                   + "recorded \(recorded.contains(id)), owner owns a recorded window \(ownsRecorded)")
         }
+    }
+}
+
+@MainActor func benchWindows(_ count: Int, on display: String?) -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    let screen = NSScreen.screens.first { $0.localizedName == display } ?? NSScreen.main ?? NSScreen.screens[0]
+    let area = screen.visibleFrame
+    let bench = BenchWindows()
+    let ids = (0..<count).map { index in
+        let step = 30 * CGFloat(index)
+        return bench.open(NSRect(x: area.minX + 40 + step, y: area.maxY - 340 - step, width: 480, height: 300))
+    }
+    print(ids.map(String.init).joined(separator: " "))
+    Thread.detachNewThread {
+        while let line = readLine() {
+            let words = line.split(separator: " ")
+            if words == ["open"] {
+                DispatchQueue.main.async { MainActor.assumeIsolated { if let id = bench.reopen() { print("opened \(id) \(epochNow())") } } }
+            } else if words.count == 2, words[0] == "close", let id = Int(words[1]) {
+                DispatchQueue.main.async { MainActor.assumeIsolated { bench.close(id) } }
+            }
+        }
+        exit(0)
+    }
+    app.run()
+    exit(0)
+}
+
+/// The wall clock in seconds, to the microsecond, as bash's EPOCHREALTIME prints it.
+func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970) }
+
+/// The windows of `bench-windows`. Each prints its frame when it moves or resizes, once per
+/// new frame, with the origin at the top left of the main display, as Kosmos logs frames.
+@MainActor final class BenchWindows: NSObject, NSWindowDelegate {
+    private var windows: [Int: NSWindow] = [:]
+    private var printed: [Int: NSRect] = [:]
+    private var closed: NSRect?
+    private let top = NSScreen.screens[0].frame.maxY
+
+    /// Orders the window in without making it key, so the app stays in the background.
+    func open(_ frame: NSRect) -> Int {
+        let window = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              backing: .buffered, defer: false)
+        window.title = "kosmos-probe bench"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.orderFrontRegardless()
+        windows[window.windowNumber] = window
+        return window.windowNumber
+    }
+
+    /// The window goes when its last reference does, which destroys it in WindowServer.
+    func close(_ id: Int) {
+        guard let window = windows.removeValue(forKey: id) else { return }
+        printed[id] = nil
+        closed = window.frame
+        window.close()
+    }
+
+    func reopen() -> Int? { closed.map(open) }
+
+    func windowDidMove(_ notification: Notification) { printFrame(notification) }
+    func windowDidResize(_ notification: Notification) { printFrame(notification) }
+
+    private func printFrame(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        let id = window.windowNumber, frame = window.frame
+        guard printed[id] != frame else { return }
+        printed[id] = frame
+        print("frame \(id) \(Int(frame.minX)) \(Int(top - frame.maxY)) \(Int(frame.width)) \(Int(frame.height)) \(epochNow())")
     }
 }
