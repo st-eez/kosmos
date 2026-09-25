@@ -241,6 +241,24 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
     print(String(format: "rows of 2 windows: %.3f ms median; rows then a second query with radii: %.3f ms median",
                  percentile(plain, 0.5), percentile(withRadii, 0.5)))
 
+    // The events WindowServer sends for T and C at each step: moved (806), resized (807),
+    // reordered (808), ordered in (815) and out (816).
+    borderEvents = []
+    stepEvents = []
+    for id: UInt32 in [806, 807, 808, 815, 816] {
+        SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            guard let data, length >= 4 else { return }
+            let window = data.loadUnaligned(as: UInt32.self)
+            DispatchQueue.main.async { stepEvents.append((id, window)) }
+        }, id, nil)
+    }
+    var watched = [t, c]
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, 2)
+    func events() -> String {
+        defer { stepEvents = [] }
+        return stepEvents.isEmpty ? "no events" : "events " + stepEvents.map { "\($0.id) for \($0.window == t ? "T" : $0.window == c ? "C" : String($0.window))" }.joined(separator: ", ")
+    }
+
     // The border, ordered directly above T.
     let border = ProbeBorder()
     let frame = appKitRect(rows[t]!.frame)
@@ -254,15 +272,27 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
     wait(0.2)
     let b = border.id
     stacking("ordered above T", border: b)
+    print("  \(events())")
     targets.send("front \(c)")
     wait(0.2)
     stacking("after the child orders C front", border: b)
+    print("  \(events())")
     targets.send("front \(t)")
     wait(0.2)
     stacking("after the child orders T front", border: b)
+    print("  \(events())")
     border.window.order(.above, relativeTo: Int(t))
     wait(0.2)
     stacking("B ordered above T again", border: b)
+    print("  \(events())")
+    var orders: [Double] = []
+    for _ in 0..<100 {
+        start = .now
+        border.window.order(.above, relativeTo: Int(t))
+        orders.append(elapsed(start))
+    }
+    wait(0.2)
+    print(String(format: "100 more orders above T: %.3f ms median, %.3f ms at most; ", percentile(orders, 0.5), orders.max()!) + events())
 
     // Hit tests: 0.5 pt inside T's left edge, under the ring's inner point, and 1 pt
     // outside it, under the ring alone.
@@ -463,6 +493,7 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
 }
 
 nonisolated(unsafe) var borderEvents: Set<UInt32> = []
+nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
 
 @MainActor func bordersCPU(relayouts: Int) -> Never {
     let app = NSApplication.shared
