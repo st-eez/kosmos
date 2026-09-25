@@ -151,6 +151,9 @@ CFArrayRef kosmos_window_spaces(uint32_t window) {
 extern CGError _SLPSSetFrontProcessWithOptions(ProcessSerialNumber *psn, uint32_t window, uint32_t mode);
 extern CGError SLPSPostEventRecordTo(ProcessSerialNumber *psn, uint8_t *bytes);
 extern CGError _SLPSGetFrontProcess(ProcessSerialNumber *psn);
+// The second argument receives one byte of the reply, 1 in every read so far; its meaning
+// is not known.
+extern CGError SLPSGetKeyFocusProcess(ProcessSerialNumber *psn, uint8_t *unknown);
 static const uint32_t kCPSUserGenerated = 0x200;
 static const uint32_t kCPSNoWindows = 0x400;
 
@@ -184,6 +187,17 @@ pid_t kosmos_front_pid(void) {
     ProcessSerialNumber psn = {0};
     pid_t pid = 0;
     if (_SLPSGetFrontProcess(&psn) != kCGErrorSuccess) return 0;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations" // the pid of a PSN
+    return GetProcessPID(&psn, &pid) == noErr ? pid : 0;
+#pragma clang diagnostic pop
+}
+
+pid_t kosmos_key_focus_pid(void) {
+    ProcessSerialNumber psn = {0};
+    uint8_t unknown = 0;
+    pid_t pid = 0;
+    if (SLPSGetKeyFocusProcess(&psn, &unknown) != kCGErrorSuccess) return 0;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations" // the pid of a PSN
     return GetProcessPID(&psn, &pid) == noErr ? pid : 0;

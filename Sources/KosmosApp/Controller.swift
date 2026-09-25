@@ -1,4 +1,5 @@
 import AppKit
+import CKosmos
 import KosmosCore
 import KosmosSkyLight
 import os
@@ -861,21 +862,29 @@ final class Controller {
     private func focusUnderPointer(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         let window = entered.window
         let fullscreen = fullscreenParked.contains(window)
-        if let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
-                                             app: owner[window].map(inventory.appIdentity),
-                                             stale: reports.isStale(stamp)) {
-            // Onto a display whose shown workspace is empty: that workspace takes the focus as
-            // `workspace` gives it, keying the empty workspace window there, and the pointer
-            // stays where it is.
-            if skip == .notTiled, let display = entered.display,
-               let name = focusFollowsMouse.emptyWorkspace(entered: display, in: session),
-               let plan = session.perform(.workspace(.named(name))) {
-                pointerLog.info("pointer focuses empty workspace \(name, privacy: .public)")
-                reports.commandExecuted(receivedAt: stamp)
-                execute(plan, fromCommand: true)
-                return
-            }
+        let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
+                                          app: owner[window].map(inventory.appIdentity), stale: reports.isStale(stamp))
+        // Onto a display whose shown workspace is empty: that workspace takes the focus as
+        // `workspace` gives it, keying the empty workspace window there, and the pointer
+        // stays where it is.
+        let emptyWorkspace = skip == .notTiled
+            ? entered.display.flatMap { focusFollowsMouse.emptyWorkspace(entered: $0, in: session) } : nil
+        if let skip, emptyWorkspace == nil {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
+            return
+        }
+        if let holder = unmanagedKeyHolder() {
+            pointerLog.debug("""
+                pointer in \(window): \(NSRunningApplication(processIdentifier: holder)?.localizedName ?? String(holder), privacy: .public) \
+                is front or holds the key window
+                """)
+            return
+        }
+        if let emptyWorkspace {
+            guard let plan = session.perform(.workspace(.named(emptyWorkspace))) else { return }
+            pointerLog.info("pointer focuses empty workspace \(emptyWorkspace, privacy: .public)")
+            reports.commandExecuted(receivedAt: stamp)
+            execute(plan, fromCommand: true)
             return
         }
         pointerLog.info("pointer focuses \(window)")
@@ -891,6 +900,21 @@ final class Controller {
         // window key on another display leaves this one free.
         requestFocus(.window(window), fromCommand: true)
         publishState()
+    }
+
+    /// A process other than Kosmos that has no worker and is front or holds the key window,
+    /// as a launcher's panel or a password prompt, or nil. Focusing a window would take the
+    /// key window from it, which closes a launcher, so hover focus waits, as AutoRaise's
+    /// `stayFocusedBundleIds` did for the apps it listed (DESIGN.md, section 5.11). The front
+    /// process is read from LaunchServices at no WindowServer cost. A non-activating panel,
+    /// as Spotlight's, holds the key window while another app stays front, and only
+    /// WindowServer knows that, so the second read is a round trip to it, only for a focus.
+    private func unmanagedKeyHolder() -> pid_t? {
+        let unmanaged = { (pid: pid_t) in pid != 0 && pid != getpid() && self.inventory.worker(pid) == nil }
+        let front = kosmos_front_pid()
+        if unmanaged(front) { return front }
+        let holder = kosmos_key_focus_pid()
+        return unmanaged(holder) ? holder : nil
     }
 
     private func touch(_ window: WindowID) {

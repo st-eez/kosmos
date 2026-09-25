@@ -94,6 +94,13 @@
 //                                   the window is watched. Prints every event in time order
 //                                   with the level changes, then counts the events of other ids
 //                                   near a change and at other times.
+//   kosmos-probe key-holder [seconds]  Who is front, and who holds the key window: every
+//                                   50 ms for 30 s by default, prints each change of the
+//                                   front process (kosmos_front_pid) and the key focus
+//                                   process (kosmos_key_focus_pid), with each app's name and
+//                                   activation policy, then the time each read took. Passive:
+//                                   open Raycast, Spotlight, a password prompt, Control Center
+//                                   or a menu while it runs to see which read names what.
 //   kosmos-probe events [seconds]   Which SkyLight events reach Kosmos, and when: prints each
 //                                   event Kosmos registers, with the wall clock time the
 //                                   unified log uses, the window and its app, for 30 s by
@@ -133,8 +140,9 @@ case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dro
 case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3, finder: arguments.contains("finder"))
 case "level": levels()
 case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
+case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds]")
     exit(2)
 }
 
@@ -1496,4 +1504,41 @@ nonisolated(unsafe) var eventTime = DateFormatter()
         line += " payload \(payload)"
     }
     print(line)
+}
+
+@MainActor func keyHolder(seconds: Double) -> Never {
+    func describe(_ pid: pid_t) -> String {
+        guard pid != 0 else { return "none" }
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return "pid \(pid)" }
+        let policy = switch app.activationPolicy {
+        case .regular: "regular"
+        case .accessory: "accessory"
+        case .prohibited: "prohibited"
+        @unknown default: "unknown"
+        }
+        return "\(app.localizedName ?? "pid \(pid)") (\(pid), \(policy))"
+    }
+    var frontTimes: [Double] = [], holderTimes: [Double] = []
+    var last: (front: pid_t, holder: pid_t) = (-1, -1)
+    let end = ContinuousClock.now + .seconds(seconds)
+    print("watching the front and key focus processes for \(seconds) s")
+    while ContinuousClock.now < end {
+        var start = ContinuousClock.now
+        let front = kosmos_front_pid()
+        frontTimes.append(elapsed(start))
+        start = ContinuousClock.now
+        let holder = kosmos_key_focus_pid()
+        holderTimes.append(elapsed(start))
+        if (front, holder) != last {
+            print("\(Date().formatted(date: .omitted, time: .standard)) front \(describe(front)), key focus \(describe(holder))")
+            last = (front, holder)
+        }
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+    for (name, times) in [("front", frontTimes), ("key focus", holderTimes)] {
+        let sorted = times.sorted()
+        print(String(format: "%@ read: median %.1f us, max %.1f us over %d reads", name,
+                     sorted[sorted.count / 2] * 1000, sorted.last! * 1000, sorted.count))
+    }
+    exit(0)
 }

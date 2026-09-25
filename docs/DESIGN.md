@@ -765,6 +765,17 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - It is not the focus intent and key already. When a panel or dialog took key from the
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
+  - The front process, and the process that holds the key window, are Kosmos or have a
+    worker (`Controller.unmanagedKeyHolder`). A launcher's panel, as Raycast's, Spotlight's or Alfred's, or a password
+    prompt belongs to a process with none, as Apps keeps workers for regular apps only,
+    and focusing a window would take the key window from it, which closes a launcher.
+    AutoRaise left the front apps its `stayFocusedBundleIds` listed alone. Kosmos reads the
+    front process from LaunchServices, which costs WindowServer nothing. A non-activating
+    panel, as Spotlight's, holds the key window while another app stays front, and only
+    WindowServer knows that (`SLPSGetKeyFocusProcess`): 30 us back to back, and 111 us at
+    the median and 4.8 ms at most read every 50 ms. So that read comes last, only when the
+    window or an empty workspace would take focus. Which read names each of those
+    processes is for the live test, with `kosmos-probe key-holder`.
 - The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
   does, and never focuses anything over one, display by display. On a display that shows
   a fullscreen Space, the windows under the pointer are the fullscreen window and its
@@ -895,9 +906,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     minimum distance from where the pointer last counted, in PointerGate, brings it back.
   - A pause key other than Control, and a delay setting, until a user needs one.
   - Open menus. Moving the pointer off an open menu onto a window focuses that window and
-    closes the menu, and with no delay a short overshoot does it. If the live test shows
-    it, one SkyLight window list read per window entered, for a window at the pop-up menu
-    level on screen, would keep the menu open.
+    closes the menu, and with no delay a short overshoot does it. The front app's own menus
+    belong to a process with a worker, so the key holder check leaves them to this; whether
+    a menu extra's menu moves the key focus is for `kosmos-probe key-holder`. If the live
+    test shows it, one SkyLight window list read per window entered, for a window at the
+    pop-up menu level on screen, would keep the menu open.
   - A raise of a background app's window. The key record keys it and leaves the stacking
     order alone (section 5.4), until the worker's raise after the key record lands. The
     window under the pointer is on top at the pointer already, so only the parts of a
