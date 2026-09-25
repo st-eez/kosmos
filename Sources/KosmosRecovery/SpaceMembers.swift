@@ -13,6 +13,14 @@ public struct SpaceMembers: Equatable, Sendable {
     /// Reads `spaces` and keeps the windows `record` concealed. A Space that holds only
     /// other windows still exists.
     public static func read(_ spaces: [UInt64], of record: RecoveryRecord) -> SpaceMembers {
+        var result = listed(spaces)
+        result.members = concealed(result.members, by: record, rows: rows)
+        return result
+    }
+
+    /// Reads `spaces` and keeps every window in them, as recovery takes every window out of
+    /// an animation Space.
+    public static func listed(_ spaces: [UInt64]) -> SpaceMembers {
         var result = SpaceMembers(members: [:], gone: [])
         var pending = spaces
         for attempt in 0..<10 {
@@ -25,7 +33,6 @@ public struct SpaceMembers: Equatable, Sendable {
             if pending.isEmpty { break }
         }
         result.gone = Set(pending)
-        result.members = concealed(result.members, by: record, rows: rows)
         return result
     }
 

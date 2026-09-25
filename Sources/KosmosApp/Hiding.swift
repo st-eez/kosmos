@@ -54,6 +54,20 @@ final class Hiding {
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
+    /// Whether the guardian would recover windows now, should Kosmos die: the slide trial
+    /// moves windows through its Spaces only then.
+    var guardianReady: Bool { guardian.isReady }
+
+    /// Creates `count` Spaces for the slide trial at `level` on the bridge queue, each
+    /// recorded before any window enters it, and hands the ones created to `done`.
+    func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
+        let store = self.store
+        bridge.async {
+            let spaces = store.createAnimationSpaces(count, level: level)
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(spaces) } }
+        }
+    }
+
     /// Whether the window was concealed when a report was stamped, judged by when the bridge
     /// last sent its conceal or reveal (ConcealHistory).
     func wasConcealed(_ window: UInt32, at stamp: ContinuousClock.Instant) -> Bool {
@@ -90,7 +104,7 @@ final class Hiding {
             let started = ContinuousClock.now
             let (confirmed, sent, barrier, stripped) = store.apply(show: show, on: displays, hide: hide, stripping: stripping)
             let applied = ContinuousClock.now
-            let outcome = confirmed ? nil : store.recover()
+            let outcome = confirmed ? nil : store.recover(keepingAnimationSpaces: true)
             let concealed = store.concealed
             let finished = ContinuousClock.now
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
@@ -124,7 +138,7 @@ final class Hiding {
     func restoreAll() {
         let store = self.store
         bridge.async {
-            let outcome = store.recover()
+            let outcome = store.recover(keepingAnimationSpaces: true)
             let concealed = store.concealed
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -143,10 +157,11 @@ final class Hiding {
         }
     }
 
-    /// Waits for queued batches, then restores every concealed window. For quit.
+    /// Waits for queued batches, then restores every concealed window and destroys every
+    /// Space, the slide trial's too. For quit.
     func recoverNow() -> Recovery.Outcome {
         let store = self.store
-        return bridge.sync { store.recoverOutcome() }
+        return bridge.sync { store.recover(keepingAnimationSpaces: false) }
     }
 }
 
@@ -337,10 +352,28 @@ private final class HidingStore: @unchecked Sendable {
         return false
     }
 
+    /// Creates Spaces for the slide trial, recorded before any window enters them. Returns
+    /// the ones created, none when the record cannot take them.
+    func createAnimationSpaces(_ count: Int, level: Int32) -> [UInt64] {
+        guard load() else { return [] }
+        let created = (0..<count).map { _ in kosmos_float_space_create(level) }.filter { $0 != 0 }
+        if created.count < count { hidingLog.error("\(count - created.count) of \(count) animation Spaces not created") }
+        var next = state!
+        next.animationSpaces += created
+        guard record.publish(next) else {
+            hidingLog.error("the recovery record cannot take \(created.count) more animation Spaces")
+            created.forEach { kosmos_space_destroy($0) }
+            return []
+        }
+        state = next
+        return created
+    }
+
     /// Runs recovery, then loads the ledger again from what the record still names.
+    /// `keepingAnimationSpaces`: the running Kosmos goes on sliding windows through them.
     @discardableResult
-    func recover() -> Recovery.Outcome {
-        let outcome = Recovery.run(file: record)
+    func recover(keepingAnimationSpaces keeping: Bool) -> Recovery.Outcome {
+        let outcome = Recovery.run(file: record, keepingAnimationSpaces: keeping)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
         history.withLock { $0.forgetAll() }   // recovery restores windows unrecorded
         loaded = false
@@ -351,8 +384,6 @@ private final class HidingStore: @unchecked Sendable {
         }
         return outcome
     }
-
-    func recoverOutcome() -> Recovery.Outcome { recover() }
 
     /// Whether the window has a Space besides the holding Space, which the list leaves out,
     /// so a removal from the holding Space leaves it where it was. Any listed Space counts, a

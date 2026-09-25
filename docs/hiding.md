@@ -85,6 +85,13 @@
   recovery it conceals into the newest recorded Space again only while that Space holds a
   recorded window, which a Space sent a destroy never does, and creates a new one
   otherwise.
+- The slide trial ([geometry.md](geometry.md)) records its Spaces in a list of their own,
+  after the windows, where a reader that predates the list stops, so it still restores
+  every concealed window. Each is recorded before any window enters it. Recovery sets each
+  to identity and alpha 1, takes every window out of it, since each came in through Kosmos,
+  then destroys it with the holding Spaces and reads it back. The running Kosmos's
+  recovery after a failed batch leaves them to it, recorded; the quit, the guardian and the
+  startup recovery destroy them.
 - A window that closes leaves the ledger and the record once its concealing Space no
   longer lists it. The record's slot holds about 168 windows, and filled with closed ones it
   would stop every conceal. A window still listed stays recorded, as one that only stopped
