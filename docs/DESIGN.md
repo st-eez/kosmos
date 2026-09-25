@@ -359,23 +359,26 @@ off the main thread).
   since that read failed, so it keeps the record. Recovery adds each one without an
   ordinary Space to the current Space of the display under it, or to the Space a reveal
   would choose, then removes them from each recorded Space, destroys the Spaces and clears
-  the record. It removes an added window from a recorded Space only
-  once the add landed, and keeps the record while a concealed window is left there. Every
-  step can safely run twice.
-- Recovery leaves in its Space a window whose process owns no recorded window, such as a
-  JankyBorders border window (below), and so does the ledger rebuilt after an incomplete
-  recovery. Whether a destroy takes away a Space that still holds such
-  a window is unconfirmed, since the destroy's return says only that it was sent. So
-  recovery sends a barrier after the destroys and reads each Space back. That read is the
-  measurement: a Space still there is logged and stays in the record, with no windows, for
-  the next recovery to destroy again. Kosmos never conceals into a Space it sent a destroy,
-  whose level, transform and alpha would be unknown. After a recovery it conceals into the
-  newest recorded Space again only while the record names a window and that Space exists,
-  and creates a new one otherwise.
+  the record. It removes an added window from a recorded Space only once the add landed,
+  and keeps the record while a concealed window is left there. Every step can safely run
+  twice.
+- Recovery leaves in its Space a window of another process that is neither a child of a
+  concealed window nor unread, such as a JankyBorders border window (below), and so does
+  the ledger rebuilt after an incomplete recovery. Whether a destroy takes away a Space
+  that still holds such a window is unconfirmed, since the destroy's return says only that
+  it was sent. So recovery sends a barrier after the destroys and reads each Space back.
+  That read is the measurement: a Space still there is logged and stays in the record,
+  with no windows, for the next recovery to destroy again. Kosmos never conceals into a
+  Space it sent a destroy, whose level, transform and alpha would be unknown. After a
+  recovery it conceals into the newest recorded Space again only while that Space holds a
+  recorded window, which a Space sent a destroy never does, and creates a new one
+  otherwise.
 - A window that closes leaves the ledger and the record once its concealing Space no
   longer lists it. The record's slot holds about 168 windows, and filled with closed ones it
   would stop every conceal. A window still listed stays recorded, as one that only stopped
-  being managed or that a failed read took for closed, so recovery restores it.
+  being managed or that a failed read took for closed, so recovery restores it. A window
+  the ledger does not hold leaves once its row is gone or it has a Space: recovery restores
+  one alive on no Space.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

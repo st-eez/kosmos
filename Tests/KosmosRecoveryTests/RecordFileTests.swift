@@ -111,10 +111,12 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(file.read()?.spaces.count == 64)
 }
 
-/// Hiding conceals into the newest recorded Space again only when it still exists and the
-/// record names a window: a record without one holds Spaces that outlived their destroy.
-@Test func onlyTheNewestSpaceOfARecordWithWindowsIsUsedAgain() {
-    #expect(record(spaces: [1, 2], windows: 1).reusableSpace(gone: []) == 2)
-    #expect(record(spaces: [1, 2], windows: 1).reusableSpace(gone: [2]) == nil)
-    #expect(record(spaces: [1, 2]).reusableSpace(gone: []) == nil)
+/// Hiding conceals into the newest recorded Space again only while it holds a recorded
+/// window, 0 here: a Space sent a destroy holds none.
+@Test func onlyTheNewestSpaceHoldingARecordedWindowIsUsedAgain() {
+    let kept = record(spaces: [1, 2], windows: 1)
+    #expect(kept.reusableSpace(members: [1: [], 2: [0]]) == 2)
+    #expect(kept.reusableSpace(members: [1: [0], 2: []]) == nil)
+    #expect(kept.reusableSpace(members: [1: [0]]) == nil)   // 2 is gone
+    #expect(kept.reusableSpace(members: [2: [7]]) == nil)   // another process's window
 }

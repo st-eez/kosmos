@@ -61,7 +61,8 @@ final class Hiding {
     }
 
     /// Forgets a window that closed: its history at once, and on the bridge queue its entries
-    /// in the ledger and the record, once its concealing Space no longer lists it. Kept, the
+    /// in the ledger and the record, once its concealing Space no longer lists it, or for a
+    /// window the ledger does not hold, once its row is gone or it has a Space. Kept, the
     /// record would fill with closed windows and every conceal would stop. A window still
     /// listed stays recorded, as one that only stopped being managed or that a failed read
     /// took for closed, so recovery restores it.
@@ -185,8 +186,8 @@ private final class HidingStore: @unchecked Sendable {
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }
         // The newest recorded Space is used again rather than adding one per attempt, unless
-        // it is gone or was sent a destroy.
-        space = onFile.reusableSpace(gone: read.gone) ?? 0
+        // it may have been sent a destroy.
+        space = onFile.reusableSpace(members: read.members) ?? 0
         ledger = rebuilt
         loaded = true
         return true
@@ -277,7 +278,8 @@ private final class HidingStore: @unchecked Sendable {
 
     func forgetClosed(_ window: UInt32) {
         guard load() else { return }
-        forget(ledger.departed([window]) { kosmos_space_windows($0) as? [UInt32] })
+        forget(ledger.departed([window], members: { kosmos_space_windows($0) as? [UInt32] },
+                               settled: { SkyLight.rows([$0]).isEmpty || !((kosmos_window_spaces($0) as? [UInt64]) ?? []).isEmpty }))
     }
 
     func forget(_ windows: [UInt32]) {

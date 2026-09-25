@@ -92,12 +92,13 @@ public struct ConcealLedger: Equatable, Sendable {
         for window in windows { entries[window] = nil }
     }
 
-    /// The windows of `windows` out of their concealing Space, as a closed window is, and
-    /// those the ledger does not hold. `members` reads a Space; a failed read, nil, keeps
-    /// its windows.
-    public func departed(_ windows: [UInt32], members: (UInt64) -> [UInt32]?) -> [UInt32] {
+    /// The windows of `windows` out of their concealing Space, as a closed window is.
+    /// `members` reads a Space; a failed read, nil, keeps its windows. A window the ledger
+    /// does not hold leaves when `settled` says its row is gone or it has a Space: one alive
+    /// on no Space stays for recovery to restore.
+    public func departed(_ windows: [UInt32], members: (UInt64) -> [UInt32]?, settled: (UInt32) -> Bool) -> [UInt32] {
         windows.filter { window in
-            guard let space = entries[window] else { return true }
+            guard let space = entries[window] else { return settled(window) }
             return members(space).map { !$0.contains(window) } ?? false
         }
     }
