@@ -431,36 +431,22 @@ final class Controller {
         guard changed, NSEvent.pressedMouseButtons == 1 else { return }
         if !session.shownFloatingWindows.contains(id) {
             mouseMoved.insert(id)
-        } else if key == .window(id) {
-            rebind(id, draggedTo: frame)
+        } else if key == .window(id), let plan = session.dragged(id, to: frame) {
+            controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
+            execute(plan)
         }
     }
 
     /// The left button came up. The workspaces of tiled windows the user moved or resized
     /// with it are laid out again, which puts those windows back in their tiles, as AeroSpace
-    /// lays out at a left mouse up (GlobalObserver.swift). A floating key window is checked
-    /// for a drag once more, where WindowServer has it now, in case its moves were not
-    /// reported while the button was down.
+    /// lays out at a left mouse up (GlobalObserver.swift).
     private func leftMouseUp() {
-        guard managing, !sessionLocked else { return }
-        if case .window(let id)? = key, session.shownFloatingWindows.contains(id), !ledger.isWriting(id),
-           let frame = SkyLight.rows([id]).first?.frame {
-            rebind(id, draggedTo: frame)
-        }
-        guard !mouseMoved.isEmpty else { return }
+        guard managing, !sessionLocked, !mouseMoved.isEmpty else { return }
         let names = Set(mouseMoved.compactMap { session.workspace(of: $0) }.filter { session.isShown($0) })
         controllerLog.info("left mouse up: \(self.mouseMoved.count) tiled windows moved with the mouse, workspaces \(names.sorted().joined(separator: " "), privacy: .public) laid out again")
         mouseMoved = []
         var plan = Session.Plan()
         for name in names { plan.frames.merge(session.frames(of: name)) { current, _ in current } }
-        execute(plan)
-    }
-
-    /// A floating window the user dragged to `frame` joins the workspace shown there, if
-    /// another display shows it (Session.dragged).
-    private func rebind(_ id: WindowID, draggedTo frame: CGRect) {
-        guard let plan = session.dragged(id, to: frame) else { return }
-        controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
         execute(plan)
     }
 

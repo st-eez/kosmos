@@ -827,11 +827,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   check above leaves it there. Kosmos takes a move of a floating window of a shown
   workspace for a drag when a WindowServer change event (806 to 808, 815, 816) reports
   it, no frame write of its own is in flight for it, the window is key and the left
-  button is down, as AeroSpace's `isManipulatedWithMouse` checks. When the button comes
-  up, a floating key window is checked once more from where WindowServer has it then.
-  macOS moving the windows of a display that leaves is no drag, and the check moves them
-  back. A reveal's Space change reads the window's frame again and is no drag either. A
-  tiled window dragged to another display goes back to its tile (section 5.2).
+  button is down, as AeroSpace's `isManipulatedWithMouse` checks. macOS moving the
+  windows of a display that leaves is no drag, and the check moves them back. A reveal's
+  Space change reads the window's frame again and is no drag either. A tiled window
+  dragged to another display goes back to its tile (section 5.2).
 - A concealed window keeps its ordinary Space, as on one display, unless its app's most
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display (section
@@ -869,8 +868,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     frame when revealed there;
   - how many notifications a hotplug posts, and whether the holding Space survives one;
   - whether WindowServer reports a dragged window's moves while the left button is still
-    down, which putting a dragged tiled window back needs; a floating one is checked
-    again when the button comes up;
+    down, which putting a dragged tiled window back and rebinding a dragged floating
+    window need;
   - whether macOS keeps the twin panels' left and main places across replugs without
     BetterDisplay, which decides whether a placement step stays;
   - where a concealed window lands when a display leaves and recovery then runs: every
