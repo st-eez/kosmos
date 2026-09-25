@@ -64,8 +64,6 @@ extension Controller {
         }
     }
 
-    /// Every held report logs its outcome, to tell whether any report came before the first
-    /// word of its departure.
     private func log(_ note: KeyReportIntake.Note) {
         func since(_ held: KeyReportIntake.Report) -> Double { (ContinuousClock.now - held.received).milliseconds }
         switch note {

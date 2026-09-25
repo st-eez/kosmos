@@ -1,7 +1,5 @@
-/// Decides each key window report: adopt its window, follow it to its workspace, hold it for
-/// the grace, request the focus intent again or key the empty workspace again, and whether the
-/// pointer comes (docs/focus.md; tla/Kosmos.tla, Adopt and Hold). The Controller gathers the
-/// facts, runs the action and keeps the grace's timer.
+/// Decides what each key window report does and whether the pointer comes (docs/focus.md;
+/// tla/Kosmos.tla, Adopt and Hold). The Controller gathers the facts and runs the action.
 public struct KeyReportIntake: Sendable {
     public struct Report: Equatable, Sendable {
         public let key: KeyWindow
