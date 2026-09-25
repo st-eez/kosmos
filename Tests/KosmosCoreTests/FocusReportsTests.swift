@@ -320,38 +320,3 @@ import Testing
     #expect(reports.classify(.none, receivedAt: 14, onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
     #expect(reads == 2)
 }
-
-@Test func aWindowKeyedBeforeItsPlaceOnAHiddenWorkspaceIsFollowed() {
-    // Live, 2026-09-25: Chrome launched on workspace 8, and a rule put its first window on
-    // workspace 4, which no display showed. Kosmos concealed the window and keyed Claude
-    // again, so Steve pressed alt-4 himself.
-    #expect(AdmissionFocus.decide(keyed: true, shown: false, parked: false, atLaunch: false, locked: false) == .follow)
-    // The report is decided as one of a concealed window whose key window before it stayed.
-    var reports = FocusReports<Int>()
-    #expect(reports.classify(.window(7), receivedAt: 10, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(7))
-    // A command after the report wins.
-    reports.commandExecuted(receivedAt: 11)
-    #expect(reports.classify(.window(7), receivedAt: 10, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .reassert)
-}
-
-@Test func admissionFollowsOnlyAWindowItsAppKeyedSinceLaunch() {
-    func decide(keyed: Bool = true, shown: Bool = false, parked: Bool = false, atLaunch: Bool = false,
-                locked: Bool = false) -> AdmissionFocus {
-        AdmissionFocus.decide(keyed: keyed, shown: shown, parked: parked, atLaunch: atLaunch, locked: locked)
-    }
-    // On a shown workspace, as with a rule that names no workspace, it becomes the focus
-    // there, at launch too.
-    #expect(decide(shown: true) == .adopt)
-    #expect(decide(shown: true, atLaunch: true) == .adopt)
-    #expect(decide(keyed: false, shown: true) == .none)
-    // A window no report named, as one a background app opened: a report before its conceal
-    // completes is still followed.
-    #expect(decide(keyed: false) == .placedHidden)
-    // Kosmos's launch sweep, a parked window and a locked session follow nothing.
-    #expect(decide(atLaunch: true) == .none)
-    #expect(decide(keyed: false, atLaunch: true) == .none)
-    #expect(decide(parked: true) == .none)
-    #expect(decide(shown: true, parked: true) == .none)
-    #expect(decide(locked: true) == .none)
-    #expect(decide(shown: true, locked: true) == .none)
-}

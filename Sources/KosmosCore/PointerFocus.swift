@@ -142,6 +142,15 @@ public struct ActivationInput: Equatable, Sendable {
         if key < 1, key < leftClick, key < rightClick, key < moved { return true }
         return onDock && leftClick < 1 && leftClick < key && leftClick < rightClick
     }
+
+    /// The input as it stood `age` seconds ago, each time counted from then, or nil when a
+    /// key or a button went down since: the session keeps only the last event of each type,
+    /// so a later one hides the one before. A pointer movement since rules a key press out,
+    /// as a movement after it does, and leaves a Dock click alone.
+    public func asOf(secondsAgo age: Double) -> ActivationInput? {
+        guard key >= age, leftClick >= age, rightClick >= age else { return nil }
+        return ActivationInput(key: key - age, leftClick: leftClick - age, rightClick: rightClick - age, moved: moved - age)
+    }
 }
 
 /// Where a command came from. Bar clicks, scripts and launchers send theirs through the CLI.

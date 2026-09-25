@@ -184,9 +184,10 @@ app-name = 'TLauncher'
 float = true
 
 # Daily apps on fixed workspaces. A rule applies to new windows; a window moved by hand
-# stays where it is. Launching or activating an app whose new window a rule sends to a
-# hidden workspace switches to that workspace, as a Hyprland workspace rule without
-# `silent` does. A window an app opens in the background leaves the workspaces alone.
+# stays where it is. A new window the user asked for, by launching its app with a key
+# press or a Dock click or by Command-N in it, switches to the hidden workspace its rule
+# names, as a Hyprland workspace rule without `silent` does. A window an agent's launch
+# or a background app opens leaves the workspaces alone.
 [[rule]]
 app-id = 'com.mitchellh.ghostty'
 workspace = '1'
