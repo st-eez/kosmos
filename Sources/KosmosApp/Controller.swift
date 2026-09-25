@@ -425,7 +425,9 @@ final class Controller {
         let stale = reports.isStale(stamp)
         var plan = session.unpark(windows, follow: stale ? nil : follow)
         if stale { plan.focus = intent }
-        execute(plan)
+        // A Dock click that unhides the app or restores the window, or Command-Tab to a
+        // hidden app, picks it away from the pointer, as an activation does (decide).
+        execute(plan, movePointer: mouseFollowsFocus && follow != nil && !stale && pickedAwayFromPointer())
     }
 
     /// Minimized, or hidden with their app (tla/Kosmos.tla, Depart). When Kosmos's focus

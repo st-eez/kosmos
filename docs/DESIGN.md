@@ -966,12 +966,19 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     frame says nothing. So as each left mouse down lands, Kosmos asks WindowServer's hit
     test for the window under it (`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`),
     and reads that window's row at each activation it handles. A press off every display,
-    as the focus path's synthesized one, names no window. The hit test runs
-    at the press because the Dock starts to hide once the pointer leaves it, which can be
-    before the app reports its window key. With the Dock hidden, the hit test passed
-    through its window and named the windows beneath, Finder's desktop at the display's
-    bottom edge; a click on a shown Dock's icon is unmeasured. A click on the Dock's menus,
-    Mission Control or Launchpad is left out, at other levels.
+    as the focus path's synthesized one, names no window. The hit test runs at the press
+    because the Dock starts to hide once the pointer leaves it, which can be before the
+    app reports its window key. With the Dock hidden, the hit test passed through its
+    window and named the windows beneath, Finder's desktop at the display's bottom edge; a
+    click on a shown Dock's icon is unmeasured. A click on the Dock's menus, Mission
+    Control or Launchpad is left out, at other levels.
+  - A window Kosmos follows back to its place (section 5.5) brings the pointer by the
+    same test, read as Kosmos handles the return: a Dock click that unhides its app or
+    restores it from the Dock, and Command-Tab to a hidden app. macOS keys such a window
+    while it is still parked, so its key report is no activation Kosmos handles, and the
+    pointer stayed on the Dock before this. A key that takes a window out of native
+    fullscreen, or makes an app order a closed window in again, brings it too. Whether a
+    window restored from the Dock reports its return within the second is unmeasured.
   - A workspace switch command on the pointer's display leaves the pointer where it is:
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
     `move-node-to-workspace --focus-follows-window`.
