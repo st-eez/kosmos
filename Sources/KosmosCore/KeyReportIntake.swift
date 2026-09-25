@@ -40,8 +40,9 @@ public struct KeyReportIntake: Sendable {
         case heldWindowLeft(Report)
         /// At the grace's end another window was key.
         case heldMovedOn(Report, key: KeyWindow?)
-        /// At the grace's end, whether the key window before the held report left.
-        case heldDecided(Report, previous: WindowID, left: Bool)
+        /// At the grace's end, whether the key window before the held report left. `at`: the
+        /// grace's end, before the read of whether it left.
+        case heldDecided(Report, previous: WindowID, left: Bool, at: ContinuousClock.Instant)
     }
 
     /// What the Controller knows as it decides. The closures run only when a decision needs
@@ -245,8 +246,9 @@ public struct KeyReportIntake: Sendable {
             return .none
         }
         guard let previous = report.previous else { return .none }
+        let now = ContinuousClock.now
         let left = facts.leftScreen(previous)
-        facts.note(.heldDecided(report, previous: previous, left: left))
+        facts.note(.heldDecided(report, previous: previous, left: left, at: now))
         return decide(report, keyLeft: left ? .left : .stayed, facts: facts, reports: &reports)
     }
 

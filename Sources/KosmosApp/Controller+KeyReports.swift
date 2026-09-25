@@ -83,10 +83,10 @@ extension Controller {
             controllerLog.notice("held focus report \(String(describing: held.key), privacy: .public): dropped, its window left, after \(since(held), format: .fixed(precision: 3)) ms")
         case .heldMovedOn(let held, let key):
             controllerLog.notice("held focus report \(String(describing: held.key), privacy: .public): dropped, \(String(describing: key), privacy: .public) is key now, after \(since(held), format: .fixed(precision: 3)) ms")
-        case .heldDecided(let held, let previous, let left):
+        case .heldDecided(let held, let previous, let left, let at):
             controllerLog.notice("""
                 held focus report \(String(describing: held.key), privacy: .public): \
-                \(previous) \(left ? "left" : "stayed", privacy: .public) after \(since(held), format: .fixed(precision: 3)) ms
+                \(previous) \(left ? "left" : "stayed", privacy: .public) after \((at - held.received).milliseconds, format: .fixed(precision: 3)) ms
                 """)
         }
     }
