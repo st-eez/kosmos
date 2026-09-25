@@ -118,20 +118,12 @@ public enum Command: Equatable, Sendable {
             guard let direction = direction(rest[0]) else { return fail("\(name): unknown direction \(rest[0])") }
             return .success(name == "swap" ? .swap(direction) : .joinWith(direction))
         case "move-node-to-workspace":
-            let usageText = "usage: move-node-to-workspace [--focus-follows-window] [--window-id <id>] <name|next|prev>"
-            var follow = false, window: WindowID?, targets: [String] = []
-            var words = rest[...]
-            while let word = words.popFirst() {
-                switch word {
-                case "--focus-follows-window": follow = true
-                case "--window-id":
-                    guard let id = words.popFirst().flatMap(WindowID.init) else { return fail(usageText) }
-                    window = id
-                default: targets.append(word)
-                }
+            guard let options = options(rest, movesNode: true, wraps: false), options.targets.count == 1,
+                  !options.targets[0].hasPrefix("--") else {
+                return fail("usage: move-node-to-workspace [--focus-follows-window] [--window-id <id>] <name|next|prev>")
             }
-            guard targets.count == 1, !targets[0].hasPrefix("--") else { return fail(usageText) }
-            return .success(.moveNodeToWorkspace(workspace(targets[0]), focusFollowsWindow: follow, window: window))
+            return .success(.moveNodeToWorkspace(workspace(options.targets[0]), focusFollowsWindow: options.follow,
+                                                 window: options.window))
         case "layout":
             switch rest {
             case ["horizontal"], ["tiles", "horizontal"]: return .success(.layout(.orientation(.horizontal)))
@@ -168,23 +160,13 @@ public enum Command: Equatable, Sendable {
             let movesNode = name == "move-node-to-monitor"
             let usageText = "usage: \(name) " + (movesNode ? "[--focus-follows-window] [--window-id <id>] " : "")
                 + "[--wrap-around] <left|right|up|down|next|prev|number>"
-            var follow = false, wrap = false, window: WindowID?, targets: [String] = []
-            var words = rest[...]
-            while let word = words.popFirst() {
-                switch word {
-                case "--wrap-around": wrap = true
-                case "--focus-follows-window" where movesNode: follow = true
-                case "--window-id" where movesNode:
-                    guard let id = words.popFirst().flatMap(WindowID.init) else { return fail(usageText) }
-                    window = id
-                default: targets.append(word)
-                }
-            }
-            guard targets.count == 1, let target = monitor(targets[0]) else { return fail(usageText) }
+            guard let options = options(rest, movesNode: movesNode, wraps: true), options.targets.count == 1,
+                  let target = monitor(options.targets[0]) else { return fail(usageText) }
             // As in AeroSpace, wrapping needs an order to wrap in.
-            if wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
-            return .success(movesNode ? .moveNodeToMonitor(target, focusFollowsWindow: follow, wrapAround: wrap, window: window)
-                                      : .focusMonitor(target, wrapAround: wrap))
+            if options.wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
+            return .success(movesNode
+                ? .moveNodeToMonitor(target, focusFollowsWindow: options.follow, wrapAround: options.wrap, window: options.window)
+                : .focusMonitor(target, wrapAround: options.wrap))
         case "focus-follows-mouse":
             switch rest {
             case ["on"]: return .success(.focusFollowsMouse(.on))
@@ -194,6 +176,26 @@ public enum Command: Equatable, Sendable {
             }
         default: return usage
         }
+    }
+
+    /// The options among `words`: `--focus-follows-window` and `--window-id <id>` when
+    /// `movesNode`, and `--wrap-around` when `wraps`. Every other word is a target. Nil when
+    /// `--window-id` has no id.
+    private static func options(_ words: [String], movesNode: Bool, wraps: Bool)
+        -> (follow: Bool, wrap: Bool, window: WindowID?, targets: [String])? {
+        var options: (follow: Bool, wrap: Bool, window: WindowID?, targets: [String]) = (false, false, nil, [])
+        var words = words[...]
+        while let word = words.popFirst() {
+            switch word {
+            case "--wrap-around" where wraps: options.wrap = true
+            case "--focus-follows-window" where movesNode: options.follow = true
+            case "--window-id" where movesNode:
+                guard let id = words.popFirst().flatMap(WindowID.init) else { return nil }
+                options.window = id
+            default: options.targets.append(word)
+            }
+        }
+        return options
     }
 
     private static func monitor(_ target: String) -> MonitorTarget? {
