@@ -253,18 +253,20 @@ off the main thread).
   written once more at its next change event with the button up, or after 100 ms; only
   that write's read back can show a minimum.
 - The inventory applies a change event after reading the window's row off the main thread
-  (section 5.1), by which time Kosmos's write may be confirmed and the button up. So Kosmos
-  judges the change as of its arrival. It is a write's when it came before the write's
-  read back confirmed it, even after a mouse up made the ledger forget the window, and it
-  is the user's when it came during a press, from the left button's down to its up as
-  `NSEvent` global monitors hear them. A mouse up can come between a change and its
-  apply, and it sends back or drops only the windows the press had moved by then, each
-  with a write the change counts as. So a tiled window changed in a press that has ended
-  by the time the change applies goes back to its tile, as the mouse up would have sent
-  it. Only the last press that ended is kept, so a change from the press before it reads
-  as one with the button up. Judged as it applied, the late echo of a hotkey's write to
-  the window the user holds the button in would lift it, and the late echo of the write
-  at a mouse up would write the tile again early and record a live resize step as a
+  (section 5.1), by which time Kosmos's write may be confirmed and the button up. So
+  Kosmos judges the change as of its arrival. It is a write's when it came before the
+  write's read back confirmed it, even after a mouse up made the ledger forget the window,
+  and it is the user's when it came during a press, from the left button's down to its up
+  as `NSEvent` global monitors hear them. A mouse down off every display is left out,
+  since the focus path's key record (section 3) is a mouse down far off every display with
+  no mouse up, and a lock or a resync forgets the presses. A mouse up can come between a
+  change and its apply, and it sends back or drops only the windows the press had moved by
+  then, each with a write the change counts as. So a tiled window changed in a press that
+  has ended by the time the change applies goes back to its tile, as the mouse up would
+  have sent it. Only the last press that ended is kept, so a change from the press before
+  it reads as one with the button up. Judged as it applied, the late echo of a hotkey's
+  write to the window the user holds the button in would lift it, and the late echo of the
+  write at a mouse up would write the tile again early and record a live resize step as a
   minimum. A change that came before a write was sent counts as the write's too. The
   write's change still records its row when it differs from the frame confirmed: the row
   applies after the confirm and can hold the app's next step, as of a live resize, whose

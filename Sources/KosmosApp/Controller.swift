@@ -106,8 +106,9 @@ final class Controller {
             self?.frameChanged(id, from: old, to: frame, receivedAt: receivedAt)
         }
         // AppKit calls a global monitor's handler on the main thread.
-        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
-            MainActor.assumeIsolated { self?.leftButton.pressed(at: .now) }
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let point = event.cgEvent?.location else { return }
+            MainActor.assumeIsolated { self?.leftMouseDown(at: point) }
         }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
@@ -199,6 +200,7 @@ final class Controller {
     /// requests the focus intent and publishes the state. With the same displays, the other
     /// workspaces are laid out when they are shown.
     private func resync(displaysChanged: Bool) {
+        forgetPresses()
         guard managing else { return publishState() }
         // Reports received before now are older than the focus this asks for again, and an
         // echo in flight at the lock was dropped with the other reports while locked.
@@ -509,6 +511,21 @@ final class Controller {
         guard dragging else { return }
         controllerLog.info("hotkey during a drag: the window drops where the pointer is")
         leftMouseUp(at: nil)
+    }
+
+    /// The left button went down at `point`. kosmos_make_key posts a synthesized mouse down
+    /// far past every display with no mouse up, so a press off every display is left out.
+    private func leftMouseDown(at point: CGPoint) {
+        var display: CGDirectDisplayID = 0, count: UInt32 = 0
+        let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
+        controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
+        if onDisplay { leftButton.pressed(at: .now) }
+    }
+
+    /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
+    /// Kosmos never heard would count as on until the next click.
+    func forgetPresses() {
+        leftButton = LeftButton()
     }
 
     /// The left button came up at `point`, or at the pointer when nil. A lifted window tiles
