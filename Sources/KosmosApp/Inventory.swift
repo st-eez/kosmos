@@ -18,6 +18,8 @@ final class Inventory {
     /// Accessibility facts for windows whose app's worker knows them.
     private var ax: [UInt32: AXWindowInfo] = [:]
     private(set) var focused: UInt32?
+    /// The app that reported `focused`.
+    private var focusedApp: pid_t?
     /// Windows in a native fullscreen Space.
     private(set) var fullscreen: Set<UInt32> = []
     /// How long a departure counts as just now, for the report of the next key window and
@@ -75,10 +77,10 @@ final class Inventory {
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window moved or resized, with its frame before and now, and whether a
-    /// `.changed` event reported it. A Space change, as a reveal makes, a creation or a
-    /// sweep can read a new frame too.
-    var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, Bool) -> Void)?
+    /// A managed window moved or resized, with its frame before and now, and when the
+    /// `.changed` event that reported it came, or nil: a Space change, as a reveal makes, a
+    /// creation or a sweep can read a new frame too.
+    var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, ContinuousClock.Instant?) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -119,6 +121,28 @@ final class Inventory {
     /// Apps whose launch found them regular after their windows were left out, until the
     /// sweep that admits those windows, which then counts none of them as missed by events.
     private var launchedLate: Set<pid_t> = []
+    /// What the inventory does after applying a window's row read for an event.
+    private enum FollowUp: Sendable {
+        case none
+        /// Ask Accessibility about the window if its facts are unknown.
+        case readIfUnknown
+        /// Its Space membership changed at that time.
+        case spaceMembership(ContinuousClock.Instant)
+        /// A `.changed` event came at that time: it moved, resized, or was ordered in, out
+        /// or again.
+        case changed(at: ContinuousClock.Instant)
+    }
+    private enum PendingEvent: Sendable {
+        /// Read the window's row, apply it, then the follow-up.
+        case read(UInt32, FollowUp)
+        case destroyed(UInt32)
+        case appExited(pid_t)
+    }
+    /// Window events waiting for the next read, in the order they came. Sweeps read on
+    /// `reads` too, so every result reaches the main actor in read order (DESIGN.md, section
+    /// 5.1).
+    private var pending: [PendingEvent] = []
+    private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
 
     /// WindowServer tracking needs no permission and starts at once.
     func start() {
@@ -137,7 +161,7 @@ final class Inventory {
         center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
-            MainActor.assumeIsolated { self?.appExited(pid) }
+            MainActor.assumeIsolated { self?.enqueue(.appExited(pid)) }
         }
         for (name, hidden) in [(NSWorkspace.didHideApplicationNotification, true), (NSWorkspace.didUnhideApplicationNotification, false)] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
@@ -181,20 +205,22 @@ final class Inventory {
     private func handle(_ report: AXReport) {
         switch report.kind {
         case .windowCreated(let id):
-            refresh(id)
             // WindowServer can report the window before its app's worker knows it.
-            readIfUnknown([id])
+            enqueue(.read(id, .readIfUnknown))
         case .answering:
             readIfUnknown(windows.filter { $0.value.pid == report.pid }.keys)
         case .windowDestroyed(let id):
             // AX alone never removes a window; WindowServer decides.
-            refresh(id)
+            enqueue(.read(id, .none))
         case .focusedWindowChanged(let id):
             // The worker knows a window its app reports focused.
             if let id { readIfUnknown([id]) }
-            // Repeats still go to the controller, which counts echoes.
-            if id != focused {
+            // Repeats still go to the controller, which counts echoes. No key window is logged
+            // again when another app reports it, as an app with no window after Kosmos's empty
+            // workspace window.
+            if id != focused || (id == nil && report.pid != focusedApp) {
                 focused = id
+                focusedApp = report.pid
                 let name = appName(report.pid)
                 if let id {
                     inventoryLog.info("focus \(id) \(name, privacy: .public) managed \(self.isManaged(id))")
@@ -336,19 +362,13 @@ final class Inventory {
         }
         switch event {
         case .created(let id):
-            refresh(id)
+            enqueue(.read(id, .none))
         case .changed(let id):
-            refresh(id, changed: true)
+            enqueue(.read(id, .changed(at: .now)))
         case .spaceMembership(let id):
-            refresh(id)
-            // It may join the shown Space, where Accessibility lists it.
-            readIfUnknown([id])
-            if let row = windows[id], isCandidate(row) {
-                if spaceChangedAt[id] == nil { spaceChangedAt[id] = .now }
-                Task { setFullscreen(id, await fullscreenState(id)) }
-            }
+            enqueue(.read(id, .spaceMembership(.now)))
         case .destroyed(let id):
-            remove(id, reason: "destroyed")
+            enqueue(.destroyed(id))
         case .spacesChanged:
             spacesChanged = true
             sweep()
@@ -357,17 +377,75 @@ final class Inventory {
         }
     }
 
-    /// Reads one window's row (about 0.01 ms) and admits, updates or drops it. `changed`: a
-    /// `.changed` event asked for it.
-    private func refresh(_ id: UInt32, changed: Bool = false) {
-        guard let row = SkyLight.rows([id]).first else {
-            remove(id, reason: "gone")
-            return
+    /// Holds the event for the read after this run loop turn. A window it names, or a known
+    /// window of an app that exited, counts as changed during a running sweep from now, as
+    /// the sweep's snapshot may predate the change.
+    private func enqueue(_ event: PendingEvent) {
+        switch event {
+        case .read(let id, _), .destroyed(let id): touchedDuringSweep?.insert(id)
+        case .appExited(let pid): touchedDuringSweep?.formUnion(windows.filter { $0.value.pid == pid }.keys)
         }
-        apply(row, changed: changed)
+        if pending.isEmpty {
+            // Queued after the events already on the main queue, such as the rest of
+            // SkyLight's batch, so one read covers them.
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.flushReads() } }
+        }
+        pending.append(event)
     }
 
-    private func apply(_ row: WindowRow, changed: Bool = false) {
+    /// Reads the rows of every window the waiting events name in one query on `reads`, then
+    /// applies the events in the order they came.
+    private func flushReads() {
+        guard !pending.isEmpty else { return }
+        let events = pending
+        pending = []
+        let ids = Set(events.compactMap { event -> UInt32? in
+            guard case .read(let id, _) = event else { return nil }
+            return id
+        })
+        reads.async {
+            let rows = SkyLight.rows(Array(ids))
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
+        }
+    }
+
+    private func applyReads(_ events: [PendingEvent], _ rows: [WindowRow]) {
+        let rows = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
+        for event in events {
+            switch event {
+            case .read(let id, let followUp):
+                if let row = rows[id] {
+                    if case .changed(let at) = followUp { apply(row, changed: at) } else { apply(row) }
+                } else {
+                    remove(id, reason: "gone")
+                }
+                follow(followUp, id)
+            case .destroyed(let id):
+                remove(id, reason: "destroyed")
+            case .appExited(let pid):
+                appExited(pid)
+            }
+        }
+    }
+
+    private func follow(_ followUp: FollowUp, _ id: UInt32) {
+        switch followUp {
+        case .none, .changed:
+            break
+        case .readIfUnknown:
+            readIfUnknown([id])
+        case .spaceMembership(let changed):
+            // It may join the shown Space, where Accessibility lists it.
+            readIfUnknown([id])
+            if let row = windows[id], isCandidate(row) {
+                if spaceChangedAt[id] == nil { spaceChangedAt[id] = changed }
+                Task { setFullscreen(id, await fullscreenState(id)) }
+            }
+        }
+    }
+
+    /// `changed`: when the `.changed` event that asked for the read came.
+    private func apply(_ row: WindowRow, changed: ContinuousClock.Instant? = nil) {
         touchedDuringSweep?.insert(row.id)
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
@@ -497,13 +575,15 @@ final class Inventory {
     /// windows that are on no Space, such as one created but not yet shown, so tracked
     /// windows missing from it are queried directly before they count as gone, and so are
     /// windows first seen while locked, which an unlock sweep admits even when ordered out.
-    /// The queries can block during a Space transition, so they run off the main thread.
+    /// The queries can block during a Space transition, so they run off the main thread,
+    /// after the reads for events already waiting.
     func sweep() {
         guard !sessionLocked else { return }
         guard touchedDuringSweep == nil else { sweepAgain = true; return }
         touchedDuringSweep = []
+        flushReads()
         let tracked = Array(windows.keys) + arrivedWhileLocked.keys
-        DispatchQueue.global(qos: .utility).async {
+        reads.async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
             let rows = SkyLight.rows(listed + unlisted)

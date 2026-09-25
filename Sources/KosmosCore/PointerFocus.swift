@@ -94,14 +94,24 @@ extension FocusFollowsMouse {
         return nil
     }
 
-    /// The workspace to focus when the pointer entered `display`: the one it shows, when
-    /// that has no windows and is not focused already, as Hyprland's `follow_mouse` moves
-    /// the monitor focus. Over the desktop or a gap of a display whose workspace has
-    /// windows, focus stays where it is, as in Hyprland.
-    public func emptyWorkspace(entered display: DisplayID, in session: Session) -> String? {
+    /// The workspace to focus when the pointer entered `display` over the desktop: the one
+    /// it shows, when that has no windows and is not focused already, as Hyprland's
+    /// `follow_mouse` moves the monitor focus. Over the desktop or a gap of a display whose
+    /// workspace has windows, focus stays where it is, as in Hyprland. So does a window
+    /// Kosmos does not manage covering the display, as a slideshow, a game, the menu bar or
+    /// a panel over a native fullscreen window.
+    /// - Parameter overDesktop: the pointer is over the desktop or no window, read last.
+    public func emptyWorkspace(entered display: DisplayID, overDesktop: @autoclosure () -> Bool,
+                               in session: Session) -> String? {
         guard enabled, let name = session.workspace(shownOn: display), name != session.focusedWorkspace,
-              session.windows(of: name).isEmpty else { return nil }
+              session.windows(of: name).isEmpty, overDesktop() else { return nil }
         return name
+    }
+
+    /// Whether a window at `level` is the desktop: Finder's desktop window at the desktop
+    /// icon level, or the wallpaper and backstop windows below it.
+    public static func isDesktop(level: Int32) -> Bool {
+        level <= CGWindowLevelForKey(.desktopIconWindow)
     }
 }
 

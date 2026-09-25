@@ -47,6 +47,8 @@ final class Controller {
     /// The key window macOS last reported. Too old to skip a focus request against, which the
     /// focus queue decides when the request runs.
     private var key: KeyWindow?
+    /// When Kosmos's empty workspace window last became key, on the clock app launch dates use.
+    private var emptyWorkspaceKeyed = Date.distantPast
     /// A report whose verdict waits for the departure of the window key before it
     /// (tla/Kosmos.tla, Hold).
     private var held = HeldReport<KeyReport>()
@@ -61,6 +63,7 @@ final class Controller {
     /// frames before the press and whether the user resizes them by their edges, which
     /// never lifts them. They go back to their tiles when the button comes up.
     private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
+    private var leftButton = LeftButton()
     /// Windows written their tiles at a mouse up, dropped or sent back, until the write
     /// reads back.
     private var releasedWrites: Set<WindowID> = []
@@ -119,13 +122,20 @@ final class Controller {
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, old, frame, changed in
-            self?.frameChanged(id, from: old, to: frame, changed: changed)
+        inventory.onFrameChange = { [weak self] id, old, frame, receivedAt in
+            self?.frameChanged(id, from: old, to: frame, receivedAt: receivedAt)
         }
         // AppKit calls a global monitor's handler on the main thread.
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let point = event.cgEvent?.location else { return }
+            MainActor.assumeIsolated { self?.leftMouseDown(at: point) }
+        }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
-            MainActor.assumeIsolated { self?.leftMouseUp(at: point) }
+            MainActor.assumeIsolated {
+                self?.leftButton.released(at: .now)
+                self?.leftMouseUp(at: point)
+            }
         }
     }
 
@@ -240,6 +250,7 @@ final class Controller {
     /// requests the focus intent and publishes the state. With the same displays, the other
     /// workspaces are laid out when they are shown.
     private func resync(displaysChanged: Bool) {
+        forgetPresses()
         guard managing else { return publishState() }
         // Reports received before now are older than the focus this asks for again, and an
         // echo in flight at the lock was dropped with the other reports while locked.
@@ -485,19 +496,27 @@ final class Controller {
     }
 
     /// A tiled or floating window of a shown workspace moved or resized, not by a write of
-    /// Kosmos's in flight: the frame ledger records it. A `.changed` event with the left
-    /// button down is the user's. The key tiled window lifts out of the layout until the
-    /// button comes up once it has moved whole more than 10 pt, so a click that jitters the
-    /// title bar does not lift it. A tiled window resized by its edges, moved less, or moved
-    /// while another is key, as by a Command drag, goes back to its tile then
-    /// (leftMouseUp). The key floating window may join another display's workspace, as
-    /// AeroSpace's isManipulatedWithMouse has it (DESIGN.md, sections 5.2 and 5.13).
-    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
+    /// Kosmos's in flight: the frame ledger records it. A `.changed` event that came during
+    /// a press is the user's. Both are judged as of `receivedAt`, when the event came, since
+    /// the inventory applies it after an off main read, and a tiled window changed in a press
+    /// whose mouse up has come since goes back to its tile (DESIGN.md, section 5.2). The key
+    /// tiled window lifts out of the layout until the button comes up once it has moved whole
+    /// more than 10 pt, so a click that jitters the title bar does not lift it. A tiled
+    /// window resized by its edges, moved less, or moved while another is key, as by a
+    /// Command drag, goes back to its tile then (leftMouseUp). The key floating window may
+    /// join another display's workspace, as AeroSpace's isManipulatedWithMouse has it
+    /// (DESIGN.md, sections 5.2 and 5.13).
+    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, receivedAt: ContinuousClock.Instant?) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
+        if let receivedAt, ledger.isWriting(id, at: receivedAt) {
+            ledger.observeAfterConfirm(id, frame: frame)
+            return
+        }
         ledger.observe(id, frame: frame)
-        guard changed else { return }
-        guard NSEvent.pressedMouseButtons == 1 else {
+        guard let receivedAt else { return }
+        let button = leftButton.state(at: receivedAt)
+        guard button != .up else {
             // The app went on with the user's live resize after the write at mouse up.
             if writeAgain.contains(id) { writeTileAgain(id) }
             return
@@ -508,10 +527,21 @@ final class Controller {
             execute(plan)
             return
         }
+        guard button == .down else {
+            // The mouse up sent back what the press had moved by then, each with a write this
+            // change would count as, so this window was not among them.
+            controllerLog.info("\(id) changed during a press that has ended goes back to its tile")
+            ledger.forget(id)
+            execute(session.released([id]))
+            if ledger.isWriting(id) { releasedWrites.insert(id) }
+            return
+        }
         let press = mouseMoved[id]
         let before = press?.before ?? old
         // WindowServer can apply a resize by the left or top edge as a move before the
-        // resize, so the pointer on a resize border at the first event marks one too.
+        // resize, so the pointer on a resize border at the first event marks one too. It is
+        // read as the event applies, since reading it as each event came would read it at
+        // every change event a switch posts.
         let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
         let resized = press?.resized == true || onBorder || frame.size != before.size
         if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > 10,
@@ -532,6 +562,21 @@ final class Controller {
         guard dragging else { return }
         controllerLog.info("hotkey during a drag: the window drops where the pointer is")
         leftMouseUp(at: nil)
+    }
+
+    /// The left button went down at `point`. kosmos_make_key posts a synthesized mouse down
+    /// far past every display with no mouse up, so a press off every display is left out.
+    private func leftMouseDown(at point: CGPoint) {
+        var display: CGDirectDisplayID = 0, count: UInt32 = 0
+        let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
+        controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
+        if onDisplay { leftButton.pressed(at: .now) }
+    }
+
+    /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
+    /// Kosmos never heard would count as on until the next click.
+    func forgetPresses() {
+        leftButton = LeftButton()
     }
 
     /// The left button came up at `point`, or at the pointer when nil. A lifted window tiles
@@ -583,6 +628,7 @@ final class Controller {
             let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             let repeated = key == reported
             key = reported
+            if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
             // macOS's report of the next key window, which a departure waited for. Kosmos's
             // own echo is not it: a window keyed during a minimize's animation leaves macOS
@@ -626,7 +672,7 @@ final class Controller {
             returned([id], follow: id, at: report.received)
         case .framesApplied(let results):
             for result in results {
-                ledger.confirm(result.id, target: result.target, readBack: result.readBack)
+                ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now)
                 let released = releasedWrites.remove(result.id) != nil
                 // A window that kept more than it was given, past the slack, refused the
                 // size: that is its minimum on that axis (DESIGN.md, section 5.2).
@@ -703,8 +749,19 @@ final class Controller {
                 """)
         }
         switch verdict {
-        case .echo, .ignore:
+        case .echo:
             break
+        case .ignore:
+            // Another app has no key window while an empty workspace has the focus, and no key
+            // or mouse button went down just before: macOS or the app fronted it, and the
+            // empty workspace keys its window again, so key equivalents such as Cmd-Q reach no
+            // app. After a click on the desktop or a Command-Tab it is the user's choice, and
+            // so is an app launched since, which activates before its first window.
+            guard report.key == .none, report.pid != getpid(), session.focused == nil, !Self.userPressedJustBefore(),
+                  NSRunningApplication(processIdentifier: report.pid)?.launchDate.map({ $0 > emptyWorkspaceKeyed }) != true
+            else { break }
+            controllerLog.notice("\(self.inventory.appIdentity(report.pid).name ?? String(report.pid), privacy: .public) has no key window on an empty workspace; keying its window again")
+            requestFocus(.none)
         case .undecided:
             let number = held.hold(report, of: report.key)
             after(Self.grace) { controller in
@@ -725,9 +782,10 @@ final class Controller {
             publishState()
         case .follow(let window):
             touch(window)
-            // A workspace switch, which brings the pointer along only to another display.
+            // Command-Tab or a launcher's hotkey names a window, and the pointer goes to it,
+            // on the pointer's own display too, unlike a workspace switch command.
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast() && focusAwayFromPointer)
+            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast())
         }
     }
 
@@ -952,17 +1010,27 @@ final class Controller {
     /// Whether the keyboard made the activation being handled, as Command-Tab or a
     /// launcher's hotkey does: a key went down in the last second, after the last click and
     /// the last pointer movement. With focus follows mouse the user seldom clicks, so a key
-    /// press long ago would otherwise pass for a Command-Tab. The session's event state keeps
-    /// the times, which reading takes no event tap. A Command-Tab switcher held open for over
-    /// a second reads as a click.
+    /// press long ago would otherwise pass for a Command-Tab. A Command-Tab switcher held open
+    /// for over a second reads as a click.
     private static func keyPressedLast() -> Bool {
-        let since = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
-        let key = since(.keyDown), click = min(since(.leftMouseDown), since(.rightMouseDown)), moved = since(.mouseMoved)
+        let key = secondsSince(.keyDown), click = min(secondsSince(.leftMouseDown), secondsSince(.rightMouseDown))
+        let moved = secondsSince(.mouseMoved)
         pointerLog.debug("""
             activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago, \
             pointer moved \(moved, format: .fixed(precision: 3)) s ago
             """)
         return key < 1 && key < click && key < moved
+    }
+
+    /// Whether a key or a mouse button went down in the last second.
+    private static func userPressedJustBefore() -> Bool {
+        min(secondsSince(.keyDown), secondsSince(.leftMouseDown), secondsSince(.rightMouseDown)) < 1
+    }
+
+    /// Seconds since the last event of `type`, from the session's event state, which reading
+    /// takes no event tap.
+    private static func secondsSince(_ type: CGEventType) -> Double {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
     }
 
     // MARK: Focus follows mouse
@@ -989,19 +1057,21 @@ final class Controller {
         let fullscreen = fullscreenParked.contains(window)
         let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
                                           app: owner[window].map(inventory.appIdentity), stale: reports.isStale(stamp))
-        // Onto a display whose shown workspace is empty: that workspace takes the focus as
-        // `workspace` gives it, keying the empty workspace window there, and the pointer
-        // stays where it is.
-        let emptyWorkspace = skip == .notTiled
-            ? entered.display.flatMap { focusFollowsMouse.emptyWorkspace(entered: $0, in: session) } : nil
+        // Onto the desktop of a display whose shown workspace is empty: that workspace takes
+        // the focus as `workspace` gives it, keying the empty workspace window there, and the
+        // pointer stays where it is. Only then is the window's level read from WindowServer.
+        let emptyWorkspace = skip == .notTiled ? entered.display.flatMap { display in
+            focusFollowsMouse.emptyWorkspace(entered: display, overDesktop: window == 0 || SkyLight.rows([window]).first
+                .map { FocusFollowsMouse.isDesktop(level: $0.level) } == true, in: session)
+        } : nil
         if let skip, emptyWorkspace == nil {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
             return
         }
-        if let holder = unmanagedKeyHolder() {
+        if let holder = keyHolderApartFromFront() {
             pointerLog.debug("""
                 pointer in \(window): \(NSRunningApplication(processIdentifier: holder)?.localizedName ?? String(holder), privacy: .public) \
-                is front or holds the key window
+                holds the key window apart from the front app
                 """)
             return
         }
@@ -1027,19 +1097,15 @@ final class Controller {
         publishState()
     }
 
-    /// A process other than Kosmos that has no worker and is front or holds the key window,
-    /// as a launcher's panel or a password prompt, or nil. Focusing a window would take the
-    /// key window from it, which closes a launcher, so hover focus waits, as AutoRaise's
-    /// `stayFocusedBundleIds` did for the apps it listed (DESIGN.md, section 5.11). The front
-    /// process is read from LaunchServices at no WindowServer cost. A non-activating panel,
-    /// as Spotlight's, holds the key window while another app stays front, and only
-    /// WindowServer knows that, so the second read is a round trip to it, only for a focus.
-    private func unmanagedKeyHolder() -> pid_t? {
-        let unmanaged = { (pid: pid_t) in pid != 0 && pid != getpid() && self.inventory.worker(pid) == nil }
-        let front = kosmos_front_pid()
-        if unmanaged(front) { return front }
-        let holder = kosmos_key_focus_pid()
-        return unmanaged(holder) ? holder : nil
+    /// The process that holds the key window while another stays front, unless it is
+    /// Kosmos, or nil. Raycast, Spotlight, Notification Center and Control Center do so with
+    /// their panels, and focusing a window would take the key window from them and close
+    /// them, so hover focus waits, as AutoRaise's `stayFocusedBundleIds` did for the apps it
+    /// listed (DESIGN.md, section 5.11). The key focus read is a round trip to WindowServer,
+    /// made only for a focus.
+    private func keyHolderApartFromFront() -> pid_t? {
+        let front = kosmos_front_pid(), holder = kosmos_key_focus_pid()
+        return front != 0 && holder != 0 && holder != front && holder != getpid() ? holder : nil
     }
 
     private func touch(_ window: WindowID) {
