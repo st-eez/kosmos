@@ -20,7 +20,9 @@ final class Borders {
     }
 
     private var windows: [WindowID: BorderWindow] = [:]
-    private var spare: [BorderWindow] = []
+    /// A border window keeps to one display: moved to another display's Space before its new
+    /// frame lands, it showed there at its old frame (docs/borders.md).
+    private var spare: [DisplayID: [BorderWindow]] = [:]
     /// A Space read can wait out a Space transition, so Space reads and moves run here.
     private let spaces = DispatchQueue(label: "kosmos.borders", qos: .userInitiated)
     private(set) var accent = Borders.readAccent()
@@ -56,20 +58,21 @@ final class Borders {
     }
 
     func show(_ shown: [WindowID: Shown]) {
-        for (target, window) in windows where shown[target] == nil {
+        for (target, window) in windows where shown[target]?.border.display != window.display {
             window.orderOut(nil)
             windows[target] = nil
-            spare.append(window)
+            spare[window.display, default: []].append(window)
         }
         for (target, next) in shown {
+            let display = next.border.display
             let window = windows[target], fresh = window == nil
-            let border = window ?? spare.popLast() ?? BorderWindow()
+            let border = window ?? spare[display]?.popLast() ?? BorderWindow(display: display)
             windows[target] = border
             // Setting another level can move the border within the stacking order.
             let leveled = border.level.rawValue != Int(next.level)
-            let displayChanged = border.show(next)
+            border.show(next)
             if fresh || leveled { border.order(.above, relativeTo: Int(target)) }
-            if fresh || displayChanged { pin(border, to: target) }
+            if fresh { pin(border, to: target) }
         }
     }
 
@@ -79,11 +82,11 @@ final class Borders {
     }
 
     /// A border joins its display's current Space, maybe another app's fullscreen one, so it
-    /// moves to its target's ordinary Space, never the holding or a slide's (docs/borders.md).
+    /// moves to its target's ordinary Space on its own display, or stays (docs/borders.md).
     private func pin(_ window: BorderWindow, to target: WindowID) {
-        let border = UInt32(window.windowNumber)
+        let border = UInt32(window.windowNumber), display = window.display
         spaces.async {
-            let ordinary = Displays.current().ordinarySpaces
+            let ordinary = Displays.current().ordinarySpaces(on: display)
             let targetSpaces = (SkyLight.spaces(of: target) ?? []).filter(ordinary.contains)
             let borderSpaces = SkyLight.spaces(of: border) ?? []
             guard let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) else { return }
@@ -96,10 +99,12 @@ final class Borders {
 /// `.transient` hides it in Mission Control, and `canHide = false` keeps it on screen when
 /// another app's Hide Others hides Kosmos.
 private final class BorderWindow: NSWindow {
+    let display: DisplayID
     private let ring = CALayer()
     private var shown: Borders.Shown?
 
-    init() {
+    init(display: DisplayID) {
+        self.display = display
         super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: [.borderless], backing: .buffered,
                    defer: false)
         isOpaque = false
@@ -119,9 +124,8 @@ private final class BorderWindow: NSWindow {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Returns whether the border's display changed, as it does at the first show.
-    func show(_ next: Borders.Shown) -> Bool {
-        guard next != shown else { return false }
+    func show(_ next: Borders.Shown) {
+        guard next != shown else { return }
         let previous = shown
         shown = next
         let border = next.border
@@ -147,6 +151,5 @@ private final class BorderWindow: NSWindow {
         }
         ring.opacity = Float(next.alpha)
         CATransaction.commit()
-        return previous?.border.display != border.display
     }
 }

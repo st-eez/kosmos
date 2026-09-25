@@ -95,7 +95,8 @@ prefix.
   windows get one, their shape, stacking and Spaces, how they follow frames, focus and
   slides, and what they cost against JankyBorders.
   Code: `KosmosCore/Borders.swift`, `KosmosApp/Borders.swift`, `KosmosApp/Controller.swift`,
-  `KosmosApp/Slides.swift`, `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`.
+  `KosmosApp/Slides.swift`, `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`,
+  `kosmos-probe/BorderHop.swift`.
 
 Other docs:
 

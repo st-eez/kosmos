@@ -29,6 +29,13 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
     ("borders", "borders", { _ in borders() }),
     ("borders-cpu", "borders-cpu [relayouts]", { bordersCPU(relayouts: $0.first.flatMap(Int.init) ?? 12) }),
+    ("border-hop", "border-hop [one|per-display] [hops]", {
+        borderHop(perDisplay: $0.first == "per-display", hops: $0.dropFirst().first.flatMap(Int.init) ?? 8)
+    }),
+    ("border-watch", "border-watch <window> [seconds]", { arguments in
+        guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
+        borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
+    }),
     ("panel", nil, { _ in showPanel() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),
     ("level-window", nil, { levelWindow(onscreen: $0.contains("onscreen"), opaque: $0.contains("opaque")) }),
