@@ -1316,3 +1316,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles with the mouse
 (section 5.2), an embedded scripting language, window title matchers, marks, persistence
 across restarts, and one macOS Space per workspace.
+
+The app icon is still to be designed. Kosmos ships without one, and the setup window's
+header draws a placeholder mark of three tiles (section 5.9). Three rounds of icons drawn
+in code were rejected; the next round starts from references from Steve or a designer.
