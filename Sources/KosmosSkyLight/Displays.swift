@@ -4,20 +4,14 @@ import CKosmos
 /// The managed displays and their Spaces, from SLSCopyManagedDisplaySpaces, whose private
 /// keys only `init(raw:)` reads.
 public struct Displays: Sendable {
-    public struct Space: Sendable, Equatable {
-        public let id: UInt64
-        /// 0 for an ordinary Space, 4 for a native fullscreen one.
-        public let type: Int?
-    }
-
     public struct Display: Sendable {
         public let identifier: String
         /// Nil while the display shows a Space that is not ordinary, such as native fullscreen.
         public let currentSpace: UInt64?
         /// Every Space, in WindowServer's order.
-        public let allSpaces: [Space]
-
-        public var ordinarySpaces: [UInt64] { allSpaces.filter { $0.type == 0 }.map(\.id) }
+        public let allSpaces: [UInt64]
+        public let ordinarySpaces: [UInt64]
+        let fullscreenSpaces: [UInt64]
     }
 
     public let displays: [Display]
@@ -27,14 +21,16 @@ public struct Displays: Sendable {
     }
 
     init(raw: [[String: Any]]) {
-        func space(_ entry: [String: Any]) -> Space? {
-            (entry["id64"] as? UInt64).map { Space(id: $0, type: entry["type"] as? Int) }
-        }
         displays = raw.map { display in
-            let current = (display["Current Space"] as? [String: Any]).flatMap(space)
+            let spaces = (display["Spaces"] as? [[String: Any]] ?? []).compactMap { space in
+                (space["id64"] as? UInt64).map { (id: $0, type: space["type"] as? Int) }
+            }
+            let current = display["Current Space"] as? [String: Any]
             return Display(identifier: display["Display Identifier"] as? String ?? "",
-                           currentSpace: current?.type == 0 ? current?.id : nil,
-                           allSpaces: (display["Spaces"] as? [[String: Any]] ?? []).compactMap(space))
+                           currentSpace: current?["type"] as? Int == 0 ? current?["id64"] as? UInt64 : nil,
+                           allSpaces: spaces.map(\.id),
+                           ordinarySpaces: spaces.filter { $0.type == 0 }.map(\.id),
+                           fullscreenSpaces: spaces.filter { $0.type == 4 }.map(\.id))
         }
     }
 
@@ -46,8 +42,8 @@ public struct Displays: Sendable {
     }
 
     public var ordinarySpaces: Set<UInt64> { Set(displays.flatMap(\.ordinarySpaces)) }
-    var fullscreenSpaces: Set<UInt64> { Set(displays.flatMap(\.allSpaces).filter { $0.type == 4 }.map(\.id)) }
-    var allSpaces: [UInt64] { displays.flatMap(\.allSpaces).map(\.id) }
+    var fullscreenSpaces: Set<UInt64> { Set(displays.flatMap(\.fullscreenSpaces)) }
+    var allSpaces: [UInt64] { displays.flatMap(\.allSpaces) }
 
     /// The main display's choice for a window with no ordinary Space (docs/hiding.md).
     public func ordinarySpace(original: UInt64?) -> UInt64? {
