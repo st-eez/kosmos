@@ -1,4 +1,5 @@
-/// A window macOS reports as key, or no key window (Finder fronted for an empty workspace).
+/// A window macOS reports as key, or no key window: an app with none, or Kosmos's own window for an
+/// empty workspace.
 public enum KeyWindow: Hashable, Sendable {
     case window(UInt32)
     case none
@@ -74,7 +75,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// Records a request just before the focus queue makes its calls, before it can come back.
-    /// `app` owns the window, or is Finder for no window. `publicly` says the public path
+    /// `app` owns the window, or is Kosmos for no window. `publicly` says the public path
     /// makes the request, which lets the app key a window of its own choosing.
     public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: Stamp, publicly: Bool = false) {
         if key != retried { retried = nil }

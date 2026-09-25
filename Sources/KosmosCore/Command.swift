@@ -35,6 +35,12 @@ public enum Command: Equatable, Sendable {
         case toggleFloating
     }
 
+    public enum Toggle: Equatable, Sendable {
+        case on
+        case off
+        case toggle
+    }
+
     case workspace(Workspace)
     case workspaceBackAndForth
     case focus(Direction, boundaries: Boundaries = .workspace)
@@ -57,6 +63,8 @@ public enum Command: Equatable, Sendable {
     case moveNodeToMonitor(MonitorTarget, focusFollowsWindow: Bool, wrapAround: Bool, window: WindowID? = nil)
     /// Applies a display profile from the config until the displays change.
     case profile(String)
+    /// Turns focus follows mouse on or off until the next config load.
+    case focusFollowsMouse(Toggle)
 
     public struct ParseError: Error, Equatable, Sendable {
         public let message: String
@@ -177,6 +185,13 @@ public enum Command: Equatable, Sendable {
             if wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
             return .success(movesNode ? .moveNodeToMonitor(target, focusFollowsWindow: follow, wrapAround: wrap, window: window)
                                       : .focusMonitor(target, wrapAround: wrap))
+        case "focus-follows-mouse":
+            switch rest {
+            case ["on"]: return .success(.focusFollowsMouse(.on))
+            case ["off"]: return .success(.focusFollowsMouse(.off))
+            case ["toggle"]: return .success(.focusFollowsMouse(.toggle))
+            default: return fail("usage: focus-follows-mouse on|off|toggle")
+            }
         default: return usage
         }
     }

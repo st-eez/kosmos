@@ -16,7 +16,7 @@ extension Command {
         case .layout, .fullscreen, .joinWith, .flattenWorkspaceTree: "Layout"
         case .resize, .balanceSizes: "Resize"
         case .profile: "Profile"
-        case .reloadConfig, .mode: "Other"
+        case .reloadConfig, .mode, .focusFollowsMouse: "Other"
         }
     }
 
@@ -62,6 +62,12 @@ extension Command {
             "Move window to \(Self.name(target))\(follow ? " and follow" : "")\(wrap ? ", wrapping around" : "")"
         case .profile(let name):
             "Switch to profile \(name)"
+        case .focusFollowsMouse(.on):
+            "Turn focus follows mouse on"
+        case .focusFollowsMouse(.off):
+            "Turn focus follows mouse off"
+        case .focusFollowsMouse(.toggle):
+            "Toggle focus follows mouse"
         }
     }
 

@@ -39,6 +39,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | After a conceal or reveal, a check of the holding Space found the change 0 times in 50 each. After one synchronous bridged read, it found it 50 times in 50 each; the read took 1.3 ms median, 3.6 ms at most (`kosmos-probe barrier`) | One bridged read can confirm a switch, where the fork polled |
 | Live on 2026-09-24, 40 alternating switches per run between two workspaces of one window each. Reading the holding Space directly every 0.1 ms confirmed each batch at a median of 2.10, 2.18 and 2.95 ms in three runs (p90 3.66, 4.83 and 3.44 ms; at most 4.62, 9.79 and 3.86 ms), and all 120 confirmed before the barrier was due. The barrier alone confirmed at 3.31 and 3.44 ms median in two runs (p90 4.72 and 5.24 ms; at most 11.08 and 10.59 ms). Switches over 8.3 ms from keypress to the end: 10 of 120 with the reads, 21 of 80 with the barrier alone | Direct reads confirm a switch; the barrier backs them up after 10 ms |
 | Bridged Space operations from a process that has not started AppKit do nothing. With `NSApplication` initialized, the guardian restored a concealed window 130 ms after `kill -9`, 100 ms of it a deliberate settle (`kosmos-probe survive-kill`) | The guardian is a prohibited AppKit client with no Dock icon |
+| Keying a window of another app costs about 94 ms of CPU outside Kosmos: BiomeAgent 29 ms, spotlightknowledged.updater 15, MenuBarAgent 15, duetexpertd 14, WindowManager 6, ContextStoreAgent 6 and the activated app 8, plus 12 for BetterTouchTool on the development Mac. Five stub apps were keyed back and forth through the focus path, 384 activations against 96 in 73 s each, and the cost is the difference between the two; WindowServer's share was lost in the noise of the desktop in use. The focus call took 4.4 ms at the median and 16.6 ms at p95 (`kosmos-probe sweep` and `script/sweep.sh`, commit 3223999 on the hover branch) | Accepted for focus follows mouse, which focuses the window the pointer enters at once (section 5.11) |
 | An AX call to a hung app returns kAXErrorCannotComplete 5 ms after its messaging timeout, and with none set macOS 27 waits 1.5 s. An app still launching fails with the same error in under 9 ms and answers about 60 ms after it starts. An answered read takes 13 µs (`kosmos-probe ax-timeout`) | Time out every call at 1 s, and back an app off only after a call that waited out the timeout |
 
 ## 3. Primitive decisions
@@ -49,8 +50,8 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Discovery | Inventory keyed by WindowServer window id, fed by SkyLight window notifications and per-app AX observers; reconcile only the app an event names; a 0.1 ms SkyLight sweep at launch, on a Space change and after an unlock or wake, as a backstop, with no timer (as yabai and rift) | Full discovery after commands: CPU on every switch, and the lock screen looks like every window closed |
 | Hiding | Hidden windows gain membership in one concealed holding Space created once per session. A switch is two batched bridged operations, confirmed by direct reads of the holding Space, with one bridged read as the barrier when the reads do not show them within 10 ms | One macOS Space per workspace, which hides windows from Accessibility and binds workspaces to displays. Corner parking, which keeps hidden apps rendering and leaves a visible sliver |
 | Recovery | A memory-mapped record of owned Space ids and first-hide window records, with no fsync, and a separate guardian executable in its own process group that Kosmos watches and respawns | A journal rewritten on every switch |
-| Focus | Private window-targeted focus in every case: AXRaise the window on its app's worker, then front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
-| Empty workspace | Front Finder with no key window | Nothing, which leaves keystrokes going to the hidden window |
+| Focus | Private window-targeted focus in every case: inside the front app, AXRaise the window on its app's worker; for a background app, front the process and post one mouse-down key record far off the window. A serial focus queue off the main thread, with generations and read-back | Public `activate`, which names no window and chose the wrong one in every trial on the development Mac |
+| Empty workspace | Key an invisible window of Kosmos's own | Nothing, which leaves keystrokes going to the hidden window. Finder with no window brought forward, which keys a concealed Finder window |
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
 | IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, a CLI that avoids AppKit (1.4 ms launch), and `subscribe` streams of full snapshots | A CLI that links AppKit (about 15 ms launch) |
@@ -74,7 +75,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Context | Owns | Never does |
 | --- | --- | --- |
 | Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
-| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, observers, frame writes and reads, and raises before focus | Touch the model directly |
+| One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, and raises before focus. Its observer runs on a second thread, which stamps each focus notification and checks the front process as the app sends it | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
@@ -96,8 +97,8 @@ on its own and never delays another app.
    Revealing first shows windows of both workspaces for the length of one bridged
    operation; concealing first would show an empty desktop for the same time.
 4. Once the reads confirm the target window is revealed, and the switch generation is
-   still current, the focus queue fronts the target, or Finder with no window for an empty
-   workspace, and reads back the key window.
+   still current, the focus queue fronts the target, or Kosmos's own invisible window for an
+   empty workspace, and reads back the key window.
 5. The main actor publishes one bar snapshot and one `subscribe` frame.
 
 A switch launches no process, writes no file and leaves the status item alone. Everything
@@ -330,12 +331,13 @@ off the main thread).
 - A batch's completion and the focus request after it run on the main actor, so work
   queued there delays both. Three reads had kept the main actor busy after a switch. Each
   app's activation policy is now read once (section 5.1), the departure of the window key
-  before a report only when its verdict needs it (5.4), and the pointer's target frame on
-  the focus queue (5.11). Live on 2026-09-24, 40 alternating switches between two
-  workspaces of one window each, back to back under the same load (load average 5 to 8):
-  main at 636a019 took 3.53 ms from keypress to the end at the median and 8.42 ms at most,
-  and the completion waited over 1 ms for the main actor in 12 switches; with the three
-  changes (367cd28), 3.75 and 10.25 ms, and 3 such waits, so the switch time is the same
+  before a report only when its verdict needs it (5.4), and the pointer's target frame
+  comes from Kosmos's layout with no read, and never after a switch (5.11). Live on
+  2026-09-24, 40 alternating switches between two workspaces of one window each, back to
+  back under the same load (load average 5 to 8): main at 636a019 took 3.53 ms from
+  keypress to the end at the median and 8.42 ms at most, and the completion waited over
+  1 ms for the main actor in 12 switches; with the three changes (367cd28), 3.75 and
+  10.25 ms, and 3 such waits, so the switch time is the same
   within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
   but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
   10 ms stalls until 248f668 removed it. Half of the about 66 left were the 815 reads,
@@ -366,10 +368,14 @@ off the main thread).
 - There is one current focus intent, identified by a focus generation. A switch has its own
   generation, so a focus change adopted during a switch leaves the switch to finish.
 - Every report names the key window, the front app's focused window. For an app
-  activation, the app's worker reads the app's focused window. A focus change reported by
-  an app that is not front, as AXRaise in a background app causes, is no key window report:
-  it consumes an echo it matches, is otherwise ignored, and never counts as the last report
-  (tla/Kosmos.tla, Observe). Hotkeys, socket commands and reports are stamped on receipt.
+  activation, the app's worker reads the app's focused window. An app's focused window
+  notification is stamped, and checked against the front process, on an observer thread
+  that never waits behind the worker's calls into the app. Checked when the worker got to
+  it, a click inside the front app that raced Kosmos's activation of another app was
+  dropped (tla/README.md, change 12). A focus change reported by an app that is not front,
+  as a background app opening a window causes, is no key window report: it consumes an
+  echo it matches, is otherwise ignored, and never counts as the last report
+  (tla/Kosmos.tla, Observe). Hotkeys and socket commands are stamped on receipt.
 - Reports are classified in order:
   - An echo is a report of a requested window received after the request. Matching the
     app alone would take a Command-Tab to another window of that app for an echo.
@@ -380,10 +386,13 @@ off the main thread).
     older request of Kosmos's landed after the user's change.
   - Only the user reaches a window that was hidden when it became key: with Command-Tab,
     or by opening that window, as `open` on a document, an app's Window menu or the
-    Dock's window list do. Kosmos follows it to its workspace. That excludes the report
-    right after the key window left, when it closed or minimized or its app hid. macOS then keys another window
-    itself, sometimes a concealed one, and Kosmos keeps its workspace and focuses it
-    again. The window key before the report left the screen within the last second if
+    Dock's window list do. Kosmos follows it to its workspace. Whether the window was
+    hidden is judged at the report's stamp: the bridge queue notes when it sends each
+    window's conceal and reveal, because a switch can reveal or conceal the window before
+    the report is classified (tla/README.md, change 12). That excludes the report right
+    after the key window left, when it closed or minimized or its app hid. macOS then keys
+    another window itself, sometimes a concealed one, and Kosmos keeps its workspace and
+    focuses it again. The window key before the report left the screen within the last second if
     WindowServer ordered it out or destroyed it, Accessibility reported it minimized, or
     NSWorkspace reported its app hidden.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
@@ -416,10 +425,8 @@ off the main thread).
   logged. The read and the raise go to the same app with the same timeout, so the app is
   not answering, and a record for a call that changes nothing would swallow a later click
   on the window: going ahead failed TLC's user configs, whose model assumes reads answer.
-  The empty workspace goes ahead when Finder's read gets no answer within 30 ms: stopping
-  would leave a hidden Finder window key, the 30 ms measures a busy worker rather than an
-  app that does not answer, and a record of no key window that gets no echo is matched
-  only by a later report of no key window, which then also drops any older expectation.
+  The empty workspace's window is key already when Kosmos is the front process and the
+  window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
   WorkerRaise, FocusDecide). Each side records the echo, through the main queue, right
@@ -428,21 +435,22 @@ off the main thread).
   worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so
     the worker keys it and the queue posts no key record. The worker ends a stale request,
-    and one whose front app already has the target focused; then, under the request's lock
-    just before the raise, it records and marks the request raising while the app is front.
-  - For a background app the worker raises without a record, as the raise changes only the
-    app's own focused window, and the queue keys it. Unless the request went stale, the app
-    came front meanwhile, or the worker is raising it, the queue marks it sent, records, and
-    posts the key record, which activates the app with the named window. A worker that
-    finds it sent raises nothing.
+    and one whose front app already has the target focused; then, just before the raise,
+    it records and raises if the request is current and the app is still front.
+  - For a background app the queue keys it and nothing raises the window: a raise in a
+    background app lands after anything that fronts the app meanwhile, and in TLC it keyed
+    a stale window over a newer activation (tla/README.md, change 12). The app's job does
+    nothing, and the queue waits on it only so its key record follows the app's queued
+    activation reads. Unless the request went stale or the app came front meanwhile, the
+    queue records and posts the key record, which activates the app with the named window.
   - Nothing is recorded and later forgotten, so no late answer can orphan a call; `dropped`
     serves only a call that fails.
   - TLC passes every split config (tla/README.md on the hover branch, change 11): RaiseKeys and RaiseReports
     both ways, either app busy with the 30 ms timeout nondeterministic, background apps
     opening windows, and liveness. Kosmos builds the RaiseKeys case, where AXRaise alone
-    keys the target inside the front app. Where it does not, the model's WorkerKey step has
-    the worker record and post the key record after the raise while the request is still
-    current. `kosmos-probe keying`'s "AXRaise alone" order settles which case holds.
+    keys the target inside the front app: it did so in 20 of 20 trials of `kosmos-probe
+    keying` for stacked and side by side windows, where the record alone keyed 0 of 20
+    (September 24, 2026). The model's WorkerKey step, for the other case, is left out.
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
@@ -464,7 +472,7 @@ off the main thread).
   user out of fullscreen.
 - Never front a window that just left the screen, before Kosmos heard of it: that would
   unminimize it or unhide its app. The window's departure then focuses its workspace's
-  next window, or Finder. A closed focus is replaced at once. A minimized or hidden one is
+  next window, or Kosmos's empty workspace window. A closed focus is replaced at once. A minimized or hidden one is
   replaced at once too, unless the key window macOS last reported left with it: then
   macOS's report of the next key window is still on its way and focuses. Focusing earlier
   could put Kosmos's echo between the departure and that report. When macOS keys no
@@ -490,36 +498,77 @@ off the main thread).
     private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
     between two windows of the active app, so the miss rate is at most about 5% at 95%
     confidence, and five misses in a row at 5% come once in about 3 million runs. Those
-    trials posted a down and up record pair, and Kosmos posts the down alone;
-    `kosmos-probe keying` measures Kosmos's own sequence. The public path chose the wrong
-    window in 9 of 9 trials, so a false trip costs more than a few late wrong windows
+    trials raised first and posted a down and up record pair. Kosmos's own sequence, the
+    down record alone to a background app, keyed the named window in 20 of 20 trials of
+    `kosmos-probe keying` (September 24, 2026). The public path chose the wrong window in 9
+    of 9 trials, so a false trip costs more than a few late wrong windows
     (wm-research focus note, section 4; autoraise-steez trial results, September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, before the queue's key record for a background app. On
-  macOS 27 the record alone leaves the key window unchanged inside the app that is already
-  frontmost, for stacked and side by side windows alike, while AXRaise and then the record
-  keyed the right window in every case, same app or not (`kosmos-probe raise` on the hover
-  branch). yabai and alt-tab raise after the record, an order no probe has checked on
-  macOS 27. A slow app's raise lands after the key record, and a hung app holds only its
-  own worker. `kosmos-probe keying` compares the orders, AXRaise alone included.
-- While the path is off, and for a request whose SkyLight call fails, focus takes the public
-  path on the app's worker: make the window the app's main window, raise it, then activate
-  the app. For an empty workspace it activates Kosmos, which holds no workspace window. No
-  public call fronts Finder with no key window, and activating Finder can key a hidden
-  Finder window, which keeps its ordinary Space for Command-Tab, and Kosmos would follow it
-  off the empty workspace on every switch. Concealing Finder's windows fully instead would
-  not reach one concealed earlier: the conceal ledger leaves a concealed window as it was.
-  Whether macOS 27 lets a background agent activate itself is unmeasured; Kosmos logs a
-  refusal, and `kosmos-probe keying` measures it with a background accessory app. The app
+- AXRaise runs on the app's worker, and only inside the front app. On macOS 27 the record
+  alone leaves the key window unchanged inside the app that is already frontmost, for
+  stacked and side by side windows alike, while AXRaise and then the record keyed the right
+  window in every case (`kosmos-probe raise` on the hover branch). A hung app holds only
+  its own worker. AXRaise took 0.65 and 1.02 ms at the median and 3.70 and 2.13 ms at
+  most, over 120 raises in each of two runs (`kosmos-probe keying`, September 24, 2026).
+- Open item: the key record alone keys a background app's window but leaves it where it
+  was in the window order. It was on top in 0 of 20 trials, behind the windows of the app
+  that was front and of its own app. The record and then AXRaise keyed it and put it on
+  top in 20 of 20, while AXRaise and then the record put it on top in 11 of 20. Tiled
+  windows do not overlap, so this shows with floating windows. yabai raises after its
+  record for this. A raise in a background app is what failed TLC, so the raise after
+  the record waits for the split model.
+- The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
+  waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
+  a newer command, and Kosmos followed it there (tla/README.md, change 12). A raise that
+  outlasts the 5 s counts as made, so its echo is still recognized. Only a raise the app
+  refuses or fails at once is dropped.
+- While the path is off, and for a request whose SkyLight call fails, focus takes the
+  public path on the app's worker: make the window the app's main window, raise it, then
+  activate the app. A background accessory app with no window, as Kosmos is, made another
+  app the front process in 10 of 10 trials with each of `activate`, yielding and then
+  `activate(from:)` itself, and `activate(from:)` the front app, and Finder in 10 of 10
+  with each (`kosmos-probe keying`, September 24, 2026). An empty workspace has no public
+  path: its window is Kosmos's own, and an accessory app that activated itself became the
+  front process in 0 of 10 trials, as activate returned false. The app
   picks its key window, so the spec's assumption that the requested window becomes key no
   longer holds, and a wrong window is adopted like the user's choice. A public request's
   expectation ends at the first report from its app that is no echo, so a click on the
   requested window afterwards is the user's. Private requests keep theirs until matched
   (tla/README.md, change 6). The spec models exact keying only, so its TLC passes do not
   cover the public path. If the app keys the requested window late, after the user chose
-  another of its windows, that late report reads as the user's and pulls focus back, change
-  6's bounce in the fallback alone.
+  another of its windows, that late report reads as the user's and pulls focus back,
+  change 6's bounce in the fallback alone.
+- An empty workspace keys a window of Kosmos's own (EmptyWorkspaceWindow): 1 by 1 point
+  at the bottom left corner of the display the workspace is on, borderless, clear and
+  transparent, ignoring the mouse, on every Space and out of the window cycle. With
+  displays that have separate Spaces, keying a window makes its display the active one,
+  which takes the menu bar and the next new window. An app fronted with no window
+  brought forward still keys its own last key window: `kosmos_front_without_windows` let
+  a stub key its window in 10 of 10 trials, and a stub whose every window was concealed
+  keyed one of them in 10 of 10 in each of four ways, kept in their ordinary Space or
+  concealed exclusively, fronted by `activate` or by `kosmos_front_without_windows`. So
+  Finder, or any app with a concealed window, cannot be the target: Kosmos would follow
+  the concealed window it keys off the empty workspace on every switch. A background
+  accessory app keyed an invisible window of its own by the private key record in 10 of
+  10 trials, from its own background thread and from another process
+  (`kosmos-probe keying`, September 24, 2026).
+  - Kosmos is an accessory app, and the inventory tracks only regular apps' windows, so it
+    never manages or conceals the window. The window becoming key is the key window report
+    for an empty workspace, as Kosmos keeps no worker for itself; it names no window and
+    is the echo of the request's record of no key window.
+  - Kosmos has no main menu, and the window swallows every key and key equivalent, so
+    typing on an empty workspace neither beeps nor reaches a menu command such as Quit.
+    Hotkeys still fire: Carbon hotkeys are taken before the key reaches any window.
+  - The kill switch guards the call like any private call, and a crash inside it turns the
+    path off. The wrong window count judges only key records to other apps' windows, so
+    that trigger leaves the empty workspace's window keyed privately. After a crash the
+    empty workspace keys nothing and the previous window stays key, as there is no public
+    path to Kosmos's own window.
+  - AeroSpace does nothing on an empty workspace, so macOS keeps the outgoing window key
+    while it is hidden and keystrokes reach it (`refresh.swift`, upstream at 39e51904). The
+    aerospace-steez fork fronts Finder with `kCPSNoWindows` instead, following yabai (its
+    commit 2031030b), which keys a Finder window whenever Finder has one.
 - Open item: a focus request reads WindowServer on the main thread to skip a window that
   just left the screen (`leftScreen`). Right after a switch that read waits on
   WindowServer's Space transaction: 29 of about 290 busy main thread samples in 40
@@ -537,6 +586,22 @@ off the main thread).
   follows the private call with that public activation. An empty workspace would still
   leave the fullscreen Space on screen, as in AeroSpace. It waits for a probe with a real
   fullscreen Space, which takes over the screen.
+- Open item, for the report rules of the `focus` work: echoes out of order. Each app's
+  observer thread sends its own reports, so on a fast sweep of the pointer across apps an
+  earlier request's echo can reach the main actor after a later one's. Consuming an echo
+  drops every expectation before it, so the late echo reads as the user's choice and
+  focus goes back to the window the pointer left. The hover branch's merged spec removes
+  only the matched record, together with rules that keep an expectation from lingering:
+  records have a kind, an activation record from the key record or Kosmos's own window
+  and an in-app record from the worker's raise; an activation read matches the oldest
+  activation record of its app, whatever window it reads; a notification consumes an
+  in-app record of its window and only joins an activation record; and after an echo
+  whose window is not the intent, the intent is requested again. Removing only the
+  matched record without them leaves an expectation whose echo was lost, as when
+  Apps.activated reports nothing or a background key record's only report is the
+  activation read, to swallow a later report of its window as its echo: a Command-Tab to
+  a concealed window is then not followed. tla/Kosmos.tla here still drops the earlier
+  records, so the code does too until those rules land with the spec.
 
 ### 5.5 Tree
 
@@ -749,35 +814,215 @@ off the main thread).
 Kosmos replaces AutoRaise for hover focus. AutoRaise needed a local patch to key the
 hovered window instead of the app's most recent one; Kosmos's focus path already does.
 
-- The window under the pointer becomes key as soon as the pointer enters it, through the
-  same exact-window path as a focus command, as Hyprland's `follow_mouse = 1` does.
-  Tiled windows never overlap, so only focus moves; a floating window is also raised.
-- Instant focus has one cost on macOS that it lacks on Linux: focusing another app's
-  window activates the app, and activations cost macOS's app usage daemons CPU (section
-  2). Sweeping the pointer across several windows activates each of them. AutoRaise waits
-  for the pointer to rest on a window for about 100 ms to avoid that. Kosmos starts
-  without a delay, measures a sweep's CPU and daemon activity, and adds the shortest dwell
-  that the measurement justifies, if any.
-- The pointer must move at least 2 pt to count, holding Control pauses it, and chosen apps
-  are ignored: the settings an AutoRaise user has today.
-- Kosmos finds the window under the pointer in its own model: floating windows first, then
-  the shown workspace's tiled frames, which never overlap. Moving the pointer queries no
-  window list.
-- Pointer movement arrives through a listen-only event tap on its own thread, so a pointer
-  at rest costs nothing. AutoRaise polls 20 times a second.
-- Nothing is raised while a mouse button is down, while the front app is in native
-  fullscreen (AeroSpace's focus follows mouse raised tiled windows over fullscreen video),
-  over a window Kosmos does not manage (menus, the bar, panels), or during Mission Control.
-- A hover focus counts as a command: the session adopts the window, and its focus
-  request's echo is consumed like any other.
-- The pointer follows focus the other way too. A command that focuses a window moves the
-  pointer to its center unless the pointer is already inside it, and so does Command-Tab
-  to a window that is not under the pointer. A click always happens under the pointer, so
-  it never moves it. The focus queue moves the pointer right before it keys the window,
-  and reads the window's frame there, off the main thread; a request already stale when
-  the focus queue reaches it, or one naming a concealed window, moves nothing.
-- `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
-  the command `focus-follows-mouse on|off|toggle` switches it at run time.
+- The window under the pointer takes focus as soon as the pointer enters it, through the
+  same exact-window focus request as a focus command, as Hyprland's `follow_mouse = 1`
+  does.
+- Focusing another app's window activates the app, which costs macOS about 94 ms of CPU
+  outside Kosmos (section 2), so a pointer swept across windows of several apps activates
+  each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
+  few windows on its way. AutoRaise waited for the pointer to rest in a window (`delay=2`
+  at `pollMillis=50`, 50 to 100 ms). The delay is one constant, `Controller.dwell`, set
+  to zero; at 50 ms a window takes focus only once the pointer has stayed in it that long.
+- Pointer movement arrives through a listen-only event tap on its own thread, at the
+  annotated session location, for mouse moved events only. A pointer at rest costs
+  nothing, and the tap is off while focus follows mouse is. AutoRaise polls 20 times a
+  second.
+- Each event names the window under the pointer as WindowServer's own hit test found it
+  (`kCGMouseEventWindowUnderMousePointer`, filled in at the annotated location), so moving
+  the pointer queries no window list, and the stacking of overlapping floating windows is
+  WindowServer's answer. A hit test of the model's frames would need a stacking order the
+  model does not keep. The tap's callback passes a movement on to the main actor only when
+  it enters another window or another display than the last movement passed on, with
+  Control up (KosmosCore's PointerGate). The gate tells the display from the event's
+  location and the session's displays, which the main actor gives it at each change.
+- The main actor focuses the window only when all of these hold (KosmosCore's
+  `FocusFollowsMouse.skip`, whose reason for skipping is logged):
+  - It is a tiled or floating window of a workspace a display shows, or a native
+    fullscreen window. Menus, the bar, panels and dialogs, the Dock, Mission Control's
+    windows, Kosmos's own windows and the windows of a workspace a switch is hiding leave
+    focus where it is.
+  - Its app is not ignored.
+  - It is not the focus intent and key already. When a panel or dialog took key from the
+    focus intent, the pointer coming back into the intent keys it again.
+  - No command was received after the movement.
+  - No process other than the front one and Kosmos holds the key window
+    (`Controller.keyHolderApartFromFront`). With Raycast, Spotlight (whose process is
+    "Siri", an accessory app), Notification Center or Control Center open, the front
+    process stayed Ghostty and only the process holding the key window changed
+    (`kosmos-probe key-holder`, 90 s at the desk on 2026-09-24). Focusing a window would
+    take the key window from such a panel and close it. AutoRaise left the front apps its
+    `stayFocusedBundleIds` listed alone. An app that is front with its own window keeps
+    hover focus on, even an accessory app's, as Raycast's settings, a menu bar app's
+    settings or Hammerspoon's. The front process comes from LaunchServices, 54 us
+    at the median, and the key focus process from WindowServer (`SLPSGetKeyFocusProcess`),
+    120 us at the median and 42 ms at most, so both are read last, only when the window or
+    an empty workspace would take focus. A window the pointer entered while a panel held
+    the key window takes focus only when the pointer enters it again, so what a launcher
+    opened keeps the focus.
+- The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
+  does, and never focuses anything over one, display by display. On a display that shows
+  a fullscreen Space, the windows under the pointer are the fullscreen window and its
+  app's panels, which stay skipped, and WindowServer's hit test never names a window
+  behind them. AeroSpace's focus follows mouse raised tiled windows over fullscreen video.
+  The fullscreen window stays parked and the session's focus stays where it was, as when
+  the user clicks it; its report, which Kosmos otherwise leaves unclassified, consumes the
+  request's echo. A fullscreen window key on another display leaves this display's
+  windows free: the window under the pointer is on screen, so keying it takes no display
+  out of a fullscreen Space, and a hover focus passes the fullscreen gate of section 5.4
+  as a command does. Live on 2026-09-24, the pointer entering Moonlight in native
+  fullscreen on the built-in display skipped it as untiled, which this replaced.
+- When the pointer enters the desktop of a display whose shown workspace has no windows,
+  that workspace takes the focus as `workspace` gives it: Kosmos keys its empty workspace
+  window on that display, with no switch and no pointer move, as Hyprland's
+  `follow_mouse` moves the monitor focus (`FocusFollowsMouse.emptyWorkspace`). Over a gap
+  or the desktop of a display whose workspace has windows, focus stays where it is, as in
+  Hyprland. The hit test names no managed window there, which is why the gate passes on a
+  movement onto another display. The desktop is no window, or one at the desktop icon
+  level or below: Finder's desktop window, the wallpaper and the display's backstop
+  (`FocusFollowsMouse.isDesktop`), whose level is read from WindowServer only on this
+  path. A window Kosmos does not manage over that display keeps the key window: a
+  slideshow, a game, the menu bar, or a panel over a native fullscreen window, where the
+  empty workspace's focus would also pass the fullscreen gate as a command. Live on
+  2026-09-24, moving from workspace 1 on the main panel onto the left panel, which showed
+  empty workspace 7, did nothing before this.
+- A hover focus counts as a command stamped when the tap saw the movement: reports of the
+  user's activations before it are stale, and its request's echo is consumed like any
+  other. The hover branch's spec modeled it so, and its `hover` and `hover-settles`
+  configs passed (commit ae9e5c1). With the hover unstamped, TLC found a click made before
+  the hover but reported after it adopted, and focus left the window the pointer was in.
+  The spec on this branch does not model hover yet.
+- Holding Control pauses focus follows mouse, as AutoRaise's `disableKey` did. Control is
+  read from each movement's flags, so the tap takes no keyboard events. A movement with
+  Control held changes nothing, so after Control is released the next movement focuses
+  the window under the pointer. Nothing is focused while a mouse button is down, because a
+  movement with a button down is a drag event, which the tap does not receive, nor while
+  a tiled window is lifted (section 5.13): the pointer is the user's during a drag.
+- The pointer follows focus the other way too, with `mouse-follows-focus`, when the
+  keyboard moves focus to another window or moves the focused window. A workspace switch
+  command moves it only when the focus is on another display than the pointer
+  (KosmosCore's `Command.movesPointer`), and a keyboard activation of a window always
+  does. Omarchy on the development Mac centers the pointer only when focus moves between
+  windows of one workspace, and Steve's AeroSpace config chained
+  `move-mouse window-lazy-center` onto hotkey bindings only.
+  - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
+    another display shows, centers the pointer on the window it focuses.
+  - A hotkey's `move`, `swap` or `move-node-to-monitor` brings the pointer along with the
+    focused window, and `move-node-to-workspace` without `--focus-follows-window` centers
+    it on the window focused next. With focus follows mouse, a pointer left behind would
+    focus the neighbour on the next bump.
+  - Command-Tab, or a launcher's hotkey that activates an app, centers the pointer on the
+    window it activates, on a shown workspace or one Kosmos follows it into, on the
+    pointer's display too: it names a window, as `focus` does, where a workspace switch
+    names a workspace. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6,
+    which the left panel then showed in place of empty workspace 7, and the pointer stayed
+    on the main panel; and Command-Tab from workspace 7 to Spotify on workspace 6, both on
+    the left panel, left the pointer where it was, before this. Kosmos tells Command-Tab
+    from a click, on the window or the Dock, when it handles the activation: a key went
+    down within the last second, and after the last left or right mouse down and the last
+    pointer movement (`CGEventSource.secondsSinceLastEventType` in the combined session
+    state). With focus follows mouse the user seldom clicks, so a key press long ago would
+    otherwise pass for Command-Tab when an app activates itself. The read takes no event
+    tap, and the log gives the three times. A Command-Tab switcher held open for over a
+    second reads as a click.
+  - A workspace switch command on the pointer's display leaves the pointer where it is:
+    `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
+    `move-node-to-workspace --focus-follows-window`.
+  - A keyboard focus change that lands on another display than the pointer brings the
+    pointer, whether or not that display's workspace switched: alt-N, alt-shift-N and
+    `workspace-back-and-forth` to a workspace another display shows or hides. Left behind,
+    the pointer sits over a tile of its own display that the next bump would focus. The
+    focus is on the display of the focused workspace (`Session.focusIsOnAnotherDisplay`).
+    When that workspace is empty, the pointer goes to the display's center, as Hyprland's
+    `focusmonitor` puts it.
+  - Every command carries its source, a hotkey or the CLI, and a command from the CLI
+    leaves the pointer, so a click on the bar's workspaces, a script or a launcher running
+    `kosmos` never moves it. Neither does a click that Kosmos follows or adopts, a hover
+    focus, nor a layout, resize or `join-with` command.
+  - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
+    window, or the empty workspace's display. A tile's frame is the layout's after the
+    change, the one Kosmos is writing, which the app's worker may not have applied yet;
+    AeroSpace's binding slept 50 ms before it read the frame. A floating window's is the
+    last frame the inventory heard. So the move reads nothing from WindowServer and runs on
+    the main actor. While a window is lifted the pointer stays (section 5.13).
+- Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
+  the next movement as the place the pointer landed and passes nothing on, whether or not
+  the move posts an event of its own. A movement the tap passed on before a command is
+  stale. The ceiling: a movement made before the move that reaches the tap after it is
+  taken as the landing place, and the movement after it then enters the window Kosmos
+  focused, which at most requests that window again.
+- On macOS 27, creating a listen-only tap for mouse moved events alone made macOS ask a
+  process with neither Accessibility nor Input Monitoring for Input Monitoring ("would
+  like to receive keystrokes from any application"), and that tap received nothing, while
+  the same tap under the terminal's grants received about 5,800 movements in the same
+  minutes. Apps with Accessibility alone run listen-only taps: AltTab at the annotated
+  location (`src/events/WindowAttentionEvents.swift`, whose tap creation fails without
+  Accessibility) and Loop for mouse movement (`PassiveEventMonitor.swift`). Whether
+  Kosmos's grant is enough is open until a live test settles it. The tap is created only
+  when focus follows mouse is first turned on, and Kosmos logs whether Input Monitoring is
+  granted when it creates the tap, whether the tap is enabled when it turns on, and when
+  the first event arrives. When macOS refuses the tap, Kosmos logs an error,
+  `focus-follows-mouse on` exits 1 and says to allow Input Monitoring, and the next turn on
+  or config load creates the tap again.
+- Open: if the live test asks Kosmos for Input Monitoring, pointer movement comes from
+  `NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)` instead, and only PointerTap's
+  event source changes; the gate and everything after it stay. AeroSpace's and Amethyst's
+  focus follows mouse and Rectangle's drag snapping use such monitors, and their code asks
+  only for Accessibility. AppKit installs the monitor as a handler on HIToolbox's event
+  monitor target (AppKit's imports and disassembly on macOS 27), which Carbon's
+  documentation of `GetEventMonitorTarget` describes as WindowServer copying user input
+  events sent to other processes into this one's event queue, so it is no event tap.
+  NSEvent's header requires Accessibility for key events and names nothing for mouse
+  events. Against the tap it gives up two things:
+  - Delivery is on the main thread, so every movement wakes the main actor and queues with
+    hotkey events. The gate still runs first, and only a movement into another window does
+    more.
+  - The event may not name the window under the pointer; whether its `cgEvent` carries the
+    annotated field is for the live test. If not, `NSWindow.windowNumber(at:
+    belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point, including
+    other apps' windows, at one WindowServer call per movement. It takes the event's
+    location as the monitor gives it, in screen coordinates. Branch `ffm-monitor` holds this
+    variant.
+
+  The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
+  and Control still comes from each event's modifier flags. An active tap is the other way
+  out: Rectangle, skhd and yabai create default taps with Accessibility, and it keeps the
+  tap's thread and field, but every pointer event would wait on Kosmos's callback, which
+  section 3 rejects for the keyboard.
+- `focus-follows-mouse = true` turns it on, and `focus-follows-mouse-ignore-apps` lists
+  apps by bundle identifier or name, as AutoRaise's `ignoreApps` did; Steve's AutoRaise
+  ignored Google Chrome for Testing. The command `focus-follows-mouse on|off|toggle`
+  switches it until the next config load.
+- Left out:
+  - The pointer after `join-with`, layout and resize commands, which can leave it over a
+    neighbour of the focused window. Steve's AeroSpace bindings left it there too; if a
+    bump then focuses the neighbour in practice, they join `Command.movesPointer`'s list.
+  - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
+    AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
+    minimum distance from where the pointer last counted, in PointerGate, brings it back.
+  - A pause key other than Control, and a delay setting, until a user needs one.
+  - Open menus. Moving the pointer off an open menu onto a window focuses that window and
+    closes the menu, and with no delay a short overshoot does it. The front app's own menus
+    leave the key window with the front process, so the key holder check leaves them to
+    this. If the live test shows it, one SkyLight window list read per window entered, for
+    a window at the pop-up menu level on screen, would keep the menu open.
+  - A raise of a background app's window. The key record keys it and leaves the stacking
+    order alone (section 5.4), until the worker's raise after the key record lands. The
+    window under the pointer is on top at the pointer already, so only the parts of a
+    floating window that other windows cover stay behind them.
+  - Keeping floating windows over a tile the pointer enters in the app that is front.
+    Inside the front app only AXRaise keys a window (section 5.4), so the tile comes up
+    over any floating window it overlaps, which Hyprland keeps on top. A tile of another
+    app is keyed by the key record alone and stays where it is, so hovering from floating
+    Messages onto a Ghostty tile keeps Messages on top (Steve's live test on 2026-09-24);
+    only two windows of the front app bury one. Raising the floating windows again after
+    the raise would key one of the front app's, or reorder only a background app's own
+    windows. If it bothers in practice, the path is yabai's
+    `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
+    (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
+    key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
+    the key record. It would replace AXRaise on the worker for a hover focus of a tile, the
+    echo recorded just before, once `kosmos-probe keying` shows it keys 20 of 20 in the
+    front app with the window order unchanged.
 
 ### 5.12 Other tools
 

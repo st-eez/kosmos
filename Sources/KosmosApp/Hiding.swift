@@ -3,6 +3,7 @@ import Foundation
 import KosmosCore
 import KosmosRecovery
 import KosmosSkyLight
+import Synchronization
 import os
 
 private let hidingLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "hiding")
@@ -52,6 +53,17 @@ final class Hiding {
     }
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
+
+    /// Whether the window was concealed when a report was stamped, judged by when the bridge
+    /// last sent its conceal or reveal (ConcealHistory).
+    func wasConcealed(_ window: UInt32, at stamp: ContinuousClock.Instant) -> Bool {
+        store.history.withLock { $0.wasConcealed(window, at: stamp, now: concealed.contains(window)) }
+    }
+
+    /// A window that left for good has no history to keep.
+    func forgetHistory(of window: UInt32) {
+        store.history.withLock { $0.forget(window) }
+    }
 
     /// Reveals `show`, then conceals `hide`, then confirms both, on the bridge queue.
     /// `displays` holds the display each revealed window's workspace is on. The windows of
@@ -136,6 +148,8 @@ private final class HidingStore: @unchecked Sendable {
     private var ledger = ConcealLedger()
     /// Whether the record on file and the ledger it implies are loaded.
     private var loaded = false
+    /// When each window's conceal or reveal was last sent, read on the main actor too.
+    let history = Mutex(ConcealHistory<ContinuousClock.Instant>())
 
     init(record: RecordFile) { self.record = record }
 
@@ -235,10 +249,12 @@ private final class HidingStore: @unchecked Sendable {
             guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return nil }
             removals = batch.removals(landed: displays.isInOrdinarySpace)
         }
+        history.withLock { $0.changed(Array(removals.values.joined()), concealed: false, at: .now) }
         for (from, windows) in removals {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
+        history.withLock { $0.changed(batch.fresh, concealed: true, at: .now) }
         // An add that keeps their other Spaces, the ordinary one included, and for the
         // windows to strip one that takes them out of their ordinary Space.
         var ids = batch.fresh.filter { !batch.strip.contains($0) }
@@ -251,6 +267,7 @@ private final class HidingStore: @unchecked Sendable {
     func forget(_ windows: [UInt32]) {
         guard load() else { return }
         ledger.forget(windows)
+        history.withLock { history in windows.forEach { history.forget($0) } }
         guard var next = state, next.windows.contains(where: { windows.contains($0.id) }) else { return }
         next.windows.removeAll { windows.contains($0.id) }
         if record.publish(next) { state = next }
@@ -302,6 +319,7 @@ private final class HidingStore: @unchecked Sendable {
     func recover() -> Recovery.Outcome {
         let outcome = Recovery.run(file: record)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
+        history.withLock { $0.forgetAll() }   // recovery restores windows unrecorded
         loaded = false
         if !load() {
             // Unknown: every batch fails at load() and runs recovery again, so this empty

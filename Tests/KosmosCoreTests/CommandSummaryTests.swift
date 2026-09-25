@@ -36,6 +36,9 @@ import Testing
         "move-node-to-monitor 1",
         "move-node-to-monitor --wrap-around --focus-follows-window up",
         "profile home",
+        "focus-follows-mouse on",
+        "focus-follows-mouse off",
+        "focus-follows-mouse toggle",
     ]
     let described = try commands.map { line in
         let command = try Command.parse(line.split(separator: " ").map(String.init)).get()
@@ -74,5 +77,8 @@ import Testing
         "Move window to monitor 1 [Monitor]",
         "Move window to the monitor above and follow, wrapping around [Monitor]",
         "Switch to profile home [Profile]",
+        "Turn focus follows mouse on [Other]",
+        "Turn focus follows mouse off [Other]",
+        "Toggle focus follows mouse [Other]",
     ])
 }

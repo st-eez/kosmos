@@ -81,7 +81,7 @@ public struct HeldReport<Report: Sendable>: Sendable {
 public enum DepartureFocus: Equatable, Sendable {
     /// The focus stayed: nothing to do.
     case none
-    /// Focus the workspace's next window, or Finder, now.
+    /// Focus the workspace's next window, or the empty workspace's, now.
     case now
     /// The key window left too, so macOS keys another window itself, and that report
     /// focuses. Focusing first could put Kosmos's echo between the departure and that

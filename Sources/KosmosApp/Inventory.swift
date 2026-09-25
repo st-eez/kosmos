@@ -18,6 +18,8 @@ final class Inventory {
     /// Accessibility facts for windows whose app's worker knows them.
     private var ax: [UInt32: AXWindowInfo] = [:]
     private(set) var focused: UInt32?
+    /// The app that reported `focused`.
+    private var focusedApp: pid_t?
     /// Windows in a native fullscreen Space.
     private(set) var fullscreen: Set<UInt32> = []
     /// How long a departure counts as just now, for the report of the next key window and
@@ -194,6 +196,12 @@ final class Inventory {
     /// facts and as each minimize report since says.
     func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
 
+    /// Kosmos's own window became key, for an empty workspace: the key window report no
+    /// worker sends, as Kosmos keeps none for itself. It names no window.
+    func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
+        handle(AXReport(pid: getpid(), kind: .focusedWindowChanged(nil), received: stamp))
+    }
+
     private func handle(_ report: AXReport) {
         switch report.kind {
         case .windowCreated(let id):
@@ -207,9 +215,12 @@ final class Inventory {
         case .focusedWindowChanged(let id):
             // The worker knows a window its app reports focused.
             if let id { readIfUnknown([id]) }
-            // Repeats still go to the controller, which counts echoes.
-            if id != focused {
+            // Repeats still go to the controller, which counts echoes. No key window is logged
+            // again when another app reports it, as an app with no window after Kosmos's empty
+            // workspace window.
+            if id != focused || (id == nil && report.pid != focusedApp) {
                 focused = id
+                focusedApp = report.pid
                 let name = appName(report.pid)
                 if let id {
                     inventoryLog.info("focus \(id) \(name, privacy: .public) managed \(self.isManaged(id))")

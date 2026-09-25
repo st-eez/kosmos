@@ -9,9 +9,18 @@
 # arguments of the CLI, which follow AeroSpace's.
 
 config-version = 1
-# Move the pointer into the focused window after a keyboard focus change. AutoRaise stays
-# the hover engine; Kosmos has no focus follows mouse.
+# Move the pointer into the window a hotkey or Command-Tab focuses or moves, unless it is
+# inside the window already. Command-Tab and a launcher's app hotkey bring it along into
+# another workspace too, while a workspace switch command moves it only to another
+# display. Commands from the CLI, as the bar's workspace clicks, and clicks leave the
+# pointer where it is.
 mouse-follows-focus = true
+# Focus the window the pointer enters, tiled, floating or in native fullscreen, and the
+# empty workspace of a display it enters, in place of AutoRaise. Holding Control stops it,
+# and the pointer leaves the listed apps alone, matched by bundle identifier or name, as
+# AutoRaise's ignoreApps did.
+focus-follows-mouse = true
+focus-follows-mouse-ignore-apps = ['Google Chrome for Testing']
 
 # Workspace names, in order. A profile may replace the list.
 workspaces = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
@@ -57,8 +66,6 @@ outer-per-monitor = { builtin = { top = 5 } }
 # Bindings of the main mode, the mode Kosmos starts in. Kosmos pushes every change to
 # SketchyBar itself, so no binding runs `sketchybar --trigger`.
 [mode.main.binding]
-# AeroSpace's ctrl-alt-a swapped focus follows mouse and AutoRaise. Kosmos has no focus
-# follows mouse, so AutoRaise stays on and the binding is gone.
 
 # Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys). At
 # the edge of the workspace, focus goes on to the next monitor.
@@ -128,6 +135,8 @@ ctrl-alt-down = 'join-with down'
 ctrl-alt-j = 'layout tiles horizontal vertical'
 ctrl-alt-r = 'flatten-workspace-tree'
 ctrl-alt-c = 'reload-config'
+# AeroSpace's ctrl-alt-a swapped its focus follows mouse and AutoRaise.
+ctrl-alt-a = 'focus-follows-mouse toggle'
 
 # Move the window to the next or previous workspace of its monitor, and follow it.
 ctrl-alt-shift-left = 'move-node-to-workspace --focus-follows-window prev'

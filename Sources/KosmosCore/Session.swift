@@ -235,6 +235,17 @@ public struct Session: Sendable {
         return workspace.root.windows + workspace.floating
     }
 
+    /// Whether the window is tiled or floating on a workspace a display shows. A parked
+    /// window is left to macOS.
+    public func isVisible(_ window: WindowID) -> Bool {
+        home[window].map(isShown) == true && !isParked(window)
+    }
+
+    /// Whether the focused workspace is on another display than the one under `point`.
+    public func focusIsOnAnotherDisplay(than point: CGPoint) -> Bool {
+        !monitor(of: focusedWorkspace).frame.contains(point)
+    }
+
     public func frames(of name: String) -> [WindowID: CGRect] {
         guard let workspace = workspaces[name] else { return [:] }
         let monitor = monitor(of: name)
@@ -452,8 +463,9 @@ public struct Session: Sendable {
                   let name = shown[monitor.id], name != source else { return nil }
             let entering: Direction? = if case .direction(let direction) = target { direction } else { nil }
             return move(window, from: source, to: name, follow: follow, entering: entering)
-        case .reloadConfig, .mode, .profile:
-            return nil   // the app reloads the config, switches hotkeys or applies the profile
+        case .reloadConfig, .mode, .profile, .focusFollowsMouse:
+            return nil   // the app reloads the config, switches hotkeys, applies the profile
+                         // or turns focus follows mouse on or off
         default:
             return performOnFocused(command)
         }
@@ -491,7 +503,7 @@ public struct Session: Sendable {
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
         case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusMonitor,
-             .moveNodeToMonitor, .profile:
+             .moveNodeToMonitor, .profile, .focusFollowsMouse:
             return nil
         }
         workspaces[focusedWorkspace] = workspace

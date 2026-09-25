@@ -35,3 +35,8 @@ bool kosmos_make_key(pid_t pid, uint32_t window);
 bool kosmos_front_without_windows(pid_t pid);
 // The front process's pid, as yabai reads it, or 0. About 1.6 us.
 pid_t kosmos_front_pid(void);
+// The pid of the process that holds the key window, or 0. A non-activating panel holds it
+// while another process stays front. A round trip to WindowServer: 30 us back to back, and
+// 120 us at the median and 42 ms at most read every 50 ms at the desk (kosmos-probe
+// key-holder).
+pid_t kosmos_key_focus_pid(void);
