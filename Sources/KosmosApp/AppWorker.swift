@@ -287,6 +287,10 @@ actor AppWorker {
                 let kept = readBack.height
                 set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))
                 set(element, kAXSizeAttribute, target.size)
+                if backoff.backedOff {
+                    queuedWrites[id] = entry
+                    continue
+                }
                 readBack = frame(element) ?? readBack
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
