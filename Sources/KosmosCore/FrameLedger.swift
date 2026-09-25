@@ -27,6 +27,9 @@ public struct FrameLedger: Sendable {
 
     private var confirmed: [UInt32: CGRect] = [:]
     private var pending: [UInt32: CGRect] = [:]
+    /// When each window's last write was confirmed. It outlasts `forget`, as a change that
+    /// came before the confirm is still that write's.
+    private var confirmedAt: [UInt32: ContinuousClock.Instant] = [:]
     /// A target whose size the app refused, and the size it kept instead.
     private var refused: [UInt32: (target: CGRect, kept: CGSize)] = [:]
 
@@ -55,10 +58,11 @@ public struct FrameLedger: Sendable {
         return writes
     }
 
-    /// Records the frame read back after a write. A size other than the target's is a
-    /// refusal, remembered until the target changes.
-    public mutating func confirm(_ id: UInt32, target: CGRect, readBack: CGRect) {
+    /// Records the frame read back after a write, confirmed `now`. A size other than the
+    /// target's is a refusal, remembered until the target changes.
+    public mutating func confirm(_ id: UInt32, target: CGRect, readBack: CGRect, at now: ContinuousClock.Instant) {
         confirmed[id] = readBack
+        confirmedAt[id] = now
         if pending[id] == target || pending[id] == CGRect(origin: target.origin, size: readBack.size) {
             pending[id] = nil
         }
@@ -78,6 +82,16 @@ public struct FrameLedger: Sendable {
     /// Whether a target sent for the window is not confirmed yet: a change of its frame now
     /// can be that write's.
     public func isWriting(_ id: UInt32) -> Bool { pending[id] != nil }
+
+    /// Whether a change of the window's frame that came at `stamp` can be a write's: a target
+    /// is not confirmed yet, or the change came before the last confirm. The inventory
+    /// applies a change after an off main read, by which time the write can be confirmed.
+    ///
+    /// Ceiling: a change that came before a write was sent counts too. Recording when each
+    /// write was sent would tell the two apart.
+    public func isWriting(_ id: UInt32, at stamp: ContinuousClock.Instant) -> Bool {
+        isWriting(id) || confirmedAt[id].map { stamp < $0 } == true
+    }
 
     public mutating func forget(_ id: UInt32) {
         confirmed[id] = nil

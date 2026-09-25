@@ -58,6 +58,8 @@ final class Controller {
     /// frames before the press and whether the user resizes them by their edges, which
     /// never lifts them. They go back to their tiles when the button comes up.
     private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
+    /// When the left button went down, while it is down.
+    private var pressedAt: ContinuousClock.Instant?
     /// Windows written their tiles at a mouse up, dropped or sent back, until the write
     /// reads back.
     private var releasedWrites: Set<WindowID> = []
@@ -101,13 +103,19 @@ final class Controller {
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, old, frame, changed in
-            self?.frameChanged(id, from: old, to: frame, changed: changed)
+        inventory.onFrameChange = { [weak self] id, old, frame, receivedAt in
+            self?.frameChanged(id, from: old, to: frame, receivedAt: receivedAt)
         }
         // AppKit calls a global monitor's handler on the main thread.
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pressedAt = .now }
+        }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
-            MainActor.assumeIsolated { self?.leftMouseUp(at: point) }
+            MainActor.assumeIsolated {
+                self?.pressedAt = nil
+                self?.leftMouseUp(at: point)
+            }
         }
     }
 
@@ -436,19 +444,22 @@ final class Controller {
     }
 
     /// A tiled or floating window of a shown workspace moved or resized, not by a write of
-    /// Kosmos's in flight: the frame ledger records it. A `.changed` event with the left
-    /// button down is the user's. The key tiled window lifts out of the layout until the
-    /// button comes up once it has moved whole more than 10 pt, so a click that jitters the
-    /// title bar does not lift it. A tiled window resized by its edges, moved less, or moved
-    /// while another is key, as by a Command drag, goes back to its tile then
-    /// (leftMouseUp). The key floating window may join another display's workspace, as
-    /// AeroSpace's isManipulatedWithMouse has it (DESIGN.md, sections 5.2 and 5.13).
-    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
-        guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
+    /// Kosmos's in flight: the frame ledger records it. A `.changed` event that came during
+    /// a press still on is the user's. Both are judged as of `receivedAt`, when the event
+    /// came, since the inventory applies it after an off main read; a press that has ended
+    /// left what it moved to its mouse up (DESIGN.md, section 5.2). The key tiled window
+    /// lifts out of the layout until the button comes up once it has moved whole more than
+    /// 10 pt, so a click that jitters the title bar does not lift it. A tiled window resized
+    /// by its edges, moved less, or moved while another is key, as by a Command drag, goes
+    /// back to its tile then (leftMouseUp). The key floating window may join another
+    /// display's workspace, as AeroSpace's isManipulatedWithMouse has it (DESIGN.md,
+    /// sections 5.2 and 5.13).
+    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, receivedAt: ContinuousClock.Instant?) {
+        guard managing, !sessionLocked, !ledger.isWriting(id, at: receivedAt ?? .now), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
-        guard changed else { return }
-        guard NSEvent.pressedMouseButtons == 1 else {
+        guard let receivedAt else { return }
+        guard let pressedAt, pressedAt <= receivedAt else {
             // The app went on with the user's live resize after the write at mouse up.
             if writeAgain.contains(id) { writeTileAgain(id) }
             return
@@ -462,7 +473,9 @@ final class Controller {
         let press = mouseMoved[id]
         let before = press?.before ?? old
         // WindowServer can apply a resize by the left or top edge as a move before the
-        // resize, so the pointer on a resize border at the first event marks one too.
+        // resize, so the pointer on a resize border at the first event marks one too. The
+        // pointer is read as the event applies, a read's time after it came: reading it as
+        // each event comes would read it at every change event a switch posts.
         let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
         let resized = press?.resized == true || onBorder || frame.size != before.size
         if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > 10,
@@ -572,7 +585,7 @@ final class Controller {
             returned([id], follow: id, at: report.received)
         case .framesApplied(let results):
             for result in results {
-                ledger.confirm(result.id, target: result.target, readBack: result.readBack)
+                ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now)
                 let released = releasedWrites.remove(result.id) != nil
                 // A window that kept more than it was given, past the slack, refused the
                 // size: that is its minimum on that axis (DESIGN.md, section 5.2).

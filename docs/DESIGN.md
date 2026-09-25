@@ -252,6 +252,17 @@ off the main thread).
   write reads back larger records no minimum. Its ledger entry goes, and its tile is
   written once more at its next change event with the button up, or after 100 ms; only
   that write's read back can show a minimum.
+- The inventory applies a change event after reading the window's row off the main thread
+  (section 5.1), by which time Kosmos's write may be confirmed and the button up. So Kosmos
+  judges the change as of its arrival. It is a write's when it came before the write's
+  read back confirmed it, even after a mouse up made the ledger forget the window, and the
+  left button counts as down when it went down before the change came, as an `NSEvent`
+  global monitor hears, and has not come up since. A change from a press that has ended
+  is left to that press's mouse up. Judged as it applied, the late echo of a hotkey's
+  write to the window the user holds the button in would lift it, and the late echo of the
+  write at a mouse up would write the tile again early and record a live resize step as a
+  minimum. A change that came before a write was sent counts as the write's too. The
+  pointer for the resize border check is read as the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would

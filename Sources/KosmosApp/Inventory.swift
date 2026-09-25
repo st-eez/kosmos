@@ -75,10 +75,10 @@ final class Inventory {
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
-    /// A managed window moved or resized, with its frame before and now, and whether a
-    /// `.changed` event reported it. A Space change, as a reveal makes, a creation or a
-    /// sweep can read a new frame too.
-    var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, Bool) -> Void)?
+    /// A managed window moved or resized, with its frame before and now, and when the
+    /// `.changed` event that reported it came, or nil: a Space change, as a reveal makes, a
+    /// creation or a sweep can read a new frame too.
+    var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, ContinuousClock.Instant?) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -126,8 +126,9 @@ final class Inventory {
         case readIfUnknown
         /// Its Space membership changed at that time.
         case spaceMembership(ContinuousClock.Instant)
-        /// A `.changed` event: it moved, resized, or was ordered in, out or again.
-        case changed
+        /// A `.changed` event came at that time: it moved, resized, or was ordered in, out
+        /// or again.
+        case changed(at: ContinuousClock.Instant)
     }
     /// Window events waiting for the next read. A read waited on WindowServer during a
     /// switch's Space transaction, about 1.4 ms each with three displays (2026-09-24), so the
@@ -347,7 +348,7 @@ final class Inventory {
         case .created(let id):
             enqueue(.read(id, .none))
         case .changed(let id):
-            enqueue(.read(id, .changed))
+            enqueue(.read(id, .changed(at: .now)))
         case .spaceMembership(let id):
             enqueue(.read(id, .spaceMembership(.now)))
         case .destroyed(let id):
@@ -391,7 +392,7 @@ final class Inventory {
         for action in PendingReads.actions(events, found: Set(rows.keys)) {
             switch action {
             case .apply(let id, let followUp):
-                if case .changed = followUp { apply(rows[id]!, changed: true) } else { apply(rows[id]!) }
+                if case .changed(let at) = followUp { apply(rows[id]!, changed: at) } else { apply(rows[id]!) }
                 follow(followUp, id)
             case .gone(let id, let followUp):
                 remove(id, reason: "gone")
@@ -420,7 +421,8 @@ final class Inventory {
         }
     }
 
-    private func apply(_ row: WindowRow, changed: Bool = false) {
+    /// `changed`: when the `.changed` event that asked for the read came.
+    private func apply(_ row: WindowRow, changed: ContinuousClock.Instant? = nil) {
         touchedDuringSweep?.insert(row.id)
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
