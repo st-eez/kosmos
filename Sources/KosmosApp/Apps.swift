@@ -77,8 +77,15 @@ final class Apps {
     /// An activation names only the app, so the app's worker reads its focused window. The
     /// read waits behind the worker's other jobs, so the app can have left the front by the
     /// time it answers; then the report is a background one, like any report from an app
-    /// that is not front when it arrives (tla/Kosmos.tla, Observe). Taken as the key window,
-    /// it could be adopted after the user's click on another app.
+    /// that is not front when it arrives (tla/Kosmos.tla, ObserveSplit). Taken as the key
+    /// window, it could be adopted after the user's click on another app.
+    ///
+    /// The ceiling: when an older request of Kosmos's fronted another app before the read
+    /// ran, the user's activation of this app, as a Command-Tab, is lost with the read
+    /// (tla/README.md, change 19, `split-user-actcheck`). The spec keeps such a read when
+    /// Kosmos recorded an activation after its stamp, or when the app had already lost the
+    /// front to Kosmos's activation as the main actor noticed it (changes 19 and 20). Both
+    /// are left out (DESIGN.md, section 5.4, Deferred).
     private func activated(_ pid: pid_t, received: ContinuousClock.Instant) {
         guard let worker = workers[pid] else { return }
         let report = self.report

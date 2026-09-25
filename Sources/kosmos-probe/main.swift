@@ -1118,6 +1118,9 @@ final class FocusNotes: @unchecked Sendable {
         case recordOnly = "record only"
         case raiseFirst = "AXRaise, then record"
         case raiseAfter = "record, then AXRaise"
+        /// As the worker's raise after the key record: only while the app is front and the
+        /// target is its focused window, read just after the record.
+        case postRaise = "record, then AXRaise while front and focused"
         case raiseOnly = "AXRaise alone"
     }
     /// Keys the window as `order` says and waits 0.3 s. Returns when the raise started, and
@@ -1134,6 +1137,14 @@ final class FocusNotes: @unchecked Sendable {
         if order == .raiseFirst || order == .raiseOnly { raiseWindow() }
         if order != .raiseOnly, !kosmos_make_key(stub.pid, window) { print("  kosmos_make_key failed for \(stub.label(window))") }
         if order == .raiseAfter { raiseWindow() }
+        if order == .postRaise {
+            let focused = focusedWindow(of: stub.pid), front = kosmos_front_pid() == stub.pid
+            if front, focused == window {
+                raiseWindow()
+            } else {
+                print("  raise skipped: front \(front ? "yes" : "no"), AX focused \(stub.label(focused))")
+            }
+        }
         wait(0.3)
         return raise
     }

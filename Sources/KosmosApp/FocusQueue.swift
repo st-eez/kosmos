@@ -40,13 +40,14 @@ final class FocusQueue: Sendable {
     /// can be older than a request still in flight. Otherwise it raises, which keys the
     /// window there. `FocusDecide`: after the job, or 30 ms, the queue keys only a
     /// background app, whose job did nothing but order the key record after the app's queued
-    /// activation reads.
+    /// activation reads. `WorkerPost`: then the app's worker raises the window.
     ///
     /// Each side records the echo right before its own call that changes the key window, and
     /// never for the other's: `performing` runs on the main actor with a stamp and the path,
     /// before any report of the change, which reaches main only after the change starts.
-    /// `dropped` gets that stamp when the call fails. Recording when the request is made failed
-    /// TLC: a request still queued took a click on its window for its echo.
+    /// `dropped` gets that stamp when the call fails, and when the raise after a key record is
+    /// done, which forgets its record unless a report used it. Recording when the request is
+    /// made failed TLC: a request still queued took a click on its window for its echo.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
                  generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
@@ -54,15 +55,15 @@ final class FocusQueue: Sendable {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !concealed else { return }
+            let raising: @Sendable (ContinuousClock.Instant) -> Void = { stamp in Self.onMain { performing(stamp, .raise) } }
+            let dropping: @Sendable (ContinuousClock.Instant) -> Void = { stamp in Self.onMain { dropped(stamp) } }
             let front = kosmos_front_pid() == pid
             if privately {
                 let stamp: ContinuousClock.Instant
                 switch key {
                 case .window(let id):
                     let request = KeyRequest(appWasFront: front)
-                    Self.wait(for: worker, id, isCurrent, request,
-                              performing: { stamp in Self.onMain { performing(stamp, .raise) } },
-                              dropped: { stamp in Self.onMain { dropped(stamp) } })
+                    Self.wait(for: worker, id, isCurrent, request, performing: raising, dropped: dropping)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     stamp = ContinuousClock.now
                 case .none:
@@ -77,14 +78,19 @@ final class FocusQueue: Sendable {
                     case .none: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
-                if performed { return }
-                Self.onMain { dropped(stamp) }
+                guard performed else { return dropping(stamp) }
+                // `WorkerPost`: the key record left the window where it sits in its app's
+                // stacking order, and the app's worker raises it next.
+                if case .window(let id) = key {
+                    worker?.raiseAfterKeyRecord(id, performing: raising, raised: dropping)
+                }
+                return
             }
             switch key {
             case .window(let id):
                 worker?.focusPublicly(id, readFocus: front, isCurrent: isCurrent,
                                       performing: { stamp in Self.onMain { performing(stamp, .activation) } },
-                                      dropped: { stamp in Self.onMain { dropped(stamp) } })
+                                      dropped: dropping)
             case .none:
                 // Only the private path keys Kosmos's own window: an accessory app that
                 // activated itself became front in 0 of 10 trials. With that path off after a
@@ -96,10 +102,10 @@ final class FocusQueue: Sendable {
 
     /// Runs the worker's job for a private request and waits for it no longer than the main
     /// actor waits on a worker (DESIGN.md, section 4.2). On macOS 27 the key record alone
-    /// leaves the key window unchanged inside the app that is already frontmost, while AXRaise
-    /// keyed the right window (the hover branch's `kosmos-probe raise`). A slow app's job
-    /// finishes on its own, and a hung app holds only its own worker. With no worker, nothing
-    /// is raised and the queue decides.
+    /// left the key window unchanged inside the app that is already frontmost 20 times in 20,
+    /// while AXRaise keyed the right window 20 times in 20 (`kosmos-probe keying`). A slow
+    /// app's job finishes on its own, and a hung app holds only its own worker. With no
+    /// worker, nothing is raised and the queue decides.
     private static func wait(for worker: AppWorker?, _ id: UInt32, _ isCurrent: @escaping @Sendable () -> Bool,
                              _ request: KeyRequest,
                              performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,

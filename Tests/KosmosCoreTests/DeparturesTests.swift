@@ -37,6 +37,21 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(log.justLeft(7, at: t0 + .milliseconds(1200)) == nil)
 }
 
+@Test func aRepeatOfTheLastKeyWindowHasTheWindowBeforeIt() {   // change 24
+    // The key window 2 hides, and macOS keys 1, concealed on another workspace. Its
+    // notification finds 2 gone, and the activation read of the same change, which repeats
+    // 1, has to find 2 gone too, or Kosmos follows macOS's re-key.
+    var keys = KeyHistory()
+    _ = keys.heard(.window(2))
+    #expect(keys.heard(.window(1)) == .window(2))
+    #expect(keys.heard(.window(1)) == .window(2))
+    #expect(keys.heard(.window(3)) == .window(1))
+    #expect(keys.key == .window(3))
+    // No key window after 3 left, then another app's report of none: that one has none.
+    #expect(keys.heard(.none) == .window(3))
+    #expect(keys.heard(.none) == KeyWindow.none)
+}
+
 @Test func aHeldReportIsDecidedOnceByItsGrace() {
     var held = HeldReport<String>()
     let first = held.hold("Ghostty", of: .window(3))

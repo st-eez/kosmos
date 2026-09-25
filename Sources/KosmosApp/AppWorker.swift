@@ -47,17 +47,20 @@ actor AppWorker {
     static let timeout: Float = 1.0
     /// How long the worker waits for the app to perform a raise. A raise it stopped waiting
     /// for still lands when the app gets to it, and can key a window after a newer command
-    /// (tla/README.md, change 12). One that outlasts this counts as made, so its echo is
-    /// still recognized, and its app is backed off. No measurement chose the 5 s.
+    /// (tla/README.md, change 19, `split-user-timeout`). One that outlasts this counts as
+    /// made, so its echo is still recognized, and its app is backed off. No measurement chose
+    /// the 5 s.
     static let raiseTimeout: Float = 5.0
 
     let pid: pid_t
     private let name: String
     private let executor: RunLoopExecutor
     /// Runs the app's AX observer, apart from the worker's calls into the app, so a focus
-    /// notification is stamped and checked against the front process when the app sends it
-    /// (tla/README.md, change 12). Checked behind a busy worker, a click inside the front
-    /// app that raced Kosmos's activation of another app was dropped.
+    /// notification is stamped and checked against the front process in its callback, which
+    /// never waits behind the worker's calls (tla/README.md, change 19). Checked behind a
+    /// busy worker, a click inside the front app that raced Kosmos's activation of another app
+    /// was dropped (`split-user-latenote`). The callback still runs some time after the app
+    /// sends the notification, and Kosmos can key or hide windows in between (change 20).
     private let observerLoop: RunLoopExecutor
     private let report: @MainActor (AXReport) -> Void
     private let app: AXUIElement
@@ -202,6 +205,44 @@ actor AppWorker {
                 let stamp = ContinuousClock.now
                 performing(stamp)
                 if !worker.raiseWindow(id) { dropped(stamp) }
+            }
+        }
+    }
+
+    /// The raise after the queue's key record for this background app (`WorkerPost`,
+    /// KosmosCore's KeyRequest), which brings the keyed window to the top of its app. The key
+    /// record alone put it on top 0 times in 20, the key record then AXRaise 20 times in 20
+    /// (`kosmos-probe keying`). The echo is recorded through `performing` just before the
+    /// raise, as the raise keys the window again if the user keyed another window of the app
+    /// first. Once the raise has returned and the worker has read the app's focused window,
+    /// `raised` tells the main actor to forget the record if no report used it
+    /// (tla/README.md, change 23).
+    ///
+    /// The ceiling: the raise's report hops to the main actor from the observer's thread, and
+    /// `raised` from the worker's, so the report can arrive after its record is forgotten and
+    /// read as the user's choice of the window. The spec has the app's callbacks for the raise
+    /// run before the worker's read, as they run before its activation read. The upgrade is
+    /// to forget the record only once the observer has handled the notifications the app sent
+    /// before answering the read (DESIGN.md, section 5.4).
+    nonisolated func raiseAfterKeyRecord(_ id: UInt32, performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                         raised: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
+        executor.perform {
+            self.assumeIsolated { worker in
+                let focused = worker.focusedWindow()
+                let front = kosmos_front_pid() == worker.pid
+                guard worker.elements[id] != nil,
+                      KeyRequest.workerPostRaises(appIsFront: front, focused: focused, target: id) else {
+                    // Logged to tell a read that came before the app handled the key record
+                    // from the user moving on (DESIGN.md, section 5.4).
+                    let seen = focused.map { $0.map(String.init) ?? "none" } ?? "no answer"
+                    log.info("\(worker.name, privacy: .public) raise after the key record of \(id) skipped: front \(front), focused \(seen, privacy: .public)")
+                    return
+                }
+                let stamp = ContinuousClock.now
+                performing(stamp)
+                worker.raiseWindow(id)
+                _ = worker.focusedWindow()
+                raised(stamp)
             }
         }
     }

@@ -44,9 +44,10 @@ final class Controller {
     /// tab by the user's or the app's choice, so its report counts as one of a concealed
     /// window, and the tab deselected before it did not depart: it is followed at once.
     private var placedHidden: Set<WindowID> = []
-    /// The key window macOS last reported. Too old to skip a focus request against, which the
-    /// focus queue decides when the request runs.
-    private var key: KeyWindow?
+    /// The key window macOS last reported, and the one before it. Too old to skip a focus
+    /// request against, which the focus queue decides when the request runs.
+    private var keys = KeyHistory()
+    private var key: KeyWindow? { keys.key }
     /// When Kosmos's empty workspace window last became key, on the clock app launch dates use.
     private var emptyWorkspaceKeyed = Date.distantPast
     /// A report whose verdict waits for the departure of the window key before it
@@ -448,7 +449,7 @@ final class Controller {
         // plan conceals it afresh when its place is on a hidden workspace.
         hiding.forget([old, new])
         ledger.forget(new)
-        if key == .window(old) { key = .window(new) }
+        if key == .window(old) { keys.key = .window(new) }
         execute(plan)
         // macOS reported the new tab key before it had a place. It is the user's or the
         // app's choice, followed if the place is on a hidden workspace; the window key
@@ -702,16 +703,16 @@ final class Controller {
         switch report.kind {
         case .backgroundFocus(let id):
             // An app that is not front changed its own focused window, as after AXRaise in
-            // it: no key window report, and never the last one seen. It can still be
-            // Kosmos's echo, and is otherwise ignored (tla/Kosmos.tla, Observe). It leaves the
-            // kill switch's count alone: a raise's report says nothing about the key record.
+            // it, or its activation read ran after it lost the front: no key window report,
+            // and never the key window last heard of. It can still be Kosmos's echo, and is
+            // otherwise ignored (tla/README.md, change 17). It leaves the kill switch's count
+            // alone: a raise's report says nothing about the key record.
             guard !sessionLocked else { return }
             _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
             let reported: KeyWindow = id.map(KeyWindow.window) ?? .none
-            let previous: WindowID? = if case .window(let window)? = key, window != id { window } else { nil }
             let repeated = key == reported
-            key = reported
+            let previous: WindowID? = if case .window(let window)? = keys.heard(reported), window != id { window } else { nil }
             if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
             guard !sessionLocked else { return }   // resync requests the intent again
             // macOS's report of the next key window, which a departure waited for. Kosmos's
@@ -742,10 +743,14 @@ final class Controller {
             unplacedKey = nil
             if held.holds(reported, repeated: repeated) { return }
             // The window key before this report left the screen just now: macOS keyed this
-            // window after that one closed, minimized or hid (DESIGN.md, section 5.4).
+            // window after that one closed, minimized or hid (DESIGN.md, section 5.4). For a
+            // report that repeats the key window, that is the window before (KeyHistory).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
             // it left too. classify reads it only when the verdict depends on it. After a
-            // switch the read waited on WindowServer's Space transaction.
+            // switch the read waited on WindowServer's Space transaction. Whether the window
+            // was concealed is judged at the stamp, for a notification as for an activation
+            // read: only its notification reports a window opened inside the front app
+            // (tla/README.md, change 22).
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
                                    concealed: placed || id.map { hiding.wasConcealed($0, at: report.received) } ?? false, miss: miss),

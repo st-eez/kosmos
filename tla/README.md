@@ -1,5 +1,9 @@
 # TLA+ spec of the workspace switch
 
+The code implements changes 1 to 18 below, and the parts of changes 19 to 24 that
+[DESIGN.md](../docs/DESIGN.md) 5.4 describes; its Deferred list names the rules of those
+changes the code leaves out, change 21's drop of change 12's miss rule among them.
+
 [Kosmos.tla](Kosmos.tla) specifies the switch protocol and focus classification from
 [DESIGN.md](../docs/DESIGN.md), sections 4.3 and 5.4. It models three queues: the main
 actor, the bridge queue that reveals and conceals windows through the holding Space, and
@@ -18,8 +22,8 @@ display, and a command for a workspace another display shows only moves the focu
 [MC.tla](MC.tla) fixes a small topology: workspace 1 holds w1 and w2, workspace 2 holds
 w3, and workspace 3 is empty. App A owns w1 and w3, app B owns w2. The `displays-`
 configs use two displays: workspaces 1 = {w1} and 2 = {w3} on display 1, and workspace
-3 = {w2} on display 2, with the same apps. Each configuration bounds the user to two or
-three inputs.
+3 = {w2} on display 2, with the same apps, and so does `split-displays`. Each
+configuration bounds the user to two or three inputs.
 
 ## Running
 
@@ -28,37 +32,44 @@ three inputs.
 python3 trace.py < mixed.out              # print the counterexample step by step
 ```
 
-Java 11 or newer is required.
+Java 11 or newer is required. `run.sh` runs TLC with 4 workers, or `TLC_WORKERS`, and
+deletes its state directory when TLC exits.
 
 ## Results
 
-| Config | Inputs | Checks | Result | States |
-| --- | --- | --- | --- | --- |
-| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 |
-| `user` | commands, clicks, Command-Tab, an opened hidden window | convergence, last command wins, last activation wins, recovery path | pass | 220,819 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 |
-| `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 |
-| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 6,465 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 72 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 59 |
-| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 |
-| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 |
-| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 925,239 |
-| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 973,302 |
-| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 11,149 |
-| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,235,551 |
-| `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 |
-| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 71,139 |
-| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 |
-| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 |
-| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 |
-| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 |
-| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 |
-| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 |
-| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 |
-| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 3,506 |
-| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 7,208 |
+| Config | Inputs | Checks | Result | States | Depth |
+| --- | --- | --- | --- | --- | --- |
+| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 | 26 |
+| `user` | commands, clicks, Command-Tab, an opened hidden window | convergence, last command wins, last activation wins, recovery path | pass | 220,819 | 29 |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 | 28 |
+| `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 | 28 |
+| `hover` | commands, clicks, Command-Tab, an opened hidden window, and hover | convergence, last command wins, last activation wins, recovery path | pass | 328,029 | 29 |
+| `hover-settles` | as `hover` | every disturbance settles (liveness) | pass | 328,029 | 29 |
+| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 | 32 |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 6,716 | 8 |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 90 | 6 |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 65 | 6 |
+| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 | 37 |
+| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 | 37 |
+| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 948,393 | 14 |
+| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 996,698 | 14 |
+| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 13,917 | 7 |
+| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,282,596 | 21 |
+| `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 | 32 |
+| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 75,373 | 15 |
+| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 | 40 |
+| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 | 26 |
+| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 | 29 |
+| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 | 26 |
+| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 | 37 |
+| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 | 37 |
+| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 | 40 |
+| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 4,918 | 9 |
+| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 7,505 | 12 |
+
+Every run in this file's tables used TLC with 8 workers on a 12 core Linux machine, on
+September 25, 2026. A failing run's state count depends on the order the workers take
+states in.
 
 `mixed`, `conceal-first`, `fallback-user` and `displays-fallback` record trade-offs, and
 the others record the behaviour this model replaced:
@@ -121,6 +132,61 @@ command there is covered. A report is not, because a return makes macOS key wind
 and Kosmos cannot yet tell those key changes from the user's. The gap is widest when a
 window leaves fullscreen: Kosmos handles that return once the window joins the desktop's
 Space, about 0.5 s after it starts to leave.
+
+The `split-` configs run a focus request as the steps the implementation takes
+(`SplitQueue`): the focus queue's, the target app worker's, the app's AXRaise landing
+later, the raise after a background app's key record (`PostRaise`) and the echo it records
+(`PostRaiseEcho`), the app's focus notification, whose observer callback runs some time
+after the change (`NoteDelay`), and the activation read, which runs on the app's worker
+and reads the app's focused window whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
+unless named `busyb`). AXRaise alone keys a window inside the front app (`RaiseKeys`), and
+a raise in a background app is reported as a focus change (`RaiseReports`), both as
+`kosmos-probe keying` measured. Requests do not miss there, so the split configs run
+without misses and without the miss rule (change 21). In the `background` configs
+background apps also change their own focused window (`AllowBackground`). In the `notice`
+configs the main actor also notices an activation some time after it happens
+(`NoticeDelay`), with two inputs. `split-open` lets the user open a hidden window, and
+`split-displays` runs it on two displays. The split configs also check that the key window
+is the front window of its app at rest (`FocusOnTop`).
+
+Each split run was stopped after 10 minutes. A run that finished gives its state count and
+the depth of its search. One that was stopped gives the states it had checked without a
+violation and the depth it had reached.
+
+| Config | Inputs | Checks | Result | States | Depth |
+| --- | --- | --- | --- | --- | --- |
+| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 990,973 | 60 |
+| `split-user` | commands, clicks, Command-Tab; app A busy | as `split-commands`, last activation wins | stopped, no violation | 43,423,158 | 45 |
+| `split-user-busyb` | as `split-user`, app B busy | as `split-user` | stopped, no violation | 45,253,366 | 45 |
+| `split-user-background` | as `split-user`, background apps changing their own focused window | as `split-user` | stopped, no violation | 44,248,643 | 45 |
+| `split-hover` | as `split-user`, and hover | as `split-user` | stopped, no violation | 44,305,537 | 39 |
+| `split-hover-settles` | as `split-hover` | every disturbance settles (liveness) | stopped, no violation in the liveness check at 4,903,909 states | 6,881,836 | 26 |
+| `split-open` | as `split-user`, and an opened hidden window | as `split-user` | stopped, no violation | 46,423,057 | 39 |
+| `split-displays` | two displays; as `split-open` | as `split-user` | stopped, no violation | 43,678,787 | 42 |
+| `split-leave` | as `split-user`, the key window leaving and returning as in `leave` | as `split-user`, keeps its workspace after a leave | stopped, no violation | 47,114,439 | 23 |
+| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 3,439,580 | 55 |
+| `split-user-background-notice` | as `split-user-background` with two inputs, activations noticed late | as `split-user` | pass | 3,440,679 | 55 |
+| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 4,376,652 | 55 |
+
+Each of these runs one rule the implementation had, or one the spec had, and fails as
+expected (changes 17 to 23):
+
+| Config | Rule | Result | States | Depth |
+| --- | --- | --- | --- | --- |
+| `split-user-actcheck` | an activation read counts only while its app is front (`ActFrontCheck`) | fails last activation wins, expected | 83,823 | 12 |
+| `split-user-latenote` | a focus notification is stamped and checked when the worker delivers it (`LateNoteCheck`) | fails last activation wins, expected | 2,368,879 | 23 |
+| `split-user-timeout` | the worker gives up on a busy app's AXRaise, which still lands (`RaiseTimeout`) | fails last command wins, expected | 40,185,832 | 42 |
+| `split-user-bgraise` | the worker also raises a background app's window before the key record (`BackgroundRaise`) | fails last command wins, expected | 16,594,886 | 33 |
+| `split-user-d1be665` | robust's rules at d1be665 (`SplitRules`), which change 18 replaced | fails last activation wins, expected | 1,344,425 | 20 |
+| `split-user-background-nohold` | a notification from an app Kosmos activated is taken before that activation's read (`HoldNotes` off) | fails last activation wins, expected | 18,697,182 | 37 |
+| `split-user-reasserttakes` | with only activation reads followed, a report Kosmos reasserts over counts as the last one taken for the user's (`ReassertTakes`) | fails last activation wins, expected | 209,889 | 15 |
+| `split-user-notice-nocheck` | a late notice does not note that its app lost the front to Kosmos's activation (`NoticeCheck` off) | fails last activation wins, expected | 9,875 | 14 |
+| `split-user-lostclick` | the last activation wins, without exempting a click lost to a late callback (`HonorsLastClick`) | fails last click wins, expected | 2,256,738 | 24 |
+| `split-user-missrule` | the miss rule (`MissRule`) | fails last activation wins, expected | 1,916,528 | 23 |
+| `split-user-nopostraise` | no raise after a background app's key record (`PostRaise` off) | fails key window on top, expected | 278,630 | 16 |
+| `split-open-readfollows` | only activation reads follow into another workspace (`NoteFollows` off) | fails last activation wins, expected | 224,729 | 13 |
+| `split-open-postraisenone` | the raise after a key record records no echo (`PostRaiseEcho = "none"`) | fails last command wins, expected | 22,690,877 | 38 |
+| `split-open-postraisekept` | that raise's record stays until a report matches it (`PostRaiseEcho = "kept"`) | fails last activation wins, expected | 30,429,128 | 40 |
 
 `RecoveryPath` holds by construction here, because the holding Space is recorded before
 the first hide. The recovery protocol needs its own spec.
@@ -239,3 +305,199 @@ Each change below started as a counterexample from TLC.
     which `KeepsWorkspaceAfterLeave` now checks per display. Holding those reports for the
     grace would delay every click on another display by 100 ms. The single display
     configs find the same state counts as before.
+
+The split model, merged with the one above from the `hover` branch, found the rest.
+
+15. **Skipping on reports.** The main actor skipped a request for the window macOS last
+    reported key. Reports lag: after `workspace 2` then `workspace 1`, the second switch's
+    request for w1 was skipped because the report of w3 had not arrived, and w3 stayed
+    key. Requesting while an echo was due instead recorded an expectation for a request
+    that changed nothing; no report cleared it, and a later click away and back to that
+    window was taken for an echo. Recording no expectation for such a request let it land
+    after a click and be adopted as the user's. The main actor now requests every focus,
+    and the focus queue skips a request whose window is really key when it runs.
+16. **Recording at the call.** With expectations recorded when the main actor requested and
+    forgotten when the queue skipped, the user's click back to a window matched the
+    expectation of a re-request the queue had not run yet, and was taken for an echo. The
+    queue now records each expectation just before its call, so a request it skips leaves
+    nothing to match.
+
+The split configs found more, each in the implementation's order of steps before the
+change that removed it:
+
+17. **Background reports.** A busy app's late raise of w3, after the user had switched
+    away, changed only that background app's own focused window, and the app reported it.
+    w3 was concealed by then, so Kosmos took the report for a Command-Tab and followed it
+    back to the workspace the user had left. A report from an app that is not the front
+    process when it arrives now consumes an echo it matches and is otherwise ignored, and
+    it does not count as the last report, or the user's real Command-Tab to that window
+    was later dropped as a repeat.
+18. **Recording for the other side.** Records were taken by whichever of the queue and the
+    worker decided first, before the other's call. A worker that found the target key
+    already dropped the queue's record, and the queue's activation then went unrecorded
+    and was adopted after the user's click; that was still so at d1be665
+    (`split-user-d1be665`). A request that turned stale after its record kept it, and it
+    swallowed the user's own click or Command-Tab to that window. A raise that recorded
+    after the queue's activation changed nothing and left its record behind. Now each
+    side records only just before its own call that changes the key window, and skips its
+    call once the other has made one. The queue posts no key record for a front app,
+    where it changes nothing unless the window is frontmost in its app. There the worker
+    keys: when AXRaise alone keys the window, it records just before the raise; when it
+    does not, it raises, then records and posts the key record while the request is still
+    current. A worker that raised, read, and posted the key record only if the window was
+    not key served both cases but failed: the user's Command-Tab between the raise and the
+    read made the read say not key, and the key record took focus back. Which case holds
+    is for `kosmos-probe keying` to settle.
+19. **Late reports and late raises.** The split model then took each report as the
+    implementation takes it: an activation read runs on the app's worker, behind its
+    raises, and reads whatever window the app has by then, and a busy app's AXRaise can
+    land after the worker stopped waiting. That found, in turn:
+    - A notification and an activation read both report one activation. With the
+      notification consuming the record, the read, arriving after an unrelated echo, was
+      adopted and followed into a hidden workspace. An activation read now matches
+      Kosmos's activation record for that app whatever window it reads, and a
+      notification only joins such a record.
+    - Echoes from one app came after the echo of a later request from another, which
+      dropped the earlier records with it; only the matched record goes now. The repeat
+      filter dropped a Command-Tab to the window of the last report processed, which was
+      another app's older report; it is gone.
+    - The user clicked A, then B, and A's report came last; a report stamped before the
+      last one taken as the user's is now ignored.
+    - An activation read marked background once its app lost the front dropped the user's
+      Command-Tab when Kosmos's older request fronted another app first. Such a read is
+      now ignored only when no Kosmos activation was recorded after it.
+    - A notification checked when the worker delivered it, behind the worker's calls, was
+      judged against a newer front app and dropped a click. Notifications are checked
+      when sent.
+    - A raise the worker gave up on landed after a newer command, keying a concealed
+      window that Kosmos followed. The worker waits for the raise.
+    - A raise in a background app landed after the app came front and keyed a stale
+      window. Nothing raises a background app's window.
+    - Whether a window was hidden, judged as the report was classified, turned a
+      Command-Tab into a click on a window being concealed after a later switch revealed
+      it. It is judged at the report's stamp.
+
+    One case is left: when Kosmos keys an app again before that app's activation read
+    runs, the read finds Kosmos's window, and no report says which window the user
+    activated. The spec exempts it with a ghost (`lastAmb`) and DESIGN.md 5.4 records it.
+20. **Callbacks after the change.** An app's observer callback runs some time after the
+    change it reports, and stamps it and checks the front app and the window's hiddenness
+    then (`NoteDelay`). The main actor likewise notices an activation some time after it
+    happens (`NoticeDelay`). Both run before the user's next input, and an app's
+    callbacks run before its activation read, but Kosmos's own steps can run in between.
+    That found:
+    - A background app changed its focused window, Kosmos's older request brought the
+      app front, and the change's callback then found the app front. Kosmos adopted the
+      stale window over the user's later Command-Tab (`split-user-background-nohold`). A
+      notification from an app Kosmos activated now waits for that activation's read,
+      and stands only if the read finds its window.
+    - The notification of a Command-Tab to a hidden window ends in Kosmos requesting its
+      intent again. Counted as the last report taken for the user's, it dropped the
+      activation read, stamped earlier, that would have followed the Command-Tab
+      (`split-user-reasserttakes`). Only a report Kosmos adopts or follows counts now.
+    - A click on a window being concealed had its callback run after the conceal, so the
+      window looked hidden, and Kosmos followed it back to the old workspace over the
+      user's next click. Only an activation read followed after this change; change 22
+      follows notifications again and exempts this race.
+    - With notices late, Kosmos's older request recorded and made its activation after
+      the user's Command-Tab and before the main actor noticed the Command-Tab. The read,
+      stamped after Kosmos's record, looked overtaken by the user and was dropped
+      (`split-user-notice-nocheck`). The notice now records that its app had already
+      lost the front to an activation Kosmos recorded, and such a read stands.
+
+    Two more cases are left, exempted with ghosts and recorded in DESIGN.md 5.4. A click
+    inside the front app is lost when a request Kosmos made before it activates another
+    app before the click's callback runs (`lastLost`; `split-user-lostclick` checks
+    without the exemption). A switch that reveals or conceals a window between the user's
+    activation of it and the main actor's notice makes the notice misjudge whether it
+    was hidden (`lastMis`, kept until Kosmos settles, since the wrong follow decides what
+    later inputs lead to).
+
+    The state view also treats the generation of the request the focus queue is running
+    as current or stale now, as it does for queued requests. Before, a stale and a current
+    running request could share a view, so TLC could skip behaviors; every `split-` config
+    was run again with it.
+
+21. **The split model beside returning's rules.** Reports of different apps reach Kosmos out
+    of order, and three rules misread them:
+    - The miss rule takes a report that repeats the key window Kosmos last heard of, while
+      a request to another window of that app awaits its echo, for a miss. The
+      activation read of a Command-Tab repeats the window its own notification just
+      reported, so Kosmos took it for a miss of its older request to that app, asked for
+      its intent again, and lost the Command-Tab (`split-user-missrule`). Inside the front
+      app the worker's AXRaise keys the window, 20 times in 20, and the key record
+      activates a background app with the named window, 10 times in 10 (`kosmos-probe
+      keying`), so the split path does not miss. The split configs run without misses and
+      without the rule.
+    - For the same reason, a report that repeats the held window was taken for the held
+      report after a miss. A newer Command-Tab to the window of a held, older one was
+      dropped with it when the older one turned out stale. Without misses that goes too.
+    - An older report of another app arriving late ended a held report as a newer
+      activation, and replaced it. A report stamped before the held report is now
+      overtaken by it, as by the last report taken for the user's.
+
+    The key record leaves a background app's window where it sits in that app's stacking
+    order, 0 times in 10 on top (`kosmos-probe keying`), so `FocusOnTop` fails without the
+    raise after it (`split-user-nopostraise`). The app's worker raises the window after
+    the key record while the app is front and the window is still its focused window;
+    the key record then AXRaise put it on top 10 times in 10. Change 23 gives that raise
+    its echo.
+22. **Windows opened inside the front app.** With main's inputs in the split model, the user
+    can open a concealed window of the front app, as its Window menu or `open` on a document
+    does. Only the app's notification reports that change. With only activation reads
+    followed, Kosmos requested its intent again and took the window away from the user
+    (`split-open-readfollows`). A notification of a window hidden at its stamp now follows
+    as an activation read does. That brings back change 20's click on a window being
+    concealed whose callback runs after the conceal, which Kosmos follows back. It joins the
+    exempted race of a switch that changes whether a window is hidden between the user's
+    change and its notice (`lastMis`), now also between the change and its callback. The
+    opened window found two more races, and their exemptions widened:
+    - Kosmos's older request activated another app before the callback of the user's change
+      inside the front app ran, and then brought that app front again. The callback found
+      the app front, and the held notification rule dropped it as a change the app made
+      before Kosmos's activation. The exemption for a click lost to a late callback
+      (`lastLost`) now covers a callback that runs after its app lost the front at all.
+    - The user opened the window Kosmos's older raise was keying, before the app performed
+      the raise. The user's change matched the raise's record, and Kosmos, whose intent had
+      moved on, requested it again. The exemption for the raise after a key record
+      (`lastRaced`) now covers the user keying any window of an app with a raise Kosmos
+      decided and the app has not performed.
+23. **The echo of the raise after a key record.** The worker raises only while the app is
+    front and the target is its focused window, so the raise finds the target key and
+    changes nothing, unless the user keyed another window of the app between the check and
+    the raise. With no record, the raise's report then reads as the user's. When a newer
+    command had concealed the window by then, Kosmos followed it back to the workspace the
+    user left (`split-open-postraisenone`). A record kept until a report matches it stays
+    behind after every raise that changes nothing, and swallowed the user's later opening
+    of that window (`split-open-postraisekept`). The worker now records just before the
+    raise, and once the raise has returned and it has read the app's focused window, tells
+    the main actor, which forgets the record if no report used it. The app's callbacks for
+    the raise have run by then, as they have before its activation read.
+    The worker does not check that the request is still current. With that check, a hover
+    on the same window made the raise stale, the new request found the window key and
+    raised nothing, and it stayed behind its app's other windows (`FocusOnTop` failed
+    `split-hover` at depth 21 in a run made for this question).
+24. **Departures and a second display in the split model.** `split-leave` and
+    `split-displays` found five more:
+    - The fold of the split model lost the check that the user leaves or brings back a
+      window only after Kosmos has every report: a quantifier took it into its scope. It is
+      back.
+    - After the key window closed or minimized with no window keyed next, the model counted
+      Kosmos as the front app, so the worker dropped its raise inside the app, which had
+      stayed front, and nothing was focused. The app whose window closed or minimized now
+      stays front while no window is key (`bare`).
+    - The key window left and macOS keyed a concealed window of another app. That app's
+      notification found the window before it gone, and Kosmos kept its workspace. The
+      activation read of the same change came next, took the notification's window for the
+      one before it, and Kosmos followed macOS's re-key, as in `leave-follow`. A report that
+      repeats the window Kosmos last heard of now has the window before that one.
+    - Kosmos's evidence that the key window left lasts a second, and the split model judges
+      it by the key window Kosmos last heard of. With no report of a next key window, a
+      Command-Tab within that second reads as macOS's own key change, as a click during a
+      minimize's animation does above. The spec lets the second pass once Kosmos has every
+      report (`Age`), and exempts input inside it (`lastEarly`).
+    - On two displays the user clicked the window Kosmos's older raise was about to key, on
+      the display the focus had just left. The worker had read the app's focused window
+      before the click and recorded after it, and the click's callback ran after the record,
+      so the click read as the raise's echo. The exemption of change 22 (`lastRaced`) now
+      starts at the worker's read.

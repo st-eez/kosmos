@@ -108,10 +108,19 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// Consumes the expectation `key` answers, if any. An echo names the requested window and
-    /// arrives after the request. Earlier expectations are dropped with it; a report that
-    /// matches none leaves them all. A report from an app that is not front calls this alone:
-    /// it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
-    /// Observe).
+    /// arrives after the request. Earlier expectations are dropped with it, so one whose echo
+    /// never comes, as when an app the key record activated keys another window itself
+    /// before reporting the requested one, goes once a later request's echo comes; a report
+    /// that matches none leaves them all. A report from an app that is not front calls this
+    /// alone: it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
+    /// ObserveSplit).
+    ///
+    /// The ceiling: each app reports on its own threads, so on a fast sweep of the pointer
+    /// across apps an earlier request's echo can arrive after a later one's, find its
+    /// expectation dropped, and read as the user's choice (tla/README.md, change 19). The
+    /// spec removes only the matched expectation, and matches an activation read to its
+    /// app's key record whatever window it reads; the two come together or not at all
+    /// (DESIGN.md, section 5.4, Deferred).
     public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
         guard let index = echo(of: key, receivedAt: stamp) else { return false }
         expected.removeFirst(index + 1)
@@ -135,12 +144,21 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// Whether a report is a miss of Kosmos's own request (`Miss`). The missed request, the
     /// oldest to that app since the focus queue runs requests in order, never comes back:
     /// it leaves the expectations, so it cannot take a later report of its window for its
-    /// echo. Call it for every report, before `classify`.
+    /// echo. Call it for every report, before `classify`. A report that echoes a request is
+    /// none: the raise after a key record repeats the window the key record keyed, and an app
+    /// can report that window again after it (`kosmos-probe keying`, 6 of 40).
+    ///
+    /// The ceiling: the activation read of a Command-Tab repeats the window its own
+    /// notification just reported, so while an older request to that app awaits its echo it
+    /// reads as a miss, and the Command-Tab is lost (tla/README.md, change 21,
+    /// `split-user-missrule`). The spec drops the rule together with matching an activation
+    /// read to its app's key record whatever window it reads (DESIGN.md, section 5.4,
+    /// Deferred).
     /// - Parameters:
     ///   - app: the app that owns the reported window.
     ///   - repeated: the report names the key window Kosmos last heard of.
     public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: Stamp) -> Miss {
-        guard repeated, let app,
+        guard repeated, let app, echo(of: key, receivedAt: stamp) == nil,
               let index = expected.firstIndex(where: { $0.app == app && $0.key != key && $0.requested <= stamp })
         else { return .none }
         let missed = expected.remove(at: index).key
