@@ -318,7 +318,9 @@ off the main thread).
   the app answers only if none of those calls timed out, and the inventory then reads the
   facts it could not read before. A focus change during the backoff went unread, so while
   the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
-  left to the launch retries.
+  left to the launch retries. Its worker reports the front app's focused window when it
+  starts too: a key change before the observer was registered posts nothing, and the
+  activation read made while the app launched got no answer (section 5.4).
 
 ### 5.3 Hiding and recovery
 

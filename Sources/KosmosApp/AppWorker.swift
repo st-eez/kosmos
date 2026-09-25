@@ -88,8 +88,9 @@ actor AppWorker {
         AXUIElementSetMessagingTimeout(probeElement, 0.05)
     }
 
-    /// Registers the app's observer and reads its current windows, then reports `answering`.
-    /// Returns false when the app does not answer Accessibility yet.
+    /// Registers the app's observer and reads its current windows, then reports `answering`,
+    /// and the app's focused window while it is the front process. Returns false when the
+    /// app does not answer Accessibility yet.
     func start() -> Bool {
         // The launch retries and the probe can both get here.
         guard !started else { return true }
@@ -110,7 +111,17 @@ actor AppWorker {
         guard trackWindows(), !backoff.backedOff else { return false }
         started = true
         send(.answering)
+        reportFrontFocus()
         return true
+    }
+
+    /// Reports the app's focused window as a key window report while the app is the front
+    /// process. A focus change the worker could not read is lost otherwise: one while the
+    /// app was backed off, such as a Command-Tab to it, and one before the observer was
+    /// registered, as a launching app's first window, whose activation read got no answer
+    /// while the app launched (DESIGN.md, section 5.4).
+    private func reportFrontFocus() {
+        if kosmos_front_pid() == pid, let window = focusedWindow() { send(.focusedWindowChanged(window)) }
     }
 
     /// Tracks every window the app lists. False when the app did not answer.
@@ -490,9 +501,8 @@ actor AppWorker {
     /// One read with a 50 ms timeout. Any answer lets calls go again. A worker that has not
     /// started starts; one that has tracks the windows created meanwhile and writes the held
     /// frames. If none of those calls timed out and the worker has started, asking stops and
-    /// the worker reports `answering`, which `start` also does. Focus changes the worker could
-    /// not read meanwhile, such as a Command-Tab to the app, are lost, so while the app is the
-    /// front process its focused window is reported as a key window report.
+    /// the worker reports `answering` and the front app's focused window, which `start` also
+    /// does.
     private func askAgain() {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(probeElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
@@ -507,8 +517,10 @@ actor AppWorker {
         guard backoff.settled(started: started) else { return }   // asked again at the next tick
         if let probe { CFRunLoopTimerInvalidate(probe) }
         probe = nil
-        if wasStarted { send(.answering) }
-        if kosmos_front_pid() == pid, let window = focusedWindow() { send(.focusedWindowChanged(window)) }
+        if wasStarted {
+            send(.answering)
+            reportFrontFocus()
+        }
         if let since {
             log.notice("\(self.name, privacy: .public) answers Accessibility again after \((ContinuousClock.now - since).formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public)")
         }
