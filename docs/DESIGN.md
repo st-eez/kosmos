@@ -830,8 +830,9 @@ off the main thread).
     shows as missing again, and a row leaves the list once nothing needs it. When
     everything listed is granted, the window says Kosmos is running and closes 1.5 s
     later; when the last missing row leaves without a grant, it closes at once.
-  - At launch the window takes the key. Later it only comes to the front, since a
-    background accessory app does not become the front app (section 5.4). When it closes
+  - At a launch without Accessibility the window takes the key. Otherwise it only comes
+    to the front, since a background accessory app does not become the front app
+    (section 5.4). When it closes
     with the key, the key goes to the window the model has focused, to the empty
     workspace's window if Kosmos had the key before, and otherwise back to the app macOS
     activates next.
@@ -1009,7 +1010,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   (`CGPreflightListenEventAccess`), at a config load or a command, the setup window lists
   Input Monitoring (section 5.9), whether the tap was created or not: a created tap may
   hear nothing, as above. Once it is granted, Kosmos makes the tap again if the last one
-  predates the grant, at the window's next check or the next turn on or config load. If
+  predates the grant, a grant after a revoke included, at the window's next check or the next turn on or config load. If
   macOS offers to quit and reopen Kosmos after the grant, the quit reaches NSApplication's
   terminate as Quit Kosmos does, by Apple event or SIGTERM, so hidden windows come back in
   process; the guardian covers a kill.

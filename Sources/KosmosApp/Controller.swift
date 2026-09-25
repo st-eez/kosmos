@@ -170,15 +170,18 @@ final class Controller {
     /// Monitoring grant it predates (DESIGN.md, section 5.11).
     private func updatePointerTap() {
         let listening = CGPreflightListenEventAccess()
+        if !listening { pointerListens = false }
         if wantsPointer, pointer == nil || (listening && !pointerListens) { makePointerTap(listening: listening) }
         pointer?.setEnabled(focusFollowsMouse.enabled)
         if wantsPointer, !listening { onInputMonitoringMissing?() }
     }
 
     /// Makes the pointer tap again once Input Monitoring is granted, when the last one was
-    /// made without it. The setup window calls this at each check.
+    /// made without it or the grant was revoked since. The setup window calls this at each
+    /// check.
     func renewPointerTapAfterGrant() {
-        guard wantsPointer, !pointerListens, CGPreflightListenEventAccess() else { return }
+        guard CGPreflightListenEventAccess() else { pointerListens = false; return }
+        guard wantsPointer, !pointerListens else { return }
         makePointerTap(listening: true)
         pointer?.setEnabled(true)
     }

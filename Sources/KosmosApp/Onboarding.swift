@@ -41,8 +41,8 @@ final class Onboarding {
     }
 
     /// Brings the window to the front of the normal level, and keeps it open if it was about
-    /// to close. Only a launch lets Kosmos take the key: mid-session, a background accessory
-    /// app does not become the front app (DESIGN.md, section 5.4).
+    /// to close. Only a launch without Accessibility lets Kosmos take the key: otherwise a
+    /// background accessory app does not become the front app (DESIGN.md, section 5.4).
     func show(takingKey: Bool) {
         if let closing {
             closing.cancel()
