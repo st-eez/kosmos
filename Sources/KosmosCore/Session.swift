@@ -257,7 +257,7 @@ public struct Session: Sendable {
             if lifted.remove(window) != nil || workspaces[name]!.park(window) {
                 changed.insert(name)
                 if !isShown(name) { parkedConcealed.insert(window) }
-            } else if parkReasons[window] != .closedByApp {
+            } else if parkReasons[window] != .closedByApp || reason == .appHidden {
                 continue
             }
             parkReasons[window] = reason
