@@ -14,8 +14,8 @@ private let signposter = OSSignposter(subsystem: "io.github.st-eez.kosmos", cate
 final class Controller {
     private var session: Session
     private var ledger = FrameLedger()
-    private var reports = FocusReports<ContinuousClock.Instant>()
-    private var misses = FocusMisses<ContinuousClock.Instant>()
+    private var reports = FocusReports()
+    private var misses = FocusMisses()
     private let inventory: Inventory
     private let hiding: Hiding
     /// What an empty workspace keys (docs/focus.md).
@@ -263,7 +263,7 @@ final class Controller {
     var focusProblem: String? {
         switch focusQueue.killSwitch.offReason {
         case .crashed?: "Private focus is off after a crash inside it, until kosmos reload-config"
-        case .wrongWindows?: "Private focus is off after \(FocusMisses<ContinuousClock.Instant>.limit) wrong windows in a row, until kosmos reload-config"
+        case .wrongWindows?: "Private focus is off after \(FocusMisses.limit) wrong windows in a row, until kosmos reload-config"
         case nil: nil
         }
     }
@@ -1252,7 +1252,7 @@ final class Controller {
         guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
               misses.willRequest(id, pid: pid, at: stamp, retry: retry) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)
-        controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
+        controllerLog.fault("private focus keyed another window \(FocusMisses.limit) times in a row; focus uses the public path")
         onFocusProblem?(focusProblem)
     }
 

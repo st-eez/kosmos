@@ -96,24 +96,24 @@ public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int3
 }
 
 /// Classifies key window reports against the focus requests Kosmos made. Hotkeys, requests
-/// and reports carry receipt stamps (`Stamp`) so "happened before" can be decided.
-public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
+/// and reports carry receipt stamps so "happened before" can be decided.
+public struct FocusReports: Sendable {
     /// `publicly`: the public path made the request.
-    private var expected: [(key: KeyWindow, app: Int32?, requested: Stamp, publicly: Bool)] = []
-    private var lastCommand: Stamp?
+    private var expected: [(key: KeyWindow, app: Int32?, requested: ContinuousClock.Instant, publicly: Bool)] = []
+    private var lastCommand: ContinuousClock.Instant?
     /// The window whose missed request Kosmos requested again.
     private var retried: KeyWindow?
 
     public init() {}
 
-    public mutating func commandExecuted(receivedAt stamp: Stamp) {
+    public mutating func commandExecuted(receivedAt stamp: ContinuousClock.Instant) {
         lastCommand = stamp
     }
 
     /// Records a request just before the focus queue makes its calls, before it can come back.
     /// `app` owns the window, or is Kosmos for no window. `publicly` says the public path
     /// makes the request, which lets the app key a window of its own choosing.
-    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: Stamp, publicly: Bool = false) {
+    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: ContinuousClock.Instant, publicly: Bool = false) {
         if key != retried { retried = nil }
         expected.append((key, app, stamp, publicly))
     }
@@ -123,23 +123,23 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// report of the requested window is the user's. Private requests keep their
     /// expectations until matched, or their late echo would pull focus back from the user's
     /// choice (tla/README.md, change 6); the spec does not model the public path.
-    public mutating func publicRequestsAnswered(by app: Int32, receivedAt stamp: Stamp) {
+    public mutating func publicRequestsAnswered(by app: Int32, receivedAt stamp: ContinuousClock.Instant) {
         expected.removeAll { $0.publicly && $0.app == app && $0.requested <= stamp }
     }
 
     /// A user action received before the latest command is stale: the command wins
     /// (tla/Kosmos.tla, Adopt and Rejoin).
-    public func isStale(_ stamp: Stamp) -> Bool {
+    public func isStale(_ stamp: ContinuousClock.Instant) -> Bool {
         lastCommand.map { stamp < $0 } ?? false
     }
 
     /// Whether the report would be the echo of a request of Kosmos's.
-    public func isEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
+    public func isEcho(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Bool {
         echo(of: key, receivedAt: stamp) != nil
     }
 
     /// The expectation a report echoes: the requested window, reported after the request.
-    private func echo(of key: KeyWindow, receivedAt stamp: Stamp) -> Int? {
+    private func echo(of key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Int? {
         expected.firstIndex { $0.key == key && $0.requested <= stamp }
     }
 
@@ -157,7 +157,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// spec removes only the matched expectation, and matches an activation read to its
     /// app's key record whatever window it reads; the two come together or not at all
     /// (docs/focus.md, Deferred).
-    public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
+    public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Bool {
         guard let index = echo(of: key, receivedAt: stamp) else { return false }
         expected.removeFirst(index + 1)
         if key == retried { retried = nil }
@@ -171,7 +171,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// Forgets a request the focus queue dropped, so it cannot swallow a later report.
-    public mutating func requestDropped(_ key: KeyWindow, at stamp: Stamp) {
+    public mutating func requestDropped(_ key: KeyWindow, at stamp: ContinuousClock.Instant) {
         if let index = expected.firstIndex(where: { $0.key == key && $0.requested == stamp }) {
             expected.remove(at: index)
         }
@@ -193,7 +193,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// - Parameters:
     ///   - app: the app that owns the reported window.
     ///   - repeated: the report names the key window Kosmos last heard of.
-    public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: Stamp) -> Miss {
+    public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: ContinuousClock.Instant) -> Miss {
         guard repeated, let app, echo(of: key, receivedAt: stamp) == nil,
               let index = expected.firstIndex(where: { $0.app == app && $0.key != key && $0.requested <= stamp })
         else { return .none }
@@ -218,7 +218,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     ///     only when the verdict depends on it, as it can read WindowServer. If
     ///     it has, macOS keyed this window itself, so it is not a Command-Tab to follow;
     ///     Kosmos keeps its workspace and focuses it again (tla/Kosmos.tla, KeyLeft).
-    public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp, onShownWorkspace: Bool,
+    public mutating func classify(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant, onShownWorkspace: Bool,
                                   concealed: Bool, recovered: Bool = false, miss: Miss = .none,
                                   keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if consumeEcho(key, receivedAt: stamp) { return .echo }

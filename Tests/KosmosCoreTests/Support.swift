@@ -119,6 +119,9 @@ extension Workspace {
 
 let screen = CGRect(x: 0, y: 0, width: 1000, height: 600)
 
+/// Stamps count from here: `t0 + .milliseconds(10)`.
+let t0 = ContinuousClock.now
+
 /// Steve's gaps. On `screen`, `h[1 2]` has tile 1 at x 10 to 495 and tile 2 at x 505 to 990.
 let deskGaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
 

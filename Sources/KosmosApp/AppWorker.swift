@@ -73,7 +73,7 @@ actor AppWorker {
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
-    private var backoff = AXBackoff<ContinuousClock.Instant>()
+    private var backoff = AXBackoff()
     /// `backoff.backedOff` for the main actor, which slides no window of an app that does not
     /// answer (Controller.motions).
     private nonisolated let backedOff = Atomic(false)

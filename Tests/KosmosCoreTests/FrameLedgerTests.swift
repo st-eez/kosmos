@@ -5,7 +5,6 @@ import Testing
 private let a = CGRect(x: 0, y: 0, width: 800, height: 600)
 private let moved = CGRect(x: 100, y: 0, width: 800, height: 600)
 private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
-private let t0 = ContinuousClock.now
 
 @Test func firstTargetWritesTheWholeFrame() {
     var ledger = FrameLedger()

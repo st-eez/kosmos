@@ -4,7 +4,6 @@ import Testing
 
 // The pieces that fixed the live Command-H re-key (tla/README.md, change 11).
 
-private let t0 = ContinuousClock.now
 /// The frame the tabs of a group share.
 private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
 

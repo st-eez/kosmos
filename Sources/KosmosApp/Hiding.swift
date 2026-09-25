@@ -186,7 +186,7 @@ private final class HidingStore: @unchecked Sendable {
     /// Whether the record on file and the ledger it implies are loaded.
     private var loaded = false
     /// When each window's conceal or reveal was last sent, read on the main actor too.
-    let history = Mutex(ConcealHistory<ContinuousClock.Instant>())
+    let history = Mutex(ConcealHistory())
 
     init(record: RecordFile) { self.record = record }
 

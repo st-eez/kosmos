@@ -1,8 +1,6 @@
 import Testing
 @testable import KosmosCore
 
-private let t0 = ContinuousClock.now
-
 @Test func aChangeIsJudgedByThePressOnWhenItCame() {
     var button = LeftButton()
     #expect(button.state(at: t0) == .up)
