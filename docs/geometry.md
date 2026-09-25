@@ -60,7 +60,11 @@
   `resize_on_border` off, so a tile's edges resize nothing there, and macOS gives Kosmos
   no way to stop such a resize. So does a tiled window moved while another window is
   key, as by a Command drag, or moved less than a lift takes ([displays.md](displays.md)). The ledger
-  forgets the window first, so it gets a whole frame write. The resize command sizes
+  forgets the window first, so it gets a whole frame write. A lock or a resync forgets the
+  presses and the windows they moved, and the resync lays those windows out, so a press
+  that spans a resync loses its snap-back: its later changes count as made with the button
+  up, and the window keeps what the rest of the press gives it. That is rare, and accepted.
+  The resize command sizes
   tiles, and a floating window keeps the size the user gives it.
 - The inventory applies a change event after reading the window's row off the main thread
   ([inventory.md](inventory.md)), by which time Kosmos's write may be confirmed and the button up. So
