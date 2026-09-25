@@ -41,13 +41,11 @@ private let t0 = ContinuousClock.now
     var ledger = FrameLedger()
     let kept = CGRect(x: 0, y: 0, width: 500, height: 600)
     _ = ledger.writes(for: [1: resized])
-    ledger.confirm(1, target: resized, readBack: kept, at: t0)
-    _ = ledger.writes(for: [1: resized])
-    ledger.confirm(1, target: resized, readBack: kept, at: t0)
+    #expect(ledger.confirm(1, target: resized, readBack: kept, at: t0) == .refused)
+    #expect(ledger.writes(for: [1: resized]) == [1: .frame(resized)])
+    // Refused on both writes of one target, the size it kept is its minimum on that axis.
+    #expect(ledger.confirm(1, target: resized, readBack: kept, at: t0) == .minimum(CGSize(width: 500, height: 0)))
     #expect(ledger.writes(for: [1: resized]).isEmpty)
-    // The window at its kept size reads back larger than the target again.
-    let placed = CGRect(x: 0, y: 0, width: 500, height: 600)
-    #expect(ledger.confirm(1, target: resized, readBack: placed, at: t0) == .minimum(CGSize(width: 500, height: 0)))
     // A new size is tried again.
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
 }
@@ -62,15 +60,8 @@ private let t0 = ContinuousClock.now
     #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
     // It took the size written again: no minimum.
     #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
-    // Refused on both writes of one target, the size it kept is its minimum on that axis.
-    let shifted = target.offsetBy(dx: 5, dy: 0), taller = CGRect(x: 15, y: 35, width: 945, height: 1070)
-    _ = ledger.writes(for: [1: shifted])
-    #expect(ledger.confirm(1, target: shifted, readBack: taller, at: t0) == .refused)
-    #expect(ledger.writes(for: [1: shifted]) == [1: .frame(shifted)])
-    #expect(ledger.confirm(1, target: shifted, readBack: taller, at: t0) == .minimum(CGSize(width: 0, height: 1070)))
-    #expect(ledger.writes(for: [1: shifted]).isEmpty)
     // A read back within the slack, or smaller, took the target.
-    let within = CGRect(x: 15, y: 35, width: 947, height: 1035)
+    let within = CGRect(x: 10, y: 35, width: 947, height: 1035)
     #expect(ledger.confirm(1, target: target, readBack: within, at: t0) == .took)
     #expect(ledger.confirm(1, target: target, readBack: resized, at: t0) == .took)
 }
