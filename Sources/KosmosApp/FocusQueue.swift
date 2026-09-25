@@ -25,20 +25,20 @@ final class FocusQueue: Sendable {
     /// at the request failed TLC (docs/focus.md).
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
-                 dropped: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
+                 forgetRecord: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         let generation = current.add(1, ordering: .relaxed).newValue
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !concealed else { return }
             let raising: @Sendable (ContinuousClock.Instant) -> Void = { stamp in onMain { performing(stamp, .raise) } }
-            let dropping: @Sendable (ContinuousClock.Instant) -> Void = { stamp in onMain { dropped(stamp) } }
+            let forgettingRecord: @Sendable (ContinuousClock.Instant) -> Void = { stamp in onMain { forgetRecord(stamp) } }
             let front = kosmos_front_pid() == pid
             if privately {
                 let stamp: ContinuousClock.Instant
                 switch key {
                 case .window(let id):
                     let request = KeyRequest(appWasFront: front)
-                    Self.wait(for: worker, id, isCurrent, request, performing: raising, dropped: dropping)
+                    Self.wait(for: worker, id, isCurrent, request, performing: raising, forgetRecord: forgettingRecord)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     stamp = ContinuousClock.now
                 case .none:
@@ -57,18 +57,18 @@ final class FocusQueue: Sendable {
                     // `WorkerPost`: the key record leaves the window where it sits in its app's
                     // stacking order.
                     if case .window(let id) = key {
-                        worker?.raiseAfterKeyRecord(id, performing: raising, raised: dropping)
+                        worker?.raiseAfterKeyRecord(id, performing: raising, raised: forgettingRecord)
                     }
                     return
                 }
                 // A failed key record takes the public path (docs/focus.md).
-                dropping(stamp)
+                forgettingRecord(stamp)
             }
             switch key {
             case .window(let id):
                 worker?.focusPublicly(id, readFocus: front, isCurrent: isCurrent,
                                       performing: { stamp in onMain { performing(stamp, .activation) } },
-                                      dropped: dropping)
+                                      forgetRecord: forgettingRecord)
             case .none:
                 // No public call keys Kosmos's own window (docs/focus.md).
                 focusLog.notice("the empty workspace keys nothing: the private path is off after a crash, or its call failed")
@@ -81,10 +81,10 @@ final class FocusQueue: Sendable {
     private static func wait(for worker: AppWorker?, _ id: UInt32, _ isCurrent: @escaping @Sendable () -> Bool,
                              _ request: KeyRequest,
                              performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
-                             dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
+                             forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         guard let worker else { return }
         let finished = DispatchSemaphore(value: 0)
-        worker.focusPrivately(id, isCurrent: isCurrent, request: request, performing: performing, dropped: dropped) {
+        worker.focusPrivately(id, isCurrent: isCurrent, request: request, performing: performing, forgetRecord: forgetRecord) {
             finished.signal()
         }
         _ = finished.wait(timeout: .now() + .milliseconds(30))

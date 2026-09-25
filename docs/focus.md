@@ -178,7 +178,7 @@
     runs its `record, then AXRaise while front and focused` order, which measures that
     read.
   - Only the raise after a key record has its record forgotten, once the raise is done, so
-    no late answer can orphan any other call; `dropped` otherwise serves only a call that
+    no late answer can orphan any other call; `forgetRecord` otherwise serves only a call that
     fails.
   - Kosmos builds the model's RaiseKeys case, where AXRaise alone keys the target inside
     the front app ([overview.md, section 2](overview.md#2-what-the-fork-measured)). The model's WorkerKey step, for the other case, is left out.

@@ -1059,7 +1059,7 @@ final class Controller {
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
-                           dropped: { [weak self] stamp in
+                           forgetRecord: { [weak self] stamp in
                                self?.reports.requestDropped(target, at: stamp)
                                self?.misses.requestDropped(at: stamp)
                            })

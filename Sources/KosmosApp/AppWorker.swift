@@ -179,7 +179,7 @@ actor AppWorker {
     /// KeyRequest). `performing` records the echo just before AXRaise (docs/focus.md).
     nonisolated func focusPrivately(_ id: UInt32, isCurrent: @escaping @Sendable () -> Bool, request: KeyRequest,
                                     performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
-                                    dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void,
+                                    forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                     done: @escaping @Sendable () -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
@@ -193,7 +193,7 @@ actor AppWorker {
                 else { return }
                 let stamp = ContinuousClock.now
                 performing(stamp)
-                if !worker.raiseWindow(id) { dropped(stamp) }
+                if !worker.raiseWindow(id) { forgetRecord(stamp) }
             }
         }
     }
@@ -231,7 +231,7 @@ actor AppWorker {
     /// after its record keeps the record for the reports its steps cause.
     nonisolated func focusPublicly(_ id: UInt32, readFocus: Bool, isCurrent: @escaping @Sendable () -> Bool,
                                    performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
-                                   dropped: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
+                                   forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         executor.perform {
             self.assumeIsolated { worker in
                 let focused: UInt32?? = readFocus ? worker.focusedWindow() : nil
@@ -245,7 +245,7 @@ actor AppWorker {
                 guard isCurrent() else { return }
                 worker.raiseWindow(id)
                 guard isCurrent() else { return }
-                if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { dropped(stamp) }
+                if NSRunningApplication(processIdentifier: worker.pid)?.activate(options: []) != true { forgetRecord(stamp) }
             }
         }
     }
