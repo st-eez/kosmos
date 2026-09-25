@@ -118,7 +118,6 @@ public struct Binding: Equatable, Sendable {
     /// The combination as written in the config, such as `alt-shift-h`.
     public var key: String
     public var combo: KeyCombo
-    /// Parsed when the config loaded.
     public var command: Command
 }
 

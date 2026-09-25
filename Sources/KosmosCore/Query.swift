@@ -8,7 +8,6 @@ public enum Query: String, Sendable {
     case listWindows = "list-windows"
     case listBindings = "list-bindings"
 
-    /// Nil when the arguments are no query.
     public init?(_ arguments: [String]) {
         guard arguments.count == 1 else { return nil }
         self.init(rawValue: arguments[0])
@@ -16,13 +15,10 @@ public enum Query: String, Sendable {
 }
 
 extension Session {
-    /// `list-workspaces`: a line for each workspace, the focused one's marked ` *`.
     public var workspaceList: String {
         names.map { $0 == focusedWorkspace ? "\($0) *" : $0 }.joined(separator: "\n")
     }
 
-    /// `list-windows`: a line for each window with its workspace and app, `?` for an app with
-    /// no name, and the focused window's marked ` *`.
     public func windowList(app: (WindowID) -> String?) -> String {
         names.flatMap { name in
             windows(of: name).map { id in "\(id) \(name) \(app(id) ?? "?")\(id == focused ? " *" : "")" }
@@ -37,7 +33,6 @@ public struct ListedBinding: Encodable, Equatable, Sendable {
     public var description: String
     public var category: String
 
-    /// Mode main first, then the other modes by name, each in file order.
     public static func list(_ modes: [String: [Binding]]) -> [ListedBinding] {
         let modes = modes.sorted { ($0.key == "main" ? 0 : 1, $0.key) < ($1.key == "main" ? 0 : 1, $1.key) }
         return modes.flatMap { mode, bindings in
