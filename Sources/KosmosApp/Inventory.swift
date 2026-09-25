@@ -367,12 +367,13 @@ final class Inventory {
         }
     }
 
-    /// Holds the event for the read after this run loop turn. A window it names counts as
-    /// changed during a running sweep from now, as the sweep's snapshot may predate the change.
+    /// Holds the event for the read after this run loop turn. A window it names, or a known
+    /// window of an app that exited, counts as changed during a running sweep from now, as
+    /// the sweep's snapshot may predate the change.
     private func enqueue(_ event: PendingEvent) {
         switch event {
         case .read(let id, _), .destroyed(let id): touchedDuringSweep?.insert(id)
-        case .appExited: break
+        case .appExited(let pid): touchedDuringSweep?.formUnion(windows.filter { $0.value.pid == pid }.keys)
         }
         if pending.isEmpty {
             // Queued after the events already on the main queue, such as the rest of
