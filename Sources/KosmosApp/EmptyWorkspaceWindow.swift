@@ -1,4 +1,5 @@
 import AppKit
+import KosmosCore
 import Synchronization
 
 /// The window an empty workspace keys, so keystrokes reach no hidden window. An app with a
@@ -7,11 +8,11 @@ import Synchronization
 final class EmptyWorkspaceWindow: NSWindow {
     /// What the focus queue needs of the window, from any thread.
     final class Target: Sendable {
-        let window: UInt32
+        let window: WindowID
         /// Whether the window is key, as its last key change on the main actor said.
         let isKey = Atomic<Bool>(false)
 
-        init(window: UInt32) { self.window = window }
+        init(window: WindowID) { self.window = window }
     }
 
     private(set) var target: Target!
@@ -31,7 +32,7 @@ final class EmptyWorkspaceWindow: NSWindow {
         collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
         isReleasedWhenClosed = false
         orderFrontRegardless()
-        target = Target(window: UInt32(windowNumber))
+        target = Target(window: WindowID(windowNumber))
     }
 
     /// `display` is in Accessibility's coordinates. Keying the window makes its display the

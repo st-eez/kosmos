@@ -50,7 +50,7 @@ final class PointerTap: Sendable {
         pointerLog.notice("pointer tap stopped")
     }
 
-    var window: UInt32? { gate.withLock { $0.window } }
+    var window: WindowID? { gate.withLock { $0.window } }
 
     func setEnabled(_ on: Bool) {
         guard let port, enabled.exchange(on, ordering: .relaxed) != on else { return }
@@ -76,11 +76,11 @@ final class PointerTap: Sendable {
             }
             return
         }
-        moved(over: UInt32(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer)),
+        moved(over: WindowID(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer)),
               at: event.location, control: event.flags.contains(.maskControl))
     }
 
-    private func moved(over window: UInt32, at location: CGPoint, control: Bool) {
+    private func moved(over window: WindowID, at location: CGPoint, control: Bool) {
         let stamp = ContinuousClock.now
         if !heard.exchange(true, ordering: .relaxed) { pointerLog.notice("pointer tap receiving events") }
         guard let entered = gate.withLock({ $0.admit(window, at: location, control: control) }) else { return }

@@ -10,37 +10,37 @@ private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category
 /// (docs/inventory.md).
 @MainActor
 final class Inventory {
-    private(set) var windows: [UInt32: WindowRow] = [:]
-    private var ax: [UInt32: AXWindowInfo] = [:]
-    private(set) var focused: UInt32?
+    private(set) var windows: [WindowID: WindowRow] = [:]
+    private var ax: [WindowID: AXWindowInfo] = [:]
+    private(set) var focused: WindowID?
     private var focusReporter: pid_t?
-    private(set) var fullscreen: Set<UInt32> = []
+    private(set) var fullscreen: Set<WindowID> = []
     /// Outlasts macOS's report of the next key window after a minimize, 0.73 s (docs/focus.md).
     static let departureBound: Duration = .seconds(1)
     private var departures = DepartureLog(bound: departureBound)
     /// A window leaving fullscreen leaves its Space before it joins the desktop's, and its
     /// return dates from the first of those changes (docs/tree.md).
-    private var spaceChangedAt: [UInt32: ContinuousClock.Instant] = [:]
+    private var spaceChangedAt: [WindowID: ContinuousClock.Instant] = [:]
     private let spaceQueue = DispatchQueue(label: "kosmos.spaces", qos: .userInitiated)
     private lazy var apps = Apps { [weak self] report in self?.handle(report) }
     enum Event {
-        case managedChange(window: UInt32, pid: pid_t, managed: Bool)
+        case managedChange(window: WindowID, pid: pid_t, managed: Bool)
         /// Each worker report, after the inventory has applied it.
         case report(AXReport)
         /// Sent after the inventory recorded the departure or return of the app's windows.
         case appHidden(pid: pid_t, hidden: Bool, received: ContinuousClock.Instant)
         /// A managed window still ordered out at its look for none of the reasons with their
         /// own reports, as a closed NSWindowController window its app keeps (docs/tree.md).
-        case keptOrderedOut(window: UInt32, orderedOut: ContinuousClock.Instant)
+        case keptOrderedOut(window: WindowID, orderedOut: ContinuousClock.Instant)
         /// A destroyed candidate window counts as ordered out. Native tab switches are made of
         /// these (docs/tree.md).
-        case orderChange(window: UInt32, pid: pid_t, orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant)
-        case fullscreenChange(window: UInt32, entered: Bool, spaceChangeBegan: ContinuousClock.Instant)
+        case orderChange(window: WindowID, pid: pid_t, orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant)
+        case fullscreenChange(window: WindowID, entered: Bool, spaceChangeBegan: ContinuousClock.Instant)
         /// `changedAt` is nil for a frame read for a creation, a sweep, or a Space change such
         /// as a reveal.
-        case frameChange(window: UInt32, old: CGRect, new: CGRect, changedAt: ContinuousClock.Instant?)
+        case frameChange(window: WindowID, old: CGRect, new: CGRect, changedAt: ContinuousClock.Instant?)
         /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
-        case reordered(window: UInt32)
+        case reordered(window: WindowID)
         case styleChange
     }
     var onEvent: (@MainActor (Event) -> Void)?
@@ -57,8 +57,8 @@ final class Inventory {
         }
     }
     private var heldOrder = HeldOrder()
-    private var arrivedWhileLocked: [UInt32: WindowRow] = [:]
-    private var removedWhileLocked: Set<UInt32> = []
+    private var arrivedWhileLocked: [WindowID: WindowRow] = [:]
+    private var removedWhileLocked: Set<WindowID> = []
     private var awaitingUnlockSweep = false
     private var spacesChangedSinceSweep = false
     /// A native fullscreen transition creates Spaces around its order-out (docs/tree.md).
@@ -73,11 +73,11 @@ final class Inventory {
     }
     private var watchPending = false
     /// Nil while no sweep runs. A sweep skips these, as its snapshot predates their events.
-    private var touchedDuringSweep: Set<UInt32>?
+    private var touchedDuringSweep: Set<WindowID>?
     private var sweepAgain = false
     private var swept = false
-    private var presentAtStart: Set<UInt32> = []
-    private var markedMissed: [UInt32: ContinuousClock.Instant] = [:]
+    private var presentAtStart: Set<WindowID> = []
+    private var markedMissed: [WindowID: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)
     /// Read once for each process, as each read is a synchronous LaunchServices call, and
     /// dropped by its exit source (docs/inventory.md).
@@ -94,8 +94,8 @@ final class Inventory {
         case changed(at: ContinuousClock.Instant)
     }
     private enum PendingEvent: Sendable {
-        case read(UInt32, FollowUp)
-        case destroyed(UInt32)
+        case read(WindowID, FollowUp)
+        case destroyed(WindowID)
         case appExited(pid_t)
     }
     private var pending: [PendingEvent] = []
@@ -138,14 +138,14 @@ final class Inventory {
         apps.start()
     }
 
-    func isManaged(_ id: UInt32) -> Bool {
+    func isManaged(_ id: WindowID) -> Bool {
         guard let row = windows[id] else { return false }
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
 
-    func wasThereAtLaunch(_ id: UInt32) -> Bool { presentAtStart.contains(id) }
+    func wasThereAtLaunch(_ id: WindowID) -> Bool { presentAtStart.contains(id) }
 
-    func isMinimized(_ id: UInt32) -> Bool { ax[id]?.minimized == true }
+    func isMinimized(_ id: WindowID) -> Bool { ax[id]?.minimized == true }
 
     /// The key window report for Kosmos's own window, which no worker sends.
     func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
@@ -191,7 +191,7 @@ final class Inventory {
         onEvent?(.report(report))
     }
 
-    private func readAX(_ ids: [UInt32], pid: pid_t) {
+    private func readAX(_ ids: [WindowID], pid: pid_t) {
         guard let worker = apps.worker(pid) else { return }
         Task {
             let infos = await worker.info(ids)
@@ -204,8 +204,8 @@ final class Inventory {
         }
     }
 
-    private func readIfUnknown(_ ids: some Sequence<UInt32>) {
-        var unknown: [pid_t: [UInt32]] = [:]
+    private func readIfUnknown(_ ids: some Sequence<WindowID>) {
+        var unknown: [pid_t: [WindowID]] = [:]
         for id in ids {
             guard ax[id] == nil, let row = windows[id], isCandidate(row) else { continue }
             unknown[row.pid, default: []].append(id)
@@ -215,13 +215,13 @@ final class Inventory {
 
     /// Accessibility has no notification for native fullscreen, which SkyLight reports as a
     /// Space membership change (docs/tree.md).
-    private func fullscreenState(_ id: UInt32) async -> Bool? {
+    private func fullscreenState(_ id: WindowID) async -> Bool? {
         await withCheckedContinuation { continuation in
             spaceQueue.async { continuation.resume(returning: Displays.isFullscreen(id)) }
         }
     }
 
-    private func setFullscreen(_ id: UInt32, _ state: Bool?) {
+    private func setFullscreen(_ id: WindowID, _ state: Bool?) {
         guard let state, windows[id] != nil else { return }
         let since = spaceChangedAt.removeValue(forKey: id) ?? .now
         let changed = state ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil
@@ -232,7 +232,7 @@ final class Inventory {
 
     /// Within the departure bound. A window ordered out in an event not handled yet counts
     /// as leaving now.
-    func leftScreen(_ id: UInt32) -> Bool {
+    func leftScreen(_ id: WindowID) -> Bool {
         if let left = departures.justLeft(id, at: .now) { return left }
         guard windows[id]?.orderedIn == true else { return false }
         guard let row = SkyLight.rows([id]).first else { return true }
@@ -247,21 +247,21 @@ final class Inventory {
 
     /// None counts until the sweep after an unlock: whether the lock screen orders windows out
     /// is unmeasured (docs/tree.md).
-    func isKeptOrderedOut(_ id: UInt32) -> Bool {
+    func isKeptOrderedOut(_ id: WindowID) -> Bool {
         guard !sessionLocked, !awaitingUnlockSweep, let row = windows[id], !row.orderedIn, isManaged(id), !isMinimized(id)
         else { return false }
         return NSRunningApplication(processIdentifier: row.pid)?.isHidden != true && !fullscreen.contains(id)
     }
 
-    func hasOrderedOutWindows(_ pid: pid_t, besides window: UInt32) -> Bool {
+    func hasOrderedOutWindows(_ pid: pid_t, besides window: WindowID) -> Bool {
         windows.values.contains { $0.pid == pid && $0.id != window && !$0.orderedIn && isCandidate($0) }
     }
 
-    func hasOrderedInWindow(_ pid: pid_t, at frame: CGRect, besides window: UInt32) -> Bool {
+    func hasOrderedInWindow(_ pid: pid_t, at frame: CGRect, besides window: WindowID) -> Bool {
         windows.values.contains { $0.pid == pid && $0.id != window && $0.orderedIn && $0.frame == frame && isCandidate($0) }
     }
 
-    func otherWindows(of pid: pid_t, besides window: UInt32) -> [DepartureFocus.OtherWindow] {
+    func otherWindows(of pid: pid_t, besides window: WindowID) -> [DepartureFocus.OtherWindow] {
         windows.values.filter { $0.pid == pid && $0.id != window && isCandidate($0) }
             .map { DepartureFocus.OtherWindow(orderedIn: $0.orderedIn, minimized: isMinimized($0.id)) }
     }
@@ -276,7 +276,7 @@ final class Inventory {
     }
 
     /// Nil info means the app did not answer, and what was known stays (docs/inventory.md).
-    private func setAX(_ id: UInt32, _ info: AXWindowInfo?) {
+    private func setAX(_ id: WindowID, _ info: AXWindowInfo?) {
         guard let info, let pid = windows[id]?.pid else { return }
         let wasManaged = isManaged(id)
         ax[id] = info
@@ -342,7 +342,7 @@ final class Inventory {
         guard !pending.isEmpty else { return }
         let events = pending
         pending = []
-        let ids = Set(events.compactMap { event -> UInt32? in
+        let ids = Set(events.compactMap { event -> WindowID? in
             guard case .read(let id, _) = event else { return nil }
             return id
         })
@@ -373,7 +373,7 @@ final class Inventory {
         }
     }
 
-    private func follow(_ followUp: FollowUp, _ id: UInt32) {
+    private func follow(_ followUp: FollowUp, _ id: WindowID) {
         switch followUp {
         case .none, .changed:
             break
@@ -429,7 +429,7 @@ final class Inventory {
         }
     }
 
-    private func remove(_ id: UInt32, reason: StaticString) {
+    private func remove(_ id: WindowID, reason: StaticString) {
         guard !sessionLocked else {
             if windows[id] != nil { removedWhileLocked.insert(id) }
             if let row = windows[id], isCandidate(row) {

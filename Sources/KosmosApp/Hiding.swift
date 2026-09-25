@@ -35,8 +35,8 @@ final class Hiding {
     private let bridge = DispatchQueue(label: "kosmos.bridge", qos: .userInteractive)
     private let store: HidingStore
     /// A copy of the bridge queue's ledger as of its last job.
-    private var concealed: Set<UInt32> = []
-    private var batchesConcealing: [UInt32: Int] = [:]
+    private var concealed: Set<WindowID> = []
+    private var batchesConcealing: [WindowID: Int] = [:]
 
     /// A description while concealed windows could not all be restored, nil once they are.
     var onProblem: (@MainActor (String?) -> Void)?
@@ -47,15 +47,15 @@ final class Hiding {
         guardian.onUnavailable = { [weak self] in self?.restoreAll() }
     }
 
-    func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
+    func isConcealed(_ window: WindowID) -> Bool { concealed.contains(window) }
 
-    func isConcealedOrConcealing(_ window: UInt32) -> Bool { concealed.contains(window) || batchesConcealing[window] != nil }
+    func isConcealedOrConcealing(_ window: WindowID) -> Bool { concealed.contains(window) || batchesConcealing[window] != nil }
 
     /// Windows are concealed, and slide through the pool's Spaces, only while this macOS has
     /// every bridged operation and the guardian would recover them.
     var canConceal: Bool { missingOperation == nil && guardian.isReady }
 
-    func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
+    func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([SpaceID]) -> Void) {
         let store = self.store
         bridge.async {
             let spaces = store.createAnimationSpaces(count, level: level)
@@ -63,13 +63,13 @@ final class Hiding {
         }
     }
 
-    func wasConcealed(_ window: UInt32, at stamp: ContinuousClock.Instant) -> Bool {
+    func wasConcealed(_ window: WindowID, at stamp: ContinuousClock.Instant) -> Bool {
         store.history.withLock { $0.wasConcealed(window, at: stamp, now: concealed.contains(window)) }
     }
 
     /// Forgets a closed window once its concealing Space no longer lists it, so the record
     /// does not fill with closed windows; one still listed stays recorded (docs/hiding.md).
-    func forgetClosed(_ window: UInt32) {
+    func forgetClosed(_ window: WindowID) {
         store.history.withLock { $0.forget(window) }
         let store = self.store
         bridge.async {
@@ -81,7 +81,7 @@ final class Hiding {
 
     /// Reveals `show`, then conceals `hide`, then confirms both (docs/hiding.md). Windows in
     /// `stripping` lose their ordinary Space only if this batch conceals them.
-    func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32], stripping: Set<UInt32>,
+    func apply(show: [WindowID], on displays: [WindowID: CGDirectDisplayID], hide: [WindowID], stripping: Set<WindowID>,
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let revealedOnly = missingOperation == nil && !guardian.isReady
         let hide = canConceal ? hide : []
@@ -113,7 +113,7 @@ final class Hiding {
 
     /// Forgets windows that left the holding Space on their own, as a deselected native tab
     /// does; kept, a batch would fail to find them there (docs/tree.md).
-    func forget(_ windows: [UInt32]) {
+    func forget(_ windows: [WindowID]) {
         let store = self.store
         bridge.async {
             store.forget(windows)
@@ -152,7 +152,7 @@ final class Hiding {
 private final class HidingStore: @unchecked Sendable {
     private let record: RecordFile
     private var state: RecoveryRecord?
-    private var space: UInt64 = 0
+    private var space: SpaceID = 0
     private var ledger = ConcealLedger()
     private var loaded = false
     /// Read on the main actor too.
@@ -160,7 +160,7 @@ private final class HidingStore: @unchecked Sendable {
 
     init(record: RecordFile) { self.record = record }
 
-    var concealed: Set<UInt32> { Set(ledger.entries.keys) }
+    var concealed: Set<WindowID> { Set(ledger.entries.keys) }
 
     /// False while a recorded Space cannot be read: nothing is concealed or revealed until
     /// its state is known.
@@ -186,14 +186,14 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// `sent` is nil when the batch stopped before sending, `barrier` nil when it read nothing.
-    func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32],
-               stripping: Set<UInt32>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
+    func apply(show: [WindowID], on displays: [WindowID: CGDirectDisplayID], hide: [WindowID],
+               stripping: Set<WindowID>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
         guard let (batch, sent) = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
         let touched = batch.touched
         guard let any = touched.first else { return (true, sent, nil, batch.strip.count) }
         // A Space whose read fails is left out, which proves nothing.
         func done() -> Bool {
-            var members: [UInt64: Set<UInt32>] = [:]
+            var members: [SpaceID: Set<WindowID>] = [:]
             for space in touched {
                 if let list = SkyLight.windows(in: space) { members[space] = Set(list) }
             }
@@ -217,14 +217,14 @@ private final class HidingStore: @unchecked Sendable {
 
     private static let directReadsBeforeBarrier: Duration = .milliseconds(10)
 
-    private func send(show: [UInt32], on showDisplays: [UInt32: CGDirectDisplayID], hide: [UInt32],
-                      stripping: Set<UInt32>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
+    private func send(show: [WindowID], on showDisplays: [WindowID: CGDirectDisplayID], hide: [WindowID],
+                      stripping: Set<WindowID>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
         guard load() else { return nil }
         // A window with no row, or new to the record with no owner, is left out. Ceiling: a
         // failed row query leaves every window to hide on screen; docs/hiding.md has the upgrade.
         let rows = Dictionary(SkyLight.rows(hide).map { ($0.id, $0) }) { first, _ in first }
         let recorded = Set(state!.windows.map(\.id))
-        var owners: [UInt32: ProcessIdentity] = [:]
+        var owners: [WindowID: ProcessIdentity] = [:]
         for (id, row) in rows where !recorded.contains(id) { owners[id] = ProcessIdentity.of(row.pid) }
         let hide = hide.filter { recorded.contains($0) ? rows[$0] != nil : owners[$0] != nil }
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
@@ -238,7 +238,7 @@ private final class HidingStore: @unchecked Sendable {
         if !batch.adds.isEmpty {
             let displays = Displays.current()
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
-            var destinations: [UInt64: [UInt32]] = [:]
+            var destinations: [SpaceID: [WindowID]] = [:]
             for window in batch.adds {
                 guard let destination = displays.ordinarySpace(on: showDisplays[window], original: original[window]) else { return nil }
                 destinations[destination, default: []].append(window)
@@ -259,17 +259,17 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// An exclusive add takes the windows out of their other managed Spaces.
-    private static func add(_ windows: [UInt32], to space: UInt64, exclusively: Bool) {
+    private static func add(_ windows: [WindowID], to space: SpaceID, exclusively: Bool) {
         kosmos_add_windows(space, windows, windows.count, exclusively)
     }
 
-    func forgetClosed(_ window: UInt32) {
+    func forgetClosed(_ window: WindowID) {
         guard load() else { return }
         forget(ledger.departed([window], members: SkyLight.windows(in:),
                                settled: { SkyLight.rows([$0]).isEmpty || SkyLight.spaces(of: $0)?.isEmpty == false }))
     }
 
-    func forget(_ windows: [UInt32]) {
+    func forget(_ windows: [WindowID]) {
         guard load() else { return }
         ledger.forget(windows)
         history.withLock { history in windows.forEach { history.forget($0) } }
@@ -280,9 +280,9 @@ private final class HidingStore: @unchecked Sendable {
 
     /// Records the holding Space before any window enters it, and each window before its
     /// first hide.
-    private func prepare(_ windows: [UInt32], owners: [UInt32: ProcessIdentity]) -> Bool {
+    private func prepare(_ windows: [WindowID], owners: [WindowID: ProcessIdentity]) -> Bool {
         var next = state!
-        var created: UInt64 = 0
+        var created: SpaceID = 0
         if space == 0 {
             created = kosmos_holding_create()
             guard created != 0 else {
@@ -317,13 +317,13 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// Destroys a Space created for a change never published, which holds no window.
-    private func abandon(_ created: UInt64) -> Bool {
+    private func abandon(_ created: SpaceID) -> Bool {
         if created != 0 { kosmos_space_destroy(created) }
         return false
     }
 
     /// Records the Spaces windows slide in before any window enters them.
-    func createAnimationSpaces(_ count: Int, level: Int32) -> [UInt64] {
+    func createAnimationSpaces(_ count: Int, level: Int32) -> [SpaceID] {
         guard load() else { return [] }
         let created = (0..<count).map { _ in kosmos_float_space_create(level) }.filter { $0 != 0 }
         if created.count < count { hidingLog.error("\(count - created.count) of \(count) animation Spaces not created") }
@@ -353,7 +353,7 @@ private final class HidingStore: @unchecked Sendable {
 
     /// kosmos_window_spaces leaves out the holding Space. A fullscreen Space counts too: an add
     /// to an ordinary Space would take the window out of it.
-    private static func hasOrdinarySpace(_ window: UInt32) -> Bool {
+    private static func hasOrdinarySpace(_ window: WindowID) -> Bool {
         SkyLight.spaces(of: window)?.isEmpty == false
     }
 }
