@@ -78,7 +78,7 @@ final class FocusQueue: Sendable {
 
     /// Waits no longer than the main actor waits on a worker (docs/overview.md, section 4.2);
     /// a slow app's job finishes on its own.
-    private static func wait(for worker: AppWorker?, _ id: UInt32, _ isCurrent: @escaping @Sendable () -> Bool,
+    private static func wait(for worker: AppWorker?, _ id: WindowID, _ isCurrent: @escaping @Sendable () -> Bool,
                              _ request: KeyRequest,
                              performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                              forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {

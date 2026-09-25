@@ -144,57 +144,34 @@ final class Controller {
         onFocusProblem?(nil)
     }
 
-    func run(_ arguments: [String], received: ContinuousClock.Instant, from source: CommandSource) -> (code: Int32, text: String) {
-        switch arguments {
-        case ["state"]:
-            return (0, String(decoding: stateJSON(), as: UTF8.self))
-        case ["list-workspaces"]:
-            return (0, session.names.map { $0 == session.focusedWorkspace ? "\($0) *" : $0 }.joined(separator: "\n"))
-        case ["list-windows"]:
-            let lines = session.names.flatMap { name in
-                session.windows(of: name).map { id in
-                    let app = owner[id].flatMap { inventory.appIdentity($0).name } ?? "?"
-                    return "\(id) \(name) \(app)\(id == session.focused ? " *" : "")"
-                }
-            }
-            return (0, lines.joined(separator: "\n"))
-        default:
-            break
-        }
-        switch Command.parse(arguments) {
-        case .failure(let error):
-            return (1, error.message)
-        case .success where !managing:
-            // Changing the model without moving windows would leave the two apart.
-            return (1, "observing only while another window manager runs")
-        case .success where sessionLocked:
-            return (1, "the session is locked")
-        case .success(.focusFollowsMouse(let change)):
+    /// Nil when the command ran, or else why it did not.
+    func run(_ command: Command, received: ContinuousClock.Instant, from source: CommandSource) -> String? {
+        guard !sessionLocked else { return "the session is locked" }
+        if case .focusFollowsMouse(let change) = command {
             focusFollowsMouse.enabled = switch change {
             case .on: true
             case .off: false
             case .toggle: !focusFollowsMouse.enabled
             }
             if focusFollowsMouse.enabled, pointer == nil {
-                return (1, """
+                return """
                     focus follows mouse gets no pointer movement: macOS refused Kosmos's event tap. \
                     Allow Kosmos in System Settings, Privacy & Security, Input Monitoring, then run \
                     kosmos focus-follows-mouse on
-                    """)
+                    """
             }
-            return (0, "")
-        case .success(let command):
-            if let missing = session.missingWorkspace(in: command) {
-                return (1, "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))")
-            }
-            reports.commandExecuted(receivedAt: received)
-            // Floating windows' frames as the inventory last heard them, so nothing waits on
-            // WindowServer.
-            if let plan = session.perform(command, frame: { [inventory] in inventory.windows[$0]?.frame }) {
-                execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
-            }
-            return (0, "")
+            return nil
         }
+        if let missing = session.missingWorkspace(in: command) {
+            return "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))"
+        }
+        reports.commandExecuted(receivedAt: received)
+        // Floating windows' frames as the inventory last heard them, so nothing waits on
+        // WindowServer.
+        if let plan = session.perform(command, frame: { [inventory] in inventory.windows[$0]?.frame }) {
+            execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
+        }
+        return nil
     }
 
     private func resync(displaysChanged: Bool) {
@@ -445,11 +422,13 @@ final class Controller {
         })
     }
 
-    private func stateJSON() -> Data {
-        let snapshot = session.barSnapshot(
-            profile: profile, displays: barDisplays,
-            app: { [owner, inventory] id in owner[id].flatMap { inventory.appIdentity($0).name } },
-            frame: { [inventory] id in inventory.windows[id]?.frame })
+    func appName(_ window: WindowID) -> String? {
+        owner[window].flatMap { inventory.appIdentity($0).name }
+    }
+
+    func stateJSON() -> Data {
+        let snapshot = session.barSnapshot(profile: profile, displays: barDisplays, app: appName,
+                                           frame: { [inventory] id in inventory.windows[id]?.frame })
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(snapshot)) ?? Data("{}".utf8)
