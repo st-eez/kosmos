@@ -140,6 +140,8 @@ public struct DragGate: Sendable {
 
 /// A modifier drag as the main actor carries it out (docs/modifier-drags.md).
 public struct ModifierDrag: Equatable, Sendable {
+    static let smallestSide: CGFloat = 20
+
     public let grab: DragGate.Grab
     /// The window's frame when the button went down, as WindowServer last reported it.
     public let frame: CGRect
@@ -157,7 +159,7 @@ public struct ModifierDrag: Equatable, Sendable {
 
     public mutating func delta(to point: CGPoint) -> CGSize? {
         let delta = CGSize(width: (point.x - grab.start.x).rounded(), height: (point.y - grab.start.y).rounded())
-        guard started || hypot(delta.width, delta.height) > TitleBarDrag.liftDistance else { return nil }
+        guard started || hypot(delta.width, delta.height) > TitleBarDrag.dragThreshold else { return nil }
         started = true
         return delta
     }

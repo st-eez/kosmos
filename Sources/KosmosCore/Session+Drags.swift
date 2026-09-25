@@ -2,9 +2,7 @@ import CoreGraphics
 
 /// A tiled window the user drags by its title bar (docs/displays.md).
 public enum TitleBarDrag {
-    /// A drag goes this far before it lifts a tile, and a modifier drag before it changes
-    /// anything, so a click that jitters changes nothing (docs/displays.md).
-    public static let liftDistance: CGFloat = 10
+    public static let dragThreshold: CGFloat = 10
 
     /// Where macOS resizes a window at `frame`. A title-bar drag keeps the pointer inside the
     /// frame, away from the side edges.
@@ -128,10 +126,9 @@ extension Session {
         return Plan(frames: frames(of: name))
     }
 
-    /// Down to the recorded minimum or 20 pt (docs/modifier-drags.md).
     public func resized(_ drag: ModifierDrag, by delta: CGSize) -> CGRect {
-        let start = drag.frame, least = minimums[drag.grab.window] ?? .zero
-        let (width, height) = (max(least.width, 20), max(least.height, 20))
+        let start = drag.frame, least = minimums[drag.grab.window] ?? .zero, side = ModifierDrag.smallestSide
+        let (width, height) = (max(least.width, side), max(least.height, side))
         var frame = start
         for edge in drag.edges {
             switch edge {

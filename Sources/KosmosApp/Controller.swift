@@ -541,8 +541,8 @@ final class Controller {
     }
 
     /// Judged as of `changedAt`, as the inventory applies a change after an off main read.
-    /// The key tiled window lifts only once it moved whole past TitleBarDrag.liftDistance, so a
-    /// click that jitters the title bar does not lift it (docs/geometry.md, docs/displays.md).
+    /// The key tiled window lifts only once it moved whole past TitleBarDrag.dragThreshold, so
+    /// a click that jitters the title bar does not lift it (docs/geometry.md, docs/displays.md).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
@@ -584,7 +584,7 @@ final class Controller {
         // came would read it at every change event a switch posts.
         let onBorder = press == nil && CGEvent(source: nil).map { TitleBarDrag.onResizeBorder($0.location, of: frame) } == true
         let resized = press?.resized == true || onBorder || frame.size != before.size
-        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > TitleBarDrag.liftDistance,
+        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > TitleBarDrag.dragThreshold,
            let plan = session.lift(id) {
             mouseMoved[id] = nil
             controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
