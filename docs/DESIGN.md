@@ -368,7 +368,10 @@ off the main thread).
   a window is unconfirmed, since the destroy's return says only that it was sent. So
   recovery sends a barrier after the destroys and reads each Space back. That read is the
   measurement: a Space still there is logged and stays in the record, with no windows, for
-  the next recovery to destroy again.
+  the next recovery to destroy again. Kosmos never conceals into a Space it sent a destroy,
+  whose level, transform and alpha would be unknown. After a recovery it conceals into the
+  newest recorded Space again only while the record names a window and that Space exists,
+  and creates a new one otherwise.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

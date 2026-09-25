@@ -174,8 +174,9 @@ private final class HidingStore: @unchecked Sendable {
         state = onFile
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }
-        // The newest recorded Space is used again rather than adding one per attempt.
-        space = onFile.spaces.last ?? 0
+        // The newest recorded Space is used again rather than adding one per attempt, unless
+        // it is gone or was sent a destroy.
+        space = onFile.reusableSpace(gone: read.gone) ?? 0
         ledger = rebuilt
         loaded = true
         return true

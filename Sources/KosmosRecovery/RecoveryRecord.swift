@@ -76,6 +76,17 @@ public struct RecoveryRecord: Equatable, Sendable {
         self.windows = windows
     }
 
+    /// The recorded Space hiding conceals into again after a recovery kept the record: the
+    /// newest, while the record names a window and that Space still exists; nil calls for a
+    /// new one. A completed recovery has sent every Space a destroy, and keeps the Spaces
+    /// that outlived it in a record with no windows (Recovery.run). A Space created after
+    /// that comes last. So the Space returned was never sent a destroy, after which its
+    /// level, transform and alpha would be unknown.
+    public func reusableSpace(gone: Set<UInt64>) -> UInt64? {
+        guard !windows.isEmpty, let newest = spaces.last, !gone.contains(newest) else { return nil }
+        return newest
+    }
+
     /// The record without the windows that no longer exist, to make room in a full slot.
     /// `alive` is a read of the recorded windows. The windows of `keeping`, the concealed
     /// ones and the ones about to be, stay whatever it says. Nil when it misses a window of
