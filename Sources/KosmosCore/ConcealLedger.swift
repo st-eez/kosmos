@@ -9,8 +9,11 @@ public struct ConcealLedger: Equatable, Sendable {
         /// Revealed windows with no ordinary Space, to add to one before their removal. The
         /// add strips only managed Spaces, so it leaves them in the concealing Space.
         public var adds: [UInt32] = []
-        /// Windows to conceal for the first time. They keep their ordinary Space.
+        /// Windows to conceal for the first time. They keep their ordinary Space, except
+        /// those in `strip`.
         public var fresh: [UInt32] = []
+        /// The windows of `fresh` that lose their ordinary Space (DESIGN.md, section 5.13).
+        public var strip: [UInt32] = []
         /// After the batch: each window to hide and the Space it must be in.
         public var mustBeIn: [UInt32: UInt64] = [:]
 
@@ -59,10 +62,11 @@ public struct ConcealLedger: Equatable, Sendable {
     }
 
     /// The operations that reveal `show` and conceal `hide` in `space`. A window that is
-    /// already concealed keeps its Space. A revealed window must still have an ordinary
-    /// Space, or removing it would leave it on none; one that has none, as
-    /// `hasOrdinarySpace` reads it now, is added to one first.
-    public func batch(show: [UInt32], hide: [UInt32], into space: UInt64,
+    /// already concealed keeps its Space, and the Spaces it had. A window concealed now
+    /// keeps its ordinary Space too, unless `stripping` names it. A revealed window must
+    /// still have an ordinary Space, or removing it would leave it on none; one that has
+    /// none, as `hasOrdinarySpace` reads it now, is added to one first.
+    public func batch(show: [UInt32], hide: [UInt32], stripping: Set<UInt32> = [], into space: UInt64,
                       hasOrdinarySpace: (UInt32) -> Bool) -> Batch {
         var batch = Batch()
         for window in show {
@@ -76,6 +80,7 @@ public struct ConcealLedger: Equatable, Sendable {
                 continue
             }
             batch.fresh.append(window)
+            if stripping.contains(window) { batch.strip.append(window) }
             batch.mustBeIn[window] = space
         }
         return batch

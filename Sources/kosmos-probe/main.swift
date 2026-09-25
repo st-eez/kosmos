@@ -687,10 +687,25 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     let shared = Dictionary(grouping: active) { DisplayIdentity.uuid(of: $0) ?? "none" }.filter { $0.value.count > 1 }
     if shared.isEmpty { print("display UUIDs: \(active.count) distinct") }
     for (uuid, ids) in shared { print("display UUID \(uuid) is shared by displays \(ids): Kosmos would merge them") }
-    // Kosmos fixes the display it tiles at its own launch, which NSScreen.main now may not match.
+    // The Space a reveal on each display lands in (DESIGN.md, section 5.3).
+    let spaces = Displays.current()
+    for display in spaces.displays {
+        print("managed display \(display.identifier): current Space \(display.currentSpace.map(String.init) ?? "not ordinary"), ordinary Spaces \(display.spaces)")
+    }
+    for id in active {
+        print("display \(id): a reveal there lands in Space \(spaces.ordinarySpace(on: id, original: nil).map(String.init) ?? "none")")
+    }
+    // Kosmos's own view: each display by bar number, and the workspace it shows.
     let state = try? IPCClient.send(["state"], socketPath: kosmosSocketPath())
-    let tiled = state.flatMap { try? JSONDecoder().decode(BarSnapshot.self, from: Data($0.stdout.utf8)) }?.displays.first
-    print("Kosmos tiles \(tiled.map { "bar number \($0.id), '\($0.name)'" } ?? "(no answer)") (kosmos state)")
+    guard let snapshot = state.flatMap({ try? JSONDecoder().decode(BarSnapshot.self, from: Data($0.stdout.utf8)) }) else {
+        return print("Kosmos: no answer to kosmos state")
+    }
+    print("Kosmos: profile \(snapshot.profile ?? "base")")
+    for display in snapshot.displays {
+        let shown = snapshot.workspaces.filter { $0.display == display.id && $0.shown }.map(\.name)
+        let focused = snapshot.workspaces.contains { $0.display == display.id && $0.focused } ? ", focused" : ""
+        print("Kosmos: bar number \(display.id) '\(display.name)' shows \(shown.isEmpty ? "no workspace" : shown.joined(separator: " "))\(focused)")
+    }
 }
 
 /// SketchyBar's arrangement id for each display, from `--query displays`, or nil when no bar

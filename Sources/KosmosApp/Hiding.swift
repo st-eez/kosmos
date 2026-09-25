@@ -21,6 +21,8 @@ final class Hiding {
         /// The confirmation needed the barrier because direct reads did not show the batch
         /// done in time; nil when the batch read nothing.
         var barrier: Bool?
+        /// The windows the batch stripped of their ordinary Space as it concealed them.
+        var stripped = 0
     }
 
     enum Outcome: Sendable {
@@ -52,21 +54,25 @@ final class Hiding {
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
 
     /// Reveals `show`, then conceals `hide`, then confirms both, on the bridge queue.
-    /// Concealing needs a ready guardian; revealing does not.
-    func apply(show: [UInt32], hide: [UInt32], done: @escaping @MainActor (Outcome, Timing) -> Void) {
+    /// `displays` holds the display each revealed window's workspace is on. The windows of
+    /// `hide` in `stripping` lose their ordinary Space if they are concealed now; the others
+    /// keep it. Concealing needs a ready guardian; revealing does not.
+    func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32], stripping: Set<UInt32>,
+               done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady
         let hide = canConceal ? hide : []
         let store = self.store
         let submitted = ContinuousClock.now
         bridge.async {
             let started = ContinuousClock.now
-            let (confirmed, sent, barrier) = store.apply(show: show, hide: hide)
+            let (confirmed, sent, barrier, stripped) = store.apply(show: show, on: displays, hide: hide, stripping: stripping)
             let applied = ContinuousClock.now
             let outcome = confirmed ? nil : store.recover()
             let concealed = store.concealed
             let finished = ContinuousClock.now
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
-                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier)
+                                confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier,
+                                stripped: stripped)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     timing.returned = .now - finished
@@ -162,11 +168,13 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// Whether the batch was confirmed, when it had sent its operations (nil if it stopped
-    /// before), and whether its confirmation needed the barrier (nil if it read nothing).
-    func apply(show: [UInt32], hide: [UInt32]) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?) {
-        guard let (batch, sent) = send(show: show, hide: hide) else { return (false, nil, nil) }
+    /// before), whether its confirmation needed the barrier (nil if it read nothing), and
+    /// how many windows it stripped.
+    func apply(show: [UInt32], on displays: [UInt32: CGDirectDisplayID], hide: [UInt32],
+               stripping: Set<UInt32>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
+        guard let (batch, sent) = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
         let touched = batch.touched
-        guard let any = touched.first else { return (true, sent, nil) }
+        guard let any = touched.first else { return (true, sent, nil, batch.strip.count) }
         /// Whether the touched Spaces show the batch done. A failed read leaves its Space out,
         /// which proves nothing.
         func done() -> Bool {
@@ -189,10 +197,10 @@ private final class HidingStore: @unchecked Sendable {
             confirmed = done()
         }
         if !confirmed {
-            guard kosmos_barrier(any), done() else { return (false, sent, true) }
+            guard kosmos_barrier(any), done() else { return (false, sent, true, batch.strip.count) }
         }
         ledger.commit(batch, into: space)
-        return (true, sent, !confirmed)
+        return (true, sent, !confirmed, batch.strip.count)
     }
 
     /// How long a batch reads the Spaces directly before it sends the barrier.
@@ -200,11 +208,13 @@ private final class HidingStore: @unchecked Sendable {
 
     /// Sends a batch's operations: adds, removals, then conceals. Nil when it stops before,
     /// with the batch and the time it had sent them otherwise.
-    private func send(show: [UInt32], hide: [UInt32]) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
+    private func send(show: [UInt32], on showDisplays: [UInt32: CGDirectDisplayID], hide: [UInt32],
+                      stripping: Set<UInt32>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
         guard load() else { return nil }
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(Array(fresh)) { return nil }
-        let batch = ledger.batch(show: show, hide: hide, into: space, hasOrdinarySpace: Self.hasOrdinarySpace)
+        let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,
+                                 hasOrdinarySpace: Self.hasOrdinarySpace)
         // Adds land before any removal is sent: a window removed from its only Space lands on
         // whichever Space is active, which can be a native fullscreen one. The add's return
         // says only that it was sent, so a barrier and a read confirm it, about 1.3 ms, and
@@ -215,7 +225,7 @@ private final class HidingStore: @unchecked Sendable {
             let original = Dictionary(state!.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
             var destinations: [UInt64: [UInt32]] = [:]
             for window in batch.adds {
-                guard let destination = displays.ordinarySpace(original: original[window]) else { return nil }
+                guard let destination = displays.ordinarySpace(on: showDisplays[window], original: original[window]) else { return nil }
                 destinations[destination, default: []].append(window)
             }
             for (destination, windows) in destinations {
@@ -229,9 +239,12 @@ private final class HidingStore: @unchecked Sendable {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
-        // An add that keeps their other Spaces, the ordinary one included.
-        var ids = batch.fresh
+        // An add that keeps their other Spaces, the ordinary one included, and for the
+        // windows to strip one that takes them out of their ordinary Space.
+        var ids = batch.fresh.filter { !batch.strip.contains($0) }
         kosmos_add_windows(space, &ids, ids.count, false)
+        ids = batch.strip
+        kosmos_add_windows(space, &ids, ids.count, true)
         return (batch, .now)
     }
 

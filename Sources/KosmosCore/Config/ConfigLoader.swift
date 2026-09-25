@@ -27,6 +27,8 @@ private struct ConfigDecoder {
     /// Every name declared under [monitors], including ones whose matcher is invalid, so one
     /// mistake is reported once.
     private var monitorNames: [String] = []
+    /// Profiles that `profile` bindings name, checked once every profile is known.
+    private var profileTargets: [Located] = []
 
     mutating func config(_ root: TOMLTable) -> Config {
         let path = ValuePath()
@@ -72,6 +74,11 @@ private struct ConfigDecoder {
         }
         if let entry = root["profile"] {
             config.profiles = profiles(entry.value, path.key(entry.key), base: config, baseRules: rules)
+        }
+        let profileNames = config.profiles.map(\.name)
+        for target in profileTargets where !profileNames.contains(target.value) {
+            fail("no profile named '\(target.value)'" + suggestion(for: target.value, from: profileNames),
+                 at: target.position, target.path)
         }
         return config
     }
@@ -223,8 +230,13 @@ private struct ConfigDecoder {
                     }
                     seen[combo] = binding
                     guard let parsed = command(binding.value, bindingPath) else { continue }
-                    if case .mode(let target) = parsed.command {
+                    switch parsed.command {
+                    case .mode(let target):
                         targets.append((target, binding.value.position, bindingPath))
+                    case .profile(let target):
+                        profileTargets.append((target, binding.value.position, bindingPath))
+                    default:
+                        break
                     }
                     bindings.append(Binding(key: binding.key, combo: combo, arguments: parsed.arguments))
                 }
@@ -360,8 +372,15 @@ private struct ConfigDecoder {
             }
             profiles.append((profile, item.position, profilePath))
         }
+        // An earlier profile whose `when` monitors are all among a later one's holds whenever
+        // the later one does, so the later one never applies. One without `when` applies
+        // only when none with it does, and the first of those wins.
+        func shadows(_ earlier: Profile, _ later: Profile) -> Bool {
+            if earlier.when.isEmpty || later.when.isEmpty { return earlier.when.isEmpty && later.when.isEmpty }
+            return Set(earlier.when).isSubset(of: later.when)
+        }
         for (index, later) in profiles.enumerated() {
-            if let earlier = profiles[..<index].first(where: { Set($0.profile.when).isSubset(of: later.profile.when) }) {
+            if let earlier = profiles[..<index].first(where: { shadows($0.profile, later.profile) }) {
                 warn("this profile never applies: profile '\(earlier.profile.name)' on line \(earlier.position.line) "
                      + "comes first and matches whenever it does", at: later.position, later.path)
             }

@@ -75,6 +75,8 @@ final class Inventory {
     /// A managed window entered (true) or left (false) native fullscreen, and when its Space
     /// membership started to change.
     var onFullscreenChange: (@MainActor (UInt32, Bool, ContinuousClock.Instant) -> Void)?
+    /// A managed window moved or resized, with its frame now.
+    var onFrameChange: (@MainActor (UInt32, CGRect) -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -92,6 +94,8 @@ final class Inventory {
     /// what asked, such as the last Space event of a burst, so one more runs after it.
     private var sweepAgain = false
     private var swept = false
+    /// The windows the first sweep found, which were there before Kosmos launched.
+    private var atLaunch: Set<UInt32> = []
     private(set) var missedByEvents = 0
     /// When a sweep last counted each window as missed by events. An event for one within
     /// `lateBound` is logged, as it may be the event for the change the sweep read, late.
@@ -132,6 +136,9 @@ final class Inventory {
         guard let row = windows[id] else { return false }
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
+
+    /// Whether the first sweep found the window: it was there before Kosmos launched.
+    func wasThereAtLaunch(_ id: UInt32) -> Bool { atLaunch.contains(id) }
 
     /// Whether the window is minimized, as Accessibility read it with the window's other
     /// facts and as each minimize report since says.
@@ -348,6 +355,7 @@ final class Inventory {
         // Shown now, as the second window an app launched hidden restored, with no report of
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
+        if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, row.frame) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
@@ -483,6 +491,7 @@ final class Inventory {
             spacesChanged = false
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
+        if !swept { atLaunch = seen }
         swept = true
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false

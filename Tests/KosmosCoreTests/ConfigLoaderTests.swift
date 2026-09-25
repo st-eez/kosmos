@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import KosmosCore
 
@@ -309,9 +310,11 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     workspace = '2'
     """
 
-    private let builtIn = Display(name: "Color LCD", isBuiltIn: true)
-    private let left = Display(name: "VG279QE5A (2)", serial: "L")
-    private let main = Display(name: "VG279QE5A (1)", serial: "M")
+    // Steve's desk: the left panel, the main panel at the origin, and the built-in display
+    // below.
+    private let builtIn = Display(id: 3, name: "Color LCD", isBuiltIn: true, frame: CGRect(x: 200, y: 1080, width: 1512, height: 982))
+    private let left = Display(id: 1, name: "VG279QE5A (2)", serial: "L", frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+    private let main = Display(id: 2, name: "VG279QE5A (1)", serial: "M", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
 
     private func config() throws -> Config {
         let result = Config.load(Self.text)
@@ -326,23 +329,55 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(config.setup(for: [main, left]).profile == "home")
         // One panel: its name matches 'asus', and home needs both serials.
         #expect(config.setup(for: [builtIn, main]).profile == "single")
-        // A profile without `when` takes every other set of displays.
+        // With no profile that applies yet, as at launch, a profile without `when` takes
+        // every other set of displays.
         #expect(config.setup(for: [builtIn]).profile == "laptop")
         #expect(config.setup(for: [builtIn, Display(name: "Projector")]).profile == "laptop")
+        // Once one applies, displays no `when` fits keep it.
+        #expect(config.setup(for: [builtIn, Display(name: "Projector")], keeping: "home").profile == "home")
+        // The built-in display alone gives the profile without `when`, whatever applied.
+        #expect(config.setup(for: [builtIn], keeping: "home").profile == "laptop")
+        // A profile the config no longer has gives way to the one without `when`.
+        #expect(config.setup(for: [Display(name: "Projector")], keeping: "gone").profile == "laptop")
     }
 
     @Test func workspacesGoToTheFirstConnectedMonitorInTheirList() throws {
         let config = try config()
-        #expect(config.setup(for: [builtIn, left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 0])
-        // Lid closed: 3 falls back to the main panel, and 4 has no monitor, so the app places it.
-        #expect(config.setup(for: [left, main]).workspaceDisplays == ["1": 1, "2": 0, "3": 1])
-        #expect(config.setup(for: [builtIn, main]).workspaceDisplays == ["1": 1, "2": 1, "3": 0, "4": 1])
+        #expect(config.setup(for: [builtIn, left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 3])
+        // Lid closed: 3 falls back to the main panel, and 4 has no monitor, so it is free.
+        #expect(config.setup(for: [left, main]).workspaceDisplays == ["1": 2, "2": 1, "3": 2])
+        #expect(config.setup(for: [builtIn, main]).workspaceDisplays == ["1": 2, "2": 2, "3": 3, "4": 2])
+    }
+
+    @Test func aNameMatchingTwoDisplaysTakesTheLeftOne() throws {
+        var config = try config()
+        config.profiles.removeFirst()   // home
+        let setup = config.setup(for: [main, builtIn, left])
+        #expect(setup.profile == "single")
+        #expect(setup.workspaceDisplays == ["1": 1, "2": 1, "3": 3, "4": 1])
+    }
+
+    @Test func aForcedProfileAppliesWhateverIsConnected() throws {
+        let config = try config()
+        #expect(config.setup(for: [builtIn], profile: "home").profile == "home")
+        // Its monitors are not connected, so its workspaces are free.
+        #expect(config.setup(for: [builtIn], profile: "home").workspaceDisplays == ["3": 3])
+        #expect(config.setup(for: [builtIn, left, main], profile: "laptop").workspaces == ["1", "2"])
+        // An unknown name leaves the choice to the displays.
+        #expect(config.setup(for: [builtIn], profile: "nowhere").profile == "laptop")
+    }
+
+    @Test func monitorsCarryTheirGapsInDisplayOrder() throws {
+        let setup = try config().setup(for: [builtIn, main, left])
+        #expect(setup.monitors.map(\.id) == [1, 2, 3])
+        #expect(setup.monitors.map(\.gaps.outer.top) == [35, 35, 5])
+        #expect(setup.monitors[2].area == builtIn.frame)
     }
 
     @Test func profileReplacesWorkspacesAndPutsItsRulesFirst() throws {
         let setup = try config().setup(for: [builtIn])
         #expect(setup.workspaces == ["1", "2"])
-        #expect(setup.workspaceDisplays == ["1": 0, "2": 0])
+        #expect(setup.workspaceDisplays == ["1": 3, "2": 3])
         #expect(setup.mergeWorkspaces == ["3": "1", "4": "2"])
         // The profile's Spotify rule wins, and the base Chrome rule's workspace 3 merges into 1.
         #expect(setup.rules.map(\.appID) == ["spotify", "spotify", "chrome"])
@@ -392,6 +427,31 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "11:35: error: profile[1].merge-workspaces.3: workspace '9' is not in this profile's workspaces",
             "12:3: warning: profile[2]: this profile never applies: profile 'p' on line 7 comes first and matches whenever it does",
             "13:8: error: profile[2].name: profile 'p' is already defined at line 8",
+        ])
+    }
+
+    @Test func aProfileWithoutWhenShadowsOnlyALaterOneWithout() {
+        let body = """
+        [monitors]
+        a = { name = 'A' }
+        b = { name = 'B' }
+        [[profile]]
+        name = 'laptop'
+        [[profile]]
+        name = 'a-and-b'
+        when = ['a', 'b']
+        [[profile]]
+        name = 'a'
+        when = ['a']
+        [[profile]]
+        name = 'b-and-a'
+        when = ['b', 'a']
+        [[profile]]
+        name = 'fallback'
+        """
+        #expect(load(body).diagnostics == [
+            "14:3: warning: profile[3]: this profile never applies: profile 'a-and-b' on line 8 comes first and matches whenever it does",
+            "17:3: warning: profile[4]: this profile never applies: profile 'laptop' on line 6 comes first and matches whenever it does",
         ])
     }
 
