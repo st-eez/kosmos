@@ -436,7 +436,10 @@ final class Inventory {
     /// before its source started reports its exit at once (checked on macOS 27).
     private func remember(_ pid: pid_t, regular: Bool) {
         regularApps[pid] = regular
-        guard exitSources[pid] == nil else { return }
+        // WindowServer names pid 0 as the owner of some windows (2 of 34 rows on the
+        // development Mac), and dispatch aborts on a process source for pid 0 or less. Such a
+        // pid is no app: its false stays cached and never needs dropping.
+        guard pid > 0, exitSources[pid] == nil else { return }
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         source.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
