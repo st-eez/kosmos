@@ -245,15 +245,20 @@ off the main thread).
   asked is written again through a height 40 pt shorter, then the target's, and only a
   window still taller refused the height.
 - A window whose frame reads back more than 2 pt larger than a write's target on an axis
-  refused the size. After its first refusal the target is written again whole, at the
-  window's next change event with the left button up or after 100 ms, or once the window's
-  workspace is shown if it is hidden. Only a second refusal of the target records the
-  size kept as the window's minimum on that axis, and Kosmos doesn't retry that size until
-  the target changes. On 2026-09-24 `move-node-to-workspace` sent a 1900 pt wide Preview
+  refused the size. After its first refusal the target is written again whole 100 ms
+  later, and only a second refusal of the target records the size kept as the window's
+  minimum on that axis. Kosmos doesn't retry that size until the target changes. A first
+  refusal can pass. On 2026-09-24 `move-node-to-workspace` sent a 1900 pt wide Preview
   window from the main panel to a hidden workspace on the left panel, shown 13 ms later.
   Its 945 pt target read back 1900, and an Accessibility write of 945 seconds later
   landed, so one refusal is no limit of the app's; recorded as a minimum, the width kept
-  the window over its neighbour until Kosmos restarted.
+  the window over its neighbour until Kosmos restarted. An app can also apply a live
+  resize step queued before the button came up after Kosmos's write at the mouse up. The
+  mouse up forgets the windows it sends back or drops from the ledger, refusals too, so
+  that write's larger read back is a first refusal as well. The retry waits out the
+  100 ms, since the window's next change event can come inside a queued live resize step
+  or the display or Space change itself. A window the user holds again by then gets its
+  tile at that press's mouse up.
 - A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
   Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
   axis. Its workspace is laid out again then, or at the mouse up during a press.
@@ -271,10 +276,6 @@ off the main thread).
   key, as by a Command drag, or moved less than a lift takes (section 5.13). The ledger
   forgets the window first, so it gets a whole frame write. The resize command sizes
   tiles, and a floating window keeps the size the user gives it.
-- An app can apply a live resize step queued before the button came up after Kosmos's
-  write. A mouse up forgets the windows it sends back or drops from the ledger, refusals
-  too, so a write at a mouse up that reads back larger is a first refusal, and only the
-  write after it can show a minimum.
 - The inventory applies a change event after reading the window's row off the main thread
   (section 5.1), by which time Kosmos's write may be confirmed and the button up. So
   Kosmos judges the change as of its arrival. It is a write's when it came before the
@@ -288,9 +289,7 @@ off the main thread).
   has ended by the time the change applies goes back to its tile, as the mouse up would
   have sent it. Only the last press that ended is kept, so a change from the press before
   it reads as one with the button up. Judged as it applied, the late echo of a hotkey's
-  write to the window the user holds the button in would lift it, and the late echo of the
-  write at a mouse up would write the tile again early and record a live resize step as a
-  minimum. A change that came before a write was sent counts as the write's too. The
+  write to the window the user holds the button in would lift it. A change that came before a write was sent counts as the write's too. The
   write's change still records its row when it differs from the frame confirmed: the row
   applies after the confirm and can hold the app's next step, as of a live resize, whose
   own event then finds no difference. The pointer for the resize border check is read as

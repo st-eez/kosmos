@@ -66,11 +66,6 @@ final class Controller {
     private var leftButton = LeftButton()
     /// The window the last left mouse down landed on, for mouse-follows-focus, or 0.
     private var clickedWindow = 0
-    /// Windows whose write read back larger than the target for the first time, as when the
-    /// app applied a live resize step after a write at a mouse up, or ignored a size written
-    /// as the window changed display or Space. The tile is written once more when the app
-    /// goes quiet, and only that write can show a minimum (framesApplied).
-    private var writeAgain: Set<WindowID> = []
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -317,7 +312,6 @@ final class Controller {
         closedByApp.remove(id)
         tabs.forget(id)
         placedHidden.remove(id)
-        writeAgain.remove(id)
         ledger.forget(id)
         hiding.forgetHistory(of: id)
         execute(session.remove(id))
@@ -508,13 +502,9 @@ final class Controller {
         // lays its workspace out.
         let smaller = session.sizeObserved(id, frame.size)
         if !smaller.isEmpty { controllerLog.notice("\(id) seen at \(Int(frame.width))x\(Int(frame.height)), below its minimum") }
-        guard let receivedAt else { return execute(smaller) }
-        let button = leftButton.state(at: receivedAt)
+        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
         guard button != .up else {
-            // The app went on with a live resize, or changed display or Space, after the
-            // write it read back larger from.
-            if writeAgain.contains(id) { writeTileAgain(id) }
-            execute(smaller)
+            if !smaller.isEmpty { execute(smaller) }
             return
         }
         if session.shownFloatingWindows.contains(id) {
@@ -605,13 +595,13 @@ final class Controller {
         }
     }
 
-    /// Writes the window's tile once more, after its write read back larger for the first
-    /// time (framesApplied): when the app's next change event arrives with the button up, or
-    /// 100 ms after the read back. A window the user holds again waits for that press's
-    /// mouse up, and one on a hidden workspace for the write that shows it.
+    /// Writes the window's tile once more, 100 ms after its write read back larger for the
+    /// first time (framesApplied). The window's next change event can come sooner, but inside
+    /// a live resize step still queued or the display or Space change itself. A window the
+    /// user holds again gets its tile at that press's mouse up, and one on a hidden workspace
+    /// when the workspace is shown.
     private func writeTileAgain(_ id: WindowID) {
-        guard writeAgain.remove(id) != nil, mouseMoved[id] == nil,
-              let name = session.workspace(of: id), session.isShown(name) else { return }
+        guard mouseMoved[id] == nil, let name = session.workspace(of: id), session.isShown(name) else { return }
         writeFrames(session.frames(of: name))
     }
 
@@ -682,7 +672,6 @@ final class Controller {
                     break
                 case .refused:
                     controllerLog.info("\(result.id) \(asked, privacy: .public); its tile is written again")
-                    writeAgain.insert(result.id)
                     after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
                 case .minimum(let size):
                     controllerLog.notice("minimum for \(result.id): \(asked, privacy: .public)")
