@@ -375,9 +375,8 @@ public struct Session: Sendable {
     }
 
     /// A parked window its app closed and kept, then ordered in again, opens as a new window
-    /// does (docs/tree.md): it leaves its parked place, which held no space in the layout,
-    /// and joins the workspace `name` names, else the focused one, floating when `floating`,
-    /// as `add` places it. It keeps its minimum size. The plan reveals it when Kosmos had
+    /// does (docs/tree.md): it leaves its parked place and joins the workspace `name` names,
+    /// else the focused one, as `add` places it. It keeps its minimum size. The plan reveals it when Kosmos had
     /// concealed it and its new workspace is shown. Nil for a window that is not parked.
     public mutating func reopen(_ window: WindowID, to name: String?, floating: Bool) -> Plan? {
         guard isParked(window) else { return nil }

@@ -465,9 +465,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan.hide == [1])
 }
 
-/// Steve moved Activity Monitor to workspace 3, closed it with Command-W, which parked it
-/// as closed and kept, and reopened it from workspace 5, where it came back on workspace 3
-/// (live, September 25, 2026). Reopened, it opens where a new window would.
+/// A window closed and kept opens again where a new window would (docs/tree.md).
 @Test func aReopenedWindowOpensOnTheFocusedWorkspace() {
     var s = session()
     _ = s.perform(.workspace(.named("3")))

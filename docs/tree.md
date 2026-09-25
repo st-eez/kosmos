@@ -55,14 +55,11 @@
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
     as a minimized one does, and its focus moves on as [focus.md](focus.md) says for a
     window closed and kept. When the app orders it in again it opens as a new window does
-    (`Session.reopen`), and its parked place goes: it joins the focused workspace, or the
-    one its rule names, floating when the rule floats its app, takes the focus when its
-    app keys it, and brings the pointer as a new window does
-    ([focus-follows-mouse.md](focus-follows-mouse.md)). To the user a closed window is
-    closed, and in Omarchy an app reopening its window makes a new one on the current
-    workspace. Live on 2026-09-25, Steve moved Activity Monitor to workspace 3, closed it
-    with Command-W, and reopened it from workspace 5, and it came back on workspace 3,
-    before this. It keeps the minimum size Kosmos learned for it. Kosmos takes a managed
+    (`Session.reopen`): it leaves its parked place, joins the focused workspace or its
+    rule's, and keeps the minimum size Kosmos learned for it. To the user a closed window
+    is closed, and in Omarchy reopening makes a new window on the current workspace.
+    Before this, Activity Monitor closed with Command-W on workspace 3 came back there
+    when reopened from workspace 5 (live, September 25, 2026). Kosmos takes a managed
     window ordered out for none of the other reasons as closed and kept, and looks at it
     as soon as the read that saw its order-out is applied with no other read of window
     rows under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A
@@ -95,10 +92,12 @@
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize
     reported after the look changes the window's reason, and it returns when restored.
-    The ceiling: a hide reported after the look leaves the window parked as closed and
-    kept, to open again as a new window a pairing window after its own order-in, rather
-    than return to its place with its app. The upgrade path is for the hide to take its
-    app's windows that parked as closed and kept within the departure bound.
+    The ceiling: after a hide whose report lands after the look, the app's windows park
+    as closed and kept, and when the app unhides they reopen on the focused workspace, or
+    their rule's, instead of going back to their places. The log shows it as a "closed
+    and kept by its app: parked" line for each window before the app's "hid" line. The
+    upgrade path is for the hide to take its app's windows that parked as closed and kept
+    within the departure bound.
   - A tab whose place a new tab claims before Kosmos admits it waits for that admission
     until a second after its order-out, then parks, and gives its place back if the new
     tab takes it later. Parking it sooner would request focus for the workspace's next

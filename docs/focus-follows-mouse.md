@@ -167,8 +167,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     restores it from the Dock, and Command-Tab to a hidden app. macOS keys such a window
     while it is still parked, so its key report is no activation Kosmos handles, and the
     pointer stayed on the Dock before this. A key that takes a window out of native
-    fullscreen, or makes an app order a closed window in again, brings it too. Whether a
-    window restored from the Dock reports its return within the second is unmeasured.
+    fullscreen brings it too. Whether a window restored from the Dock reports its return
+    within the second is unmeasured. A window its app closed and kept and orders in again
+    opens as a new window ([tree.md](tree.md)), and the admission rules above bring the
+    pointer.
   - A workspace switch command on the pointer's display leaves the pointer where it is:
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth` and
     `move-node-to-workspace --focus-follows-window`.

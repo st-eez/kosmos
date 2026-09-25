@@ -36,9 +36,10 @@ final class Controller {
     /// Switches between native tabs, and the tabs that hold no place.
     private var tabSwitches = TabSwitches()
     private var tabs = TabGroups()
-    /// The last key report of a window with no place, decided again when that window takes
-    /// one: at its admission, as an app keys a window before Kosmos admits it, or at a tab
-    /// switch, as macOS can report the new tab key before the switch pairs.
+    /// The last key report of a window with no place, or of a parked window its app closed
+    /// and kept, decided again when that window takes one: at its admission, as an app keys
+    /// a window before Kosmos admits it or as it reopens one, or at a tab switch, as macOS
+    /// can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
     /// Windows admitted on a shown workspace before their apps keyed them
     /// (AdmissionFocus.awaitKey), with when each was admitted. A key window report of one
@@ -424,9 +425,9 @@ final class Controller {
         // A window opened after launch onto a shown workspace pops in (Slides). A new window
         // its app keyed brings the pointer on any display, as a keyboard focus change does,
         // and so does one its app keys just after (docs/focus-follows-mouse.md).
-        let launched = !atLaunch
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched && !Self.leftButtonDown,
-                floatingCheck: floats, popping: launched ? id : nil)
+        let new = !atLaunch
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new && !Self.leftButtonDown,
+                floatingCheck: floats, popping: new ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden[id] = nil
