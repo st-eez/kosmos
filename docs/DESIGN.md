@@ -578,34 +578,32 @@ off the main thread).
     activates the app with the named window but leaves it where it sits in its app's
     stacking order.
   - Then the app's worker raises the window, only while the app is front and the window is
-    its focused window, so it never raises over a window the user chose since. It does not
-    check that the request is current: with that check, a hover on the same window made the
-    raise stale, the new request found the window key and raised nothing, and the window
-    stayed behind its app's other windows (`FocusOnTop` failed `split-hover`; without the
-    raise `split-user-nopostraise` fails it). The worker records the raise's echo just
-    before it, since the raise keys the window again if the user keyed another window of
-    the app first. Once the raise has returned and the worker has read the app's focused
-    window, by when the app's callbacks for the raise have run, the main actor forgets the
-    record if no report used it: the raise changed nothing. Without the record
-    `split-open-postraisenone` fails, and with a record kept until matched
-    `split-open-postraisekept` does (changes 21 and 23). The ceiling: the worker's read can
-    reach the app before the app handles the key record, and then finds the window it had
-    focused before and skips the raise. Each skip is logged with whether the app was front
-    and the window it had focused, and `kosmos-probe keying` measures that read in its
-    `record, then AXRaise while front and focused` order, which has not run yet.
+    its focused window, so it never raises over a window the user chose since. Every
+    private request for a background app's window gets this raise, whatever made it: a
+    focus command, the focus after a switch, a move that follows its window, the next
+    window after a departure, a reassert, or the pointer (section 5.11). The window then
+    comes up over the windows it overlaps, other apps' floating windows included. The
+    raise does not check that the request is current: with that check, a hover on the same
+    window made the raise stale, the new request found the window key and raised nothing,
+    and the window stayed behind its app's other windows (`FocusOnTop` failed
+    `split-hover`; without the raise `split-user-nopostraise` fails it). The worker records
+    the raise's echo just before it, since the raise keys the window again if the user
+    keyed another window of the app first. Once the raise has returned and the worker has
+    read the app's focused window, the main actor forgets the record if no report used it.
+    Without the record `split-open-postraisenone` fails, and with a record kept until
+    matched `split-open-postraisekept` does (changes 21 and 23). The ceiling: the worker's
+    read can reach the app before the app handles the key record, and then finds the
+    window it had focused before and skips the raise. Each skip is logged with whether the
+    app was front and the window it had focused. The log stays until `kosmos-probe keying`
+    runs its `record, then AXRaise while front and focused` order, which measures that
+    read.
   - Only the raise after a key record has its record forgotten, once the raise is done, so
     no late answer can orphan any other call; `dropped` otherwise serves only a call that
     fails.
-  - TLC checks the split path with RaiseKeys and RaiseReports as `kosmos-probe keying`
-    measured, either app busy with the 30 ms timeout nondeterministic, background apps
-    opening windows, a window opened inside the front app, two displays, and the key
-    window on top of its app at rest (tla/README.md, changes 15 to 24). Those configs run
-    the spec's full rule set; Kosmos builds part of it, the rest is under Deferred below,
-    and no TLC run checks the part built. Kosmos builds the RaiseKeys case, where AXRaise
-    alone keys the target inside the front app: it did so in 20 of 20 trials of
-    `kosmos-probe keying` for stacked and side by side windows, where the record alone
-    keyed 0 of 20 (September 24, 2026). The model's WorkerKey step, for the other case, is
-    left out.
+  - Kosmos builds the model's RaiseKeys case, where AXRaise alone keys the target inside
+    the front app (section 2). The model's WorkerKey step, for the other case, is left out.
+    TLC checks the spec's full rule set, and no TLC run checks the part Kosmos builds
+    (Deferred, below).
   - Recording when the request was made failed TLC's `user` config. The user clicked w2, and
     Kosmos requested w2 again. Before the queue ran that request, the user clicked w1 and
     then w2, the second click on w2 was taken for the queued request's echo, and Kosmos
@@ -1032,11 +1030,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - The window under the pointer takes focus as soon as the pointer enters it, through the
   same exact-window focus request as a focus command, as Hyprland's `follow_mouse = 1`
   does.
-- That request leaves the window on top of its app (section 5.4), so a floating window
-  the pointer enters comes up over the tiled windows it overlaps, whichever app was front.
-  The pointer is over a part of the window that was on top already, and the raise brings
-  up the rest. Before the raise after the key record, a floating window of a background
-  app stayed behind the tiles it overlapped.
+- That request raises the window, as every private focus request does, inside the front
+  app and after the key record for another app (section 5.4). A floating window the
+  pointer enters comes up over the tiled windows it overlaps, whichever app was front. The
+  pointer is over a part of the window that was on top already, and the raise brings up
+  the rest.
 - Focusing another app's window activates the app, which costs macOS about 94 ms of CPU
   outside Kosmos (section 2), so a pointer swept across windows of several apps activates
   each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
@@ -1258,17 +1256,15 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - Keeping floating windows over a tile the pointer enters. Inside the front app only
     AXRaise keys a window, and for another app AXRaise follows the key record (section
     5.4), so the tile comes up over any floating window it overlaps, which Hyprland keeps
-    on top. Before the raise after the key record, a tile of another app stayed where it
-    was, and hovering from floating Messages onto a Ghostty tile kept Messages on top
-    (Steve's live test on 2026-09-24); now the tile comes up over Messages. Raising the
-    floating windows again after the raise would key one of the front app's, or reorder
-    only a background app's own windows. If it bothers in practice, the path is yabai's
-    `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
-    (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
-    key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
-    the key record. It would replace AXRaise on the worker, and the raise after a key
-    record, for a hover focus of a tile, the echo recorded just before, once `kosmos-probe keying` shows it keys 20 of 20 in the
-    front app with the window order unchanged.
+    on top. Raising the floating windows again after the raise would key one of the front
+    app's, or reorder only a background app's own windows. If it bothers in practice, the
+    path is yabai's `window_manager_focus_window_without_raise`, which AutoRaise carries
+    under FOCUS_FIRST (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a =
+    0x02 to the app's key window, 10 ms later one with 0x8a = 0x01 to the target, then the
+    private front and the key record. It would replace AXRaise on the worker, and the raise
+    after a key record, for a hover focus of a tile, the echo recorded just before, once
+    `kosmos-probe keying` shows it keys 20 of 20 in the front app with the window order
+    unchanged.
 
 ### 5.12 Other tools
 
