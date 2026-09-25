@@ -96,7 +96,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
   keyboard moves focus to another window or moves the focused window. A workspace switch
   command moves it only when the focus is on another display than the pointer
-  (KosmosCore's `Command.movesPointer`), and a keyboard activation of a window always
+  (KosmosCore's `FocusChange.movesPointer`), and a keyboard activation of a window always
   does. Omarchy on the development Mac centers the pointer only when focus moves between
   windows of one workspace, and Steve's AeroSpace config chained
   `move-mouse window-lazy-center` onto hotkey bindings only.
@@ -251,7 +251,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - Left out:
   - The pointer after `join-with`, layout and resize commands, which can leave it over a
     neighbour of the focused window. Steve's AeroSpace bindings left it there too; if a
-    bump then focuses the neighbour in practice, they join `Command.movesPointer`'s list.
+    bump then focuses the neighbour in practice, they join the commands of
+    `FocusChange.movesPointer`.
   - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
     AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
     minimum distance from where the pointer last counted, in PointerGate, brings it back.

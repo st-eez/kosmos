@@ -87,12 +87,13 @@ extension Controller {
         pointer?.warped()
     }
 
-    func movesPointer(after command: Command, from source: CommandSource) -> Bool {
-        mouseFollowsFocus && command.movesPointer(from: source, toAnotherDisplay: focusAwayFromPointer)
+    func movesPointer(after change: FocusChange) -> Bool {
+        change.movesPointer(mouseFollowsFocus: mouseFollowsFocus, reading: pointerReadings)
     }
 
-    private var focusAwayFromPointer: Bool {
-        CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
+    var pointerReadings: PointerReadings {
+        PointerReadings(
+            focusOnAnotherDisplay: { CGEvent(source: nil).map { self.session.focusIsOnAnotherDisplay(than: $0.location) } ?? false })
     }
 
     func pickedAwayFromPointer() -> Bool {

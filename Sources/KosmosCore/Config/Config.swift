@@ -3,7 +3,7 @@ import CoreGraphics
 /// A checked config file (docs/config.md): `Config.load` builds one, and every monitor,
 /// workspace and mode name in it is defined. docs/sample-config.toml shows the schema.
 public struct Config: Equatable, Sendable {
-    /// Move the mouse pointer to the focus the keyboard moved (Command.movesPointer).
+    /// Move the mouse pointer to the focus the keyboard moved (FocusChange.movesPointer).
     public var mouseFollowsFocus = false
     public var focusFollowsMouse = FocusFollowsMouse()
     /// The modifiers that start a modifier drag, or nil when modifier drags are off

@@ -164,7 +164,7 @@ final class Controller {
         // Floating windows' frames as the inventory last heard them, so nothing waits on
         // WindowServer.
         if let plan = session.perform(command, frame: { [inventory] in inventory.windows[$0]?.frame }) {
-            execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
+            execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: .command(command, from: source)))
         }
         return nil
     }

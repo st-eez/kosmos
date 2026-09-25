@@ -123,16 +123,35 @@ public enum CommandSource: Sendable {
     case cli
 }
 
-extension Command {
-    /// Whether mouse-follows-focus brings the pointer to the focus after this command. It reads
-    /// `toAnotherDisplay` only for a workspace command (docs/focus-follows-mouse.md).
-    public func movesPointer(from source: CommandSource, toAnotherDisplay: @autoclosure () -> Bool) -> Bool {
-        guard source == .hotkey else { return false }
+/// What moved the focus, for mouse-follows-focus (docs/focus-follows-mouse.md).
+public enum FocusChange: Sendable {
+    case command(Command, from: CommandSource)
+}
+
+/// The user's input as the app reads it. The rule reads each only for a change that needs it.
+public struct PointerReadings {
+    /// The focus is on another display than the pointer (Session.focusIsOnAnotherDisplay).
+    public var focusOnAnotherDisplay: () -> Bool
+
+    public init(focusOnAnotherDisplay: @escaping () -> Bool) {
+        self.focusOnAnotherDisplay = focusOnAnotherDisplay
+    }
+}
+
+extension FocusChange {
+    /// Whether mouse-follows-focus brings the pointer to the focus after this change
+    /// (docs/focus-follows-mouse.md).
+    public func movesPointer(mouseFollowsFocus: Bool, reading input: PointerReadings) -> Bool {
+        guard mouseFollowsFocus else { return false }
         switch self {
-        case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
-        case .workspace, .workspaceBackAndForth: return toAnotherDisplay()
-        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay()
-        default: return false
+        case .command(let command, let source):
+            guard source == .hotkey else { return false }
+            switch command {
+            case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
+            case .workspace, .workspaceBackAndForth: return input.focusOnAnotherDisplay()
+            case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || input.focusOnAnotherDisplay()
+            default: return false
+            }
         }
     }
 }

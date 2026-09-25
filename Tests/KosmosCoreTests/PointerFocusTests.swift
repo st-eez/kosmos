@@ -218,9 +218,25 @@ private func command(_ binding: String) throws -> Command {
     try Command.parse(binding.split(separator: " ").map(String.init)).get()
 }
 
+/// The user's input as the pointer rule reads it, and the readings it took.
+private final class Input {
+    enum Reading { case display }
+
+    var focusOnAnotherDisplay = false
+    var read: [Reading] = []
+
+    var readings: PointerReadings {
+        PointerReadings(focusOnAnotherDisplay: { self.read.append(.display); return self.focusOnAnotherDisplay })
+    }
+}
+
 /// Whether mouse-follows-focus moves the pointer for a command as a binding writes it.
-private func movesPointer(_ binding: String, from source: CommandSource = .hotkey, toAnotherDisplay: Bool = false) throws -> Bool {
-    try command(binding).movesPointer(from: source, toAnotherDisplay: toAnotherDisplay)
+private func movesPointer(_ binding: String, from source: CommandSource = .hotkey, toAnotherDisplay: Bool = false,
+                          mouseFollowsFocus: Bool = true) throws -> Bool {
+    let input = Input()
+    input.focusOnAnotherDisplay = toAnotherDisplay
+    return try FocusChange.command(command(binding), from: source)
+        .movesPointer(mouseFollowsFocus: mouseFollowsFocus, reading: input.readings)
 }
 
 /// Over workspace 1 of the `desk()` below.
@@ -278,6 +294,23 @@ private func desk() -> Session {
         }
     }
 
+    @Test func mouseFollowsFocusOffLeavesThePointer() throws {
+        for binding in ["focus left", "move right", "workspace 2", "move-node-to-workspace 3"] {
+            #expect(try !movesPointer(binding, toAnotherDisplay: true, mouseFollowsFocus: false), "\(binding)")
+        }
+    }
+
+    @Test func onlyAWorkspaceCommandReadsWhereThePointerIs() throws {
+        let input = Input()
+        for (binding, source, on) in [("workspace 2", CommandSource.cli, true), ("workspace 2", .hotkey, false),
+                                      ("focus left", .hotkey, true), ("join-with left", .hotkey, true)] {
+            _ = try FocusChange.command(command(binding), from: source).movesPointer(mouseFollowsFocus: on, reading: input.readings)
+        }
+        #expect(input.read.isEmpty)
+        _ = try FocusChange.command(command("workspace 2"), from: .hotkey).movesPointer(mouseFollowsFocus: true, reading: input.readings)
+        #expect(input.read == [.display])
+    }
+
     @Test func aSwitchToTheWorkspaceAnotherDisplayShowsBringsThePointerThere() throws {
         // Each reaches workspace 5 on the left panel with nothing shown or hidden, and a tile
         // reflowed under the pointer would take focus on the next bump.
@@ -288,7 +321,7 @@ private func desk() -> Session {
             let plan = try #require(result, "\(binding)")
             #expect(plan.show.isEmpty && plan.hide.isEmpty, "\(binding)")
             #expect(s.focusedWorkspace == "5" && s.focusIsOnAnotherDisplay(than: pointerOnMainPanel), "\(binding)")
-            #expect(command.movesPointer(from: .hotkey, toAnotherDisplay: true), "\(binding)")
+            #expect(try movesPointer(binding, toAnotherDisplay: true), "\(binding)")
             let window = try #require(s.focused, "\(binding)")
             let frame = try #require(s.frames(of: s.focusedWorkspace)[window], "\(binding)")
             #expect(leftPanel.frame.contains(CGPoint(x: frame.midX, y: frame.midY)), "\(binding)")
@@ -307,7 +340,7 @@ private func desk() -> Session {
             #expect(s.perform(command) != nil, "\(binding)")
             #expect(s.focusedWorkspace == "7" && s.focused == nil, "\(binding)")
             #expect(s.focusIsOnAnotherDisplay(than: pointerOnMainPanel), "\(binding)")
-            #expect(command.movesPointer(from: .hotkey, toAnotherDisplay: true), "\(binding)")
+            #expect(try movesPointer(binding, toAnotherDisplay: true), "\(binding)")
             #expect(s.monitor(of: s.focusedWorkspace) == leftPanel, "\(binding)")
         }
     }
