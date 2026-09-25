@@ -1,4 +1,5 @@
 import AppKit
+import CKosmos
 import KosmosCore
 import KosmosSkyLight
 import os
@@ -60,14 +61,15 @@ final class Controller {
     let managing: Bool
     /// Window rules, first match wins.
     var rules: [WindowRule] = []
-    /// Move the pointer into the window the keyboard focused or moved (FocusChange).
+    /// Move the pointer to the focus the keyboard moved (Command.movesPointer).
     var mouseFollowsFocus = false
     /// The config's settings; the `focus-follows-mouse` command changes `enabled` until the
     /// next load.
     var focusFollowsMouse = FocusFollowsMouse() {
         didSet {
             // Creating the tap may ask for Input Monitoring, so it waits until focus follows
-            // mouse is first turned on.
+            // mouse is first turned on. A tap WindowServer refused is tried again at the next
+            // turn on or config load, as after the user grants Input Monitoring.
             if focusFollowsMouse.enabled, managing, pointer == nil {
                 pointer = PointerTap { [weak self] entered, stamp in self?.pointerEntered(entered, at: stamp) }
                 pointer?.setMonitors(session.monitors)
@@ -184,6 +186,13 @@ final class Controller {
             case .off: false
             case .toggle: !focusFollowsMouse.enabled
             }
+            if focusFollowsMouse.enabled, pointer == nil {
+                return (1, """
+                    focus follows mouse gets no pointer movement: macOS refused Kosmos's event tap. \
+                    Allow Kosmos in System Settings, Privacy & Security, Input Monitoring, then run \
+                    kosmos focus-follows-mouse on
+                    """)
+            }
             return (0, "")
         case .success(let command):
             if let missing = session.missingWorkspace(in: command) {
@@ -191,7 +200,7 @@ final class Controller {
             }
             reports.commandExecuted(receivedAt: received)
             if let plan = session.perform(command) {
-                execute(plan, since: received, fromCommand: true, movePointer: movesPointer(.command(command, from: source)))
+                execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
             }
             return (0, "")
         }
@@ -598,15 +607,13 @@ final class Controller {
             requestFocus(.window(window))
             // Command-Tab to a window away from the pointer brings the pointer along; a click,
             // on the window or the Dock, leaves it.
-            if movesPointer(.activation(keyboard: Self.keyPressedLast(), intoHiddenWorkspace: false)) {
-                centerPointer(on: window)
-            }
+            if mouseFollowsFocus, Self.keyPressedLast() { centerPointer() }
             publishState()
         case .follow(let window):
             touch(window)
             // A workspace switch, which brings the pointer along only to another display.
             let plan = session.follow(window)
-            execute(plan, movePointer: movesPointer(.activation(keyboard: Self.keyPressedLast(), intoHiddenWorkspace: true)))
+            execute(plan, movePointer: mouseFollowsFocus && Self.keyPressedLast() && focusAwayFromPointer)
         }
     }
 
@@ -650,13 +657,13 @@ final class Controller {
                                     fullscreen: Dictionary(uniqueKeysWithValues: fullscreenParked.compactMap { id in owner[id].map { (id, $0) } }))
     }
 
-    /// `since` is when the command arrived, for the switch timing log. `movePointer` moves the
-    /// pointer into the focused window, at the frame the plan gives it.
+    /// `since` is when the command arrived, for the switch timing log. `movePointer` centers
+    /// the pointer on the focus.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
                          movePointer: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         writeFrames(plan.frames)
-        if movePointer, let window = session.focused { centerPointer(on: window, at: plan.frames[window]) }
+        if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
             show = session.shownWorkspaces.flatMap { session.windows(of: $0) }
@@ -799,36 +806,47 @@ final class Controller {
         onFocusProblem?(focusProblem)
     }
 
-    /// Moves the pointer to the window's center unless it is already inside the window, as
-    /// AeroSpace's `move-mouse window-lazy-center` does. The frame is `planned`, the one Kosmos
-    /// is writing, when the window moves: its app's worker may not have applied it yet, and
-    /// AeroSpace's move binding slept 50 ms before it read the frame. Otherwise the frame is
-    /// the layout's, or for a floating window the last one the inventory heard, so nothing
-    /// waits on WindowServer.
-    private func centerPointer(on window: WindowID, at planned: CGRect? = nil) {
-        guard let frame = planned ?? session.workspace(of: window).flatMap({ session.frames(of: $0)[window] })
-                ?? inventory.windows[window]?.frame, !frame.isEmpty,
-              let location = CGEvent(source: nil)?.location, !frame.contains(location) else { return }
+    /// Centers the pointer on the focused window, or on the focused workspace's display when
+    /// that has no window, as Hyprland's `focusmonitor` does, unless the pointer is inside
+    /// already, as with AeroSpace's `move-mouse window-lazy-center`. A tile's frame is the
+    /// layout's after the change, the one Kosmos is writing, and a floating window's the last
+    /// one the inventory heard, so nothing waits on WindowServer (DESIGN.md, section 5.11).
+    private func centerPointer() {
+        let frame: CGRect? = if let window = session.focused {
+            session.frames(of: session.focusedWorkspace)[window] ?? inventory.windows[window]?.frame
+        } else {
+            session.monitor(of: session.focusedWorkspace).frame
+        }
+        guard let frame, !frame.isEmpty, let location = CGEvent(source: nil)?.location, !frame.contains(location) else { return }
         CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
         pointer?.warped()
     }
 
-    /// Whether mouse-follows-focus moves the pointer to the focused window after `change`,
-    /// which the session has carried out.
-    private func movesPointer(_ change: @autoclosure () -> FocusChange) -> Bool {
-        guard mouseFollowsFocus, let window = session.focused, let location = CGEvent(source: nil)?.location else {
-            return false
-        }
-        return change().movesPointer(toAnotherDisplay: session.isOnAnotherDisplay(window, than: location))
+    /// Whether mouse-follows-focus centers the pointer on the focus after `command`, which
+    /// the session has carried out.
+    private func movesPointer(after command: Command, from source: CommandSource) -> Bool {
+        mouseFollowsFocus && command.movesPointer(from: source, toAnotherDisplay: focusAwayFromPointer)
     }
 
-    /// Whether a key press came after the last click, from the times the session's event
-    /// state keeps, which reading takes no event tap.
+    /// The focused workspace is on another display than the pointer.
+    private var focusAwayFromPointer: Bool {
+        CGEvent(source: nil).map { session.focusIsOnAnotherDisplay(than: $0.location) } ?? false
+    }
+
+    /// Whether the keyboard made the activation being handled, as Command-Tab or a
+    /// launcher's hotkey does: a key went down in the last second, after the last click and
+    /// the last pointer movement. With focus follows mouse the user seldom clicks, so a key
+    /// press long ago would otherwise pass for a Command-Tab. The session's event state keeps
+    /// the times, which reading takes no event tap. A Command-Tab switcher held open for over
+    /// a second reads as a click.
     private static func keyPressedLast() -> Bool {
         let since = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
-        let key = since(.keyDown), click = min(since(.leftMouseDown), since(.rightMouseDown))
-        pointerLog.debug("activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago")
-        return key < click
+        let key = since(.keyDown), click = min(since(.leftMouseDown), since(.rightMouseDown)), moved = since(.mouseMoved)
+        pointerLog.debug("""
+            activation: key \(key, format: .fixed(precision: 3)) s ago, click \(click, format: .fixed(precision: 3)) s ago, \
+            pointer moved \(moved, format: .fixed(precision: 3)) s ago
+            """)
+        return key < 1 && key < click && key < moved
     }
 
     // MARK: Focus follows mouse
@@ -844,7 +862,7 @@ final class Controller {
     private func pointerEntered(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         after(Self.dwell) { controller in
             // The pointer left the window during the dwell, or moved on before this ran.
-            guard controller.managing, !controller.sessionLocked, controller.pointer?.window == entered.window else { return }
+            guard !controller.sessionLocked, controller.pointer?.window == entered.window else { return }
             controller.focusUnderPointer(entered, at: stamp)
         }
     }
@@ -852,21 +870,29 @@ final class Controller {
     private func focusUnderPointer(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         let window = entered.window
         let fullscreen = fullscreenParked.contains(window)
-        if let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
-                                             app: owner[window].map(inventory.appIdentity),
-                                             stale: reports.isStale(stamp)) {
-            // Onto a display whose shown workspace is empty: that workspace takes the focus as
-            // `workspace` gives it, keying the empty workspace window there, and the pointer
-            // stays where it is.
-            if skip == .notTiled, let display = entered.display,
-               let name = focusFollowsMouse.emptyWorkspace(entered: display, in: session),
-               let plan = session.perform(.workspace(.named(name))) {
-                pointerLog.info("pointer focuses empty workspace \(name, privacy: .public)")
-                reports.commandExecuted(receivedAt: stamp)
-                execute(plan, fromCommand: true)
-                return
-            }
+        let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
+                                          app: owner[window].map(inventory.appIdentity), stale: reports.isStale(stamp))
+        // Onto a display whose shown workspace is empty: that workspace takes the focus as
+        // `workspace` gives it, keying the empty workspace window there, and the pointer
+        // stays where it is.
+        let emptyWorkspace = skip == .notTiled
+            ? entered.display.flatMap { focusFollowsMouse.emptyWorkspace(entered: $0, in: session) } : nil
+        if let skip, emptyWorkspace == nil {
             pointerLog.debug("pointer in \(window): \(String(describing: skip), privacy: .public)")
+            return
+        }
+        if let holder = unmanagedKeyHolder() {
+            pointerLog.debug("""
+                pointer in \(window): \(NSRunningApplication(processIdentifier: holder)?.localizedName ?? String(holder), privacy: .public) \
+                is front or holds the key window
+                """)
+            return
+        }
+        if let emptyWorkspace {
+            guard let plan = session.perform(.workspace(.named(emptyWorkspace))) else { return }
+            pointerLog.info("pointer focuses empty workspace \(emptyWorkspace, privacy: .public)")
+            reports.commandExecuted(receivedAt: stamp)
+            execute(plan, fromCommand: true)
             return
         }
         pointerLog.info("pointer focuses \(window)")
@@ -882,6 +908,21 @@ final class Controller {
         // window key on another display leaves this one free.
         requestFocus(.window(window), fromCommand: true)
         publishState()
+    }
+
+    /// A process other than Kosmos that has no worker and is front or holds the key window,
+    /// as a launcher's panel or a password prompt, or nil. Focusing a window would take the
+    /// key window from it, which closes a launcher, so hover focus waits, as AutoRaise's
+    /// `stayFocusedBundleIds` did for the apps it listed (DESIGN.md, section 5.11). The front
+    /// process is read from LaunchServices at no WindowServer cost. A non-activating panel,
+    /// as Spotlight's, holds the key window while another app stays front, and only
+    /// WindowServer knows that, so the second read is a round trip to it, only for a focus.
+    private func unmanagedKeyHolder() -> pid_t? {
+        let unmanaged = { (pid: pid_t) in pid != 0 && pid != getpid() && self.inventory.worker(pid) == nil }
+        let front = kosmos_front_pid()
+        if unmanaged(front) { return front }
+        let holder = kosmos_key_focus_pid()
+        return unmanaged(holder) ? holder : nil
     }
 
     private func touch(_ window: WindowID) {

@@ -75,11 +75,8 @@ public enum PointerSkip: Equatable, Sendable {
 
 extension FocusFollowsMouse {
     /// Why the pointer entering `window` leaves focus alone, or nil when the window takes
-    /// focus (DESIGN.md, section 5.11). WindowServer found `window` under the pointer, so it
-    /// is on screen: on a display that shows a native fullscreen Space, the only windows
-    /// there are the fullscreen window, which takes focus as Omarchy's does, and its app's
-    /// panels, which the session does not tile. So nothing behind a fullscreen window takes
-    /// focus, and a fullscreen Space on another display leaves this one free.
+    /// focus. A native fullscreen window takes it, and nothing behind one can (DESIGN.md,
+    /// section 5.11).
     /// - Parameters:
     ///   - fullscreen: the window is parked in native fullscreen.
     ///   - key: the key window macOS last reported.
@@ -96,6 +93,7 @@ extension FocusFollowsMouse {
         if key == .window(window), fullscreen || session.focused == window { return .focused }
         return nil
     }
+
     /// The workspace to focus when the pointer entered `display`: the one it shows, when
     /// that has no windows and is not focused already, as Hyprland's `follow_mouse` moves
     /// the monitor focus. Over the desktop or a gap of a display whose workspace has
@@ -113,36 +111,17 @@ public enum CommandSource: Sendable {
     case cli
 }
 
-/// A focus change that mouse-follows-focus may bring the pointer along for (DESIGN.md,
-/// section 5.11).
-public enum FocusChange: Equatable, Sendable {
-    case command(Command, from: CommandSource)
-    /// The user activated a window, which Kosmos adopts on a shown workspace or follows
-    /// into a hidden one, a switch. `keyboard`: a key press came after the last click, as
-    /// with Command-Tab. Otherwise a click on the window or the Dock did it.
-    case activation(keyboard: Bool, intoHiddenWorkspace: Bool)
-
-    /// Whether the pointer goes to the focused window, unless it is inside it already.
-    /// `toAnotherDisplay`: that window is on another display than the pointer.
-    ///
-    /// It does when the keyboard moves focus to another window, or moves the focused window:
-    /// a hotkey's focus and move commands, sending the window to another workspace while
-    /// focus stays, and Command-Tab. A workspace switch moves it only to another display,
-    /// as when a launcher's hotkey activates an app on a workspace another display hides; on
-    /// the pointer's own display the pointer stays, as in Omarchy. Nothing from the CLI or a
-    /// click moves it.
-    public func movesPointer(toAnotherDisplay: Bool) -> Bool {
+extension Command {
+    /// Whether mouse-follows-focus brings the pointer to the focus after this command, unless
+    /// it is there already. `toAnotherDisplay`: the focus is on another display than the
+    /// pointer (DESIGN.md, section 5.11).
+    public func movesPointer(from source: CommandSource, toAnotherDisplay: Bool) -> Bool {
+        guard source == .hotkey else { return false }
         switch self {
-        case .command(let command, let source):
-            guard source == .hotkey else { return false }
-            switch command {
-            case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
-            case .workspace, .workspaceBackAndForth: return toAnotherDisplay
-            case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay
-            default: return false
-            }
-        case .activation(let keyboard, let intoHiddenWorkspace):
-            return keyboard && (!intoHiddenWorkspace || toAnotherDisplay)
+        case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
+        case .workspace, .workspaceBackAndForth: return toAnotherDisplay
+        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay
+        default: return false
         }
     }
 }

@@ -766,6 +766,20 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - It is not the focus intent and key already. When a panel or dialog took key from the
     focus intent, the pointer coming back into the intent keys it again.
   - No command was received after the movement.
+  - The front process, and the process that holds the key window, are Kosmos or have a
+    worker (`Controller.unmanagedKeyHolder`). A launcher's panel, as Raycast's,
+    Spotlight's or Alfred's, or a password prompt belongs to a process with none, as Apps
+    keeps workers for regular apps only, and focusing a window would take the key window
+    from it, which closes a launcher. AutoRaise left the front apps its
+    `stayFocusedBundleIds` listed alone. Kosmos reads the front process from
+    LaunchServices, which costs WindowServer nothing. A non-activating panel, as
+    Spotlight's, holds the key window while another app stays front, and only WindowServer
+    knows that (`SLPSGetKeyFocusProcess`): 30 us back to back, and 111 us at the median
+    and 4.8 ms at most read every 50 ms. So that read comes last, only when the window or
+    an empty workspace would take focus. Which read names each of those processes is for
+    the live test, with `kosmos-probe key-holder`. A window the pointer entered while such
+    a process held the key window takes focus only when the pointer enters it again, so
+    what a launcher opened keeps the focus.
 - The pointer focuses a native fullscreen window it enters, as Omarchy's `follow_mouse`
   does, and never focuses anything over one, display by display. On a display that shows
   a fullscreen Space, the windows under the pointer are the fullscreen window and its
@@ -799,8 +813,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   movement with a button down is a drag event, which the monitor does not receive.
 - The pointer follows focus the other way too, with `mouse-follows-focus`, when the
   keyboard moves focus to another window or moves the focused window, and either no
-  workspace is switched or the window is on another display than the pointer
-  (KosmosCore's FocusChange). Omarchy on the development Mac centers the pointer only when
+  workspace is switched or the focus is on another display than the pointer (KosmosCore's
+  `Command.movesPointer`). Omarchy on the development Mac centers the pointer only when
   focus moves between windows of one workspace, and Steve's AeroSpace config chained
   `move-mouse window-lazy-center` onto hotkey bindings only.
   - A hotkey's `focus` or `focus-monitor`, within the workspace or across to the workspace
@@ -810,31 +824,37 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     it on the window focused next. With focus follows mouse, a pointer left behind would
     focus the neighbour on the next bump.
   - Command-Tab to a window of a shown workspace centers the pointer on it. Kosmos tells
-    Command-Tab from a click, on the window or the Dock, by which came last when it handles
-    the activation: `CGEventSource.secondsSinceLastEventType` for key down against left and
-    right mouse down, in the combined session state. The read takes no event tap, and the
-    log gives both times.
+    Command-Tab from a click, on the window or the Dock, when it handles the activation:
+    a key went down within the last second, and after the last left or right mouse down
+    and the last pointer movement (`CGEventSource.secondsSinceLastEventType` in the
+    combined session state). With focus follows mouse the user seldom clicks, so a key
+    press long ago would otherwise pass for Command-Tab when an app activates itself. The
+    read takes no event tap, and the log gives the three times. A Command-Tab switcher held
+    open for over a second reads as a click.
   - A workspace switch on the pointer's display leaves the pointer where it is:
     `workspace` by name, `next` or `prev`, `workspace-back-and-forth`,
     `move-node-to-workspace --focus-follows-window`, and Command-Tab that Kosmos follows
     into a hidden workspace.
-  - A keyboard focus change that lands on a window of another display than the pointer
-    brings the pointer, even when that display's workspace switched: alt-N to a workspace
-    of another display, and Command-Tab or a launcher's hotkey into a workspace another
-    display hides. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which
-    the left panel then showed in place of empty workspace 7, and the pointer stayed on
-    the main panel, while with 6 already shown it came along. A focus change reaches the
-    pointer's display by the window's workspace and the session's displays
-    (`Session.isOnAnotherDisplay`).
+  - A keyboard focus change that lands on another display than the pointer brings the
+    pointer, whether or not that display's workspace switched: alt-N, alt-shift-N and
+    `workspace-back-and-forth` to a workspace another display shows or hides, and
+    Command-Tab or a launcher's hotkey into a workspace another display hides. Left
+    behind, the pointer sits over a tile of its own display that the next bump would
+    focus. Live on 2026-09-24, Opt-Shift-S activated Spotify on workspace 6, which the
+    left panel then showed in place of empty workspace 7, and the pointer stayed on the
+    main panel. The focus is on the display of the focused workspace
+    (`Session.focusIsOnAnotherDisplay`). When that workspace is empty, the pointer goes to
+    the display's center, as Hyprland's `focusmonitor` puts it.
   - Every command carries its source, a hotkey or the CLI, and a command from the CLI
     leaves the pointer, so a click on the bar's workspaces, a script or a launcher never
     moves it. Neither does a click that Kosmos follows or adopts, a hover focus, nor a
     layout, resize or `join-with` command.
   - As with AeroSpace's `window-lazy-center`, the pointer moves only when it is outside the
-    window. When the window moves, the frame is the one Kosmos is writing, which the app's
-    worker may not have applied yet; AeroSpace's binding slept 50 ms before it read the
-    frame. Otherwise it is the layout's frame, or a floating window's last frame the
-    inventory heard, so the move reads nothing from WindowServer and runs on the main actor.
+    window, or the empty workspace's display. A tile's frame is the layout's after the
+    change, the one Kosmos is writing, which the app's worker may not have applied yet;
+    AeroSpace's binding slept 50 ms before it read the frame. A floating window's is the
+    last frame the inventory heard. So the move reads nothing from WindowServer and runs on
+    the main actor.
 - Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
   the next movement as the place the pointer landed and passes nothing on, whether or not
   the move posts an event of its own. A movement passed on before a command is stale.
@@ -865,15 +885,17 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - Left out:
   - The pointer after `join-with`, layout and resize commands, which can leave it over a
     neighbour of the focused window. Steve's AeroSpace bindings left it there too; if a
-    bump then focuses the neighbour in practice, they join FocusChange's list.
+    bump then focuses the neighbour in practice, they join `Command.movesPointer`'s list.
   - A minimum movement. AutoRaise's `mouseDelta = 2` kept 1 px jitter from raising
     AeroSpace's parked slivers, and Kosmos parks none. If a still hand moves focus, a
     minimum distance from where the pointer last counted, in PointerGate, brings it back.
   - A pause key other than Control, and a delay setting, until a user needs one.
   - Open menus. Moving the pointer off an open menu onto a window focuses that window and
-    closes the menu, and with no delay a short overshoot does it. If the live test shows
-    it, one SkyLight window list read per window entered, for a window at the pop-up menu
-    level on screen, would keep the menu open.
+    closes the menu, and with no delay a short overshoot does it. The front app's own menus
+    belong to a process with a worker, so the key holder check leaves them to this; whether
+    a menu extra's menu moves the key focus is for `kosmos-probe key-holder`. If the live
+    test shows it, one SkyLight window list read per window entered, for a window at the
+    pop-up menu level on screen, would keep the menu open.
   - A raise of a background app's window. The key record keys it and leaves the stacking
     order alone (section 5.4), until the worker's raise after the key record lands. The
     window under the pointer is on top at the pointer already, so only the parts of a

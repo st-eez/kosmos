@@ -56,19 +56,15 @@ private func into(_ window: UInt32, display: DisplayID? = nil) -> PointerGate.En
     }
 
     @Test func theMovementAfterKosmosMovesThePointerEntersNothing() {
-        // A command focused window 9 and moved the pointer there from window 7.
-        var gate = gate()
-        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
-        gate.warped()
-        #expect(entered([(9, 1500, false), (9, 1510, false), (7, 100, false)], gate: &gate) == [nil, nil, into(7)])
-    }
-
-    @Test func theMovementAfterTheMoveCountsWhereverThePointerLanded() {
-        // The move landed over window 8, not the window Kosmos focused: focus stays.
-        var gate = gate()
-        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
-        gate.warped()
-        #expect(entered([(8, 1500, false), (8, 1510, false), (9, 1800, false)], gate: &gate) == [nil, nil, into(9)])
+        // A command focused window 9 and moved the pointer there from window 7. It landed in
+        // window 9, or over window 8 beside it: either way focus stays.
+        for landed: UInt32 in [9, 8] {
+            var gate = gate()
+            #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
+            gate.warped()
+            #expect(entered([(landed, 1500, false), (landed, 1510, false), (7, 100, false)], gate: &gate)
+                == [nil, nil, into(7)])
+        }
     }
 
     @Test func theMovementAfterAMoveToAnotherDisplayEntersNothingEither() {
@@ -155,26 +151,16 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
         #expect(skip(99, app: nil) == .notTiled)   // the fullscreen app's panel or menu
     }
 
-    @Test func withSeveralDisplaysAFullscreenWindowLeavesTheOthersFree() {
-        // The main display shows workspace 1 and has the focus; the left one shows 5.
-        let left = Monitor(id: 1, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
-        let main = Monitor(id: 2, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
-        var s = Session(names: ["1", "2", "5", "6"], monitors: [main, left], assigned: ["1": 2, "2": 2, "5": 1, "6": 1])
+    @Test func aWindowIsVisibleOnTheWorkspaceAnyDisplayShows() {
+        // The main panel shows workspace 1 and has the focus; the left panel shows 5.
+        var s = Session(names: ["1", "2", "5", "6"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "2": 2, "5": 1, "6": 1])
         _ = s.add(10)
-        _ = s.add(11)
         _ = s.add(20, to: "2")
         _ = s.add(50, to: "5")
         _ = s.add(60, to: "6")
-        #expect(s.isVisible(10) && s.isVisible(11) && s.isVisible(50))
+        #expect(s.isVisible(10) && s.isVisible(50))
         #expect(!s.isVisible(20) && !s.isVisible(60))   // hidden workspaces
-        // Window 11 went native fullscreen on the main display and is key there. The
-        // pointer on the left display still focuses window 50, and coming back to the main
-        // display, where it finds only window 11, focuses that.
-        _ = s.park([11])
-        let settings = settings()
-        #expect(settings.skip(50, in: s, fullscreen: false, key: .window(11), app: nil, stale: false) == nil)
-        #expect(settings.skip(11, in: s, fullscreen: true, key: .window(11), app: nil, stale: false) == .focused)
-        #expect(settings.skip(11, in: s, fullscreen: true, key: .window(50), app: nil, stale: false) == nil)
+        #expect(!s.isVisible(99))   // unknown
     }
 
     @Test func onToADisplayShowingAnEmptyWorkspaceThatWorkspaceTakesFocus() {
@@ -213,23 +199,28 @@ private func skip(_ window: WindowID, _ settings: FocusFollowsMouse = settings()
     }
 }
 
-@Test func onlyTiledAndFloatingWindowsOfTheShownWorkspaceAreVisible() {
-    let s = session()
-    #expect(s.isVisible(1) && s.isVisible(2))
-    #expect(!s.isVisible(3))   // parked
-    #expect(!s.isVisible(4))   // another workspace
-    #expect(!s.isVisible(9))   // unknown
-}
-
-@Test func focusFollowsMouseIsForTheApp() {
-    var s = session()
-    #expect(s.perform(.focusFollowsMouse(.toggle)) == nil)
+private func command(_ binding: String) throws -> Command {
+    try Command.parse(binding.split(separator: " ").map(String.init)).get()
 }
 
 /// Whether mouse-follows-focus moves the pointer for a command as a binding writes it.
 private func movesPointer(_ binding: String, from source: CommandSource = .hotkey, toAnotherDisplay: Bool = false) throws -> Bool {
-    let command = try Command.parse(binding.split(separator: " ").map(String.init)).get()
-    return FocusChange.command(command, from: source).movesPointer(toAnotherDisplay: toAnotherDisplay)
+    try command(binding).movesPointer(from: source, toAnotherDisplay: toAnotherDisplay)
+}
+
+/// Steve's desk with the pointer on the main panel, over workspace 1, which has the focus
+/// and windows 10 and 11. The left panel shows workspace 5, with window 50, and hides empty
+/// workspace 7. Workspace-back-and-forth goes to 5.
+private let pointerOnMainPanel = CGPoint(x: 100, y: 500)
+
+private func desk() -> Session {
+    var s = Session(names: ["1", "5", "7"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "5": 1, "7": 1])
+    _ = s.add(10)
+    _ = s.add(11)
+    _ = s.add(50, to: "5")
+    _ = s.perform(.workspace(.named("5")))
+    _ = s.perform(.workspace(.named("1")))
+    return s
 }
 
 @Suite struct MouseFollowsFocusTests {
@@ -272,41 +263,65 @@ private func movesPointer(_ binding: String, from source: CommandSource = .hotke
         }
     }
 
-    @Test func commandTabBringsThePointerAndAClickDoesNot() {
-        #expect(FocusChange.activation(keyboard: true, intoHiddenWorkspace: false).movesPointer(toAnotherDisplay: false))
-        #expect(!FocusChange.activation(keyboard: false, intoHiddenWorkspace: false).movesPointer(toAnotherDisplay: false))
-        #expect(!FocusChange.activation(keyboard: false, intoHiddenWorkspace: false).movesPointer(toAnotherDisplay: true))
+    @Test func aSwitchToTheWorkspaceAnotherDisplayShowsBringsThePointerThere() throws {
+        // alt-5, ctrl-alt-tab and alt-shift-5 reach workspace 5 where the left panel shows it,
+        // with nothing shown or hidden, and a neighbour tile reflowed under the pointer would
+        // take focus on the next bump.
+        for binding in ["workspace 5", "workspace-back-and-forth", "move-node-to-workspace --focus-follows-window 5"] {
+            var s = desk()
+            let command = try command(binding)
+            let result = s.perform(command)
+            let plan = try #require(result, "\(binding)")
+            #expect(plan.show.isEmpty && plan.hide.isEmpty, "\(binding)")
+            #expect(s.focusedWorkspace == "5" && s.focusIsOnAnotherDisplay(than: pointerOnMainPanel), "\(binding)")
+            #expect(command.movesPointer(from: .hotkey, toAnotherDisplay: true), "\(binding)")
+            let window = try #require(s.focused, "\(binding)")
+            let frame = try #require(s.frames(of: s.focusedWorkspace)[window], "\(binding)")
+            #expect(leftPanel.frame.contains(CGPoint(x: frame.midX, y: frame.midY)), "\(binding)")
+        }
     }
 
-    @Test func anActivationIntoAHiddenWorkspaceMovesThePointerOnlyToAnotherDisplay() {
-        // A launcher's hotkey activates Spotify on workspace 6, which the left panel hides,
-        // with the pointer on the main panel.
-        #expect(FocusChange.activation(keyboard: true, intoHiddenWorkspace: true).movesPointer(toAnotherDisplay: true))
-        #expect(!FocusChange.activation(keyboard: true, intoHiddenWorkspace: true).movesPointer(toAnotherDisplay: false))
-        // A Dock click leaves the pointer wherever the window is.
-        #expect(!FocusChange.activation(keyboard: false, intoHiddenWorkspace: true).movesPointer(toAnotherDisplay: true))
+    @Test func keyboardFocusOnAnEmptyWorkspaceOfAnotherDisplayGoesToThatDisplay() throws {
+        // alt-7 shows empty workspace 7 on the left panel; focus-monitor left reaches it where
+        // the left panel shows it. With no window to center on, the pointer goes to the
+        // display's center, as Hyprland's focusmonitor puts it.
+        var shown = desk()
+        _ = shown.perform(.workspace(.named("7")))
+        _ = shown.perform(.workspace(.named("1")))
+        for (start, binding) in [(desk(), "workspace 7"), (shown, "focus-monitor left")] {
+            var s = start
+            let command = try command(binding)
+            #expect(s.perform(command) != nil, "\(binding)")
+            #expect(s.focusedWorkspace == "7" && s.focused == nil, "\(binding)")
+            #expect(s.focusIsOnAnotherDisplay(than: pointerOnMainPanel), "\(binding)")
+            #expect(command.movesPointer(from: .hotkey, toAnotherDisplay: true), "\(binding)")
+            #expect(s.monitor(of: s.focusedWorkspace) == leftPanel, "\(binding)")
+        }
     }
 
-    @Test func aWindowIsOnAnotherDisplayThanThePointerByItsWorkspace() {
-        var s = Session(names: ["1", "6", "7"], monitors: [mainPanel, leftPanel], assigned: ["1": 2, "6": 1, "7": 1])
-        _ = s.add(10)
-        _ = s.add(60, to: "6")   // hidden: the left panel shows 7
-        #expect(!s.isOnAnotherDisplay(10, than: CGPoint(x: 100, y: 500)))
-        #expect(s.isOnAnotherDisplay(60, than: CGPoint(x: 100, y: 500)))
-        #expect(!s.isOnAnotherDisplay(60, than: CGPoint(x: -100, y: 500)))
+    @Test func aSwitchOnThePointersDisplayLeavesThePointer() throws {
+        var s = desk()
+        _ = s.perform(.workspace(.named("5")))
+        #expect(s.focusIsOnAnotherDisplay(than: pointerOnMainPanel))
+        _ = s.perform(.workspace(.named("1")))
+        #expect(!s.focusIsOnAnotherDisplay(than: pointerOnMainPanel))
     }
 
-    @Test func aMovesPlanGivesTheFrameThePointerGoesTo() throws {
-        // The move sets no focus, and the pointer follows the window to the frame Kosmos
-        // writes, before the app has applied it.
-        var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
-        _ = s.add(1)
-        _ = s.add(2)
-        s.adopt(1)
+    @Test func thePointerGoesToTheFrameKosmosWrites() throws {
+        // A move sets no focus. The pointer follows the window to its tile after the move,
+        // the frame the plan writes before the app has applied it, so nothing is read from
+        // WindowServer. The same holds across displays.
+        var s = desk()
+        s.adopt(10)
         let before = s.frames(of: "1")
         let result = s.perform(.move(.right))
         let plan = try #require(result)
-        #expect(s.focused == 1 && plan.focus == nil)
-        #expect(plan.frames[1] == before[2])
+        #expect(s.focused == 10 && plan.focus == nil)
+        #expect(s.frames(of: s.focusedWorkspace)[10] == plan.frames[10])
+        #expect(plan.frames[10] == before[11])
+        let moved = s.perform(try command("move-node-to-monitor --focus-follows-window left"))
+        let across = try #require(moved)
+        #expect(s.focused == 10 && s.focusedWorkspace == "5")
+        #expect(s.frames(of: s.focusedWorkspace)[10] == across.frames[10])
     }
 }

@@ -45,12 +45,15 @@ import Testing
     #expect(reports.classify(.window(5), receivedAt: 11, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .reassert)
 }
 
-@Test func laterEchoDropsEarlierExpectations() {
+@Test func anEchoConsumesOnlyItsOwnExpectation() {
+    // The pointer swept across window 1 of one app into window 2 of another, and window 1's
+    // echo came from its app's observer thread after window 2's.
     var reports = FocusReports<Int>()
-    reports.focusRequested(.window(1), app: nil, at: 10)
-    reports.focusRequested(.window(2), app: nil, at: 11)
+    reports.focusRequested(.window(1), app: 7, at: 10)
+    reports.focusRequested(.window(2), app: 8, at: 11)
     #expect(reports.classify(.window(2), receivedAt: 12, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
-    #expect(reports.classify(.window(1), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
+    #expect(reports.classify(.window(1), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+    #expect(reports.classify(.window(1), receivedAt: 14, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
 }
 
 @Test func emptyWorkspaceFocusIsAnEchoAndOtherwiseIgnored() {

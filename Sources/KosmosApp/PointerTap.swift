@@ -45,7 +45,11 @@ final class PointerTap: Sendable {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
-        pointerLog.notice("focus follows mouse \(on ? "on" : "off", privacy: .public); monitor added: \(self.monitor != nil, privacy: .public)")
+        if on, monitor == nil {
+            pointerLog.error("focus follows mouse on; monitor not added")
+        } else {
+            pointerLog.notice("focus follows mouse \(on ? "on" : "off", privacy: .public); monitor added: \(self.monitor != nil, privacy: .public)")
+        }
     }
 
     /// Kosmos moved the pointer (PointerGate.warped).
