@@ -111,7 +111,7 @@ public enum Command: Equatable, Sendable {
             guard let direction = direction(rest[0]) else { return fail("\(name): unknown direction \(rest[0])") }
             return .success(name == "swap" ? .swap(direction) : .joinWith(direction))
         case "move-node-to-workspace":
-            guard let options = options(rest, movesNode: true, wraps: false), options.targets.count == 1,
+            guard let options = options(rest, movesNode: true), !options.wrap, options.targets.count == 1,
                   !options.targets[0].hasPrefix("--") else {
                 return fail("usage: move-node-to-workspace [--focus-follows-window] [--window-id <id>] <name|next|prev>")
             }
@@ -153,7 +153,7 @@ public enum Command: Equatable, Sendable {
             let movesNode = name == "move-node-to-monitor"
             let usageText = "usage: \(name) " + (movesNode ? "[--focus-follows-window] [--window-id <id>] " : "")
                 + "[--wrap-around] <left|right|up|down|next|prev|number>"
-            guard let options = options(rest, movesNode: movesNode, wraps: true), options.targets.count == 1,
+            guard let options = options(rest, movesNode: movesNode), options.targets.count == 1,
                   let target = monitor(options.targets[0]) else { return fail(usageText) }
             if options.wrap, case .number = target { return fail("\(name): --wrap-around needs a direction, next or prev") }
             return .success(movesNode
@@ -170,14 +170,20 @@ public enum Command: Equatable, Sendable {
         }
     }
 
+    private struct Options {
+        var follow = false
+        var wrap = false
+        var window: WindowID?
+        var targets: [String] = []
+    }
+
     /// Nil when `--window-id` has no id.
-    private static func options(_ words: [String], movesNode: Bool, wraps: Bool)
-        -> (follow: Bool, wrap: Bool, window: WindowID?, targets: [String])? {
-        var options: (follow: Bool, wrap: Bool, window: WindowID?, targets: [String]) = (false, false, nil, [])
+    private static func options(_ words: [String], movesNode: Bool) -> Options? {
+        var options = Options()
         var words = words[...]
         while let word = words.popFirst() {
             switch word {
-            case "--wrap-around" where wraps: options.wrap = true
+            case "--wrap-around": options.wrap = true
             case "--focus-follows-window" where movesNode: options.follow = true
             case "--window-id" where movesNode:
                 guard let id = words.popFirst().flatMap(WindowID.init) else { return nil }
