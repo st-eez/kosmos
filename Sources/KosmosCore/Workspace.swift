@@ -112,6 +112,24 @@ extension Workspace {
         check()
     }
 
+    /// Tiles a window beside `target` as Hyprland's dwindle layout drops one: the two share
+    /// the target's space equally, side by side when `orientation` is horizontal, else one
+    /// above the other, the window first when `first`. In a container of that orientation
+    /// they become siblings splitting the target's share. With no target, as on an empty
+    /// workspace, the window goes into the root.
+    mutating func insert(_ window: WindowID, beside target: WindowID?, _ orientation: Orientation, first: Bool) {
+        precondition(!contains(window), "window \(window) is already in the workspace")
+        if let target, let path = root.path(to: target) {
+            let pair = [Node(kind: .window(target), weight: 1), Node(kind: .window(window), weight: 1)]
+            root[path.dropLast()].children[path.last!].kind = .container(makeContainer(orientation, first ? pair.reversed() : pair))
+        } else {
+            root.insert(.window(window), at: root.children.count)
+        }
+        normalize()
+        edits += 1
+        check()
+    }
+
     /// Forgets a window. Call it only when the WindowServer reports the window gone.
     @discardableResult
     mutating func remove(_ window: WindowID) -> Bool {

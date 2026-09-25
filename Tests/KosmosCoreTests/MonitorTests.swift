@@ -297,6 +297,99 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     }
 }
 
+@Suite struct DragTests {
+    private let mainCenter = CGPoint(x: 960, y: 540)
+
+    @Test func aWindowDraggedInItsWorkspaceTilesBesideTheWindowUnderThePointer() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11)
+        s.adopt(11)
+        _ = s.add(12)
+        #expect(s.workspaces["1"]!.tree == "h[10 11 12]")
+        // Lifted, 10 leaves the tree and the others fill the display at once.
+        let lift = s.lift(10)!
+        #expect(s.workspaces["1"]!.tree == "h[11 12]" && lift.frames[10] == nil && lift.frames[11]!.minX == main.area.minX + 10)
+        #expect(s.lifted == [10] && s.isParked(10))
+        // Dropped in the bottom half of 12, which is taller than wide: under it, and the two
+        // share its space.
+        let tile = lift.frames[12]!
+        let plan = s.drop(at: CGPoint(x: tile.midX, y: tile.midY + 100))
+        #expect(s.workspaces["1"]!.tree == "h[11 v[12 10]]" && s.lifted.isEmpty)
+        #expect(plan.frames[10]!.minY > plan.frames[12]!.minY && plan.frames[10]!.width == tile.width)
+        #expect(plan.focus == nil && plan.show.isEmpty && plan.hide.isEmpty)
+        #expect(s.focusedWorkspace == "1" && s.focused == 10)
+        // 12 is now wider than tall: 11 dropped in its left half goes before it.
+        _ = s.lift(11)
+        let wide = s.frames(of: "1")[12]!
+        _ = s.drop(at: CGPoint(x: wide.minX + 10, y: wide.midY))
+        #expect(s.workspaces["1"]!.tree == "v[h[11 12] 10]")
+    }
+
+    @Test func aWindowDroppedOverItsOwnPlaceGoesBackBesideItsNeighbour() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11)
+        let before = s.frames(of: "1")
+        _ = s.lift(11)
+        _ = s.drop(at: CGPoint(x: before[11]!.midX, y: before[11]!.midY))
+        #expect(s.workspaces["1"]!.tree == "h[10 11]" && s.frames(of: "1") == before)
+    }
+
+    @Test func aWindowDroppedOnAnotherDisplayJoinsItsWorkspace() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5")
+        _ = s.lift(11)
+        let plan = s.drop(at: CGPoint(x: -500, y: 540))
+        // 50 fills the left panel, wider than tall: 11 dropped in its right half goes after it.
+        #expect(s.workspace(of: 11) == "5" && s.workspaces["5"]!.tree == "h[50 11]")
+        #expect(s.focusedWorkspace == "5" && s.focused == 11)
+        #expect(plan.frames[10] != nil && plan.frames[11] != nil && plan.hide.isEmpty)
+        // An empty workspace takes it whole.
+        _ = s.lift(11)
+        _ = s.drop(at: CGPoint(x: 900, y: 1500))
+        #expect(s.workspace(of: 11) == "8" && s.frames(of: "8")[11] == builtIn.area.insetBy(dx: 10, dy: 10))
+    }
+
+    @Test func aDragThatEndsOffEveryDisplayPutsTheWindowBack() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11)
+        let before = s.frames(of: "1")
+        _ = s.lift(10)
+        let plan = s.drop(at: CGPoint(x: 5000, y: 5000))
+        #expect(s.workspaces["1"]!.tree == "h[10 11]" && plan.frames == before && plan.hide.isEmpty)
+    }
+
+    @Test func aSwitchDuringTheDragLeavesTheWindowInTheUsersHand() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11)
+        _ = s.lift(11)
+        #expect(s.perform(.workspace(.named("2")))!.hide == [10])
+        // Dropped on the main panel, it joins 2; off every display, it goes back to 1 and
+        // is concealed with it.
+        _ = s.drop(at: mainCenter)
+        #expect(s.workspace(of: 11) == "2" && s.workspaces["2"]!.tree == "h[11]")
+        _ = s.lift(11)
+        _ = s.perform(.workspace(.named("3")))
+        #expect(s.drop(at: CGPoint(x: -5000, y: 0)).hide == [11] && s.workspace(of: 11) == "2")
+    }
+
+    @Test func aWindowThatLeavesOrParksDuringTheDragIsNotDropped() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11); _ = s.add(12)
+        _ = s.lift(11)
+        _ = s.remove(11)
+        _ = s.lift(12)
+        _ = s.park([12])   // minimized, or closed and kept by its app
+        #expect(s.lifted.isEmpty && s.isParked(12))
+        #expect(s.drop(at: mainCenter).isEmpty)
+        _ = s.unpark([12], follow: nil)
+        #expect(s.workspaces["1"]!.root.windows.sorted() == [10, 12])
+        // A lock or a display change during the drag puts the window back.
+        _ = s.lift(10)
+        s.reconfigure(names: names, monitors: [builtIn, main, left], assigned: home, merge: [:])
+        #expect(s.lifted.isEmpty && s.workspaces["1"]!.root.windows.sorted() == [10, 12])
+    }
+}
+
 @Suite struct StrippingTests {
     @Test func aConcealedWindowIsStrippedWhenItsAppsLatestWindowIsOnAnotherDisplay() {
         var s = desk()
@@ -585,13 +678,13 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     }
 }
 
-/// Runs random commands, focus changes, arrivals, departures and display changes on three
-/// displays, carries out each plan's reveals and conceals on a model of the screen, and
-/// checks after each step what DESIGN.md section 5.13 promises: every display shows at most
-/// one workspace, one it may show; the focused workspace is shown; every window is in the
-/// workspace it belongs to; a window is concealed exactly when its workspace is hidden,
-/// unless it is parked; and every tiled window of a shown workspace lies on that
-/// workspace's display.
+/// Runs random commands, focus changes, arrivals, departures, drags and display changes
+/// on three displays, carries out each plan's reveals and conceals on a model of the
+/// screen, and checks after each step what DESIGN.md section 5.13 promises: every display
+/// shows at most one workspace, one it may show; the focused workspace is shown; every
+/// window is in the workspace it belongs to; a window is concealed exactly when its
+/// workspace is hidden, unless it is parked or lifted; and every tiled window of a shown
+/// workspace lies on that workspace's display.
 @Test(arguments: 1...12 as ClosedRange<UInt64>)
 func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -624,7 +717,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         let target: Command.MonitorTarget = [.direction(.left), .direction(.right), .direction(.up), .direction(.down),
                                              .next, .previous, .number(Int.random(in: 1...3, using: &random))].randomElement(using: &random)!
         let wrap = Bool.random(using: &random)
-        let operation = Int.random(in: 0..<24, using: &random)
+        let operation = Int.random(in: 0..<26, using: &random)
         switch operation {
         case 0..<4:
             guard windows.count < 30 else { break }
@@ -658,6 +751,11 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             if new == nextWindow { nextWindow += 1 }
             concealed.subtract([window, new])
             carryOut(s.replace(window, with: new))
+        case 21: if let window { carryOut(s.lift(window)) }
+        case 22:
+            // The left button comes up anywhere, off every display too.
+            carryOut(s.drop(at: CGPoint(x: CGFloat.random(in: -2500...2500, using: &random), y: CGFloat.random(in: -200...2300, using: &random))))
+            #expect(s.lifted.isEmpty, "seed \(seed) step \(step)")
         default:
             // A display change or a forced profile, and the resync after it.
             let profile = profiles.randomElement(using: &random)!

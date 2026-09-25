@@ -212,15 +212,17 @@ off the main thread).
   replaces the confirmed one, and a size other than the one the window kept at a refusal
   ends that refusal, so the next layout writes the target again. A concealed window's
   frame reads as off every display and is left out.
-- A tiled window the user moves or resizes with the left button down, as such a change
-  event reports it, is settled when the button comes up, which an `NSEvent` global
-  monitor hears, as AeroSpace's GlobalObserver does. Each edge that moved more than 5 pt
-  while the opposite edge stayed moves the tile's edge as far: the nearest container
-  along it with windows beyond takes the space from them in proportion to their shares,
-  and each container in between keeps its other windows' lengths, as AeroSpace's
-  `resizeWithMouse` turns edges into weights. The resize command's limits hold. A window
-  moved whole, or with its center off its workspace's display, as when macOS shrank it to
-  fit another display on the way, goes back to its tile.
+- A tiled window the user resizes by its edges, as a change event reports it while the
+  window is key and the left button is down, keeps that size when the button comes up,
+  which an `NSEvent` global monitor hears, as AeroSpace's GlobalObserver does. Each edge
+  that moved more than 5 pt while the opposite edge stayed moves the tile's edge as far:
+  the nearest container along it with windows beyond takes the space from them in
+  proportion to their shares, and each container in between keeps its other windows'
+  lengths, as AeroSpace's `resizeWithMouse` turns edges into weights. The resize
+  command's limits hold. A resize that moved both edges of an axis, as a title bar double
+  click's zoom does, or left the window's center off its workspace's display goes back to
+  its tile. A window dragged by its title bar leaves the layout until it is dropped
+  (section 5.13).
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -831,8 +833,27 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   its own is in flight for it, the window is key and the left button is down, as
   AeroSpace's `isManipulatedWithMouse` checks. macOS moving the windows of a display that
   leaves is no drag, and the check moves them back. A reveal's Space change reads the
-  window's frame again and is no drag either. A tiled window dragged to another display
-  goes back to its tile (section 5.2).
+  window's frame again and is no drag either.
+- A tiled window the user drags by its title bar is placed where it is dropped, as
+  Hyprland's dwindle layout places it (Hyprland 0.56.2, `DwindleAlgorithm::addTarget` and
+  `DragController.cpp`; Steve checked the behavior on Omarchy).
+  - The first change event that moves a tiled window of a shown workspace without
+    resizing it, while the window is key and the left button is down, lifts the window:
+    it leaves the tree, parked where it stood, and the other windows fill its space at
+    once. Kosmos writes it no frame while macOS moves it, and a switch meanwhile leaves it
+    in the user's hand.
+  - When the button comes up, it tiles on the workspace shown on the display under the
+    pointer, beside the tiled window under the pointer, else the one whose center is
+    closest. The two sit side by side when that window is wider than it is tall
+    (`split_width_multiplier` 1), else one above the other, the dropped window first when
+    the pointer is in the left or top half, and they share its space equally
+    (`default_split_ratio` 1). Omarchy's `force_split = 2` does not apply to a drop, and
+    `precise_mouse_move` is off. On an empty workspace the window fills it.
+  - The drop's workspace takes the focus, with the window focused, and the pointer stays
+    where the user let go.
+  - Off every display, the window goes back to where it stood, as it does when a lock, a
+    wake or a display change cuts the drag short. A window minimized or closed while
+    dragged parks there.
 - A concealed window keeps its ordinary Space, as on one display, unless its app's most
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display (section
@@ -870,8 +891,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     frame when revealed there;
   - how many notifications a hotplug posts, and whether the holding Space survives one;
   - whether WindowServer reports a dragged window's moves while the left button is still
-    down, which putting a dragged tiled window back and rebinding a dragged floating
-    window need;
+    down, which lifting a dragged tiled window, keeping a resize by its edges and
+    rebinding a dragged floating window need;
   - whether macOS keeps the twin panels' left and main places across replugs without
     BetterDisplay, which decides whether a placement step stays;
   - where a concealed window lands when a display leaves and recovery then runs: every
@@ -925,7 +946,6 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 
 ## 8. Left out of the first version
 
-Scrolling and BSP layouts, tabbed and stacked title bars, swapping or moving tiles by
-dragging them with the mouse (resizing a tile by its edges is in, section 5.2), an
-embedded scripting language, window title matchers, marks, persistence across restarts,
-and one macOS Space per workspace.
+Scrolling and BSP layouts, tabbed and stacked title bars, an embedded scripting language,
+window title matchers, marks, persistence across restarts, and one macOS Space per
+workspace.

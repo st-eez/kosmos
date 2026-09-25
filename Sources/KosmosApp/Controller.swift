@@ -54,8 +54,8 @@ final class Controller {
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
-    /// Tiled windows the user moved or resized with the left button, with their frames before,
-    /// for when it comes up.
+    /// Tiled windows the user resized by their edges with the left button, with their frames
+    /// before, for when it comes up.
     private var mouseMoved: [WindowID: CGRect] = [:]
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
@@ -95,8 +95,9 @@ final class Controller {
             self?.frameChanged(id, from: old, to: frame, changed: changed)
         }
         // AppKit calls a global monitor's handler on the main thread.
-        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-            MainActor.assumeIsolated { self?.leftMouseUp() }
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            let point = event.cgEvent?.location
+            MainActor.assumeIsolated { self?.leftMouseUp(at: point) }
         }
     }
 
@@ -348,9 +349,10 @@ final class Controller {
     /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
     /// parks as a minimized window does, and returns when the app orders it in again
     /// (orderChanged). Removing it would lose its place, and the inventory would not admit
-    /// it again, since it stays managed. A deselected tab has left the session already.
+    /// it again, since it stays managed. A deselected tab has left the session already. A
+    /// window closed while the user drags it parks too, where it stood.
     private func keptOrderedOut(_ id: WindowID) {
-        guard session.workspace(of: id) != nil, !session.isParked(id) else { return }
+        guard session.workspace(of: id) != nil, !session.isParked(id) || session.lifted.contains(id) else { return }
         controllerLog.info("\(id) closed and kept by its app: parked")
         closedByApp.insert(id)
         depart([id])
@@ -418,28 +420,44 @@ final class Controller {
     }
 
     /// A tiled or floating window of a shown workspace moved or resized, not by a write of
-    /// Kosmos's in flight: the frame ledger records it. A `.changed` event with the left
-    /// button down is the user's: a tiled window waits for the button to come up
-    /// (leftMouseUp), and a floating key window may join another display's workspace
-    /// (DESIGN.md, sections 5.2 and 5.13).
+    /// Kosmos's in flight: the frame ledger records it. A `.changed` event for the key
+    /// window with the left button down is the user's, as AeroSpace's
+    /// isManipulatedWithMouse has it: a tiled window moved whole is lifted out of the layout
+    /// until the button comes up, one resized waits for it (leftMouseUp), and a floating
+    /// window may join another display's workspace (DESIGN.md, sections 5.2 and 5.13).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
-        guard changed, NSEvent.pressedMouseButtons == 1 else { return }
-        if !session.shownFloatingWindows.contains(id) {
-            if mouseMoved[id] == nil { mouseMoved[id] = old }
-        } else if key == .window(id), let plan = session.dragged(id, to: frame) {
+        guard changed, key == .window(id), NSEvent.pressedMouseButtons == 1 else { return }
+        if session.shownFloatingWindows.contains(id) {
+            guard let plan = session.dragged(id, to: frame) else { return }
             controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
             execute(plan)
+        } else if mouseMoved[id] == nil {
+            if old.size == frame.size, let plan = session.lift(id) {
+                controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
+                execute(plan)
+            } else {
+                mouseMoved[id] = old
+            }
         }
     }
 
-    /// The left button came up. Tiled windows the user resized with it by their edges keep
-    /// that size, and those moved go back to their tiles (Session.released), as AeroSpace
-    /// lays out at a left mouse up (GlobalObserver.swift).
-    private func leftMouseUp() {
-        guard managing, !sessionLocked, !mouseMoved.isEmpty else { return }
+    /// The left button came up at `point`. A lifted window tiles where it was dropped
+    /// (Session.drop), and tiled windows the user resized by their edges keep that size
+    /// (Session.released).
+    private func leftMouseUp(at point: CGPoint?) {
+        guard managing, !sessionLocked else { return }
+        if !session.lifted.isEmpty, let point = point ?? CGEvent(source: nil)?.location {
+            // Whole frame writes: the ledger holds their frames from before the drag.
+            for id in session.lifted { ledger.forget(id) }
+            let dropped = session.lifted
+            let plan = session.drop(at: point)
+            controllerLog.info("dropped \(dropped.sorted().map(String.init).joined(separator: " "), privacy: .public) at \(Int(point.x)), \(Int(point.y))")
+            execute(plan)
+        }
+        guard !mouseMoved.isEmpty else { return }
         let moved = mouseMoved
         mouseMoved = [:]
         let now = Dictionary(SkyLight.rows(Array(moved.keys)).map { ($0.id, $0.frame) }) { first, _ in first }
