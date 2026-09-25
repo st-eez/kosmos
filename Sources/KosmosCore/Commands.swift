@@ -13,7 +13,7 @@ extension Workspace {
     /// Focuses the window next to `window` in the direction and returns it, or returns nil
     /// at the edge of the workspace. Like i3's `focus`, it walks up to the nearest container
     /// that runs along the direction and has a sibling on that side, then descends into the
-    /// sibling by focus order. The floating windows `frames` has frames for count as tiles
+    /// sibling by focus order. The floating windows with a frame in `frames` count as tiles
     /// where `withFloatingTiled` puts them. `rect`, `gaps` and `minimums` are the ones
     /// `frames(in:gaps:minimums:)` gets.
     mutating func focus(_ direction: Direction, from window: WindowID, floating frames: [WindowID: CGRect],
@@ -25,9 +25,9 @@ extension Workspace {
         return target
     }
 
-    /// The workspace with each floating window that `frames` places tiled where AeroSpace's
-    /// `focus` counts it (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`), for a focus
-    /// in a direction to search. A window goes into the container of the tile under its
+    /// The workspace with each floating window that has a frame in `frames` tiled where
+    /// AeroSpace's `focus` counts it (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`),
+    /// for a focus in a direction to search. A window goes into the container of the tile under its
     /// center, just before that tile, or just after it when the center is at or past the
     /// tile's center along the container. The tile under a center is the one whose share of
     /// the tiling rectangle, with no gaps, holds it, as AeroSpace's virtual rectangles do,
