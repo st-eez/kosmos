@@ -234,12 +234,17 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - Keeping floating windows over a tile the pointer enters. Inside the front app only
     AXRaise keys a window, and for another app AXRaise follows the key record ([focus.md](focus.md)),
     so the tile comes up over any floating window it overlaps, which Hyprland keeps
-    on top. Raising the floating windows again after the raise would key one of the front
-    app's, or reorder only a background app's own windows. If it bothers in practice, the
-    path is yabai's `window_manager_focus_window_without_raise`, which AutoRaise carries
-    under FOCUS_FIRST (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a =
-    0x02 to the app's key window, 10 ms later one with 0x8a = 0x01 to the target, then the
-    private front and the key record. It would replace AXRaise on the worker, and the raise
-    after a key record, for a hover focus of a tile, the echo recorded just before, once
+    on top. Focusing or clicking a tile does the same. With SIP on, no process can set the
+    level of another app's window, and raising the floating windows again after the raise
+    would key one of the front app's, or reorder only a background app's own windows. A
+    Space shown above the desktop's keeps a floating window on top, and covers every menu
+    and all system UI too (`kosmos-probe float-layer`, on the floatprobe branch). A covered
+    floating window stays in reach of `focus` in a direction ([tree.md](tree.md)), where hover
+    cannot reach it. If it bothers in practice, the path is yabai's
+    `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
+    (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
+    key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
+    the key record. It would replace AXRaise on the worker, and the raise after a key
+    record, for a hover focus of a tile, the echo recorded just before, once
     `kosmos-probe keying` shows it keys 20 of 20 in the front app with the window order
     unchanged.

@@ -8,6 +8,40 @@
   - each window has exactly one place.
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
+- `focus` in a direction goes up the tree to the nearest container along the direction
+  with a sibling on that side, then into that sibling by focus order, as i3's does. The
+  workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
+  (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard
+  reaches a floating window a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).
+  - Each floating window stands in the container of the tile under its center, just
+    before that tile, or just after it when its center is at or past the tile's center
+    along the container. The tile under a center is the one whose share of the tiling
+    rectangle, with no gaps, holds it, as AeroSpace's virtual rectangles do, and a center
+    off that rectangle counts at its nearest point there. A floating window centered
+    between two side by side tiles therefore stands between them: from the left tile,
+    `focus right` reaches it, and again reaches the right tile. Windows at one place go in
+    the order of their centers along the container, and stacking plays no part.
+  - With no tiles, the floating windows stand in the root in the order of their centers,
+    so the arrows walk between them, as on Steve's workspace 4, which holds only floating
+    Chrome windows. AeroSpace does the same (FocusCommandTest.swift,
+    `testFocusOverFloatingWindows`).
+  - The frames are the ones the inventory last heard from WindowServer, which the
+    pointer's center uses too ([focus-follows-mouse.md](focus-follows-mouse.md)), so the command waits on no read. Only the
+    focused workspace's floating windows count, and parked windows never do: minimized,
+    hidden with their app or in native fullscreen.
+  - Into a container, Kosmos goes by each window's own focus order. AeroSpace's temporary
+    placement marks each floating window most recently focused, which its source calls a
+    bug ("floating windows break mru").
+  - Focusing a floating window raises it and centers the pointer on it as any focus does
+    ([focus.md](focus.md) and [focus-follows-mouse.md](focus-follows-mouse.md)).
+  - Hyprland's `movefocus` looks among windows of the focused window's kind first: from a
+    tile, the tiles beside it on that side, and the floating windows only when no tile is
+    there; from a floating window, the floating windows by angle and distance
+    (`CWindowQuery::inDirection` in src/desktop/state/WindowQuery.cpp, Hyprland main at
+    e368c13). From either of two side by side tiles the other tile is there, so a floating
+    window centered between them is never reached from a tile. Kosmos follows AeroSpace
+    here, where [overview.md, section 1](overview.md#1-goal-and-constraints) would follow Omarchy, because only AeroSpace's rule reaches that
+    window. Steve chose it.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
   workspace at their saved position, and Kosmos follows them to that workspace, as it does
   for Command-Tab. For an app that unhides, it follows the window the app keys if that

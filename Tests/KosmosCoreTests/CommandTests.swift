@@ -50,6 +50,57 @@ import Testing
     #expect(workspace.fullscreenWindow == nil)
 }
 
+// MARK: Focus in a direction with floating windows
+
+@Test func focusReachesFloatingWindowCenteredBetweenTiles() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [9]
+    // Centered on the gap between the tiles.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 300, y: 100, width: 400, height: 400)]
+    #expect(workspace.focus(.right, from: 1, frames: frames) == 9)
+    #expect(workspace.focusedWindow == 9)
+    #expect(workspace.focus(.right, from: 9, frames: frames) == 2)
+    #expect(workspace.focus(.left, from: 2, frames: frames) == 9)
+    #expect(workspace.focus(.left, from: 9, frames: frames) == 1)
+    #expect(workspace.focus(.up, from: 9, frames: frames) == nil)
+    #expect(workspace.tree == "h[1 2]")
+}
+
+@Test func floatingWindowsStandBesideTheTileUnderTheirCenter() {
+    let cases: [(tree: String, floating: [WindowID], frames: [WindowID: CGRect], tiled: String)] = [
+        // Off the display, past tile 2's center.
+        ("h[1 2]", [9], [9: CGRect(x: 800, y: 200, width: 400, height: 200)], "h[1 2 9]"),
+        // Covering tile 1: a center at the tile's own goes after it.
+        ("h[1 2]", [9], [9: CGRect(x: 10, y: 10, width: 485, height: 580)], "h[1 9 2]"),
+        // Overlapping, both between the tiles, 9 left of 8.
+        ("h[1 2]", [8, 9], [8: CGRect(x: 350, y: 100, width: 400, height: 400),
+                            9: CGRect(x: 250, y: 100, width: 400, height: 400)], "h[1 9 8 2]"),
+        // In tile 2, below its center: into tile 2's container.
+        ("h[1 v[2 3]]", [9], [9: CGRect(x: 650, y: 150, width: 200, height: 200)], "h[1 v[2 9 3]]"),
+        // With no tiles, first in the root, by their centers.
+        ("h[]", [1, 3, 2], [1: CGRect(x: 0, y: 0, width: 100, height: 100),
+                            2: CGRect(x: 10, y: 10, width: 100, height: 100),
+                            3: CGRect(x: 20, y: 20, width: 100, height: 100)], "h[1 2 3]"),
+        // With no frame, nowhere.
+        ("h[1 2]", [8], [:], "h[1 2]"),
+    ]
+    for (tree, floating, frames, tiled) in cases {
+        var workspace = Workspace(tree)
+        workspace.floating = floating
+        #expect(workspace.withFloatingTiled(frames, in: screen, gaps: deskGaps, minimums: [:]).tree == tiled, "\(frames)")
+    }
+}
+
+/// AeroSpace's placement marks the floating window most recently focused (docs/tree.md).
+@Test func focusDescendsByEachWindowsOwnFocusOrder() {
+    var workspace = Workspace("h[1 v[2 3]]")
+    workspace.floating = [9]
+    workspace.focus(9)
+    workspace.focus(3)
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 150, width: 200, height: 200)]
+    #expect(workspace.focus(.right, from: 1, frames: frames) == 3)
+}
+
 // MARK: Swap
 
 @Test func swapExchangesPlacesAndKeepsShares() {

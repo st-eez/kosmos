@@ -92,7 +92,7 @@ private func minimumLength(_ orientation: Orientation) -> CGFloat {
 /// The display rectangle inset by the outer gaps, with whole point edges. As in sway's
 /// `workspace_add_gaps`, the gaps on an axis shrink in proportion when they would leave
 /// less than the minimum length.
-private func tilingRect(_ rect: CGRect, _ outer: Insets) -> CGRect {
+func tilingRect(_ rect: CGRect, _ outer: Insets) -> CGRect {
     let rect = rect.standardized
     let (left, right) = fit(outer.left, outer.right, in: rect.width, keeping: minimumLength(.horizontal))
     let (top, bottom) = fit(outer.top, outer.bottom, in: rect.height, keeping: minimumLength(.vertical))

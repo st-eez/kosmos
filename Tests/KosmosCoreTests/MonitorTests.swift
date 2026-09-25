@@ -265,6 +265,24 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         #expect(s.perform(.focus(.up, boundaries: .allMonitors))?.focus == .window(10))
     }
 
+    @Test func focusAcrossMonitorsCrossesOnlyPastTheFloatingWindows() {
+        var s = desk()
+        _ = s.add(10); _ = s.add(11); _ = s.add(12, floating: true); _ = s.add(13, floating: true)
+        _ = s.add(50, to: "5"); _ = s.add(51, to: "5", floating: true)
+        _ = s.park([13])
+        let between = CGRect(x: 760, y: 300, width: 400, height: 400)
+        let frames: [WindowID: CGRect] = [12: CGRect(x: 0, y: 300, width: 400, height: 400), 13: between, 51: between]
+        // A parked window and another workspace's floating window count nowhere, whatever
+        // their frames.
+        s.adopt(10)
+        #expect(s.perform(.focus(.right, boundaries: .allMonitors), frames: frames)?.focus == .window(11))
+        s.adopt(10)
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frames: frames)?.focus == .window(12))
+        #expect(s.focusedWorkspace == "1")
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frames: frames)?.focus == .window(50))
+        #expect(s.focusedWorkspace == "5")
+    }
+
     @Test func moveAcrossMonitorsTakesTheWindowOverTheEdgeAndFollowsIt() {
         var s = desk()
         _ = s.add(11); _ = s.add(10)
