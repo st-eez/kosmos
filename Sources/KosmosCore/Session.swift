@@ -631,6 +631,16 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// Whether the pointer is where macOS resizes a window at `frame`: within 6 pt of its
+    /// left, right or bottom edge, or just above its top edge, outside the title bar. A
+    /// drag by the title bar keeps the pointer inside the frame, away from the side edges.
+    public static func onResizeBorder(_ pointer: CGPoint, of frame: CGRect) -> Bool {
+        let reach: CGFloat = 6
+        guard frame.insetBy(dx: -reach, dy: -reach).contains(pointer) else { return false }
+        return pointer.x <= frame.minX + reach || pointer.x >= frame.maxX - reach
+            || pointer.y >= frame.maxY - reach || pointer.y < frame.minY
+    }
+
     /// The left button came up at `point` with windows lifted. Each tiles on the workspace
     /// shown on the display under the pointer, as Hyprland's dwindle layout drops a window:
     /// beside the tiled window under the pointer, else the one whose center is closest,
@@ -674,10 +684,10 @@ public struct Session: Sendable {
         workspaces[name]!.unpark([window], in: monitor.area, gaps: monitor.gaps)
     }
 
-    /// The user let go of the left button after resizing tiled windows of shown workspaces
-    /// by their edges. Each goes back to its tile, as Omarchy leaves Hyprland's
-    /// `resize_on_border` off so a tile's edge resizes nothing. The plan has their
-    /// workspaces' frames (DESIGN.md, section 5.2).
+    /// The user let go of the left button after moving or resizing tiled windows of shown
+    /// workspaces without lifting them, as by their edges. Each goes back to its tile, as
+    /// Omarchy leaves Hyprland's `resize_on_border` off so a tile's edge resizes nothing. The
+    /// plan has their workspaces' frames (DESIGN.md, section 5.2).
     public func released(_ windows: Set<WindowID>) -> Plan {
         var changed: Set<String> = []
         for window in windows {

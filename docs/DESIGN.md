@@ -213,13 +213,13 @@ off the main thread).
   ends that refusal, so the next layout writes the target again. A concealed window's
   frame reads as off every display and is left out.
 - A tiled window the user resizes by its edges, as a change event reports it while the
-  window is key and the left button is down, goes back to its tile when the button comes
-  up, which an `NSEvent` global monitor hears, as AeroSpace's GlobalObserver does. Omarchy
-  leaves Hyprland's `resize_on_border` off, so a tile's edges resize nothing there, and
-  macOS gives Kosmos no way to stop such a resize. The ledger forgets the window first,
-  so it gets a whole frame write. The resize command sizes tiles, and a floating window
-  keeps the size the user gives it. A window dragged by its title bar leaves the layout
-  until it is dropped (section 5.13).
+  left button is down, goes back to its tile when the button comes up, which an `NSEvent`
+  global monitor hears, as AeroSpace's GlobalObserver does. Omarchy leaves Hyprland's
+  `resize_on_border` off, so a tile's edges resize nothing there, and macOS gives Kosmos
+  no way to stop such a resize. So does a tiled window moved while another window is
+  key, as by a Command drag, or moved less than a lift takes (section 5.13). The ledger
+  forgets the window first, so it gets a whole frame write. The resize command sizes
+  tiles, and a floating window keeps the size the user gives it.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
@@ -834,11 +834,15 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - A tiled window the user drags by its title bar is placed where it is dropped, as
   Hyprland's dwindle layout places it (Hyprland 0.56.2, `DwindleAlgorithm::addTarget` and
   `DragController.cpp`; Steve checked the behavior on Omarchy).
-  - The first change event that moves a tiled window of a shown workspace without
-    resizing it, while the window is key and the left button is down, lifts the window:
-    it leaves the tree, parked where it stood, and the other windows fill its space at
-    once. Kosmos writes it no frame while macOS moves it, and a switch meanwhile leaves it
-    in the user's hand.
+  - A change event that finds the key tiled window of a shown workspace moved whole more
+    than 10 pt from where it stood when the left button went down lifts the window: it
+    leaves the tree, parked where it stood, and the other windows fill its space at once.
+    A click that jitters the title bar moves it less. A window whose size changed during
+    the press, or with the pointer on a resize border at its first change event
+    (`Session.onResizeBorder`), is being resized and never lifts, since WindowServer can
+    apply a resize by the left or top edge as a move first. Kosmos writes the lifted
+    window no frame while macOS moves it, and a switch meanwhile leaves it in the user's
+    hand.
   - Hotkeys do nothing until the drop, as Hyprland's `DragController.cpp` calls
     `shadowKeybinds()` for a drag, and Kosmos moves the pointer for no focus change
     meanwhile. A switch mid-drag would otherwise key another workspace's window, and

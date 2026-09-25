@@ -54,9 +54,10 @@ final class Controller {
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
-    /// Tiled windows the user resized by their edges with the left button down, which go
-    /// back to their tiles when it comes up.
-    private var mouseResized: Set<WindowID> = []
+    /// Tiled windows moved or resized with the left button down and not lifted, with their
+    /// frames before the press and whether the user resizes them by their edges, which
+    /// never lifts them. They go back to their tiles when the button comes up.
+    private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -422,52 +423,59 @@ final class Controller {
     }
 
     /// A tiled or floating window of a shown workspace moved or resized, not by a write of
-    /// Kosmos's in flight: the frame ledger records it. A `.changed` event for the key
-    /// window with the left button down is the user's, as AeroSpace's
-    /// isManipulatedWithMouse has it: a tiled window moved whole is lifted out of the layout
-    /// until the button comes up, one resized goes back to its tile then (leftMouseUp), and a
-    /// floating window may join another display's workspace (DESIGN.md, sections 5.2 and
-    /// 5.13).
+    /// Kosmos's in flight: the frame ledger records it. A `.changed` event with the left
+    /// button down is the user's. The key tiled window lifts out of the layout until the
+    /// button comes up once it has moved whole more than 10 pt, so a click that jitters the
+    /// title bar does not lift it. A tiled window resized by its edges, moved less, or moved
+    /// while another is key, as by a Command drag, goes back to its tile then
+    /// (leftMouseUp). The key floating window may join another display's workspace, as
+    /// AeroSpace's isManipulatedWithMouse has it (DESIGN.md, sections 5.2 and 5.13).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
-        guard changed, key == .window(id), NSEvent.pressedMouseButtons == 1 else { return }
+        guard changed, NSEvent.pressedMouseButtons == 1 else { return }
         if session.shownFloatingWindows.contains(id) {
-            guard let plan = session.dragged(id, to: frame) else { return }
+            guard key == .window(id), let plan = session.dragged(id, to: frame) else { return }
             controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
             execute(plan)
-        } else if !mouseResized.contains(id) {
-            if old.size == frame.size, let plan = session.lift(id) {
-                controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
-                execute(plan)
-            } else {
-                mouseResized.insert(id)
-            }
+            return
+        }
+        let press = mouseMoved[id]
+        let before = press?.before ?? old
+        // WindowServer can apply a resize by the left or top edge as a move before the
+        // resize, so the pointer on a resize border at the first event marks one too.
+        let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
+        let resized = press?.resized == true || onBorder || frame.size != before.size
+        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > 10,
+           let plan = session.lift(id) {
+            mouseMoved[id] = nil
+            controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
+            execute(plan)
+        } else {
+            mouseMoved[id] = (before, resized)
         }
     }
 
     /// The left button came up at `point`. A lifted window tiles where it was dropped
-    /// (Session.drop), and tiled windows the user resized by their edges go back to their
-    /// tiles (Session.released).
+    /// (Session.drop), and the other tiled windows moved or resized with the button down go
+    /// back to their tiles (Session.released).
     private func leftMouseUp(at point: CGPoint?) {
         guard managing, !sessionLocked else { return }
+        let moved = Set(mouseMoved.keys)
+        mouseMoved = [:]
+        // Whole frame writes: the ledger holds a lifted window's frame from before the drag,
+        // and a resize can have gone on past the last frame it heard of.
+        for id in session.lifted.union(moved) { ledger.forget(id) }
         if !session.lifted.isEmpty, let point = point ?? CGEvent(source: nil)?.location {
-            // Whole frame writes: the ledger holds their frames from before the drag.
-            for id in session.lifted { ledger.forget(id) }
             let dropped = session.lifted
             let plan = session.drop(at: point)
             controllerLog.info("dropped \(dropped.sorted().map(String.init).joined(separator: " "), privacy: .public) at \(Int(point.x)), \(Int(point.y))")
             execute(plan)
         }
-        guard !mouseResized.isEmpty else { return }
-        let resized = mouseResized
-        mouseResized = []
-        // Whole frame writes: the resize can have gone on past the last frame the ledger
-        // heard of.
-        for id in resized { ledger.forget(id) }
-        controllerLog.info("left mouse up: \(resized.count) tiled windows resized by their edges go back to their tiles")
-        execute(session.released(resized))
+        guard !moved.isEmpty else { return }
+        controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
+        execute(session.released(moved))
     }
 
     private func handle(_ report: AXReport) {
