@@ -58,6 +58,13 @@ final class Controller {
     /// frames before the press and whether the user resizes them by their edges, which
     /// never lifts them. They go back to their tiles when the button comes up.
     private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
+    /// Windows written their tiles at a mouse up, dropped or sent back, until the write
+    /// reads back.
+    private var releasedWrites: Set<WindowID> = []
+    /// Windows whose write at a mouse up read back larger than the tile, as when the app
+    /// applied a live resize step after it. The tile is written once more when the app goes
+    /// quiet, and only that write can show a minimum (framesApplied).
+    private var writeAgain: Set<WindowID> = []
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -260,6 +267,8 @@ final class Controller {
         closedByApp.remove(id)
         tabs.forget(id)
         placedHidden.remove(id)
+        releasedWrites.remove(id)
+        writeAgain.remove(id)
         ledger.forget(id)
         execute(session.remove(id))
     }
@@ -434,7 +443,12 @@ final class Controller {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
-        guard changed, NSEvent.pressedMouseButtons == 1 else { return }
+        guard changed else { return }
+        guard NSEvent.pressedMouseButtons == 1 else {
+            // The app went on with the user's live resize after the write at mouse up.
+            if writeAgain.contains(id) { writeTileAgain(id) }
+            return
+        }
         if session.shownFloatingWindows.contains(id) {
             guard key == .window(id), let plan = session.dragged(id, to: frame) else { return }
             controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
@@ -463,19 +477,33 @@ final class Controller {
     private func leftMouseUp(at point: CGPoint?) {
         guard managing, !sessionLocked else { return }
         let moved = Set(mouseMoved.keys)
+        let released = session.lifted.union(moved)
+        guard !released.isEmpty else { return }
         mouseMoved = [:]
         // Whole frame writes: the ledger holds a lifted window's frame from before the drag,
         // and a resize can have gone on past the last frame it heard of.
-        for id in session.lifted.union(moved) { ledger.forget(id) }
+        for id in released { ledger.forget(id) }
         if !session.lifted.isEmpty, let point = point ?? CGEvent(source: nil)?.location {
             let dropped = session.lifted
             let plan = session.drop(at: point)
             controllerLog.info("dropped \(dropped.sorted().map(String.init).joined(separator: " "), privacy: .public) at \(Int(point.x)), \(Int(point.y))")
             execute(plan)
         }
-        guard !moved.isEmpty else { return }
-        controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
-        execute(session.released(moved))
+        if !moved.isEmpty {
+            controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
+            execute(session.released(moved))
+        }
+        releasedWrites.formUnion(released.filter(ledger.isWriting))
+    }
+
+    /// Writes the window's tile once more, after its write at a mouse up read back larger
+    /// (framesApplied): when the app's next change event arrives with the button up, or
+    /// 100 ms after the read back. A window the user holds again waits for that press's
+    /// mouse up.
+    private func writeTileAgain(_ id: WindowID) {
+        guard writeAgain.remove(id) != nil, mouseMoved[id] == nil,
+              let name = session.workspace(of: id), session.isShown(name) else { return }
+        writeFrames(session.frames(of: name))
     }
 
     private func handle(_ report: AXReport) {
@@ -530,18 +558,27 @@ final class Controller {
         case .framesApplied(let results):
             for result in results {
                 ledger.confirm(result.id, target: result.target, readBack: result.readBack)
+                let released = releasedWrites.remove(result.id) != nil
                 // A window that kept more than it was given, past the slack, refused the
                 // size: that is its minimum on that axis (DESIGN.md, section 5.2).
                 let wider = result.readBack.width > result.target.width + FrameLedger.slack
                 let taller = result.readBack.height > result.target.height + FrameLedger.slack
-                if wider || taller {
-                    controllerLog.notice("""
-                        minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
-                        kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
-                        """)
-                    execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
-                                                                 height: taller ? result.readBack.height : 0)))
+                guard wider || taller else { continue }
+                if released {
+                    // The app may have applied a live resize step, queued before the
+                    // button came up, after the write.
+                    controllerLog.info("\(result.id) kept \(Int(result.readBack.width))x\(Int(result.readBack.height)) after the mouse up; its tile is written again")
+                    ledger.forget(result.id)
+                    writeAgain.insert(result.id)
+                    after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
+                    continue
                 }
+                controllerLog.notice("""
+                    minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
+                    kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
+                    """)
+                execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
+                                                             height: taller ? result.readBack.height : 0)))
             }
         case .windowCreated, .windowDestroyed, .answering:
             break

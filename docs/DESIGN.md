@@ -220,6 +220,11 @@ off the main thread).
   key, as by a Command drag, or moved less than a lift takes (section 5.13). The ledger
   forgets the window first, so it gets a whole frame write. The resize command sizes
   tiles, and a floating window keeps the size the user gives it.
+- An app can apply a live resize step queued before the button came up after Kosmos's
+  write, and a width gets no retry. So a window sent back or dropped at a mouse up whose
+  write reads back larger records no minimum. Its ledger entry goes, and its tile is
+  written once more at its next change event with the button up, or after 100 ms; only
+  that write's read back can show a minimum.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
