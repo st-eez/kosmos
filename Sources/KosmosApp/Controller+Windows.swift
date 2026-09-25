@@ -96,13 +96,6 @@ extension Controller {
     /// A native fullscreen window is on a Space of its own, so it parks (docs/tree.md).
     private func fullscreenChanged(_ id: WindowID, _ entered: Bool, spaceChangeBegan: ContinuousClock.Instant) {
         if entered {
-            // Parked as closed and kept, as when its transition posted no Space event near its
-            // order-out: it changes reason.
-            if session.parkReason(of: id) == .closedByApp {
-                _ = session.park([id], because: .fullscreen)
-                return
-            }
-            guard !session.isParked(id) || session.lifted.contains(id) else { return }
             execute(session.park([id], because: .fullscreen))
         } else if session.parkReason(of: id) == .fullscreen {
             // macOS restores the frame it had; write the tile's frame again all the same.
