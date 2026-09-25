@@ -101,13 +101,22 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     }
 
     /// Consumes the expectation `key` answers, if any. An echo names the requested window and
-    /// arrives after the request. Earlier expectations are dropped with it; a report that
-    /// matches none leaves them all. A report from an app that is not front calls this alone:
-    /// it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
-    /// Observe).
+    /// arrives after the request. Only the matched expectation goes: each app reports on its
+    /// own threads, so an echo can come after the echo of a later request to another app, and
+    /// dropped with that one it read as the user's choice (tla/README.md, change 19). A report
+    /// from an app that is not front calls this alone: it is no key window report, but it can
+    /// still be Kosmos's echo (tla/Kosmos.tla, ObserveSplit).
+    ///
+    /// The ceiling: an expectation whose echo never comes stays until a report of its window,
+    /// which it takes for its echo, or until `forgetRequests`. That happens when an app keyed
+    /// by the key record already had the window focused, so it posts no notification, and its
+    /// activation read finds another window, as when the app keys another window itself or
+    /// Kosmos keys it again first, or when the app does not answer the read. The spec's rule
+    /// that an activation read matches its app's key record whatever window it reads, left
+    /// out, would consume it in the first two cases (DESIGN.md 5.4, Deferred).
     public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: Stamp) -> Bool {
         guard let index = echo(of: key, receivedAt: stamp) else { return false }
-        expected.removeFirst(index + 1)
+        expected.remove(at: index)
         return true
     }
 
