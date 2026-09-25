@@ -352,11 +352,17 @@ off the main thread).
   switch works while one is on screen.
 - There is no fallback to corner parking. At the first unconfirmed bridged operation:
   restore every hidden window, stop hiding, report the cause, and retry at the next switch.
-- Recovery adds each window without an ordinary Space to the current Space of the display
-  under it, or to the Space a reveal would choose, then empties each recorded Space,
-  destroys the Spaces and clears the record. It removes an added window from a recorded
-  Space only once the add landed, and keeps the record while a window is left there. Every
-  step can safely run twice.
+- Recovery acts only on the windows the record names. It adds each one without an ordinary
+  Space to the current Space of the display under it, or to the Space a reveal would
+  choose, then removes the recorded windows from each recorded Space, destroys the Spaces
+  and clears the record. It removes an added window from a recorded Space only once the add
+  landed, and keeps the record while a recorded window is left there. Every step can safely
+  run twice.
+- A window of another process in a recorded Space, as Mission Control's placeholders
+  appear to be (below), stays where it is and does not keep the record. Recovery destroys
+  the Space with it inside; the Mission Control probe destroyed its holding Space with two
+  such windows in it in both runs, and the call returned true each time. The ledger Kosmos
+  rebuilds after an incomplete recovery leaves such windows out too.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

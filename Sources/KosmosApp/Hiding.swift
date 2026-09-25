@@ -155,9 +155,9 @@ private final class HidingStore: @unchecked Sendable {
 
     var concealed: Set<UInt32> { Set(ledger.entries.keys) }
 
-    /// Loads the record on file, and the ledger for the windows its Spaces still hold, as
-    /// after an incomplete recovery. False while a Space cannot be read: nothing may be
-    /// concealed or revealed until its state is known.
+    /// Loads the record on file, and the ledger for the recorded windows its Spaces still
+    /// hold, as after an incomplete recovery. False while a Space cannot be read: nothing may
+    /// be concealed or revealed until its state is known.
     private func load() -> Bool {
         if loaded { return true }
         guard let windowServer = ProcessIdentity.windowServer() else { return false }
@@ -170,7 +170,7 @@ private final class HidingStore: @unchecked Sendable {
         }
         // A Space that no longer exists holds nothing and leaves the record.
         let read = SpaceMembers.read(onFile.spaces)
-        guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) }) else { return false }
+        guard let rebuilt = ConcealLedger.rebuilt(members: onFile.concealed(in: read.members).mapValues { Optional($0) }) else { return false }
         state = onFile
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }

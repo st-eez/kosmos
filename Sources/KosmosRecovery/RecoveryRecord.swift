@@ -76,6 +76,15 @@ public struct RecoveryRecord: Equatable, Sendable {
         self.windows = windows
     }
 
+    /// The recorded windows among `members`, the windows each recorded Space holds. Another
+    /// process can add windows of its own to a holding Space, as WindowManager.app appears
+    /// to for Mission Control's placeholders (DESIGN.md, section 5.3). Kosmos never concealed
+    /// them, so recovery and the ledger leave them out.
+    public func concealed(in members: [UInt64: [UInt32]]) -> [UInt64: [UInt32]] {
+        let recorded = Set(windows.map(\.id))
+        return members.mapValues { $0.filter(recorded.contains) }
+    }
+
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"
     static let version: UInt32 = 1
 

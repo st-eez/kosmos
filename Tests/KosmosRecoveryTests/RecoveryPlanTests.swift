@@ -49,3 +49,14 @@ import Testing
     #expect(plan.stuck == [3])
     #expect(!plan.isComplete(remainingMembers: 0, isOnNoSpace: { $0 == 3 }))
 }
+
+/// Another process can add windows of its own to a holding Space, as WindowManager.app
+/// appears to for Mission Control's placeholders. Recovery plans nothing for them, and one
+/// left in the Space does not keep the record.
+@Test func windowsTheRecordDoesNotNameAreLeftAlone() {
+    let owner = ProcessIdentity(pid: 3, start: 4)
+    let record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: owner, spaces: [9],
+                                windows: [.init(id: 1, owner: owner, originalSpace: 5)])
+    #expect(record.concealed(in: [9: [1, 7]]) == [9: [1]])
+    #expect(record.concealed(in: [9: [7]]) == [9: []])
+}
