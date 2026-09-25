@@ -214,22 +214,18 @@ off the main thread).
   restored a window that no read answered for and no creation report named while it
   stayed hidden, so before these reads it was never managed (live log, September 24,
   2026).
-- An app's window list leaves out its windows on Spaces no display shows. On 2026-09-24
-  Kosmos restarted while the main panel showed Moonlight's native fullscreen Space, and
-  the ChatGPT, Helium and Activity Monitor windows on the ordinary Space behind it, which
-  the launch sweep found, stayed unmanaged until the user left fullscreen 4 minutes later
-  and the sweep after that Space change read them. So a worker asked about windows its
-  list leaves out that sit only on Spaces no display shows searches for their elements by
-  id, as yabai does at startup. For each id from 0 up to 0x7fff it makes the element from
-  a remote token of the app's pid and the id, and asks the app for its window, until every
-  such window is found. An app numbers an element when it first gives it to an
-  Accessibility client, and the number outlasts that client. `kosmos-probe ax-search`
-  found the window of a new app at id 42 when the probe, or another process that had
-  exited since, had read it from the list, and did not find one no process had read. A
-  search that finds nothing asked 32767 ids in 0.4 to 0.8 s, 13 us each, of the probe's
-  small app, so each window is searched for once. A window no process has read, or with
-  an id past 0x7fff, waits for its Space to be shown. Found at launch, the windows join
-  the workspace shown on the display under their centers, unless a rule names another.
+- A known limit. A window on an ordinary Space that no display shows at launch, as one
+  behind a native fullscreen Space, is managed only once its Space is shown, since its
+  app's window list names only windows on shown Spaces. On 2026-09-24 Kosmos restarted at
+  23:50:33 while the main panel showed Moonlight's fullscreen Space. The launch sweep found
+  the ChatGPT, Helium and Activity Monitor windows on the ordinary Space behind it as
+  candidates, but no read returned their facts. Steve left fullscreen at 23:54:31, and the
+  sweep after that Space change managed all three within 0.6 s. yabai's search of an
+  app's elements by id, from a remote token, would admit them at launch. It finds only
+  windows some process has read from the list before, and a search that finds nothing
+  took 0.4 to 0.8 s (`kosmos-probe ax-search` at 174c067, since removed), so Kosmos leaves
+  the case to the next Space change. Launches behind a fullscreen Space often enough to
+  matter would call for it.
 
 ### 5.2 Geometry
 

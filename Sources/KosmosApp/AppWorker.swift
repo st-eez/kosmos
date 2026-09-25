@@ -1,7 +1,6 @@
 import AppKit
 import CKosmos
 import KosmosCore
-import KosmosSkyLight
 
 /// What an app's worker tells the main actor. Each report is stamped on receipt, so the
 /// main actor can order it against commands (DESIGN.md, section 5.4).
@@ -65,8 +64,6 @@ actor AppWorker {
     private var observer: AXObserver?
     private var started = false
     private var elements: [UInt32: AXUIElement] = [:]
-    /// Windows searched for by element id, found or not (`search`).
-    private var searched: Set<UInt32> = []
     /// Writes waiting for the next drain; a newer target replaces an older one.
     private var queuedWrites: [UInt32: (write: FrameWrite, target: CGRect)] = [:]
     private var drainScheduled = false
@@ -135,43 +132,12 @@ actor AppWorker {
     /// app did not answer; the caller keeps what it knew, since an unanswered read never makes
     /// a window unmanaged. Windows the app did not list when the worker started, nor report
     /// created, are looked for in its list again, once for all of them, as for an app
-    /// launched hidden once it unhides. The list leaves out windows on Spaces no display
-    /// shows, which are searched for by element id instead.
+    /// launched hidden once it unhides.
     func info(_ ids: [UInt32]) -> [UInt32: AXWindowInfo] {
-        if ids.contains(where: { elements[$0] == nil }) {
-            _ = trackWindows()
-            if started { search(Displays.onSpacesNotShown(ids.filter { elements[$0] == nil && !searched.contains($0) })) }
-        }
+        if ids.contains(where: { elements[$0] == nil }) { _ = trackWindows() }
         var infos: [UInt32: AXWindowInfo] = [:]
         for id in ids { infos[id] = info(id) }
         return infos
-    }
-
-    /// Finds the elements of windows on Spaces no display shows, as behind a native
-    /// fullscreen Space at launch, which the app's window list leaves out. As yabai does at
-    /// startup, it makes the element of each id from 0 up and asks the app for its window,
-    /// until every window is found. Each id is a call the app answers, so each window is
-    /// searched for once, unless the app stopped answering.
-    ///
-    /// Ceiling: an element id from 0x7fff up is not reached, as in yabai, so a window a
-    /// long-lived app gave a higher one waits for its Space to be shown.
-    private func search(_ ids: [UInt32]) {
-        guard !ids.isEmpty else { return }
-        let start = ContinuousClock.now
-        var missing = Set(ids)
-        var element: UInt64 = 0
-        while element < 0x7fff, !missing.isEmpty, !backoff.backedOff {
-            defer { element += 1 }
-            guard let candidate = kosmos_ax_element(pid, element), let id = windowID(candidate), missing.contains(id),
-                  (try? copy(candidate, kAXRoleAttribute)) as? String == kAXWindowRole else { continue }
-            missing.remove(id)
-            track(candidate)
-        }
-        if !backoff.backedOff { searched.formUnion(ids) }
-        log.notice("""
-            \(self.name, privacy: .public): \(ids.count) windows on Spaces not shown, found \(ids.count - missing.count) \
-            in \(element) element ids, \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)
-            """)
     }
 
     private func info(_ id: UInt32) -> AXWindowInfo? {

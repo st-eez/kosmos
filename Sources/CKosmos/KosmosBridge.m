@@ -209,16 +209,3 @@ bool kosmos_front_without_windows(pid_t pid) {
     if (!processForPID(pid, &psn)) return false;
     return _SLPSSetFrontProcessWithOptions(&psn, 0, kCPSNoWindows) == kCGErrorSuccess;
 }
-
-AXUIElementRef kosmos_ax_element(pid_t pid, uint64_t element) {
-    uint8_t token[20] = {0};
-    const uint32_t magic = 0x636f636f;
-    memcpy(token, &pid, sizeof pid);
-    memcpy(token + 8, &magic, sizeof magic);
-    memcpy(token + 12, &element, sizeof element);
-    CFDataRef data = CFDataCreate(NULL, token, sizeof token);
-    if (!data) return NULL;
-    AXUIElementRef result = _AXUIElementCreateWithRemoteToken(data);
-    CFRelease(data);
-    return result;
-}
