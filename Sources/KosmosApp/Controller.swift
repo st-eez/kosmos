@@ -455,8 +455,12 @@ final class Controller {
     /// display's workspace, as AeroSpace's isManipulatedWithMouse has it (DESIGN.md,
     /// sections 5.2 and 5.13).
     private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, receivedAt: ContinuousClock.Instant?) {
-        guard managing, !sessionLocked, !ledger.isWriting(id, at: receivedAt ?? .now), !hiding.isConcealed(id),
+        guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
+        if let receivedAt, ledger.isWriting(id, at: receivedAt) {
+            ledger.observeAfterConfirm(id, frame: frame)
+            return
+        }
         ledger.observe(id, frame: frame)
         guard let receivedAt else { return }
         guard let pressedAt, pressedAt <= receivedAt else {

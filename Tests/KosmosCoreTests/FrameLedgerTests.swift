@@ -97,3 +97,14 @@ private let t0 = ContinuousClock.now
     ledger.forget(1)
     #expect(ledger.isWriting(1, at: t0 + .milliseconds(1)))
 }
+
+@Test func theWritesChangeAppliedAfterTheConfirmRecordsALaterFrame() {
+    var ledger = FrameLedger()
+    _ = ledger.writes(for: [1: a])
+    ledger.confirm(1, target: a, readBack: a, at: t0)
+    ledger.observeAfterConfirm(1, frame: a)
+    #expect(ledger.writes(for: [1: a]).isEmpty)
+    // The row holds the app's next live resize step, whose own event finds no change.
+    ledger.observeAfterConfirm(1, frame: resized)
+    #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
+}

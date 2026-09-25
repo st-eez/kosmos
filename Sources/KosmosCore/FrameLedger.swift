@@ -79,6 +79,14 @@ public struct FrameLedger: Sendable {
         if let refusal = refused[id], refusal.kept != frame.size { refused[id] = nil }
     }
 
+    /// Records a frame read for a change that came before the last confirm, the write's own
+    /// change, when it differs from the frame confirmed. The change applies after the
+    /// confirm, and its row can hold a later change, as the app's next live resize step,
+    /// whose own event then finds the frame the same.
+    public mutating func observeAfterConfirm(_ id: UInt32, frame: CGRect) {
+        if confirmed[id] != frame { observe(id, frame: frame) }
+    }
+
     /// Whether a target sent for the window is not confirmed yet: a change of its frame now
     /// can be that write's.
     public func isWriting(_ id: UInt32) -> Bool { pending[id] != nil }

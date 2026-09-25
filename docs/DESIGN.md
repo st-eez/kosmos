@@ -262,7 +262,10 @@ off the main thread).
   write to the window the user holds the button in would lift it, and the late echo of the
   write at a mouse up would write the tile again early and record a live resize step as a
   minimum. A change that came before a write was sent counts as the write's too. The
-  pointer for the resize border check is read as the change applies.
+  write's change still records its row when it differs from the frame confirmed: the row
+  applies after the confirm and can hold the app's next step, as of a live resize, whose
+  own event then finds no difference. The pointer for the resize border check is read as
+  the change applies.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes are covered too. Reads use the same 1 s. Each app's calls run
   on its own worker, so a slow read delays only that app, and a read cut off at 50 ms would
