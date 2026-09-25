@@ -120,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard controller != nil else { return Response(exitCode: 1, stderr: "kosmos: waiting for Accessibility permission") }
             guard managing else { return Response(exitCode: 1, stderr: "kosmos: observing only while another window manager runs") }
             controller?.turnOnPrivateFocus()
-            let (applied, messages) = reloadConfig(atLaunch: false)
+            let (applied, messages) = reloadConfig(ConfigFile.load(atLaunch: false), atLaunch: false)
             return Response(exitCode: applied ? 0 : 1, stderr: messages.joined(separator: "\n"))
         case ["list-bindings"]:
             return listBindings()
@@ -218,11 +218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: apply)
     }
 
-    /// Applies the config file. With errors the running config stays; at launch there is
-    /// none, so the last good file or the defaults apply. Returns whether the file applied,
+    /// Applies the loaded config file. With errors the running config stays; at launch there
+    /// is none, so the last good file or the defaults apply. Returns whether the file applied,
     /// and every problem and warning for the CLI.
-    private func reloadConfig(atLaunch: Bool) -> (applied: Bool, messages: [String]) {
-        let loaded = ConfigFile.load(atLaunch: atLaunch)
+    private func reloadConfig(_ loaded: ConfigFile.Loaded, atLaunch: Bool) -> (applied: Bool, messages: [String]) {
         // A reload without a file changes nothing; saying the defaults apply would be false.
         if !atLaunch, !FileManager.default.fileExists(atPath: ConfigFile.url.path) {
             return (false, ["no config at \(ConfigFile.url.path); the running config is kept"])
@@ -348,7 +347,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Two tiling window managers would fight over every window.
         let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
         let managing = !otherManager || ProcessInfo.processInfo.environment["KOSMOS_MANAGE"] == "1"
-        config = ConfigFile.load(atLaunch: true).config ?? .defaults
+        let loaded = ConfigFile.load(atLaunch: true)
+        config = loaded.config ?? .defaults
         // NSScreen can list no display in the middle of a change; the main display stands in.
         let main = CGMainDisplayID()
         var displays = ConfigFile.displays()
@@ -377,7 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the
         // other window manager's.
         self.managing = managing
-        if managing { _ = reloadConfig(atLaunch: true) }
+        if managing { _ = reloadConfig(loaded, atLaunch: true) }
         inventory.startAccessibility()
         let center = NSWorkspace.shared.notificationCenter
         for (name, asleep) in [(NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false)] {
