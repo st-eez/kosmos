@@ -60,6 +60,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
 | Modifier drags | An active event tap for the left and right buttons at the annotated session location, each event decided on the tap's thread from WindowServer's hit test | `NSEvent` global monitors, which cannot keep an event from the app. A hit test of the model's frames, which knows no stacking order and would take a click on a panel over a tile |
+| Borders | A click-through window of Kosmos's own per bordered window, ordered directly above it, drawn by Core Animation from the model's frames, focus and slides | JankyBorders, a separate process drawing from WindowServer's events, which knows no workspace or slide |
 
 ## 4. Architecture
 
@@ -159,9 +160,9 @@ files each one covers.
    until their replacement lands. Timing compared against the AeroSpace fork.
 8. **Beyond AeroSpace.** Replace what needed a workaround: focus follows mouse (retiring
    AutoRaise), moving and resizing windows with a modifier and the mouse (retiring
-   BetterTouchTool's window moving), and `kosmos list-bindings` for launchers.
-9. **Later.** A native bar as a separate process, borders from Kosmos's own model,
-   persistence across restarts.
+   BetterTouchTool's window moving), `kosmos list-bindings` for launchers, and borders
+   from Kosmos's own model (retiring JankyBorders).
+9. **Later.** A native bar as a separate process, and persistence across restarts.
 
 ## 8. Left out of the first version
 

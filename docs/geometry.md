@@ -135,6 +135,8 @@
   - A new window's Space turns transparent before the window joins it, so the window
     vanishes from where its app opened it until its write lands, for 0.25 s at most, and
     then pops in.
+  - A window's border follows the frame the slide shows it at, at each display frame,
+    from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while the guardian is ready, and each Space of the pool is
     recorded before any window enters it ([hiding.md](hiding.md)). Kosmos makes 8 at
     launch and up to 16 when a relayout moves more windows than are free; the windows past

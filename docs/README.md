@@ -82,6 +82,11 @@ prefix.
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,
   `KosmosCore/Session.swift`, `KosmosCore/Commands.swift`, `KosmosApp/Controller.swift`.
+- [borders.md](borders.md): borders around windows in windows of Kosmos's own, which
+  windows get one, their shape, stacking and Spaces, how they follow frames, focus and
+  slides, and what they cost against JankyBorders.
+  Code: `KosmosCore/Borders.swift`, `KosmosApp/Borders.swift`, `KosmosApp/Controller.swift`,
+  `KosmosApp/Slides.swift`, `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`.
 
 Other docs:
 
