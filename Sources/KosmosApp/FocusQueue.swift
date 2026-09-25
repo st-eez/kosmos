@@ -105,10 +105,10 @@ final class FocusQueue: Sendable {
 
     /// Runs the worker's job for a private request and waits for it no longer than the main
     /// actor waits on a worker (DESIGN.md, section 4.2). On macOS 27 the key record alone
-    /// leaves the key window unchanged inside the app that is already frontmost, 0 times in 20,
-    /// while AXRaise keyed the right window 20 times in 20 (`kosmos-probe keying`). A slow app's job
-    /// finishes on its own, and a hung app holds only its own worker. With no worker, nothing
-    /// is raised and the queue decides.
+    /// left the key window unchanged inside the app that is already frontmost 20 times in 20,
+    /// while AXRaise keyed the right window 20 times in 20 (`kosmos-probe keying`). A slow
+    /// app's job finishes on its own, and a hung app holds only its own worker. With no
+    /// worker, nothing is raised and the queue decides.
     private static func wait(for worker: AppWorker?, _ id: UInt32, _ isCurrent: @escaping @Sendable () -> Bool,
                              _ request: KeyRequest,
                              performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
