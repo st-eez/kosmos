@@ -283,7 +283,7 @@ final class BorderTargets {
     print("hit test outside T under the ring: \(hit == b ? "B" : hit == t ? "T" : String(hit))")
 
     // Spaces as the border is ordered out and in.
-    func spaces(_ window: UInt32) -> [UInt64] { kosmos_window_spaces(window) as? [UInt64] ?? [] }
+    func spaces(_ window: UInt32) -> [UInt64] { SkyLight.spaces(of: window) ?? [] }
     print("T's Spaces \(spaces(t)); B's ordered in \(spaces(b))")
     border.window.orderOut(nil)
     wait(0.1)

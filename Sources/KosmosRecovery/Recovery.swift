@@ -63,7 +63,7 @@ public enum Recovery {
         let frames = Dictionary(SkyLight.rows(Array(named)).map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
         let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), alive: Set(frames.keys),
-                                     hasOrdinarySpace: { !spaces(of: $0).isEmpty },
+                                     isOnAnySpace: { SkyLight.spaces(of: $0).map { !$0.isEmpty } },
                                      destination: { destination(for: frames[$0], original: original[$0], in: displays) })
 
         // Adds land before any removal is sent: a window removed from its only Space lands
@@ -83,7 +83,8 @@ public enum Recovery {
         let after = SpaceMembers.read(liveSpaces, of: record)
         let remaining = after.members.values.reduce(0) { $0 + $1.count }
         let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))
-        let onNoSpace = { (window: UInt32) in alive.contains(window) && spaces(of: window).isEmpty }
+        // A window whose Spaces do not read counts as on none, which keeps the record.
+        let onNoSpace = { (window: UInt32) in alive.contains(window) && SkyLight.spaces(of: window)?.isEmpty != false }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
             let withoutSpace = plan.windows.filter(onNoSpace).count
             recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
@@ -97,7 +98,7 @@ public enum Recovery {
         for space in liveSpaces { kosmos_space_destroy(space) }
         let left = liveSpaces.filter { space in
             _ = kosmos_barrier(space)
-            return (kosmos_space_windows(space) as? [UInt32]) != nil
+            return SkyLight.windows(in: space) != nil
         }
         if !left.isEmpty { recoveryLog.error("\(left.count) Spaces still exist after their destroy; keeping them in the record") }
         if let kept = record.keptAfterRestore(left: Set(left), keepingAnimationSpaces: keeping) {
@@ -124,10 +125,6 @@ public enum Recovery {
             previous.members = current.members
         }
         return (previous.members, previous.gone)
-    }
-
-    private static func spaces(of window: UInt32) -> [UInt64] {
-        kosmos_window_spaces(window) as? [UInt64] ?? []
     }
 
     /// The current ordinary Space of the display under `frame`, else the Space a reveal would

@@ -28,8 +28,7 @@ public struct Displays {
     /// other. The queries can block during a Space transition, so call it off the main
     /// thread.
     public static func isFullscreen(_ window: UInt32) -> Bool? {
-        let spaces = Set(kosmos_window_spaces(window) as? [UInt64] ?? [])
-        guard !spaces.isEmpty else { return nil }
+        guard let spaces = SkyLight.spaces(of: window), !spaces.isEmpty else { return nil }
         // Native fullscreen Spaces are type 4, where ordinary Spaces are type 0.
         let raw = SLSCopyManagedDisplaySpaces(SkyLight.connection)?.takeRetainedValue() as? [[String: Any]] ?? []
         return raw.contains { display in
@@ -71,9 +70,10 @@ public struct Displays {
     }
 
     /// Whether the window belongs to an ordinary Space. Native fullscreen Spaces and Kosmos's
-    /// holding Space are not ordinary, whether or not the window's Space list names them.
+    /// holding Space are not ordinary, whether or not the window's Space list names them. A
+    /// window whose Spaces do not read is in none.
     public func isInOrdinarySpace(_ window: UInt32) -> Bool {
-        !ordinarySpaces.isDisjoint(with: (kosmos_window_spaces(window) as? [UInt64]) ?? [])
+        SkyLight.spaces(of: window).map { !ordinarySpaces.isDisjoint(with: $0) } ?? false
     }
 
     public func currentSpace(at point: CGPoint) -> UInt64? {

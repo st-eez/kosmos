@@ -8,7 +8,8 @@ struct RecoveryPlan: Equatable {
     /// so no window is ever on no Space. The add strips only managed Spaces, so a window in
     /// a recorded Space is in `removals` too.
     var adds: [UInt64: [UInt32]] = [:]
-    /// Windows with nowhere to go. They stay where they are and the record is kept.
+    /// Windows with nowhere to go, or whose Spaces did not read. They stay where they are and
+    /// the record is kept.
     var stuck: [UInt32] = []
 
     /// - Parameters:
@@ -18,11 +19,11 @@ struct RecoveryPlan: Equatable {
     ///   - recorded: the recorded windows. Each that `alive` names and that is on no Space is
     ///     added to one.
     ///   - alive: the windows a read of rows found.
-    ///   - hasOrdinarySpace: whether a window belongs to an ordinary Space besides the
-    ///     recorded one.
+    ///   - isOnAnySpace: whether a window belongs to a Space besides the recorded one, a native
+    ///     fullscreen one included, or nil when its Spaces do not read.
     ///   - destination: the ordinary Space a window without one should go to, if any.
     static func make(members: [UInt64: [UInt32]], recorded: [UInt32], alive: Set<UInt32>,
-                     hasOrdinarySpace: (UInt32) -> Bool, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
+                     isOnAnySpace: (UInt32) -> Bool?, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
         var plan = RecoveryPlan()
         /// Adds the window to its destination, or keeps it stuck when it has none. Returns
         /// whether it is added.
@@ -36,14 +37,22 @@ struct RecoveryPlan: Equatable {
         }
         for (space, windows) in members.sorted(by: { $0.key < $1.key }) {
             for window in windows {
-                // Without an ordinary Space or a destination, a removal would leave the
-                // window on no Space.
-                if hasOrdinarySpace(window) || place(window) { plan.removals[space, default: []].append(window) }
+                // Without another Space or a destination, a removal would leave the window on
+                // no Space.
+                switch isOnAnySpace(window) {
+                case true?: plan.removals[space, default: []].append(window)
+                case false?: if place(window) { plan.removals[space, default: []].append(window) }
+                case nil: plan.stuck.append(window)
+                }
             }
         }
         let inMembers = Set(members.values.joined())
-        for window in recorded where alive.contains(window) && !inMembers.contains(window) && !hasOrdinarySpace(window) {
-            _ = place(window)
+        for window in recorded where alive.contains(window) && !inMembers.contains(window) {
+            switch isOnAnySpace(window) {
+            case true?: break
+            case false?: _ = place(window)
+            case nil: plan.stuck.append(window)
+            }
         }
         return plan
     }

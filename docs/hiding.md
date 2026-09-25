@@ -72,9 +72,11 @@
   is gone does nothing, and left in, it would keep the record for good. Recovery adds each
   one without an ordinary Space to the current Space of the display under it, or to the
   Space a reveal would choose, then removes them from each recorded Space, destroys the
-  Spaces and clears the record. It removes an added window from a recorded Space only once the add landed,
-  and keeps the record while a concealed window is left there. Every step can safely run
-  twice.
+  Spaces and clears the record. It removes an added window from a recorded Space only once
+  the add landed, and keeps the record while a concealed window is left there. A window
+  whose Spaces do not read stays where it is and keeps the record too, since a removal
+  could leave it on no Space and an add could take it off its own. Every step can safely
+  run twice.
 - Recovery leaves in its Space a window of another process that is neither a child of a
   concealed window nor unread, such as a JankyBorders border window (below), and so does
   the ledger rebuilt after an incomplete recovery. Whether a destroy takes away a Space

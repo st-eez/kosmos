@@ -232,7 +232,7 @@ private final class HidingStore: @unchecked Sendable {
         func done() -> Bool {
             var members: [UInt64: Set<UInt32>] = [:]
             for space in touched {
-                if let list = kosmos_space_windows(space) as? [UInt32] { members[space] = Set(list) }
+                if let list = SkyLight.windows(in: space) { members[space] = Set(list) }
             }
             return batch.isDone(members: members)
         }
@@ -315,8 +315,8 @@ private final class HidingStore: @unchecked Sendable {
 
     func forgetClosed(_ window: UInt32) {
         guard load() else { return }
-        forget(ledger.departed([window], members: { kosmos_space_windows($0) as? [UInt32] },
-                               settled: { SkyLight.rows([$0]).isEmpty || !((kosmos_window_spaces($0) as? [UInt64]) ?? []).isEmpty }))
+        forget(ledger.departed([window], members: SkyLight.windows(in:),
+                               settled: { SkyLight.rows([$0]).isEmpty || SkyLight.spaces(of: $0)?.isEmpty == false }))
     }
 
     func forget(_ windows: [UInt32]) {
@@ -345,7 +345,7 @@ private final class HidingStore: @unchecked Sendable {
         let new = windows.filter { !known.contains($0) }
         for id in new {
             guard let owner = owners[id] else { return abandon(created) }
-            let original = (kosmos_window_spaces(id) as? [UInt64])?.first ?? 0
+            let original = SkyLight.spaces(of: id)?.first ?? 0
             next.windows.append(.init(id: id, owner: owner, originalSpace: original))
         }
         if !record.publish(next) {
@@ -411,6 +411,6 @@ private final class HidingStore: @unchecked Sendable {
     /// native fullscreen one included: an add to an ordinary Space would take the window out
     /// of it.
     private static func hasOrdinarySpace(_ window: UInt32) -> Bool {
-        !((kosmos_window_spaces(window) as? [UInt64]) ?? []).isEmpty
+        SkyLight.spaces(of: window)?.isEmpty == false
     }
 }

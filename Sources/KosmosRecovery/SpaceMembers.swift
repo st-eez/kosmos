@@ -1,4 +1,3 @@
-import CKosmos
 import Foundation
 import KosmosSkyLight
 
@@ -18,7 +17,7 @@ public struct SpaceMembers: Equatable, Sendable {
         for attempt in 0..<10 {
             if attempt > 0 { usleep(100_000) }
             pending = pending.filter { space in
-                guard let list = kosmos_space_windows(space) as? [UInt32] else { return true }
+                guard let list = SkyLight.windows(in: space) else { return true }
                 result.members[space] = list.sorted()
                 return false
             }

@@ -192,7 +192,7 @@ final class Slides {
     private func release(_ space: UInt64, of id: WindowID) {
         checks.async {
             _ = kosmos_barrier(space)
-            let members = kosmos_space_windows(space) as? [UInt32]
+            let members = SkyLight.windows(in: space)
             guard let members, !members.contains(id) else {
                 let why = members == nil ? "its windows did not read" : "\(id) is still in it"
                 slideLog.error("animation Space \(space) leaves the pool until recovery: \(why, privacy: .public)")

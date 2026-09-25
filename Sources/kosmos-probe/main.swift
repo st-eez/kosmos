@@ -229,7 +229,7 @@ func spawnPanel(_ command: String = "panel") -> (Process, UInt32) {
 }
 
 func inSpace(_ window: UInt32, _ space: UInt64) -> Bool {
-    let windows = kosmos_space_windows(space) as? [UInt32] ?? []
+    let windows = SkyLight.windows(in: space) ?? []
     return windows.contains(window)
 }
 
@@ -305,7 +305,7 @@ func surviveKill() -> Never {
     var record = RecoveryRecord(windowServer: ProcessIdentity.windowServer()!, manager: .current)
     let space = kosmos_holding_create()
     record.spaces = [space]
-    let original = (kosmos_window_spaces(window) as? [UInt64])?.first ?? 0
+    let original = SkyLight.spaces(of: window)?.first ?? 0
     record.windows = [.init(id: window, owner: ProcessIdentity.of(panel.processIdentifier)!, originalSpace: original)]
     file.publish(record)
 
@@ -347,17 +347,17 @@ func bar() {
     _ = NSApplication.shared   // bridged operations need an AppKit client
     let space = kosmos_holding_create()
     guard space != 0 else { print("holding Space not created"); return }
-    let before = kosmos_space_windows(space) as? [UInt32]
+    let before = SkyLight.windows(in: space)
     print("live Space \(space): members \(before.map { "\($0)" } ?? "nil (read failed)")")
     _ = kosmos_space_destroy(space)
     _ = kosmos_barrier(space)
     for delay in [0.0, 0.1, 1.0] {
         Thread.sleep(forTimeInterval: delay)
-        let after = kosmos_space_windows(space) as? [UInt32]
+        let after = SkyLight.windows(in: space)
         print("after destroy (+\(delay) s): members \(after.map { "\($0)" } ?? "nil (read failed)"), barrier \(kosmos_barrier(space))")
     }
     let never: UInt64 = 0x7fff_ffff_0000
-    print("a Space id that never existed: members \((kosmos_space_windows(never) as? [UInt32]).map { "\($0)" } ?? "nil (read failed)")")
+    print("a Space id that never existed: members \(SkyLight.windows(in: never).map { "\($0)" } ?? "nil (read failed)")")
 }
 
 @MainActor func goneSpaceRecovery() {
@@ -644,7 +644,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
         let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(tabWindows).map { ($0.id, $0) })
         if space != 0 { _ = kosmos_barrier(space) }
         let parts = zip(["A", "B"], tabWindows).map { name, id in
-            let spaces = (kosmos_window_spaces(id) as? [UInt64]) ?? []
+            let spaces = SkyLight.spaces(of: id) ?? []
             let held = space != 0 ? ", in holding \(inSpace(id, space))" : ""
             return "\(name) ordered in \(rows[id].map { "\($0.orderedIn)" } ?? "no row") frame \(rows[id].map { "\($0.frame)" } ?? "none") Spaces \(spaces)" + held
         }
@@ -685,7 +685,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     /// and whether WindowServer still reads it ordered in, as the inventory does.
     func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
         _ = kosmos_barrier(space)
-        let ordinary = (kosmos_window_spaces(window) as? [UInt64]) ?? [], held = inSpace(window, space)
+        let ordinary = SkyLight.spaces(of: window) ?? [], held = inSpace(window, space)
         let orderedIn = SkyLight.rows([window]).first.map { "\($0.orderedIn)" } ?? "no row"
         print("\(step): ordinary Spaces \(ordinary), in holding \(held), ordered in \(orderedIn)")
         return (ordinary, held)
@@ -1587,7 +1587,7 @@ nonisolated(unsafe) var eventTime = DateFormatter()
     let recorded = Set(record.windows.map(\.id)), apps = Set(record.windows.map(\.owner))
     print("record: Spaces \(record.spaces), \(record.windows.count) windows of pids \(Set(apps.map(\.pid)).sorted())")
     for space in record.spaces {
-        guard let members = kosmos_space_windows(space) as? [UInt32] else {
+        guard let members = SkyLight.windows(in: space) else {
             print("Space \(space): no list, so gone or unread")
             continue
         }
@@ -1602,7 +1602,7 @@ nonisolated(unsafe) var eventTime = DateFormatter()
             var name = [CChar](repeating: 0, count: 256)
             let app = NSRunningApplication(processIdentifier: row.pid)?.localizedName
                 ?? (proc_name(row.pid, &name, UInt32(name.count)) > 0 ? name.withUnsafeBufferPointer { String(cString: $0.baseAddress!) } : "?")
-            let spaces = (kosmos_window_spaces(id) as? [UInt64]).map { "\($0)" } ?? "unread"
+            let spaces = SkyLight.spaces(of: id).map { "\($0)" } ?? "unread"
             let ownsRecorded = ProcessIdentity.of(row.pid).map { apps.contains($0) }.map { "\($0)" } ?? "unread"
             print("  \(id): pid \(row.pid) \(app), parent \(row.parent), level \(row.level), Spaces \(spaces), "
                   + "recorded \(recorded.contains(id)), owner owns a recorded window \(ownsRecorded)")

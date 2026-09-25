@@ -97,6 +97,14 @@ public enum SkyLight {
         if result != .success { log.error("watch list of \(windows.count) windows rejected: \(result.rawValue)") }
     }
 
+    /// The Spaces the window belongs to, auxiliary Spaces such as the holding Space left out.
+    /// Nil when the read fails.
+    public static func spaces(of window: UInt32) -> [UInt64]? { kosmos_window_spaces(window) as? [UInt64] }
+
+    /// The windows in the Space. Nil when the read fails, as for a Space that no longer
+    /// exists (`kosmos-probe destroyed-space`).
+    public static func windows(in space: UInt64) -> [UInt32]? { kosmos_space_windows(space) as? [UInt32] }
+
     /// Every window on every Space of every display. It can block during a Space
     /// transition, so the inventory calls it off the main thread.
     public static func allWindowIDs() -> [UInt32] {
