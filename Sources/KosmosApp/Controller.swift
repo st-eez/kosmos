@@ -753,12 +753,14 @@ final class Controller {
         if mouseFollowsFocus { clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0) }
     }
 
-    /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
-    /// Kosmos never heard would count as on until the next click. A modifier drag ends
-    /// there too, as at a hotkey (endDrag), and the resync puts a window it lifted back
-    /// where it stood (Session.reconfigure).
+    /// Forgets the left button's presses and the tiled windows they moved, at a lock and a
+    /// resync: a press whose mouse up Kosmos never heard would count as on until the next
+    /// click. A modifier drag ends there too, as at a hotkey (endDrag), and the resync lays
+    /// out the windows the presses moved and puts a window it lifted back where it stood
+    /// (Session.reconfigure).
     func forgetPresses() {
         leftButton = LeftButton()
+        mouseMoved = [:]
         modifierDrag = nil
         dragTap?.endIfReleased()
     }
