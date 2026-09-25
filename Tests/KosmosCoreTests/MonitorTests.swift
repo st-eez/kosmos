@@ -771,13 +771,13 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
     }
 }
 
-/// Runs random commands, focus changes, arrivals, departures, drags and display changes
-/// on three displays, carries out each plan's reveals and conceals on a model of the
-/// screen, and checks after each step what docs/displays.md promises: every display
-/// shows at most one workspace, one it may show; the focused workspace is shown; every
-/// window is in the workspace it belongs to; a window is concealed exactly when its
-/// workspace is hidden, unless it is parked; every tiled window of a shown workspace lies
-/// on that workspace's display; and no plan has a frame for a floating window.
+/// Runs random commands, focus changes, arrivals, departures, reopens, minimum sizes, drags
+/// and display changes on three displays, carries out each plan's reveals and conceals on a
+/// model of the screen, and checks after each step what docs/displays.md promises: every
+/// display shows at most one workspace, one it may show; the focused workspace is shown; a
+/// window is concealed exactly when its workspace is hidden, unless it is parked; every
+/// tiled window of a shown workspace lies on that workspace's display; no plan has a frame
+/// for a floating window; and the session is sound (`Session.validate`).
 @Test(arguments: 1...12 as ClosedRange<UInt64>)
 func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -812,7 +812,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         let target: Command.MonitorTarget = [.direction(.left), .direction(.right), .direction(.up), .direction(.down),
                                              .next, .previous, .number(Int.random(in: 1...3, using: &random))].randomElement(using: &random)!
         let wrap = Bool.random(using: &random)
-        let operation = Int.random(in: 0..<26, using: &random)
+        let operation = Int.random(in: 0..<30, using: &random)
         switch operation {
         case 0..<4:
             guard windows.count < 30 else { break }
@@ -846,7 +846,15 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             concealed.subtract([window, new])
             carryOut(s.replace(window, with: new))
         case 21: if let window { carryOut(s.lift(window)) }
-        case 22:
+        case 22: if let window { carryOut(s.reopen(window, to: Bool.random(using: &random) ? name : nil, floating: wrap)) }
+        case 23, 24:
+            let size = CGSize(width: CGFloat.random(in: 0...900, using: &random), height: CGFloat.random(in: 0...700, using: &random))
+            if let window { carryOut(operation == 23 ? s.setMinimum(window, size) : s.sizeObserved(window, size)) }
+        case 25:
+            let frame = CGRect(x: CGFloat.random(in: -2500...2500, using: &random), y: CGFloat.random(in: -200...2000, using: &random),
+                               width: 400, height: 300)
+            if let window { carryOut(s.dragged(window, to: frame)) }
+        case 26:
             // The left button comes up anywhere, off every display too.
             carryOut(s.drop(at: CGPoint(x: CGFloat.random(in: -2500...2500, using: &random), y: CGFloat.random(in: -200...2300, using: &random))))
             #expect(s.lifted.isEmpty, "seed \(seed) step \(step)")
@@ -879,10 +887,6 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
                         "seed \(seed) step \(step) operation \(operation): \(window) on \(name)")
             }
         }
-        for window in 1..<nextWindow {
-            guard let name = s.workspace(of: window) else { continue }
-            #expect(s.workspaces[name]?.contains(window) == true,
-                    "seed \(seed) step \(step) operation \(operation): \(window) in no tree of \(name)")
-        }
+        #expect(s.validate().isEmpty, "seed \(seed) step \(step) operation \(operation): \(s.validate())")
     }
 }
