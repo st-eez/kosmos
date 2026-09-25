@@ -144,7 +144,9 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// Whether a report is a miss of Kosmos's own request (`Miss`). The missed request, the
     /// oldest to that app since the focus queue runs requests in order, never comes back:
     /// it leaves the expectations, so it cannot take a later report of its window for its
-    /// echo. Call it for every report, before `classify`.
+    /// echo. Call it for every report, before `classify`. A report that echoes a request is
+    /// none: the raise after a key record repeats the window the key record keyed, and an app
+    /// can report that window again after it (`kosmos-probe keying`, 6 of 40).
     ///
     /// The ceiling: the activation read of a Command-Tab repeats the window its own
     /// notification just reported, so while an older request to that app awaits its echo it
@@ -156,7 +158,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     ///   - app: the app that owns the reported window.
     ///   - repeated: the report names the key window Kosmos last heard of.
     public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: Stamp) -> Miss {
-        guard repeated, let app,
+        guard repeated, let app, echo(of: key, receivedAt: stamp) == nil,
               let index = expected.firstIndex(where: { $0.app == app && $0.key != key && $0.requested <= stamp })
         else { return .none }
         let missed = expected.remove(at: index).key

@@ -184,6 +184,19 @@ import Testing
     #expect(reports.classify(.window(1), receivedAt: 14, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(1))
 }
 
+@Test func anEchoOfTheRaiseAfterAKeyRecordIsNoMiss() {
+    var reports = FocusReports<Int>()
+    // The key record keyed window 1 of app 100, the worker raised it after, and a request for
+    // the app's window 2 followed. The app reported 1 again for the raise.
+    reports.focusRequested(.window(1), app: 100, at: 10)
+    #expect(reports.classify(.window(1), receivedAt: 11, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+    reports.focusRequested(.window(1), app: 100, at: 12)   // the raise
+    reports.focusRequested(.window(2), app: 100, at: 13)
+    #expect(reports.miss(.window(1), app: 100, repeated: true, receivedAt: 14) == .none)
+    #expect(reports.classify(.window(1), receivedAt: 14, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+    #expect(reports.classify(.window(2), receivedAt: 15, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
+}
+
 @Test func openingAConcealedWindowOfTheRequestedAppIsTheUsersChoice() {
     var reports = FocusReports<Int>()
     // `open a.pdf` fronts Preview's concealed window 3 while Kosmos's request for Preview's
