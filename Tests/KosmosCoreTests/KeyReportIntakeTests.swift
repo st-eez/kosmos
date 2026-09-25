@@ -74,20 +74,18 @@ private struct Replay {
         intake.expire(number, facts: facts, reports: &reports)
     }
 
-    mutating func admit(_ window: WindowID, atLaunch: Bool = false, at milliseconds: Int)
-        -> (focus: AdmissionFocus, waiting: KeyReportIntake.Report?) {
+    mutating func admit(_ window: WindowID, atLaunch: Bool = false, at milliseconds: Int) -> AdmissionFocus {
         intake.admit(window, shown: windows[window].map { shown.contains($0.workspace) } == true,
                      parked: parked.contains(window), atLaunch: atLaunch, locked: locked, at: ms(milliseconds))
     }
 
-    mutating func tabReplaced(_ old: WindowID, with new: WindowID, concealing: Bool) -> KeyReportIntake.Report? {
-        intake.tabReplaced(old, with: new, concealing: concealing)
-        let facts = facts
-        return intake.tabPlaced(new, facts: facts)
+    mutating func placed(_ window: WindowID) -> KeyReportIntake.Action {
+        intake.placed(window, facts: facts, reports: &reports, misses: &misses)
     }
 
-    mutating func decideWaiting(_ report: KeyReportIntake.Report?) -> KeyReportIntake.Action? {
-        report.map { intake.decideWaiting($0, facts: facts, reports: &reports, misses: &misses) }
+    mutating func tabReplaced(_ old: WindowID, with new: WindowID, concealing: Bool) -> KeyReportIntake.Action {
+        intake.tabReplaced(old, with: new, concealing: concealing)
+        return placed(new)
     }
 
     /// As the focus queue records a request just before its call. A key record also goes to
@@ -201,12 +199,11 @@ private struct Replay {
     _ = replay.heard(.window(11), from: ghostty, at: -100)
     #expect(replay.heard(.window(12), from: ghostty, at: 10) == .none)
     replay.windows[12] = ("1", ghostty)
-    let admission = replay.admit(12, at: 20)
-    #expect(admission.focus == .adopt)
-    #expect(admission.waiting == nil)
+    #expect(replay.admit(12, at: 20) == .adopt)
+    #expect(replay.placed(12) == .none)
     // At launch only the key window takes the focus.
     replay.windows[13] = ("1", ghostty)
-    #expect(replay.admit(13, atLaunch: true, at: 30).focus == .none)
+    #expect(replay.admit(13, atLaunch: true, at: 30) == .none)
 }
 
 @Test func aNewWindowItsAppKeysWithinASecondOfItsAdmissionBringsThePointer() {
@@ -214,9 +211,9 @@ private struct Replay {
     // (docs/focus-follows-mouse.md).
     var replay = Replay(windows: [11: ("1", ghostty), 12: ("1", ghostty), 13: ("1", ghostty), 14: ("1", ghostty)])
     _ = replay.heard(.window(11), from: ghostty, at: -100)
-    #expect(replay.admit(12, at: 0).focus == .awaitKey)
-    #expect(replay.admit(13, at: 0).focus == .awaitKey)
-    #expect(replay.admit(14, at: 0).focus == .awaitKey)
+    #expect(replay.admit(12, at: 0) == .awaitKey)
+    #expect(replay.admit(13, at: 0) == .awaitKey)
+    #expect(replay.admit(14, at: 0) == .awaitKey)
     #expect(replay.heard(.window(12), from: ghostty, at: 999) == .adopt(12, bringsPointer: true))
     // A native tab dragged out of its group is admitted with the drag still on.
     replay.leftButtonDown = true
@@ -236,9 +233,8 @@ private struct Replay {
     replay.closedByApp = []
     replay.concealed = [30]
     replay.windows[30] = ("4", activityMonitor)
-    let admission = replay.admit(30, at: 20)
-    #expect(admission.focus == .placedHidden)
-    #expect(replay.decideWaiting(admission.waiting) == .follow(30, bringsPointer: true))
+    #expect(replay.admit(30, at: 20) == .placedHidden)
+    #expect(replay.placed(30) == .follow(30, bringsPointer: true))
 }
 
 @Test func aReportOfAWindowParkedForAnotherReasonLeavesNoReportWaiting() {
@@ -250,9 +246,8 @@ private struct Replay {
     #expect(replay.heard(.window(31), from: preview, at: 20) == .none)
     replay.parked = [31]
     replay.closedByApp = []
-    let admission = replay.admit(30, at: 30)
-    #expect(admission.focus == .awaitKey)
-    #expect(admission.waiting == nil)
+    #expect(replay.admit(30, at: 30) == .awaitKey)
+    #expect(replay.placed(30) == .none)
 }
 
 @Test func aParkedWindowsReportOnlyConsumesItsEcho() {
@@ -275,7 +270,7 @@ private struct Replay {
     var replay = Replay(windows: [11: ("1", ghostty), 12: ("1", ghostty), 13: ("1", ghostty)])
     _ = replay.heard(.window(11), from: ghostty, at: -100)
     let bound = replay.intake.awaitNextKey(after: 11)
-    #expect(replay.admit(13, at: 0).focus == .awaitKey)
+    #expect(replay.admit(13, at: 0) == .awaitKey)
     replay.requested(.window(12), app: ghostty, at: 5)
     replay.locked = true
     #expect(replay.heard(.window(12), from: ghostty, at: 10) == .none)
@@ -296,28 +291,26 @@ private struct Replay {
     _ = replay.heard(.window(80), from: claude, at: -100)
     #expect(replay.heard(.window(70), from: chrome, at: 10) == .none)
     replay.windows[70] = ("4", chrome)
-    let admission = replay.admit(70, at: 20)
-    #expect(admission.focus == .placedHidden)
-    #expect(replay.decideWaiting(admission.waiting) == .follow(70, bringsPointer: true))
+    #expect(replay.admit(70, at: 20) == .placedHidden)
+    #expect(replay.placed(70) == .follow(70, bringsPointer: true))
     #expect(replay.log.departureReads == 0)
     // A command received after the report wins, as over a Command-Tab.
     #expect(replay.heard(.window(71), from: chrome, at: 30) == .none)
     replay.command(at: 40)
     replay.windows[71] = ("4", chrome)
-    let waiting = replay.admit(71, at: 50).waiting
-    #expect(replay.decideWaiting(waiting) == .requestFocus(retry: false))
+    #expect(replay.admit(71, at: 50) == .placedHidden)
+    #expect(replay.placed(71) == .requestFocus(retry: false))
 }
 
 @Test func aReportBeforeTheAdmissionsConcealLandsIsFollowedAndOneAfterLosesToTheIntent() {
     var replay = Replay(windows: [80: ("8", claude), 70: ("4", chrome), 71: ("4", chrome)], shown: ["1", "8"])
     _ = replay.heard(.window(80), from: claude, at: -100)
-    let admission = replay.admit(70, at: 0)
-    #expect(admission.focus == .placedHidden)
-    #expect(admission.waiting == nil)
+    #expect(replay.admit(70, at: 0) == .placedHidden)
+    #expect(replay.placed(70) == .none)
     #expect(replay.heard(.window(70), from: chrome, at: 10) == .follow(70, bringsPointer: true))
     // Once the conceal has landed Kosmos requests its intent again, and the echo that comes
     // after the report moves the key on.
-    #expect(replay.admit(71, at: 20).focus == .placedHidden)
+    #expect(replay.admit(71, at: 20) == .placedHidden)
     replay.intake.forgetPlacedHidden([71])
     replay.concealed = [71]
     replay.requested(.window(80), app: claude, at: 25)
@@ -333,14 +326,13 @@ private struct Replay {
     #expect(replay.heard(.window(12), from: ghostty, at: 10) == .none)
     replay.windows[12] = ("1", ghostty)
     replay.windows[11] = nil
-    let waiting = replay.tabReplaced(11, with: 12, concealing: false)
-    #expect(replay.decideWaiting(waiting) == .adopt(12, bringsPointer: false))
+    #expect(replay.tabReplaced(11, with: 12, concealing: false) == .adopt(12, bringsPointer: false))
     #expect(replay.log.departureReads == 0)
     // A switch the replace conceals takes the key window with it, and until its conceal
     // lands a report of the new tab is followed.
     replay.windows[21] = ("3", ghostty)
     replay.windows[12] = nil
-    #expect(replay.tabReplaced(12, with: 21, concealing: true) == nil)
+    #expect(replay.tabReplaced(12, with: 21, concealing: true) == .none)
     #expect(replay.intake.key == .window(21))
     #expect(replay.heard(.window(21), from: ghostty, at: 20) == .follow(21, bringsPointer: false))
 }
@@ -354,7 +346,7 @@ private struct Replay {
     #expect(replay.heard(.window(12), from: ghostty, at: 10) == .adopt(12, bringsPointer: false))
     #expect(replay.heard(.window(15), from: ghostty, at: 20) == .hold(1))
     #expect(replay.expire(1) == .follow(15, bringsPointer: false))
-    #expect(replay.admit(13, at: 30).focus == .awaitKey)
+    #expect(replay.admit(13, at: 30) == .awaitKey)
     #expect(replay.heard(.window(13), from: ghostty, at: 40) == .adopt(13, bringsPointer: false))
 }
 

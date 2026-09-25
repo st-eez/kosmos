@@ -178,31 +178,26 @@ public struct KeyReportIntake: Sendable {
                             facts: facts, reports: &reports, misses: &misses)
     }
 
-    /// Admits `window`, and takes the report its app keyed it by before it had a place.
-    /// `waiting` is that report when Kosmos follows it to a hidden workspace: decide it with
-    /// `decideWaiting` once the admission's plan has run, as the follow's switch reveals the
-    /// window the plan conceals.
+    /// Admits `window`. The report its app keyed it by before it had a place waits for
+    /// `placed` when Kosmos follows it to a hidden workspace, and is dropped otherwise.
     public mutating func admit(_ window: WindowID, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool,
-                               at now: ContinuousClock.Instant) -> (focus: AdmissionFocus, waiting: Report?) {
-        var report = unplaced?.key == .window(window) ? unplaced : nil
-        if report != nil { unplaced = nil }
+                               at now: ContinuousClock.Instant) -> AdmissionFocus {
         let focus = AdmissionFocus.decide(keyed: key == .window(window), shown: shown, parked: parked,
                                           atLaunch: atLaunch, locked: locked)
         switch focus {
-        case .awaitKey:
-            admittedUnkeyed[window] = now
-        case .placedHidden:
-            if report == nil {
-                placedHidden[window] = .admitted
-            } else {
-                report?.concealed = true
-                report?.admitted = true
-                return (focus, report)
-            }
-        case .adopt, .none:
-            break
+        case .awaitKey: admittedUnkeyed[window] = now
+        case .placedHidden: placedHidden[window] = .admitted
+        case .adopt, .none: break
         }
-        return (focus, nil)
+        if unplaced?.key == .window(window) {
+            if focus == .placedHidden {
+                unplaced?.concealed = true
+                unplaced?.admitted = true
+            } else {
+                unplaced = nil
+            }
+        }
+        return focus
     }
 
     /// `new` takes the deselected tab's place (docs/tree.md), before the replace's plan runs.
@@ -213,22 +208,15 @@ public struct KeyReportIntake: Sendable {
         if key == .window(old) { keyHistory.key = .window(new) }
     }
 
-    /// Once the replace's plan has run, the report of `new` that waited for its place, to
-    /// decide with `decideWaiting`. macOS can report the new tab key before it has a place:
-    /// the user's or the app's choice, whose key window before it, the deselected tab, did not
-    /// depart (docs/tree.md).
-    public mutating func tabPlaced(_ new: WindowID, facts: Facts) -> Report? {
-        guard var report = unplaced, report.key == .window(new), !facts.isParked(new) else { return nil }
+    /// Decides the report `window`'s app keyed it by before it had a place, as one whose key
+    /// window before it stayed (docs/focus.md).
+    public mutating func placed(_ window: WindowID, facts: Facts, reports: inout FocusReports,
+                                misses: inout FocusMisses) -> Action {
+        guard var report = unplaced, report.key == .window(window), !facts.isParked(window) else { return .none }
         unplaced = nil
-        placedHidden[new] = nil
-        report.concealed = facts.workspace(new).map { !facts.isShown($0) } ?? false
-        return report
-    }
-
-    /// A report that waited for its window's place, from `admit` or `tabPlaced`.
-    public mutating func decideWaiting(_ report: Report, facts: Facts, reports: inout FocusReports,
-                                       misses: inout FocusMisses) -> Action {
-        decidePlaced(report, keyLeft: .stayed, facts: facts, reports: &reports, misses: &misses)
+        placedHidden[window] = nil
+        report.concealed = report.concealed || facts.workspace(window).map { !facts.isShown($0) } ?? false
+        return decidePlaced(report, keyLeft: .stayed, facts: facts, reports: &reports, misses: &misses)
     }
 
     /// The grace of hold `number` ended. Every outcome is noted, to tell whether any report

@@ -78,15 +78,16 @@ extension Controller {
             plan.frames = session.park([id]).frames
             plan.hide.removeAll { $0 == id }
         }
-        let (focus, report) = intake.admit(id, shown: session.workspace(of: id).map(session.isShown) == true,
-                                           parked: session.isParked(id), atLaunch: atLaunch, locked: sessionLocked, at: .now)
+        let focus = intake.admit(id, shown: session.workspace(of: id).map(session.isShown) == true,
+                                 parked: session.isParked(id), atLaunch: atLaunch, locked: sessionLocked, at: .now)
         if focus == .adopt { session.adopt(id) }
         // A new window its app keyed brings the pointer on any display
         // (docs/focus-follows-mouse.md).
         let new = !atLaunch
         execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new && !UserInput.leftButtonDown,
                 floatingCheck: floats, popping: new ? id : nil)
-        if let report { decideWaiting(report) }
+        // The follow's switch reveals the window the plan conceals.
+        windowPlaced(id)
     }
 
     private func forget(_ id: WindowID, pid: pid_t) {
@@ -188,7 +189,9 @@ extension Controller {
         ledger.forget(new)
         intake.tabReplaced(old, with: new, concealing: plan.hide.contains(new))
         execute(plan)
-        if let report = intake.tabPlaced(new, facts: reportFacts) { decideWaiting(report) }
+        // macOS can report the new tab key before it has a place: the user's or the app's
+        // choice, whose key window before it, the deselected tab, did not depart (docs/tree.md).
+        windowPlaced(new)
         return true
     }
 

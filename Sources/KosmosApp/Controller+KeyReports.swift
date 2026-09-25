@@ -16,9 +16,8 @@ extension Controller {
                          facts: reportFacts, reports: &reports, misses: &misses))
     }
 
-    /// A report that waited for its window's place (KeyReportIntake.admit and tabPlaced).
-    func decideWaiting(_ report: KeyReportIntake.Report) {
-        run(intake.decideWaiting(report, facts: reportFacts, reports: &reports, misses: &misses))
+    func windowPlaced(_ id: WindowID) {
+        run(intake.placed(id, facts: reportFacts, reports: &reports, misses: &misses))
     }
 
     /// The intake holds `intake`, `reports` and `misses` while it runs these closures, so none
