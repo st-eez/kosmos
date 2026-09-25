@@ -329,7 +329,7 @@ final class Controller {
             case .takes(let old): if tabSwitched(from: old, to: id, frame: inventory.windows[id]?.frame) { return }
             case .own: break
             }
-            place(id, pid: pid, ruled: true)
+            place(id, pid: pid, ruleWorkspace: true)
         } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
             // Perhaps the selected tab closed before the next tab came in, in native
             // fullscreen too: its place waits for that tab for the pairing window.
@@ -339,18 +339,19 @@ final class Controller {
         }
     }
 
-    /// Gives a window a place of its own: on the workspace a rule names, when `ruled`, or
-    /// the shown one. Already minimized, in native fullscreen or hidden with its app, as at
+    /// Gives a window a place of its own, on the workspace a rule names when `ruleWorkspace`,
+    /// else the shown one. It floats when a rule floats its app, a tab dragged out of its
+    /// group too. Already minimized, in native fullscreen or hidden with its app, as at
     /// launch or as a tab that lost its group, it waits parked for its return, with no frame
     /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
     /// own, not when the app unhides.
-    private func place(_ id: WindowID, pid: pid_t, ruled: Bool) {
+    private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool) {
         let app = inventory.appIdentity(pid)
-        let rule = ruled ? rules.first { $0.matches(appID: app.bundleID, appName: app.name) } : nil
+        let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
         // A window there at launch joins the workspace of the display under it; a later one
         // joins the focused workspace, as in AeroSpace (DESIGN.md, section 5.13).
         let center = inventory.wasThereAtLaunch(id) ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
-        var plan = session.add(id, to: rule?.workspace, at: center, floating: rule?.float == true)
+        var plan = session.add(id, to: ruleWorkspace ? rule?.workspace : nil, at: center, floating: rule?.float == true)
         if rule?.float == true, let frame = inventory.windows[id]?.frame {
             controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
         }
@@ -415,7 +416,7 @@ final class Controller {
             if controller.closedByApp.remove(id) != nil {
                 controller.returned([id], follow: id, at: at)
             } else if controller.tabs.detached(id), let pid = controller.owner[id] {
-                controller.place(id, pid: pid, ruled: false)
+                controller.place(id, pid: pid, ruleWorkspace: false)
             }
         }
     }

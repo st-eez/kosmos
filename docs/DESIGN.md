@@ -881,7 +881,8 @@ off the main thread).
     out, in native fullscreen too. Closing the group's last tab is a close.
   - A window ordered in with no tab leaving is back after the pairing window if it is
     still ordered in. A hidden member dragged out of its group takes a place of its own,
-    parked at once when it is minimized, in native fullscreen or hidden with its app.
+    parked at once when it is minimized, in native fullscreen or hidden with its app. It
+    floats when a rule floats its app, and the workspace a rule names does not apply to it.
     A window its app had closed and kept returns to its place, and Kosmos follows it, so
     a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
     windows that way, and selecting one's tab brings it to the group's place.
