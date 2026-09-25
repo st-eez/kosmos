@@ -21,6 +21,11 @@ mouse-follows-focus = true
 # AutoRaise's ignoreApps did.
 focus-follows-mouse = true
 focus-follows-mouse-ignore-apps = ['Google Chrome for Testing']
+# Hold Option to drag a window, as Omarchy's Super drags: the left button moves it, and a
+# tiled window drops beside the window under the pointer; the right button resizes it from
+# the edges nearest where it was grabbed. The app under the pointer gets none of it. Name
+# the modifiers as bindings do, joined by '-', or 'off'. Alt is the default.
+mouse-modifier = 'alt'
 
 # Workspace names, in order. A profile may replace the list.
 workspaces = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']

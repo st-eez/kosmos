@@ -153,37 +153,32 @@ extension Workspace {
     }
 
     /// Moves the window's edge on the `direction` side by `amount` points, outward when
-    /// positive, as a resize by that edge with the mouse does in AeroSpace
-    /// (resizeWithMouse.swift). The nearest container along the direction with children
-    /// beyond the window's branch on that side gives the branch the space, taking it from
-    /// those children in proportion to their shares, so the other edge stays. Each
-    /// container along the direction between that one and the window gives the space to
-    /// the window's branch alone, and its other children keep their lengths. It stops at
-    /// the limits `resize` keeps. False when no container has children beyond the window,
-    /// as at the workspace's edge, or when nothing could change.
+    /// positive, as a modifier drag with the right button does (DESIGN.md, section 5.14).
+    /// The neighbour `focus` finds in the direction (`neighbor(of:)`), the node next to the
+    /// window's branch in the nearest container along the direction, gives the branch the
+    /// space alone, as i3's resize with the mouse moves only the border between two
+    /// neighbours (resize_find_tiling_participants) and Hyprland's dwindle splits hold two
+    /// nodes each. Every other edge stays. Each container along the direction between that
+    /// one and the window gives the space to the window's branch alone, and its other
+    /// children keep their lengths. It stops at the limits `resize` keeps. False with no
+    /// neighbour, as at the workspace's edge, or when nothing could change.
     @discardableResult
     mutating func moveEdge(_ window: WindowID, _ direction: Direction, by amount: CGFloat, in rect: CGRect, gaps: Gaps,
                            minimums: [WindowID: CGSize]) -> Bool {
-        guard let path = root.path(to: window) else { return false }
-        let levels = (0..<path.count).filter { root[path.prefix($0)].orientation == direction.orientation }
-        guard let depth = levels.last(where: { level in
-            direction.isForward ? path[level] < root[path.prefix(level)].children.count - 1 : path[level] > 0
-        }) else { return false }
-        let inner = levels.filter { $0 > depth }
+        guard let path = root.path(to: window), let beyond = neighbor(of: window, direction) else { return false }
+        let depth = beyond.count - 1
+        let inner = (depth + 1 ..< path.count).filter { root[path.prefix($0)].orientation == direction.orientation }
         let usable = Dictionary(uniqueKeysWithValues: ([depth] + inner).map { ($0, usableLength(of: path.prefix($0), in: rect, gaps: gaps)) })
         guard usable[depth]! > 0 else { return false }
         let before = root
         return change(by: amount, along: direction.orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
-            let parent = path.prefix(depth), index = path[depth]
+            let parent = path.prefix(depth), index = path[depth], neighbour = beyond[depth]
             let children = before[parent].children
-            let beyond = direction.isForward ? Array(index + 1 ..< children.count) : Array(0 ..< index)
             let share = points / usable[depth]!
-            let held = beyond.reduce(0) { $0 + children[$1].weight }
-            let new = children[index].weight + share
-            let scale = (held - share) / held
-            guard new > 0, scale > 0 else { return false }
+            let new = children[index].weight + share, left = children[neighbour].weight - share
+            guard new > 0, left > 0 else { return false }
             workspace.root[parent].children[index].weight = new
-            for sibling in beyond { workspace.root[parent].children[sibling].weight = children[sibling].weight * scale }
+            workspace.root[parent].children[neighbour].weight = left
             for level in inner {
                 let parent = path.prefix(level), index = path[level]
                 let children = before[parent].children
@@ -263,7 +258,7 @@ extension Workspace {
     /// The path of the node `focus` reaches in the direction: the sibling on that side of
     /// the window, or of its nearest ancestor, in the nearest container along the direction
     /// (i3's `get_tree_next`, AeroSpace's `closestParent(hasChildrenInDirection:)`).
-    private func neighbor(of window: WindowID, _ direction: Direction) -> [Int]? {
+    func neighbor(of window: WindowID, _ direction: Direction) -> [Int]? {
         guard var path = root.path(to: window) else { return nil }
         while let index = path.popLast() {
             let container = root[path[...]], sibling = index + direction.step

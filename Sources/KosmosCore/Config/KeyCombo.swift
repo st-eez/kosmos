@@ -27,15 +27,7 @@ public struct KeyCombo: Hashable, Sendable {
         guard !parts.contains("") else {
             throw KeyComboError("expected modifiers and a key joined by '-', such as alt-shift-h")
         }
-        modifiers = []
-        for part in parts.dropLast() {
-            guard let modifier = modifierNames[part] else {
-                throw KeyComboError("'\(part)' is not a modifier; use cmd, ctrl, alt or shift"
-                    + suggestion(for: part, from: modifierNames.keys))
-            }
-            guard !modifiers.contains(modifier) else { throw KeyComboError("'\(part)' appears twice") }
-            modifiers.insert(modifier)
-        }
+        modifiers = try Modifiers(names: parts.dropLast())
         let name = parts[parts.count - 1]
         if let character = characterKeys[name] {
             key = .character(character)
@@ -59,6 +51,27 @@ public struct KeyCombo: Hashable, Sendable {
         case .code(let code): code
         }
         return PhysicalKey(code: code, modifiers: modifiers)
+    }
+}
+
+extension KeyCombo.Modifiers {
+    /// Modifiers joined by '-', such as `ctrl-alt`, named as in bindings.
+    init(_ text: String) throws(KeyComboError) {
+        let parts = text.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard !parts.contains("") else { throw KeyComboError("expected modifiers joined by '-', such as ctrl-alt") }
+        try self.init(names: parts[...])
+    }
+
+    init(names: ArraySlice<String>) throws(KeyComboError) {
+        self = []
+        for name in names {
+            guard let modifier = modifierNames[name] else {
+                throw KeyComboError("'\(name)' is not a modifier; use cmd, ctrl, alt or shift"
+                    + suggestion(for: name, from: modifierNames.keys))
+            }
+            guard !contains(modifier) else { throw KeyComboError("'\(name)' appears twice") }
+            insert(modifier)
+        }
     }
 }
 

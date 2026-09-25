@@ -6,6 +6,9 @@ public struct Config: Equatable, Sendable {
     /// Move the mouse pointer to the focus the keyboard moved (Command.movesPointer).
     public var mouseFollowsFocus = false
     public var focusFollowsMouse = FocusFollowsMouse()
+    /// The modifiers that start a modifier drag, or nil when modifier drags are off
+    /// (DESIGN.md, section 5.14).
+    public var mouseModifier: KeyCombo.Modifiers? = .alt
     public var workspaces: [String] = []
     /// Display matchers by the name the rest of the config uses for them.
     public var monitors: [String: MonitorMatch] = [:]

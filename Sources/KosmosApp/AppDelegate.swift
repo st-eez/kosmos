@@ -241,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !atLaunch { applyDisplays() }
         controller.mouseFollowsFocus = config.mouseFollowsFocus
         controller.focusFollowsMouse = config.focusFollowsMouse
+        controller.mouseModifier = config.mouseModifier
         var messages = loaded.errors + loaded.warnings
         let hotkeys = self.hotkeys ?? Hotkeys(layoutProblems: { [weak self] in self?.showHotkeyProblems($0) }) { [weak self] binding in
             self?.controller?.endDrag()
