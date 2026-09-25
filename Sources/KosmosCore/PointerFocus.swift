@@ -153,13 +153,13 @@ public enum CommandSource: Sendable {
 extension Command {
     /// Whether mouse-follows-focus brings the pointer to the focus after this command, unless
     /// it is there already. `toAnotherDisplay`: the focus is on another display than the
-    /// pointer (docs/focus-follows-mouse.md).
-    public func movesPointer(from source: CommandSource, toAnotherDisplay: Bool) -> Bool {
+    /// pointer, read only for a workspace command (docs/focus-follows-mouse.md).
+    public func movesPointer(from source: CommandSource, toAnotherDisplay: @autoclosure () -> Bool) -> Bool {
         guard source == .hotkey else { return false }
         switch self {
         case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
-        case .workspace, .workspaceBackAndForth: return toAnotherDisplay
-        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay
+        case .workspace, .workspaceBackAndForth: return toAnotherDisplay()
+        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay()
         default: return false
         }
     }
