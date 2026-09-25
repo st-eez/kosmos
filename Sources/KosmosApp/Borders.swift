@@ -82,11 +82,11 @@ final class Borders {
     }
 
     /// A border joins its display's current Space, maybe another app's fullscreen one, so it
-    /// moves to its target's ordinary Space, never the holding or a slide's (docs/borders.md).
+    /// moves to its target's ordinary Space on its own display, or stays (docs/borders.md).
     private func pin(_ window: BorderWindow, to target: WindowID) {
-        let border = UInt32(window.windowNumber)
+        let border = UInt32(window.windowNumber), display = window.display
         spaces.async {
-            let ordinary = Displays.current().ordinarySpaces
+            let ordinary = Displays.current().ordinarySpaces(on: display)
             let targetSpaces = (SkyLight.spaces(of: target) ?? []).filter(ordinary.contains)
             let borderSpaces = SkyLight.spaces(of: border) ?? []
             guard let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) else { return }
