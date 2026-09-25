@@ -374,7 +374,7 @@ final class Controller {
         tabs.forget(id)
         placedHidden.remove(id)
         ledger.forget(id)
-        hiding.forgetHistory(of: id)
+        hiding.forgetClosed(id)
         execute(session.remove(id))
     }
 

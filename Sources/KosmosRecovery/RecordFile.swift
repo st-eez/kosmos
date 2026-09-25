@@ -28,8 +28,17 @@ public final class RecordFile {
     deinit { munmap(memory, 2 * Self.slotSize) }
 
     /// The newest valid record, or nil when there is none.
-    public func read() -> RecoveryRecord? {
-        let slots = (0..<2).compactMap { slot(at: $0) }
+    public func read() -> RecoveryRecord? { Self.newest(in: memory) }
+
+    /// The newest valid record in the file at `url`, read without opening it for writing, as
+    /// `kosmos-probe holding` reads a running Kosmos's record. Nil when there is none.
+    public static func peek(_ url: URL) -> RecoveryRecord? {
+        guard let data = try? Data(contentsOf: url), data.count == 2 * slotSize else { return nil }
+        return data.withUnsafeBytes { newest(in: $0.baseAddress!) }
+    }
+
+    private static func newest(in memory: UnsafeRawPointer) -> RecoveryRecord? {
+        let slots = (0..<2).compactMap { slot(in: memory, at: $0) }
         guard let newest = slots.max(by: { $0.generation < $1.generation }) else { return nil }
         return RecoveryRecord(decoding: newest.payload)
     }
@@ -38,7 +47,7 @@ public final class RecordFile {
     @discardableResult
     public func publish(_ record: RecoveryRecord) -> Bool {
         guard let payload = record.encoded(), payload.count <= Self.capacity else { return false }
-        let current = (0..<2).compactMap { index in slot(at: index).map { (index, $0.generation) } }
+        let current = (0..<2).compactMap { index in Self.slot(in: memory, at: index).map { (index, $0.generation) } }
         let newest = current.max { $0.1 < $1.1 }
         let target = newest.map { 1 - $0.0 } ?? 0
         let generation = (newest?.1 ?? 0) + 1
@@ -61,14 +70,14 @@ public final class RecordFile {
         memset(memory, 0, 2 * Self.slotSize)
     }
 
-    private func slot(at index: Int) -> (generation: UInt64, payload: [UInt8])? {
-        let base = memory + index * Self.slotSize
+    private static func slot(in memory: UnsafeRawPointer, at index: Int) -> (generation: UInt64, payload: [UInt8])? {
+        let base = memory + index * slotSize
         let generation = UInt64(littleEndian: base.loadUnaligned(as: UInt64.self))
         let storedCRC = UInt32(littleEndian: base.loadUnaligned(fromByteOffset: 8, as: UInt32.self))
         let rawLength = base.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
         let length = Int(UInt32(littleEndian: rawLength))
-        guard generation != 0, length <= Self.capacity else { return nil }
-        let payload = [UInt8](UnsafeRawBufferPointer(start: base + Self.headerSize, count: length))
+        guard generation != 0, length <= capacity else { return nil }
+        let payload = [UInt8](UnsafeRawBufferPointer(start: base + headerSize, count: length))
         var crc = CRC32()
         withUnsafeBytes(of: rawLength) { crc.update($0) }
         crc.update(payload)

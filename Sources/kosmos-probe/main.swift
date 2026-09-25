@@ -109,11 +109,13 @@
 //                                   default. Every window is watched on the probe's own
 //                                   connection. Passive: it opens no window and takes no
 //                                   focus, so it runs beside Kosmos while switches are timed.
-//   kosmos-probe mission-control [none|on-enter|always] [seconds]
-//                                   Can concealed windows be kept out of Mission Control by
-//                                   stripping their ordinary Space only while it is open?
-//                                   Prints the Exposé notifications and when each
-//                                   strip and restore landed (MissionControl.swift).
+//   kosmos-probe mission-control [seconds]
+//                                   Which Mission Control signals arrive (MissionControl.swift).
+//   kosmos-probe holding            Who owns each window in a running Kosmos's holding Spaces:
+//                                   reads its recovery record and prints each member with its
+//                                   owner, parent, level and Spaces, whether the record names
+//                                   it and whether its owner owns a recorded window. Read only:
+//                                   it changes no Space or window, opens none and takes no focus.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -148,9 +150,10 @@ case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3
 case "level": levels()
 case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
 case "key-holder": keyHolder(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
-case "mission-control": missionControl(Array(arguments.dropFirst()))
+case "holding": holding()
+case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [none|on-enter|always]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding")
     exit(2)
 }
 
@@ -880,10 +883,8 @@ func axTimeout() {
 /// opens the window an empty workspace would key (InvisibleWindow) and prints its id, and
 /// "key-self <id>" keys a window of the app's own by the private path from this background
 /// thread, as Kosmos's focus queue would, and prints what the call returned. It exits when
-/// its standard input closes, and ignores Ctrl-C, so a parent that
-/// handles Ctrl-C can still act on its windows before it quits.
+/// its standard input closes.
 @MainActor func keyStub(_ name: String, _ offsets: [String]) -> Never {
-    signal(SIGINT, SIG_IGN)
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -1555,4 +1556,34 @@ nonisolated(unsafe) var eventTime = DateFormatter()
                      sorted[sorted.count / 2] * 1000, sorted.last! * 1000, sorted.count))
     }
     exit(0)
+}
+
+/// Reads the record without opening it for writing, and the Spaces and windows with direct
+/// reads only, so it runs beside a live session.
+@MainActor func holding() {
+    guard let record = RecordFile.peek(KosmosFiles.record) else { return print("no recovery record") }
+    let recorded = Set(record.windows.map(\.id)), apps = Set(record.windows.map(\.owner))
+    print("record: Spaces \(record.spaces), \(record.windows.count) windows of pids \(Set(apps.map(\.pid)).sorted())")
+    for space in record.spaces {
+        guard let members = kosmos_space_windows(space) as? [UInt32] else {
+            print("Space \(space): no list, so gone or unread")
+            continue
+        }
+        print("Space \(space): \(members.count) members")
+        let rows = Dictionary(SkyLight.rows(members).map { ($0.id, $0) }) { first, _ in first }
+        for id in members.sorted() {
+            guard let row = rows[id] else {
+                print("  \(id): no row, recorded \(recorded.contains(id))")
+                continue
+            }
+            // A command line tool, as borders, has no NSRunningApplication.
+            var name = [CChar](repeating: 0, count: 256)
+            let app = NSRunningApplication(processIdentifier: row.pid)?.localizedName
+                ?? (proc_name(row.pid, &name, UInt32(name.count)) > 0 ? name.withUnsafeBufferPointer { String(cString: $0.baseAddress!) } : "?")
+            let spaces = (kosmos_window_spaces(id) as? [UInt64]).map { "\($0)" } ?? "unread"
+            let ownsRecorded = ProcessIdentity.of(row.pid).map { apps.contains($0) }.map { "\($0)" } ?? "unread"
+            print("  \(id): pid \(row.pid) \(app), parent \(row.parent), level \(row.level), Spaces \(spaces), "
+                  + "recorded \(recorded.contains(id)), owner owns a recorded window \(ownsRecorded)")
+        }
+    }
 }

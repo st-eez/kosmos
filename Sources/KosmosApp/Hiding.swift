@@ -60,9 +60,20 @@ final class Hiding {
         store.history.withLock { $0.wasConcealed(window, at: stamp, now: concealed.contains(window)) }
     }
 
-    /// A window that left for good has no history to keep.
-    func forgetHistory(of window: UInt32) {
+    /// Forgets a window that closed: its history at once, and on the bridge queue its entries
+    /// in the ledger and the record, once its concealing Space no longer lists it, or for a
+    /// window the ledger does not hold, once its row is gone or it has a Space. Kept, the
+    /// record would fill with closed windows and every conceal would stop. A window still
+    /// listed stays recorded, as one that only stopped being managed or that a failed read
+    /// took for closed, so recovery restores it.
+    func forgetClosed(_ window: UInt32) {
         store.history.withLock { $0.forget(window) }
+        let store = self.store
+        bridge.async {
+            store.forgetClosed(window)
+            let concealed = store.concealed
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.concealed = concealed } }
+        }
     }
 
     /// Reveals `show`, then conceals `hide`, then confirms both, on the bridge queue.
@@ -155,9 +166,9 @@ private final class HidingStore: @unchecked Sendable {
 
     var concealed: Set<UInt32> { Set(ledger.entries.keys) }
 
-    /// Loads the record on file, and the ledger for the windows its Spaces still hold, as
-    /// after an incomplete recovery. False while a Space cannot be read: nothing may be
-    /// concealed or revealed until its state is known.
+    /// Loads the record on file, and the ledger for the concealed windows its Spaces still
+    /// hold, as after an incomplete recovery. False while a Space cannot be read: nothing may
+    /// be concealed or revealed until its state is known.
     private func load() -> Bool {
         if loaded { return true }
         guard let windowServer = ProcessIdentity.windowServer() else { return false }
@@ -169,13 +180,14 @@ private final class HidingStore: @unchecked Sendable {
             return true
         }
         // A Space that no longer exists holds nothing and leaves the record.
-        let read = SpaceMembers.read(onFile.spaces)
+        let read = SpaceMembers.read(onFile.spaces, of: onFile)
         guard let rebuilt = ConcealLedger.rebuilt(members: read.members.mapValues { Optional($0) }) else { return false }
         state = onFile
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }
-        // The newest recorded Space is used again rather than adding one per attempt.
-        space = onFile.spaces.last ?? 0
+        // The newest recorded Space is used again rather than adding one per attempt, unless
+        // it may have been sent a destroy.
+        space = onFile.reusableSpace(members: read.members) ?? 0
         ledger = rebuilt
         loaded = true
         return true
@@ -264,6 +276,12 @@ private final class HidingStore: @unchecked Sendable {
         return (batch, .now)
     }
 
+    func forgetClosed(_ window: UInt32) {
+        guard load() else { return }
+        forget(ledger.departed([window], members: { kosmos_space_windows($0) as? [UInt32] },
+                               settled: { SkyLight.rows([$0]).isEmpty || !((kosmos_window_spaces($0) as? [UInt64]) ?? []).isEmpty }))
+    }
+
     func forget(_ windows: [UInt32]) {
         guard load() else { return }
         ledger.forget(windows)
@@ -295,13 +313,18 @@ private final class HidingStore: @unchecked Sendable {
             next.windows.append(.init(id: id, owner: owner, originalSpace: original))
         }
         if !record.publish(next) {
-            // The slot is full: drop records of windows that no longer exist.
+            // The slot is full: drop records of windows that no longer exist, keeping the
+            // concealed ones and this batch's.
             let alive = Set(SkyLight.rows(next.windows.map(\.id)).map(\.id))
-            next.windows.removeAll { !alive.contains($0.id) }
-            guard record.publish(next) else {
+            guard let pruned = next.pruned(alive: alive, keeping: Set(ledger.entries.keys).union(windows), seen: new) else {
+                hidingLog.error("the recorded windows could not be read; not concealing")
+                return abandon(created)
+            }
+            guard record.publish(pruned) else {
                 hidingLog.error("the recovery record is full; not concealing")
                 return abandon(created)
             }
+            next = pruned
         }
         state = next
         if created != 0 { space = created }
