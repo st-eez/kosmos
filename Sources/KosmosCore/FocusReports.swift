@@ -46,6 +46,41 @@ public enum Miss: Equatable, Sendable {
     case accept
 }
 
+/// What admitting a window does with the focus (DESIGN.md, sections 5.4 and 5.13). A window
+/// its app keyed before Kosmos gave it a place, as a launching app keys its first window, is
+/// the user's choice: it becomes the focus of a shown workspace, and Kosmos follows it to a
+/// hidden one a rule named, as Hyprland does for a `workspace` window rule without `silent`.
+public enum AdmissionFocus: Equatable, Sendable {
+    case none
+    /// The window was key before it had a place, on a shown workspace: it becomes the focus
+    /// there.
+    case adopt
+    /// The window was key before it had a place, on a hidden workspace: its report is
+    /// decided as one of a concealed window whose key window before it stayed, which Kosmos
+    /// follows as it follows a Command-Tab.
+    case follow
+    /// The window's place is on a hidden workspace, and no report named it yet: one that
+    /// comes before its conceal completes is decided the same way.
+    case placedHidden
+
+    /// - Parameters:
+    ///   - keyed: the window is the key window Kosmos last heard of, which only the front
+    ///     app reports: its app keyed it before Kosmos gave it a place.
+    ///   - shown: its place is on a workspace a display shows.
+    ///   - parked: it waits parked, as a window minimized, hidden with its app or in native
+    ///     fullscreen when Kosmos admits it, and its return decides the focus.
+    ///   - atLaunch: it was there when Kosmos launched. Its report is Kosmos's own read of
+    ///     the key window, and a follow during the launch sweep would change the workspace a
+    ///     display shows while the sweep still places windows by the display under them.
+    ///   - locked: the session is locked, and Kosmos ignores focus reports.
+    public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
+        guard !locked, !parked else { return .none }
+        if shown { return keyed ? .adopt : .none }
+        guard !atLaunch else { return .none }
+        return keyed ? .follow : .placedHidden
+    }
+}
+
 /// Whether macOS shows a native fullscreen window's Space: that window is key, or a window
 /// Kosmos does not manage is key and its app owns one, as the fullscreen app's panel or
 /// dialog. Only a command then requests focus, since focusing a desktop window takes the

@@ -40,13 +40,12 @@ final class Controller {
     /// one: at its admission, as an app keys a window before Kosmos admits it, or at a tab
     /// switch, as macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
-    /// Launches the user asked for, whose first key window Kosmos follows to a hidden
-    /// workspace (UserLaunches).
-    private var launches = UserLaunches()
-    /// Tabs a switch placed on a hidden workspace, until the batch that conceals them
-    /// completes, their workspace is shown, or another tab replaces them. macOS keyed such a
-    /// tab by the user's or the app's choice, so its report counts as one of a concealed
-    /// window, and the tab deselected before it did not depart: it is followed at once.
+    /// Windows admitted to a hidden workspace, and tabs a switch placed on one, until the
+    /// batch that conceals them completes, their workspace is shown, or another tab replaces
+    /// them. macOS keyed such a window by the user's or the app's choice, so its report
+    /// counts as one of a concealed window whose key window before it stayed: an app keys a
+    /// window it opens, and the window key before a tab is the tab deselected. It is
+    /// followed at once.
     private var placedHidden: Set<WindowID> = []
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
     /// request against, which the focus queue decides when the request runs.
@@ -69,7 +68,7 @@ final class Controller {
     /// never lifts them. They go back to their tiles when the button comes up.
     private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
     private var leftButton = LeftButton()
-    /// The window the last left mouse down landed on, to tell a Dock click, or 0.
+    /// The window the last left mouse down landed on, for mouse-follows-focus, or 0.
     private var clickedWindow = 0
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
@@ -147,14 +146,6 @@ final class Controller {
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
             MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point) }
-        }
-        // Whichever comes first judges a launch (UserLaunches).
-        for name in [NSWorkspace.willLaunchApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
-            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
-                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                let pid = app.processIdentifier, name = app.localizedName, began = app.launchDate
-                MainActor.assumeIsolated { self?.launching(pid, name: name, began: began) }
-            }
         }
     }
 
@@ -357,7 +348,7 @@ final class Controller {
     /// launch or as a tab that lost its group, it waits parked for its return, with no frame
     /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
     /// own, not when the app unhides. A window its app keyed first becomes the focus, and
-    /// Kosmos follows it to a hidden workspace when the user asked for it (AdmissionFocus).
+    /// Kosmos follows it to a hidden workspace (AdmissionFocus).
     private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
@@ -381,31 +372,18 @@ final class Controller {
         // report, which waited for the place, is decided now.
         let report = unplacedKey.flatMap { $0.key == .window(id) ? $0 : nil }
         if report != nil { unplacedKey = nil }
-        let keyed = key == .window(id)
-        var asked = false
-        if keyed {
-            let (input, onDock) = activationInput()
-            let before = report?.previous.flatMap { owner[$0] ?? inventory.windows[$0]?.pid }
-            asked = launches.asked(forKeyOf: pid, keyBefore: before, input: input, onDock: onDock, at: .now)
+        let focus = AdmissionFocus.decide(keyed: key == .window(id), shown: session.workspace(of: id).map(session.isShown) == true,
+                                          parked: session.isParked(id), atLaunch: inventory.wasThereAtLaunch(id),
+                                          locked: sessionLocked)
+        switch focus {
+        case .adopt: session.adopt(id)
+        case .placedHidden: placedHidden.insert(id)
+        case .follow, .none: break
         }
-        let name = session.workspace(of: id)
-        let shown = name.map(session.isShown) == true
-        let focus = AdmissionFocus.decide(keyed: keyed, asked: asked, shown: shown, parked: session.isParked(id),
-                                          atLaunch: inventory.wasThereAtLaunch(id), locked: sessionLocked)
-        if keyed, !shown {
-            controllerLog.info("""
-                \(id) is key on hidden workspace \(name ?? "?", privacy: .public), \
-                \(asked ? "asked for" : "not asked for", privacy: .public) by the user: \
-                \(focus == .follow ? "followed" : "Kosmos stays", privacy: .public)
-                """)
-        }
-        if focus == .adopt { session.adopt(id) }
         execute(plan, floatingCheck: floats)
-        // The follow's switch reveals the window the plan conceals. The user picked the app
-        // away from the pointer, as judged when its launch began, so the pointer comes along.
+        // The follow's switch reveals the window the plan conceals.
         if focus == .follow, var report {
             report.concealed = true
-            report.picked = true
             decidePlaced(report, keyLeft: .stayed)
         }
     }
@@ -667,10 +645,9 @@ final class Controller {
     /// The left button went down at `point`, which is `location` in AppKit's screen
     /// coordinates. kosmos_make_key posts a synthesized mouse down far past every display with
     /// no mouse up, so a press off every display is left out, and it names no window clicked.
-    /// The window the press landed on is found as it lands: the Dock, when autohide is on,
-    /// starts to hide once the pointer leaves it, which can be before the app it activates
-    /// reports its window key (pickedAwayFromPointer), and a Dock click that launches an app
-    /// asks for it whatever mouse-follows-focus says (UserLaunches).
+    /// With mouse-follows-focus, the window the press landed on is found as it lands: the
+    /// Dock, when autohide is on, starts to hide once the pointer leaves it, which can be
+    /// before the app it activates reports its window key (pickedAwayFromPointer).
     private func leftMouseDown(at point: CGPoint, location: NSPoint) {
         // Whether the monitor hears a press the drag tap took is for the live test. During a
         // right drag the tap passes the left button's press and mouse up to the app, and
@@ -685,7 +662,7 @@ final class Controller {
         clickedWindow = 0
         guard onDisplay else { return }
         leftButton.pressed(at: .now)
-        clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0)
+        if mouseFollowsFocus { clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0) }
     }
 
     /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
@@ -844,9 +821,6 @@ final class Controller {
         var concealed: Bool
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss
-        /// The user picked the window away from the pointer, as judged before the report:
-        /// a follow brings the pointer whatever the input says now.
-        var picked = false
     }
 
     /// How long a report waits to learn whether the window key before it left. macOS keyed
@@ -920,7 +894,7 @@ final class Controller {
             // Command-Tab, a launcher's hotkey or a Dock click names a window, and the pointer
             // goes to it, on the pointer's own display too, unlike a workspace switch command.
             let plan = session.follow(window)
-            execute(plan, movePointer: mouseFollowsFocus && (report.picked || pickedAwayFromPointer()))
+            execute(plan, movePointer: mouseFollowsFocus && pickedAwayFromPointer())
         }
     }
 
@@ -1155,37 +1129,15 @@ final class Controller {
 
     /// Whether the activation being handled brings the pointer (ActivationInput.bringsPointer).
     private func pickedAwayFromPointer() -> Bool {
-        let (input, onDock) = activationInput()
-        return input.bringsPointer(onDock: onDock)
-    }
-
-    /// The user's last input, and whether the last left mouse down landed on the Dock, for an
-    /// activation, a launch or an admission to judge. The log gives the times.
-    private func activationInput() -> (input: ActivationInput, onDock: Bool) {
         let input = ActivationInput(key: Self.secondsSince(.keyDown), leftClick: Self.secondsSince(.leftMouseDown),
                                     rightClick: Self.secondsSince(.rightMouseDown), moved: Self.secondsSince(.mouseMoved))
         let dock = Self.isDock(clickedWindow)
         pointerLog.debug("""
-            input: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
+            activation: key \(input.key, format: .fixed(precision: 3)) s ago, left click \(input.leftClick, format: .fixed(precision: 3)) s ago \
             \(dock ? "on" : "off", privacy: .public) the Dock, right click \(input.rightClick, format: .fixed(precision: 3)) s ago, \
             pointer moved \(input.moved, format: .fixed(precision: 3)) s ago
             """)
-        return (input, dock)
-    }
-
-    /// An app is launching, as NSWorkspace's will-launch or did-launch notification says:
-    /// the first word of the launch judges whether the user asked for it, as of `began`,
-    /// when the launch began (UserLaunches). A process LaunchServices did not launch has no
-    /// launch date, and is judged as of now.
-    private func launching(_ pid: pid_t, name: String?, began: Date?) {
-        guard pid > 0 else { return }
-        let (input, onDock) = activationInput()
-        let age = began.map { -$0.timeIntervalSinceNow } ?? 0
-        guard let asked = launches.launching(pid, input: input, onDock: onDock, age: age, at: .now) else { return }
-        controllerLog.info("""
-            \(name ?? String(pid), privacy: .public) is launching, begun \(age, format: .fixed(precision: 3)) s before: \
-            \(asked ? "the user asked for it" : "no key press or Dock click just before", privacy: .public)
-            """)
+        return input.bringsPointer(onDock: dock)
     }
 
     /// Whether the window is the Dock's own at the Dock's level, where its icons are, and not
