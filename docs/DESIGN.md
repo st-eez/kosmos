@@ -328,8 +328,9 @@ off the main thread).
   window. Reveals, hidden workspaces, retries and Low Power Mode jump, and so does every
   frame from a drag's lift, or a modifier drag's press, to its drop. The ledger
   keeps the target pending until the final read back, so the tween's change events are
-  Kosmos's. Unmeasured: the cost per step, and a user's press on a window mid-tween, which
-  `frameChanged` ignores until the tween ends.
+  Kosmos's. Unmeasured: the cost per step, which `script/bench-relayout.sh` times against
+  instant moves, and a user's press on a window mid-tween, which `frameChanged` ignores
+  until the tween ends.
 
 ### 5.3 Hiding and recovery
 

@@ -122,13 +122,16 @@
 //                                   and a running Kosmos tiles them. Opens count standard
 //                                   windows, titled and resizable, on the display of that
 //                                   name as `kosmos state` gives it, else the main one, and
-//                                   never activates the app. Prints their ids on one line,
-//                                   then `frame <id> <x> <y> <w> <h> <time>` at each new
-//                                   frame, with Kosmos's coordinates and the wall clock that
-//                                   bash's EPOCHREALTIME reads. Lines on stdin: `close <id>`
-//                                   closes a window, and `open` opens one where the last
-//                                   closed one was and prints `opened <id> <time>`. Quits at
-//                                   the end of stdin.
+//                                   never activates the app. Launch it with `open -g`, as the
+//                                   script does: run directly from a terminal, it became the
+//                                   front app as its first window opened (key-holder, on
+//                                   2026-09-25), and with no window it did not. Prints the
+//                                   windows' ids on one line, then `frame <id> <x> <y> <w>
+//                                   <h> <time>` at each new frame, with Kosmos's coordinates
+//                                   and the wall clock that bash's EPOCHREALTIME reads. Lines
+//                                   on stdin: `close <id>` closes a window, and `open` opens
+//                                   one where the last closed one was and prints `opened <id>
+//                                   <time>`. Quits at the end of stdin.
 import AppKit
 import CKosmos
 import KosmosCore
