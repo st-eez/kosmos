@@ -10,8 +10,11 @@
 # and the terminal has no keyboard focus until the run ends. Each rep runs the steps below
 # through the Kosmos socket and the stub's stdin, with no synthetic input, each followed by
 # a 0.6 s settle. Leave the mouse and keyboard alone during a run: with focus follows mouse
-# on, a pointer move can key another window, and the steps act on the key window. At the
-# end the stub quits and the display shows its workspace again.
+# on, a pointer move can key another window, and the steps act on the key window. Before
+# it shows the workspace, the script records the workspace its display shows, such as 8 on
+# the built-in display, and the focused one. At the end, also when a run fails, the stub
+# quits, the display shows that workspace again and the focused one is focused again. The
+# summary names both.
 #
 # With a window id from `kosmos list-windows`, one real app's window joins the stub's:
 # `kosmos move-node-to-workspace --window-id` brings it onto the workspace, where it goes
@@ -402,7 +405,8 @@ cpu_line() {
 }
 {
     echo "$(date '+%Y-%m-%d %H:%M'), $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo ' with changes'): $kosmos_path, KOSMOS_ANIMATE=$mode"
-    echo "workspace $workspace on $display_name, $count stub windows${real:+ and $real_app window $real}, $reps reps of ${#steps[@]} steps: $relayouts relayouts in $(per "$wall" 1) s"
+    echo "workspace $workspace on $display_name, which showed ${shown_before:-none} before, with ${focused_before:-none} focused; both come back as the script exits"
+    echo "$count stub windows${real:+ and $real_app window $real}, $reps reps of ${#steps[@]} steps: $relayouts relayouts in $(per "$wall" 1) s"
     echo "AXEnhancedUserInterface: ${eui:-unread}"
     echo "latency to the final frame the stub took, per relayout: $(awk -F'\t' '$5 != "-" { print $5 }' "$dir/relayouts.tsv" | percentiles)"
     echo "latency to the final frame the stub took, per window:   $(cut -f3 "$dir/windows.tsv" | percentiles)"
