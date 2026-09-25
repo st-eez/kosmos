@@ -701,51 +701,9 @@ final class Controller {
     private func handle(_ report: AXReport) {
         switch report.kind {
         case .backgroundFocus(let id):
-            // Never the key window, but it can be Kosmos's echo. It leaves the kill switch's
-            // count alone, as a raise says nothing about the key record (tla/README.md, change 17).
-            guard !sessionLocked else { return }
-            _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .noWindow, receivedAt: report.received)
+            backgroundFocusChanged(id, report: report)
         case .focusedWindowChanged(let id):
-            let reported: KeyWindow = id.map(KeyWindow.window) ?? .noWindow
-            let repeated = key == reported
-            let previous: WindowID? = if case .window(let window)? = keyHistory.heard(reported), window != id { window } else { nil }
-            if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
-            guard !sessionLocked else { return }   // resync requests the intent again
-            admittedUnkeyed = admittedUnkeyed.filter { report.received - $0.value < Self.keyAfterAdmission }
-            let keyedAfterAdmission = id.flatMap { admittedUnkeyed.removeValue(forKey: $0) } != nil
-            // The report a departure waited for, unless it is Kosmos's echo: a window keyed
-            // during a minimize's animation leaves macOS nothing to key when it ends.
-            if let previous, awaitingKey?.window == previous, !reports.isEcho(reported, receivedAt: report.received) {
-                awaitingKey = nil
-            }
-            let miss = reports.miss(reported, app: id.flatMap { owner[$0] ?? inventory.windows[$0]?.pid },
-                                    repeated: repeated, receivedAt: report.received)
-            if miss != .none {
-                controllerLog.notice("focus request missed: \(String(describing: reported), privacy: .public) again, \(String(describing: miss), privacy: .public)")
-            }
-            // An unmanaged window's focus is its own, and a parked one is key in its fullscreen
-            // Space or just before it returns. A window with no place, or closed and kept, is
-            // decided when it takes one.
-            if let id, session.workspace(of: id) == nil || session.isParked(id) {
-                unplacedKey = session.workspace(of: id) == nil || closedByApp.contains(id)
-                    ? KeyReport(key: reported, received: report.received, reporter: report.pid, previous: previous,
-                                concealed: false, miss: miss) : nil
-                // Kosmos keyed a native fullscreen window, as for hover focus: this is its echo.
-                if session.isParked(id), reports.consumeEcho(reported, receivedAt: report.received) {
-                    misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: true)
-                }
-                return
-            }
-            unplacedKey = nil
-            if held.holds(reported, repeated: repeated) { return }
-            // Whether the key window before this report just left the screen is read only when
-            // the verdict needs it, as the read can wait on a switch's Space transaction.
-            // Concealment is judged at the stamp (docs/focus.md; tla/README.md, change 22).
-            let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
-            decidePlaced(KeyReport(key: reported, received: report.received, reporter: report.pid, previous: previous,
-                                   concealed: placed != nil || id.map { hiding.wasConcealed($0, at: report.received) } ?? false,
-                                   miss: miss, admitted: keyedAfterAdmission || placed == .admitted),
-                         keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
+            focusedWindowChanged(id, report: report)
         case .minimized(let id, true):
             // Parked as closed and kept if its order-out was looked at first: it is minimized
             // instead.
@@ -782,6 +740,56 @@ final class Controller {
         case .windowCreated, .windowDestroyed, .answering:
             break
         }
+    }
+
+    /// Never the key window, but it can be Kosmos's echo. It leaves the kill switch's count
+    /// alone, as a raise says nothing about the key record (tla/README.md, change 17).
+    private func backgroundFocusChanged(_ id: WindowID?, report: AXReport) {
+        guard !sessionLocked else { return }
+        _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .noWindow, receivedAt: report.received)
+    }
+
+    private func focusedWindowChanged(_ id: WindowID?, report: AXReport) {
+        let reported: KeyWindow = id.map(KeyWindow.window) ?? .noWindow
+        let repeated = key == reported
+        let previous: WindowID? = if case .window(let window)? = keyHistory.heard(reported), window != id { window } else { nil }
+        if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
+        guard !sessionLocked else { return }   // resync requests the intent again
+        admittedUnkeyed = admittedUnkeyed.filter { report.received - $0.value < Self.keyAfterAdmission }
+        let keyedAfterAdmission = id.flatMap { admittedUnkeyed.removeValue(forKey: $0) } != nil
+        // The report a departure waited for, unless it is Kosmos's echo: a window keyed
+        // during a minimize's animation leaves macOS nothing to key when it ends.
+        if let previous, awaitingKey?.window == previous, !reports.isEcho(reported, receivedAt: report.received) {
+            awaitingKey = nil
+        }
+        let miss = reports.miss(reported, app: id.flatMap { owner[$0] ?? inventory.windows[$0]?.pid },
+                                repeated: repeated, receivedAt: report.received)
+        if miss != .none {
+            controllerLog.notice("focus request missed: \(String(describing: reported), privacy: .public) again, \(String(describing: miss), privacy: .public)")
+        }
+        // An unmanaged window's focus is its own, and a parked one is key in its fullscreen
+        // Space or just before it returns. A window with no place, or closed and kept, is
+        // decided when it takes one.
+        if let id, session.workspace(of: id) == nil || session.isParked(id) {
+            unplacedKey = session.workspace(of: id) == nil || closedByApp.contains(id)
+                ? KeyReport(key: reported, received: report.received, reporter: report.pid, previous: previous,
+                            concealed: false, miss: miss) : nil
+            // Kosmos keyed a native fullscreen window, as for hover focus: this is its echo.
+            if session.isParked(id), reports.consumeEcho(reported, receivedAt: report.received) {
+                misses.reported(reported, pid: report.pid, receivedAt: report.received, echo: true)
+            }
+            return
+        }
+        unplacedKey = nil
+        if held.holds(reported, repeated: repeated) { return }
+        // Whether the key window before this report just left the screen is read only when
+        // the verdict needs it, as the read can wait on a switch's Space transaction.
+        // Concealment is judged at the stamp (docs/focus.md; tla/README.md, change 22).
+        let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
+        decidePlaced(KeyReport(key: reported, received: report.received, reporter: report.pid, previous: previous,
+                               concealed: placed != nil || id.map { hiding.wasConcealed($0, at: report.received) } ?? false,
+                               miss: miss, admitted: keyedAfterAdmission || placed == .admitted),
+                     keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
     }
 
     private struct KeyReport {
