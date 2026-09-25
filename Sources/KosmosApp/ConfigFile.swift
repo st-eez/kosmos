@@ -10,7 +10,8 @@ enum ConfigFile {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/kosmos/kosmos.toml")
     }
 
-    /// The last file that loaded without errors, used when the file is broken at launch.
+    /// The last file that loaded without errors, used when the file is broken at launch. The
+    /// files it includes are not kept, so it loads without them.
     static var lastGood: URL { KosmosFiles.support.appending(path: "last-good.toml") }
 
     struct Loaded {
@@ -24,7 +25,8 @@ enum ConfigFile {
         var source = "the config file"
     }
 
-    /// Reads and checks the config. At launch a broken file falls back to the last good one.
+    /// Reads and checks the config and the files it includes. At launch a broken config falls
+    /// back to the last good file.
     static func load(atLaunch: Bool) -> Loaded {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return Loaded(config: nil, warnings: ["no config at \(url.path); using workspaces 1 to 9 and no bindings"],
@@ -33,9 +35,13 @@ enum ConfigFile {
         var loaded = Loaded()
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
-            let (config, diagnostics) = Config.load(text)
-            loaded.errors = diagnostics.filter { $0.severity == .error }.map { "\(url.path):\($0)" }
-            loaded.warnings = diagnostics.filter { $0.severity != .error }.map { "\(url.path):\($0)" }
+            let directory = url.deletingLastPathComponent()
+            let (config, diagnostics) = Config.load(text) { try? String(contentsOf: directory.appending(path: $0), encoding: .utf8) }
+            func located(_ diagnostic: Diagnostic) -> String {
+                "\(diagnostic.file.map { directory.appending(path: $0).path } ?? url.path):\(diagnostic)"
+            }
+            loaded.errors = diagnostics.filter { $0.severity == .error }.map(located)
+            loaded.warnings = diagnostics.filter { $0.severity != .error }.map(located)
             loaded.config = config
             if config != nil { try? text.write(to: lastGood, atomically: true, encoding: .utf8) }
         } catch {

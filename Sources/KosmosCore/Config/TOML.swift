@@ -1,12 +1,14 @@
 // A TOML reader for the config file, written against TOML 1.1 and kept to what the schema
-// uses. It rejects floats, dates and times, multi-line strings and non-decimal integers with
-// a diagnostic; adding one means a new branch in `value()` once a config key needs it.
-// Every key and value keeps its line and column, so the schema layer can point at them.
+// uses. It rejects infinity and nan, dates and times, multi-line strings and non-decimal
+// integers with a diagnostic; adding one means a new branch in `value()` once a config key
+// needs it. Every key and value keeps its line and column, so the schema layer can point at
+// them.
 
 struct TOMLValue: Equatable {
     enum Kind: Equatable {
         case string(String)
         case integer(Int)
+        case float(Double)
         case boolean(Bool)
         case array([TOMLValue])
         case table(TOMLTable)
@@ -31,9 +33,10 @@ struct TOMLTable: Equatable {
     }
 }
 
-/// Parses a whole document and returns its root table, or the first syntax error.
-func parseTOML(_ text: String) throws(Diagnostic) -> TOMLTable {
-    var parser = TOMLParser(text)
+/// Parses a whole document and returns its root table, or the first syntax error. `file`
+/// goes into every position (SourcePosition).
+func parseTOML(_ text: String, file: Int = 0) throws(Diagnostic) -> TOMLTable {
+    var parser = TOMLParser(text, file: file)
     return try parser.document()
 }
 
@@ -106,10 +109,12 @@ private struct TOMLParser {
     private var i = 0
     private var line = 1
     private var lineStart = 0
+    private let file: Int
     /// The key being read, for diagnostics.
     private var path = ValuePath()
 
-    init(_ text: String) {
+    init(_ text: String, file: Int) {
+        self.file = file
         self.text = Array(text.unicodeScalars)
         if self.text.first == "\u{FEFF}" {
             i = 1
@@ -140,7 +145,7 @@ private struct TOMLParser {
     // MARK: Lines and positions
 
     private var position: SourcePosition {
-        SourcePosition(line: line, column: i - lineStart + 1)
+        SourcePosition(line: line, column: i - lineStart + 1, file: file)
     }
 
     private var peek: Unicode.Scalar? {
@@ -348,7 +353,7 @@ private struct TOMLParser {
             i += 5
             kind = .boolean(false)
         case let c? where isBareKeyScalar(c) || c == "+":
-            kind = .integer(try integer())
+            kind = try number()
         case let c?:
             throw error("expected a value, found \(describe(c))")
         case nil:
@@ -357,7 +362,7 @@ private struct TOMLParser {
         return TOMLValue(kind: kind, position: start)
     }
 
-    private mutating func integer() throws(Diagnostic) -> Int {
+    private mutating func number() throws(Diagnostic) -> TOMLValue.Kind {
         let start = position
         var token = ""
         while let c = peek, isBareKeyScalar(c) || c == "+" || c == "." || c == ":" {
@@ -366,7 +371,7 @@ private struct TOMLParser {
         }
         let digits = token.first == "+" || token.first == "-" ? token.dropFirst() : token[...]
         if digits == "inf" || digits == "nan" {
-            throw error("floats are not supported", at: start)
+            throw error("infinity and nan are not supported", at: start)
         }
         if let first = digits.unicodeScalars.first, !isDigit(first) {
             throw error("expected a value; put strings in quotes", at: start)
@@ -381,17 +386,27 @@ private struct TOMLParser {
             throw error("dates and times are not supported", at: start)
         }
         if digits.contains(".") || digits.contains("e") || digits.contains("E") {
-            throw error("floats are not supported", at: start)
+            // An integer part, then a fraction, an exponent or both.
+            let parts = digits.split(separator: "e", maxSplits: 1, omittingEmptySubsequences: false)
+                .flatMap { $0.split(separator: "E", maxSplits: 1, omittingEmptySubsequences: false) }
+            let mantissa = parts[0].split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+            let exponent = parts.count > 1 ? parts[1] : nil
+            let unsignedExponent = exponent.map { $0.first == "+" || $0.first == "-" ? $0.dropFirst() : $0[...] }
+            let isFloat = parts.count <= 2 && isDecimalInteger(mantissa[0])
+                && (mantissa.count == 1 || isDigits(mantissa[1]))
+                && (unsignedExponent.map(isDigits) ?? true)
+                && (mantissa.count == 2 || exponent != nil)
+            guard isFloat else { throw error("'\(token)' is not a valid number", at: start) }
+            guard let value = Double(token.replacing("_", with: "")), value.isFinite else {
+                throw error("\(token) is out of range for a 64-bit float", at: start)
+            }
+            return .float(value)
         }
-        let isDecimal = !digits.isEmpty
-            && digits.unicodeScalars.allSatisfy { isDigit($0) || $0 == "_" }
-            && digits.first != "_" && digits.last != "_" && !digits.contains("__")
-            && (digits.first != "0" || digits.count == 1)
-        guard isDecimal else { throw error("'\(token)' is not a valid integer", at: start) }
+        guard isDecimalInteger(digits) else { throw error("'\(token)' is not a valid integer", at: start) }
         guard let value = Int(token.replacing("_", with: "")) else {
             throw error("\(token) is out of range for a 64-bit integer", at: start)
         }
-        return value
+        return .integer(value)
     }
 
     private mutating func basicString() throws(Diagnostic) -> String {
@@ -508,6 +523,17 @@ private struct TOMLParser {
 
 private func isDigit(_ c: Unicode.Scalar) -> Bool {
     ("0"..."9").contains(c)
+}
+
+/// Digits with single underscores between them.
+private func isDigits(_ text: Substring) -> Bool {
+    !text.isEmpty && text.unicodeScalars.allSatisfy { isDigit($0) || $0 == "_" }
+        && text.first != "_" && text.last != "_" && !text.contains("__")
+}
+
+/// A decimal integer without its sign: digits with no leading zero.
+private func isDecimalInteger(_ text: Substring) -> Bool {
+    isDigits(text) && (text.first != "0" || text.count == 1)
 }
 
 /// Control characters TOML allows only escaped. Tab is allowed as is.

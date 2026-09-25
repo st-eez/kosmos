@@ -10,8 +10,8 @@ public struct SpaceMembers: Equatable, Sendable {
     public var members: [UInt64: [UInt32]]
     public var gone: Set<UInt64>
 
-    /// Reads `spaces` and keeps the windows `record` concealed. A Space that holds only
-    /// other windows still exists.
+    /// Reads `spaces` and keeps the windows `record` concealed or slides. A Space that holds
+    /// only other windows still exists.
     public static func read(_ spaces: [UInt64], of record: RecoveryRecord) -> SpaceMembers {
         var result = SpaceMembers(members: [:], gone: [])
         var pending = spaces
@@ -36,17 +36,19 @@ public struct SpaceMembers: Equatable, Sendable {
         var parent: UInt32
     }
 
-    /// The windows of `members` that Kosmos concealed: the recorded ones; any other window of
-    /// an app that owns a recorded one; a child of a concealed window, as the Open or Save
-    /// panel of a sandboxed app, which the panel service owns; and a member `rows` did not
-    /// find, since the Space just listed it and the read must have failed. Another process
-    /// can have windows of its own in a holding Space, as JankyBorders' border windows follow
-    /// the windows they border into it (docs/hiding.md). Kosmos never concealed them,
-    /// so recovery and the ledger leave them out.
+    /// The windows of `members` that Kosmos concealed or slides: the recorded ones; any other
+    /// window of an app that owns a recorded one; a child of a concealed window, as the Open
+    /// or Save panel of a sandboxed app, which the panel service owns; a member `rows` did not
+    /// find, since the Space just listed it and the read must have failed; and every window
+    /// in an animation Space, since each came in through Kosmos. Another process can have
+    /// windows of its own in a holding Space, as JankyBorders' border windows follow the
+    /// windows they border into it (docs/hiding.md). Kosmos never concealed them, so recovery
+    /// and the ledger leave them out.
     static func concealed(_ members: [UInt64: [UInt32]], by record: RecoveryRecord,
                           rows: ([UInt32]) -> [UInt32: Row]) -> [UInt64: [UInt32]] {
+        let animation = Set(record.animationSpaces)
         let recorded = Set(record.windows.map(\.id)), apps = Set(record.windows.map(\.owner))
-        let others = members.values.joined().filter { !recorded.contains($0) }
+        let others = members.filter { !animation.contains($0.key) }.values.joined().filter { !recorded.contains($0) }
         let read = rows(others)
         var concealed = recorded.union(others.filter { window in
             guard let row = read[window] else { return true }
@@ -58,7 +60,9 @@ public struct SpaceMembers: Equatable, Sendable {
             children = others.filter { !concealed.contains($0) && read[$0].map { concealed.contains($0.parent) } == true }
             concealed.formUnion(children)
         } while !children.isEmpty
-        return members.mapValues { $0.filter(concealed.contains) }
+        return members.reduce(into: [:]) { kept, entry in
+            kept[entry.key] = animation.contains(entry.key) ? entry.value : entry.value.filter(concealed.contains)
+        }
     }
 
     private static func rows(_ windows: [UInt32]) -> [UInt32: Row] {

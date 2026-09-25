@@ -85,12 +85,20 @@
   recovery it conceals into the newest recorded Space again only while that Space holds a
   recorded window, which a Space sent a destroy never does, and creates a new one
   otherwise.
+- The Spaces windows slide in ([geometry.md](geometry.md)) are recorded in a list of their
+  own, after the windows, where a reader that predates the list stops, so it still
+  restores every concealed window. Each is recorded before any window enters it. Recovery
+  sets each to identity and alpha 1, takes every window out of it, since each came in
+  through Kosmos (`SpaceMembers.concealed`), then destroys it with the holding Spaces and
+  reads it back. The running Kosmos's recoveries, after a failed batch and when the
+  guardian keeps dying (`restoreAll`), leave them to it, recorded; the quit, the guardian
+  and the startup recovery destroy them.
 - A window that closes leaves the ledger and the record once its concealing Space no
-  longer lists it. The record's slot holds about 168 windows, and filled with closed ones it
-  would stop every conceal. A window still listed stays recorded, as one that only stopped
-  being managed or that a failed read took for closed, so recovery restores it. A window
-  the ledger does not hold leaves once its row is gone or it has a Space: recovery restores
-  one alive on no Space.
+  longer lists it. The record's slot holds about 168 windows, 165 with the 8 Spaces
+  windows slide in, and filled with closed ones it would stop every conceal. A window
+  still listed stays recorded, as one that only stopped being managed or that a failed
+  read took for closed, so recovery restores it. A window the ledger does not hold leaves
+  once its row is gone or it has a Space: recovery restores one alive on no Space.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

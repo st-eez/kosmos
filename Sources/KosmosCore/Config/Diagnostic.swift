@@ -1,15 +1,18 @@
 /// A line and column in a config file, both counted from 1. Columns count Unicode scalars.
+/// `file` is 0 in the main file and n in the nth file it includes.
 public struct SourcePosition: Hashable, Comparable, Sendable {
     public var line: Int
     public var column: Int
+    public var file: Int
 
-    public init(line: Int, column: Int) {
+    public init(line: Int, column: Int, file: Int = 0) {
         self.line = line
         self.column = column
+        self.file = file
     }
 
     public static func < (a: Self, b: Self) -> Bool {
-        (a.line, a.column) < (b.line, b.column)
+        (a.file, a.line, a.column) < (b.file, b.line, b.column)
     }
 }
 
@@ -27,6 +30,9 @@ public struct Diagnostic: Error, Equatable, Sendable, CustomStringConvertible {
     /// Empty when the problem is outside any key.
     public var path: String
     public var message: String
+    /// The included file the problem is in, as the main file's `include` names it, or nil
+    /// for the main file.
+    public var file: String?
 
     public init(_ severity: Severity, at position: SourcePosition, path: String, _ message: String) {
         self.severity = severity

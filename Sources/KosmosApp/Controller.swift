@@ -113,6 +113,24 @@ final class Controller {
     /// While the session is locked or switched out, Kosmos writes no frames, runs no hides,
     /// requests no focus and takes no command; `resync` catches up (docs/inventory.md).
     private var sessionLocked: Bool { inventory.sessionLocked }
+    /// Slides windows to their frames and pops new ones in (docs/geometry.md). Made at the
+    /// first turn on while Kosmos manages windows, and kept, since the record holds its Spaces.
+    private var slides: Slides?
+    /// The config's `animations`.
+    var animations = false {
+        didSet {
+            if animations, managing, slides == nil {
+                slides = Slides(hiding: hiding)
+                slides?.onChange = { [weak self] in self?.updateBorders() }
+            }
+            if !animations { slides?.endAll("as animations turned off") }
+        }
+    }
+    /// The config's borders, or nil while `borders = false` turns them off (docs/borders.md).
+    var borders: BorderSettings? = BorderSettings() {
+        didSet { if borders != oldValue { updateBorders() } }
+    }
+    private let borderWindows = Borders()
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -132,11 +150,16 @@ final class Controller {
         inventory.onKeptOrderedOut = { [weak self] id, orderedOut in self?.keptOrderedOut(id, orderedOut: orderedOut) }
         inventory.onOrderChange = { [weak self] id, pid, orderedIn, frame, at in
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
+            self?.updateBorders()
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
         inventory.onFrameChange = { [weak self] id, old, frame, receivedAt in
             self?.frameChanged(id, from: old, to: frame, receivedAt: receivedAt)
+            self?.updateBorders()
         }
+        inventory.onReordered = { [weak self] id in self?.borderWindows.raise(id) }
+        inventory.onStyleChange = { [weak self] in self?.updateBorders() }
+        borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let point = event.cgEvent?.location else { return }
@@ -154,6 +177,8 @@ final class Controller {
     /// workspaces and rules, and each display with its gaps
     /// (docs/inventory.md and docs/displays.md), then resyncs every window.
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
+        // Every display link stops too, since one whose display went stops firing (Slides.endAll).
+        slides?.endAll("at a reload, a display change, a wake or an unlock")
         rules = setup.rules
         profile = setup.profile
         self.barDisplays = barDisplays
@@ -384,10 +409,12 @@ final class Controller {
         case .placedHidden: placedHidden[id] = .admitted
         case .none: break
         }
-        // A new window its app keyed on another display than the pointer brings the pointer,
-        // as a keyboard focus change there does (docs/focus-follows-mouse.md).
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && !inventory.wasThereAtLaunch(id) && focusAwayFromPointer,
-                floatingCheck: floats)
+        // A window opened after launch onto a shown workspace pops in (Slides). One its app
+        // keyed on another display than the pointer brings the pointer, as a keyboard focus
+        // change there does (docs/focus-follows-mouse.md).
+        let launched = !inventory.wasThereAtLaunch(id)
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched && focusAwayFromPointer,
+                floatingCheck: floats, popping: launched ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden[id] = nil
@@ -619,12 +646,15 @@ final class Controller {
             ledger.observeAfterConfirm(id, frame: frame)
             return
         }
+        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
+        // The user moves or resizes it, unless the change is its own write landing after the
+        // read back, as the other tiles' reflow at a lift lands while the user drags.
+        if button != .up { slides?.changedInPress(id, to: frame) }
         ledger.observe(id, frame: frame)
         // Seen smaller than its minimum, the window loses it. During a press, the mouse up
         // lays its workspace out.
         let smaller = session.sizeObserved(id, frame.size)
         if !smaller.isEmpty { controllerLog.notice("\(id) seen at \(Int(frame.width))x\(Int(frame.height)), below its minimum") }
-        let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
         guard button != .up else {
             if !smaller.isEmpty { execute(smaller) }
             return
@@ -833,6 +863,7 @@ final class Controller {
                 if hiding.isConcealed(result.id) || session.workspace(of: result.id).map(session.isShown) != true {
                     ledger.forgetLargerReadBack(result.id)
                 }
+                slides?.confirmed(result.id, target: result.target, readBack: result.readBack)
                 switch ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now) {
                 case .took:
                     break
@@ -993,13 +1024,15 @@ final class Controller {
     /// `since` is when the command arrived, for the switch timing log. `movePointer` centers
     /// the pointer on the focus. `floatingCheck` runs the floating check for an empty plan
     /// too, as a floating window admitted to a workspace with no tiles plans nothing.
+    /// `popping`: a window just admitted, which pops in if it slides.
     private func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
-                         movePointer: Bool = false, floatingCheck: Bool = false) {
+                         movePointer: Bool = false, floatingCheck: Bool = false, popping: WindowID? = nil) {
+        slides?.keep({ self.session.isVisible($0) }, fullscreen: fullscreenDisplays)
         guard managing, !sessionLocked, !plan.isEmpty || floatingCheck else { return publishState() }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames)
+        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping))
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -1026,6 +1059,8 @@ final class Controller {
             hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
                 guard let self else { return }
                 for id in hide { self.placedHidden[id] = nil }   // the conceal that placed them hidden is done
+                // Revealed now, the incoming windows get their borders.
+                self.updateBorders()
                 signposter.endInterval("switch", interval)
                 let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
                 controllerLog.notice("""
@@ -1080,13 +1115,63 @@ final class Controller {
         writeFrames(targets)
     }
 
-    private func writeFrames(_ targets: [WindowID: CGRect]) {
+    /// `sliding`: the motion of each write that slides (motions).
+    private func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) {
         guard !sessionLocked else { return }
         let writes = ledger.writes(for: targets)
+        slides?.writing(Dictionary(uniqueKeysWithValues: writes.keys.map { ($0, targets[$0]!) }), sliding: sliding)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] ?? 0 }) where pid != 0 {
             let batch = Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })
             inventory.worker(pid)?.enqueueFrames(batch)
         }
+    }
+
+    /// How each write of `plan` slides: a window on screen on a shown workspace, other than
+    /// one the user holds or presses on, of an app that answers Accessibility, on a display
+    /// fullscreenDisplays leaves out. A window being revealed, and one concealed or on a hidden
+    /// workspace, jump to their frames. So do a drag's own writes, at each movement and for
+    /// the edges a right drag moves, the 100 ms retry and floating windows brought home, which
+    /// do not come through here. The relayout at a lift, a drop and tiles sent back after an
+    /// edge resize come through here and slide. `popping`: a window just admitted.
+    private func motions(for plan: Session.Plan, popping: WindowID?) -> [WindowID: Slides.Motion] {
+        guard animations, slides != nil else { return [:] }
+        let show = Set(plan.show), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
+        var motions: [WindowID: Slides.Motion] = [:]
+        for id in plan.frames.keys where session.isVisible(id) && !show.contains(id) && !hiding.isConcealed(id) && id != held
+            && !session.lifted.contains(id) && mouseMoved[id] == nil {
+            guard let name = session.workspace(of: id), let pid = owner[id], inventory.worker(pid)?.answers == true else { continue }
+            let display = session.monitor(of: name).id
+            guard !fullscreen.contains(display) else { continue }
+            // Where WindowServer has the window, read before the ledger takes the write as sent,
+            // and unknown while a write of Kosmos's still moves it.
+            let from = ledger.isWriting(id) ? nil : inventory.windows[id]?.frame
+            motions[id] = Slides.Motion(from: from, display: display, pop: id == popping)
+        }
+        return motions
+    }
+
+    /// The displays that hold a native fullscreen window, by the frames the inventory last
+    /// read, except the key window's display while no fullscreen Space shows
+    /// (inFullscreenSpace): the user works on its desktop Space. A Space of the pool shows
+    /// whatever Space its display shows, so a slide there would draw over the fullscreen app.
+    /// The ceiling: another such display slides nothing while it shows its desktop Space too,
+    /// and a swipe to the fullscreen Space mid-slide shows the slide over the fullscreen app
+    /// (docs/geometry.md); reading each display's current Space would tell them apart.
+    private var fullscreenDisplays: Set<DisplayID> {
+        func display(of id: WindowID) -> DisplayID? {
+            inventory.windows[id].flatMap { row in
+                session.monitors.first { $0.frame.contains(CGPoint(x: row.frame.midX, y: row.frame.midY)) }?.id
+            }
+        }
+        let displays = Set(fullscreenParked.compactMap(display))
+        guard !displays.isEmpty, case .window(let id)? = key, !inFullscreenSpace, let desktop = display(of: id)
+        else { return displays }
+        return displays.subtracting([desktop])
+    }
+
+    /// Ends every slide, for quit (Slides.endAll).
+    func endSlides() {
+        slides?.endAll("at quit")
     }
 
     /// Every focus request goes through here. `fromCommand`: a command asked for it. `retry`:
@@ -1233,6 +1318,7 @@ final class Controller {
             return
         }
         modifierDrag = drag
+        slides?.end(grab.window, "as a modifier drag took it")
         // A Dock click before this press no longer brings the pointer (pickedAwayFromPointer).
         clickedWindow = 0
         dragLog.info("""
@@ -1396,12 +1482,34 @@ final class Controller {
     }
 
     /// One snapshot for the bar and for `kosmos subscribe` (docs/integrations.md). Every
-    /// change of the model ends here, so the drag tap's windows follow it too.
+    /// change of the model ends here, so the drag tap's windows and the borders follow it too.
     private func publishState() {
         let data = stateJSON()
         bar.publish(data)
         publish?(data)
         dragTap?.setWindows(draggable)
+        updateBorders()
+    }
+
+    /// Shows the border of each window the session borders, where WindowServer has it or a
+    /// slide shows it, and none for a window concealed, being concealed or ordered out
+    /// (docs/borders.md). No border shows while borders are off or Kosmos only observes, and
+    /// a locked session keeps its borders until the resync after the unlock.
+    private func updateBorders() {
+        guard !sessionLocked else { return }
+        guard managing, let borders else { return borderWindows.show([:]) }
+        // One read of each slide, so a border's frame and alpha come from the same display frame.
+        var sliding: [WindowID: (frame: CGRect, alpha: Double)] = [:]
+        let shown = session.borders(borders, accent: borderWindows.accent) { id in
+            guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
+            sliding[id] = slides?.shown(id)
+            return (sliding[id]?.frame ?? row.frame, row.cornerRadius)
+        }
+        borderWindows.show(shown.reduce(into: [:]) { result, entry in
+            let slide = sliding[entry.key]
+            result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
+                                              alpha: slide?.alpha ?? 1, sliding: slide != nil)
+        })
     }
 
     /// The bar snapshot as JSON, also printed by `kosmos state` for a bar that starts late.

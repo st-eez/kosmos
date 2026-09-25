@@ -1,19 +1,26 @@
 extension Config {
-    /// Parses and checks a whole config file. `config` is nil when any diagnostic is an error,
-    /// so a caller applies all of a file or none of it; warnings can come with a config.
-    /// Diagnostics are in file order. Binding commands go through `Command.parse`, so a bad
-    /// command fails the load instead of the key press.
-    public static func load(_ text: String) -> (config: Config?, diagnostics: [Diagnostic]) {
-        let root: TOMLTable
+    /// Parses and checks a whole config file and the files its `include` names, which `read`
+    /// returns the text of, by the name the file gives, or nil when it cannot. `config` is
+    /// nil when any diagnostic is an error, so a caller applies all of the files or none of
+    /// them; warnings can come with a config. Diagnostics are in file order, the main file's
+    /// first. Binding commands go through `Command.parse`, so a bad command fails the load
+    /// instead of the key press.
+    public static func load(_ text: String, including read: (String) -> String? = { _ in nil })
+        -> (config: Config?, diagnostics: [Diagnostic]) {
+        var root: TOMLTable
         do {
             root = try parseTOML(text)
         } catch {
             return (nil, [error])
         }
         var decoder = ConfigDecoder()
+        let files = decoder.include(into: &root, read: read)
         let config = decoder.config(root)
         // The sort is stable, so problems at one position keep the order they were found in.
-        let diagnostics = decoder.diagnostics.sorted { $0.position < $1.position }
+        var diagnostics = decoder.diagnostics.sorted { $0.position < $1.position }
+        for index in diagnostics.indices where diagnostics[index].position.file > 0 {
+            diagnostics[index].file = files[diagnostics[index].position.file - 1]
+        }
         return (diagnostics.contains { $0.severity == .error } ? nil : config, diagnostics)
     }
 }
@@ -30,12 +37,55 @@ private struct ConfigDecoder {
     /// Profiles that `profile` bindings name, checked once every profile is known.
     private var profileTargets: [Located] = []
 
+    /// Adds the top-level keys of each file the root's `include` names to the root, and
+    /// returns the files' names in order, the first being file 1 (SourcePosition). Each is a
+    /// file in the main file's directory. An included file sets keys the main file and the
+    /// files before it leave out, and includes nothing. A file that cannot be read is left
+    /// out with a warning.
+    mutating func include(into root: inout TOMLTable, read: (String) -> String?) -> [String] {
+        guard let entry = root["include"], let paths = stringOrList(entry.value, ValuePath().key(entry.key)) else { return [] }
+        var files: [String] = []
+        for path in paths {
+            guard !path.value.contains("/"), path.value != ".." else {
+                fail("name a file in the config's directory, such as 'theme.toml'", at: path.position, path.path)
+                continue
+            }
+            files.append(path.value)
+            // Missing, as before a theme links it on a fresh install, the file is left out.
+            guard let text = read(path.value) else {
+                warn("cannot read '\(path.value)' in the config's directory; the config loads without it",
+                     at: path.position, path.path)
+                continue
+            }
+            let table: TOMLTable
+            do {
+                table = try parseTOML(text, file: files.count)
+            } catch {
+                diagnostics.append(error)
+                continue
+            }
+            for entry in table.entries {
+                let keyPath = ValuePath().key(entry.key)
+                if entry.key == "include" || entry.key == "config-version" {
+                    fail("'\(entry.key)' belongs in the main config file", at: entry.keyPosition, keyPath)
+                } else if let first = root[entry.key] {
+                    let file = first.keyPosition.file == 0 ? "the main config file" : "'\(files[first.keyPosition.file - 1])'"
+                    fail("set in \(file) too", at: entry.keyPosition, keyPath)
+                } else {
+                    root.entries.append(entry)
+                }
+            }
+        }
+        return files
+    }
+
     mutating func config(_ root: TOMLTable) -> Config {
         let path = ValuePath()
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
-            "config-version", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
-            "mouse-modifier", "workspaces", "monitors", "workspace-monitor", "gaps", "mode", "rule", "profile",
+            "config-version", "include", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
+            "mouse-modifier", "animations", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "mode", "rule",
+            "profile",
         ])
         var config = Config()
 
@@ -64,6 +114,9 @@ private struct ConfigDecoder {
                 fail(error.message, at: entry.value.position, path.key(entry.key))
             }
         }
+        if let entry = root["animations"] {
+            config.animations = boolean(entry.value, path.key(entry.key)) ?? true
+        }
         if let entry = root["monitors"] {
             config.monitors = monitors(entry.value, path.key(entry.key))
         }
@@ -78,6 +131,9 @@ private struct ConfigDecoder {
         }
         if let entry = root["gaps"] {
             config.gaps = gaps(entry.value, path.key(entry.key))
+        }
+        if let entry = root["borders"] {
+            config.borders = borders(entry.value, path.key(entry.key))
         }
         if let entry = root["mode"] {
             config.modes = modes(entry.value, path.key(entry.key))
@@ -212,6 +268,43 @@ private struct ConfigDecoder {
             return nil
         }
         return points
+    }
+
+    /// `true`, the default, or a table of settings turns borders on, and `false` off, as
+    /// `animations` takes true or false.
+    private mutating func borders(_ value: TOMLValue, _ path: ValuePath) -> BorderSettings? {
+        switch value.kind {
+        case .boolean(let on): return on ? BorderSettings() : nil
+        case .table: break
+        default:
+            fail("expected true, false or a table, found \(kindName(value))", at: value.position, path)
+            return BorderSettings()
+        }
+        guard let table = table(value, path, allowed: ["width", "active", "inactive"]) else { return nil }
+        var settings = BorderSettings()
+        if let entry = table["width"], let width = number(entry.value, path.key(entry.key)) {
+            if width > 0 {
+                settings.width = width
+            } else {
+                fail("the width must be above 0", at: entry.value.position, path.key(entry.key))
+            }
+        }
+        if let entry = table["active"] {
+            settings.active = color(entry.value, path.key(entry.key))
+        }
+        if let entry = table["inactive"] {
+            settings.inactive = color(entry.value, path.key(entry.key)) ?? .clear
+        }
+        return settings
+    }
+
+    private mutating func color(_ value: TOMLValue, _ path: ValuePath) -> BorderColor? {
+        guard let text = string(value, path) else { return nil }
+        guard let color = BorderColor(hex: text) else {
+            fail("expected a color as '#rrggbb' or '#rrggbbaa', found '\(text)'", at: value.position, path)
+            return nil
+        }
+        return color
     }
 
     private mutating func modes(_ value: TOMLValue, _ path: ValuePath) -> [String: [Binding]] {
@@ -472,6 +565,17 @@ private struct ConfigDecoder {
         return integer
     }
 
+    /// An integer or a float.
+    private mutating func number(_ value: TOMLValue, _ path: ValuePath) -> Double? {
+        switch value.kind {
+        case .integer(let integer): return Double(integer)
+        case .float(let float): return float
+        default:
+            fail("expected a number, found \(kindName(value))", at: value.position, path)
+            return nil
+        }
+    }
+
     private mutating func boolean(_ value: TOMLValue, _ path: ValuePath) -> Bool? {
         guard case .boolean(let boolean) = value.kind else {
             fail("expected true or false, found \(kindName(value))", at: value.position, path)
@@ -506,6 +610,7 @@ private func kindName(_ value: TOMLValue) -> String {
     switch value.kind {
     case .string: "a string"
     case .integer: "an integer"
+    case .float: "a float"
     case .boolean: "a boolean"
     case .array: "an array"
     case .table: "a table"

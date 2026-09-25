@@ -84,6 +84,12 @@ final class Inventory {
     /// `.changed` event that reported it came, or nil: a Space change, as a reveal makes, a
     /// creation or a sweep can read a new frame too.
     var onFrameChange: (@MainActor (UInt32, CGRect, CGRect, ContinuousClock.Instant?) -> Void)?
+    /// WindowServer ordered a managed window above or below others, as its app raising it
+    /// does, which leaves its border below it (docs/borders.md).
+    var onReordered: (@MainActor (UInt32) -> Void)?
+    /// WindowServer reported another level or corner radius for a managed window, which its
+    /// border takes (docs/borders.md).
+    var onStyleChange: (@MainActor () -> Void)?
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
@@ -376,6 +382,9 @@ final class Inventory {
             enqueue(.read(id, .none))
         case .changed(let id):
             enqueue(.read(id, .changed(at: .now)))
+        case .reordered(let id):
+            enqueue(.read(id, .changed(at: .now)))
+            if isManaged(id) { onReordered?(id) }
         case .spaceMembership(let id):
             enqueue(.read(id, .spaceMembership(.now)))
         case .destroyed(let id):
@@ -417,7 +426,7 @@ final class Inventory {
         })
         looks.readAsked()
         reads.async {
-            let rows = SkyLight.rows(Array(ids))
+            let rows = SkyLight.rows(Array(ids), cornerRadii: true)
             DispatchQueue.main.async { MainActor.assumeIsolated { self.applyReads(events, rows) } }
         }
     }
@@ -487,6 +496,7 @@ final class Inventory {
         // its own.
         if old?.orderedIn == false, row.orderedIn { readIfUnknown([row.id]) }
         if let old, old.frame != row.frame, isManaged(row.id) { onFrameChange?(row.id, old.frame, row.frame, changed) }
+        if let old, old.level != row.level || old.cornerRadius != row.cornerRadius, isManaged(row.id) { onStyleChange?() }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
@@ -603,7 +613,7 @@ final class Inventory {
         reads.async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
-            let rows = SkyLight.rows(listed + unlisted)
+            let rows = SkyLight.rows(listed + unlisted, cornerRadii: true)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self.finishSweep(rows) }
             }

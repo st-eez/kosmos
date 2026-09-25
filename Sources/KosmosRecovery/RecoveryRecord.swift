@@ -68,12 +68,18 @@ public struct RecoveryRecord: Equatable, Sendable {
     public var spaces: [UInt64]
     /// Windows recorded before their first hide.
     public var windows: [Window]
+    /// Spaces windows slide in, shown in place at level 1 (docs/hiding.md).
+    /// Each is recorded before any window enters it, and every window in one is Kosmos's to
+    /// take out.
+    public var animationSpaces: [UInt64]
 
-    public init(windowServer: ProcessIdentity, manager: ProcessIdentity, spaces: [UInt64] = [], windows: [Window] = []) {
+    public init(windowServer: ProcessIdentity, manager: ProcessIdentity, spaces: [UInt64] = [], windows: [Window] = [],
+                animationSpaces: [UInt64] = []) {
         self.windowServer = windowServer
         self.manager = manager
         self.spaces = spaces
         self.windows = windows
+        self.animationSpaces = animationSpaces
     }
 
     /// The recorded Space hiding conceals into again after a recovery kept the record: the
@@ -108,7 +114,7 @@ public struct RecoveryRecord: Equatable, Sendable {
 
     /// Nil when the record is beyond what the decoder accepts.
     func encoded() -> [UInt8]? {
-        guard spaces.count <= Self.maxSpaces, windows.count <= Self.maxWindows else { return nil }
+        guard spaces.count <= Self.maxSpaces, windows.count <= Self.maxWindows, animationSpaces.count <= Self.maxSpaces else { return nil }
         var bytes: [UInt8] = []
         func put<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { bytes += $0 } }
         put(Self.magic); put(Self.version)
@@ -118,6 +124,11 @@ public struct RecoveryRecord: Equatable, Sendable {
         put(UInt32(windows.count))
         for window in windows {
             put(window.id); put(window.owner.pid); put(window.owner.start); put(window.originalSpace)
+        }
+        // The animation Spaces follow the windows, where a reader that predates them stops, so
+        // it still restores every concealed window. With none, the record reads as before.
+        if !animationSpaces.isEmpty {
+            put(UInt32(animationSpaces.count)); animationSpaces.forEach { put($0) }
         }
         return bytes
     }
@@ -148,7 +159,16 @@ public struct RecoveryRecord: Equatable, Sendable {
                   let original: UInt64 = take() else { return nil }
             windows.append(Window(id: id, owner: ProcessIdentity(pid: pid, start: start), originalSpace: original))
         }
+        var animationSpaces: [UInt64] = []
+        if !bytes.isEmpty {
+            guard let count: UInt32 = take(), count <= Self.maxSpaces else { return nil }
+            for _ in 0..<count {
+                guard let space: UInt64 = take() else { return nil }
+                animationSpaces.append(space)
+            }
+        }
         self.init(windowServer: ProcessIdentity(pid: wsPid, start: wsStart),
-                  manager: ProcessIdentity(pid: mPid, start: mStart), spaces: spaces, windows: windows)
+                  manager: ProcessIdentity(pid: mPid, start: mStart), spaces: spaces, windows: windows,
+                  animationSpaces: animationSpaces)
     }
 }

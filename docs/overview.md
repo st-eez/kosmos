@@ -60,6 +60,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
 | Modifier drags | An active event tap for the left and right buttons at the annotated session location, each event decided on the tap's thread from WindowServer's hit test | `NSEvent` global monitors, which cannot keep an event from the app. A hit test of the model's frames, which knows no stacking order and would take a click on a panel over a tile |
+| Borders | A click-through window of Kosmos's own per bordered window, ordered directly above it, drawn by Core Animation from the model's frames, focus and slides | JankyBorders, a separate process drawing from WindowServer's events, which knows no workspace or slide |
 
 ## 4. Architecture
 
@@ -76,16 +77,28 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 
 | Context | Owns | Never does |
 | --- | --- | --- |
-| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot | AX calls, waiting on another process, file syncs, process launches |
+| Main actor | The model (inventory, workspaces, trees, focus intent), command execution, layout, hotkey dispatch, the bar snapshot, the display links that step slides and the bridged sends of a slide (below), the border windows | AX calls, any other bridged Space operation, waiting on another process, file syncs, process launches |
 | One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, the raise that keys a window of the front app, and the raise after a key record. Its observer runs on a second thread, which stamps each focus notification and checks the front process in its callback | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
-| Bridge queue, serial | Bridged Space operations, the reads that confirm them, and the barrier read | Run past its time budget |
+| Bridge queue, serial | The bridged Space operations of hiding and recovery, the reads that confirm them, the barrier read, and creating the Spaces windows slide in | Run past its time budget |
 | IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
 | Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
+| Slide queue (`kosmos.slide`), serial | The reads of sliding windows' rows until their writes land, and the Space transform sent for each new frame they find | Change the model |
+| Pool check queue (`kosmos.slide.pool`), serial | The barrier and the read that show a slide's window out of its Space before the Space goes back to the pool | Change the pool, which the main actor holds |
+| Border queue (`kosmos.borders`), serial | The reads of a border's Spaces and its window's, and the move of the border to its window's Space on Kosmos's own connection ([borders.md](borders.md)) | Set a border's frame or order, which the main actor does |
 
 The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
 on its own and never delays another app.
+
+Bridged Space operations do not run on the bridge queue alone. The main actor sends a
+slide's: it adds the window to a Space of the pool, sets the Space's transform and alpha at
+each display frame and takes the window out at the end. The slide queue sets the transform
+for each new frame its reads find ([geometry.md](geometry.md)). The limit: each goes to
+WindowManager.app as the bridge queue's do, and whether a send waits on WindowManager.app
+while it is busy is unmeasured. The `slide frames` log line gives the time the main actor
+spends in each display's frames, the sends included. The sends go out while the bridge
+queue sends its batches, to other Spaces.
 
 ### 4.3 A workspace switch
 
@@ -159,9 +172,9 @@ files each one covers.
    until their replacement lands. Timing compared against the AeroSpace fork.
 8. **Beyond AeroSpace.** Replace what needed a workaround: focus follows mouse (retiring
    AutoRaise), moving and resizing windows with a modifier and the mouse (retiring
-   BetterTouchTool's window moving), and `kosmos list-bindings` for launchers.
-9. **Later.** A native bar as a separate process, borders from Kosmos's own model,
-   persistence across restarts.
+   BetterTouchTool's window moving), `kosmos list-bindings` for launchers, and borders
+   from Kosmos's own model (retiring JankyBorders).
+9. **Later.** A native bar as a separate process, and persistence across restarts.
 
 ## 8. Left out of the first version
 

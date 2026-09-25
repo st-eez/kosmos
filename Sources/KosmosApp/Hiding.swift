@@ -41,6 +41,8 @@ final class Hiding {
     /// The windows concealed after the last batch the bridge finished, for focus reports.
     /// The bridge queue's ledger is the truth; this copy only follows it.
     private var concealed: Set<UInt32> = []
+    /// The windows that batches in flight conceal, each with how many batches do.
+    private var concealing: [UInt32: Int] = [:]
 
     /// Called with a description when concealed windows could not all be restored, and with
     /// nil once they have been.
@@ -53,6 +55,24 @@ final class Hiding {
     }
 
     func isConcealed(_ window: UInt32) -> Bool { concealed.contains(window) }
+
+    /// Whether the window is concealed or a batch in flight conceals it, which
+    /// `isConcealed` reads only once the batch finishes.
+    func isConcealedOrConcealing(_ window: UInt32) -> Bool { concealed.contains(window) || concealing[window] != nil }
+
+    /// Whether the guardian would recover windows now, should Kosmos die: windows slide
+    /// through the pool's Spaces only then (Slides).
+    var guardianReady: Bool { guardian.isReady }
+
+    /// Creates `count` Spaces for windows to slide in at `level` on the bridge queue, each
+    /// recorded before any window enters it, and hands the ones created to `done`.
+    func createAnimationSpaces(_ count: Int, level: Int32, done: @escaping @MainActor ([UInt64]) -> Void) {
+        let store = self.store
+        bridge.async {
+            let spaces = store.createAnimationSpaces(count, level: level)
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(spaces) } }
+        }
+    }
 
     /// Whether the window was concealed when a report was stamped, judged by when the bridge
     /// last sent its conceal or reveal (ConcealHistory).
@@ -84,13 +104,14 @@ final class Hiding {
                done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let canConceal = guardian.isReady
         let hide = canConceal ? hide : []
+        for window in hide { concealing[window, default: 0] += 1 }
         let store = self.store
         let submitted = ContinuousClock.now
         bridge.async {
             let started = ContinuousClock.now
             let (confirmed, sent, barrier, stripped) = store.apply(show: show, on: displays, hide: hide, stripping: stripping)
             let applied = ContinuousClock.now
-            let outcome = confirmed ? nil : store.recover()
+            let outcome = confirmed ? nil : store.recover(keepingAnimationSpaces: true)
             let concealed = store.concealed
             let finished = ContinuousClock.now
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
@@ -100,6 +121,10 @@ final class Hiding {
                 MainActor.assumeIsolated {
                     timing.returned = .now - finished
                     self.concealed = concealed
+                    for window in hide {
+                        self.concealing[window]! -= 1
+                        if self.concealing[window] == 0 { self.concealing[window] = nil }
+                    }
                     if let outcome { self.report(outcome) }
                     done(confirmed ? (canConceal ? .confirmed : .revealedOnly) : .failed, timing)
                 }
@@ -124,7 +149,7 @@ final class Hiding {
     func restoreAll() {
         let store = self.store
         bridge.async {
-            let outcome = store.recover()
+            let outcome = store.recover(keepingAnimationSpaces: true)
             let concealed = store.concealed
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -143,10 +168,11 @@ final class Hiding {
         }
     }
 
-    /// Waits for queued batches, then restores every concealed window. For quit.
+    /// Waits for queued batches, then restores every concealed window and destroys every
+    /// Space, the ones windows slide in too. For quit.
     func recoverNow() -> Recovery.Outcome {
         let store = self.store
-        return bridge.sync { store.recoverOutcome() }
+        return bridge.sync { store.recover(keepingAnimationSpaces: false) }
     }
 }
 
@@ -337,10 +363,28 @@ private final class HidingStore: @unchecked Sendable {
         return false
     }
 
+    /// Creates Spaces for windows to slide in, recorded before any window enters them.
+    /// Returns the ones created, none when the record cannot take them.
+    func createAnimationSpaces(_ count: Int, level: Int32) -> [UInt64] {
+        guard load() else { return [] }
+        let created = (0..<count).map { _ in kosmos_float_space_create(level) }.filter { $0 != 0 }
+        if created.count < count { hidingLog.error("\(count - created.count) of \(count) animation Spaces not created") }
+        var next = state!
+        next.animationSpaces += created
+        guard record.publish(next) else {
+            hidingLog.error("the recovery record cannot take \(created.count) more animation Spaces")
+            created.forEach { kosmos_space_destroy($0) }
+            return []
+        }
+        state = next
+        return created
+    }
+
     /// Runs recovery, then loads the ledger again from what the record still names.
+    /// `keepingAnimationSpaces`: the running Kosmos goes on sliding windows through them.
     @discardableResult
-    func recover() -> Recovery.Outcome {
-        let outcome = Recovery.run(file: record)
+    func recover(keepingAnimationSpaces keeping: Bool) -> Recovery.Outcome {
+        let outcome = Recovery.run(file: record, keepingAnimationSpaces: keeping)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
         history.withLock { $0.forgetAll() }   // recovery restores windows unrecorded
         loaded = false
@@ -351,8 +395,6 @@ private final class HidingStore: @unchecked Sendable {
         }
         return outcome
     }
-
-    func recoverOutcome() -> Recovery.Outcome { recover() }
 
     /// Whether the window has a Space besides the holding Space, which the list leaves out,
     /// so a removal from the holding Space leaves it where it was. Any listed Space counts, a

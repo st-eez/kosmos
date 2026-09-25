@@ -41,6 +41,14 @@ extern uint64_t SLSWindowIteratorGetTags(CFTypeRef iterator);
 // Bit 0x2 is set while the window is ordered in (matches SLSWindowIsOrderedIn).
 extern uint64_t SLSWindowIteratorGetAttributes(CFTypeRef iterator);
 extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);
+// The radii WindowServer rounds the window's corners by, as CFNumbers, in an array the caller
+// owns: 50,000 reads that kept it grew the process by 3.9 MB, and as many that released it by
+// nothing (kosmos-probe borders).
+extern CFArrayRef SLSWindowIteratorGetCornerRadii(CFTypeRef iterator);
+
+// Moves windows of the caller's own to a Space (yabai's declaration). A border window of
+// Kosmos's moved to another display's Space was there when read back (kosmos-probe borders).
+extern void SLSMoveWindowsToManagedSpace(SLSConnectionID cid, CFArrayRef windows, uint64_t space);
 
 // The WindowServer id of an Accessibility window element.
 extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);

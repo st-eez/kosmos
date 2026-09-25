@@ -10,6 +10,7 @@ private func render(_ value: TOMLValue) -> String {
     switch value.kind {
     case .string(let string): "\"\(string)\""
     case .integer(let integer): String(integer)
+    case .float(let float): String(float)
     case .boolean(let boolean): String(boolean)
     case .array(let items): "[" + items.map(render).joined(separator: ",") + "]"
     case .table(let table): render(table)
@@ -82,12 +83,19 @@ private func failure(_ text: String) -> String? {
         #expect(failure("a = 99999999999999999999") == "1:5: a: 99999999999999999999 is out of range for a 64-bit integer")
     }
 
+    @Test func floats() throws {
+        #expect(try parsed("a = 4.0\nb = -2.5E-10\nc = 1e3\nd = +1_000.5\ne = 0.5\nf = 1e-3") == "{a=4.0,b=-2.5e-10,c=1000.0,d=1000.5,e=0.5,f=0.001}")
+        #expect(failure("a = 1.") == "1:5: a: '1.' is not a valid number")
+        #expect(failure("a = .5") == "1:5: a: expected a value, found '.'")
+        #expect(failure("a = 01.5") == "1:5: a: '01.5' is not a valid number")
+        #expect(failure("a = 1._5") == "1:5: a: '1._5' is not a valid number")
+        #expect(failure("a = 1.5e") == "1:5: a: '1.5e' is not a valid number")
+        #expect(failure("a = 1e400") == "1:5: a: 1e400 is out of range for a 64-bit float")
+    }
+
     @Test func unsupportedValuesAreRejected() {
-        #expect(failure("a = 1.5") == "1:5: a: floats are not supported")
-        #expect(failure("a = 1e3") == "1:5: a: floats are not supported")
-        #expect(failure("a = 1e-3") == "1:5: a: floats are not supported")
-        #expect(failure("a = -2.5E-10") == "1:5: a: floats are not supported")
-        #expect(failure("a = -inf") == "1:5: a: floats are not supported")
+        #expect(failure("a = -inf") == "1:5: a: infinity and nan are not supported")
+        #expect(failure("a = nan") == "1:5: a: infinity and nan are not supported")
         #expect(failure("a = 1979-05-27") == "1:5: a: dates and times are not supported")
         #expect(failure("a = 07:32:00") == "1:5: a: dates and times are not supported")
         #expect(failure("a = 0xFF") == "1:5: a: hexadecimal, octal and binary integers are not supported")

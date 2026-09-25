@@ -102,6 +102,29 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(record.encoded() == expected)
 }
 
+/// The animation Spaces follow the version 1 layout, which a record without them keeps
+/// byte for byte. A reader that predates them stops before them and still restores every
+/// concealed window, so they need no new version.
+@Test func animationSpacesFollowTheWindows() throws {
+    let before = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 3, start: 4),
+                                spaces: [5], windows: [.init(id: 6, owner: ProcessIdentity(pid: 7, start: 8), originalSpace: 9)])
+    var record = before
+    record.animationSpaces = [10, 11]
+    let bytes = try #require(record.encoded())
+    let old = try #require(before.encoded())
+    #expect(Array(bytes.prefix(old.count)) == old)
+    #expect(Array(bytes.dropFirst(old.count)) == [2, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0])
+    #expect(RecoveryRecord(decoding: bytes) == record)
+    #expect(RecoveryRecord(decoding: old) == before)
+    #expect(RecoveryRecord(decoding: bytes.dropLast()) == nil)
+
+    let url = temporaryFile()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let file = try RecordFile(url: url)
+    file.publish(record)
+    #expect(file.read() == record)
+}
+
 @Test func recordBeyondTheDecodersLimitsIsRefused() throws {
     let url = temporaryFile()
     defer { try? FileManager.default.removeItem(at: url) }
