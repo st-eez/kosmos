@@ -809,6 +809,47 @@ off the main thread).
   - each window has exactly one place.
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
+- `focus` in a direction goes up the tree to the nearest container along the direction
+  with a sibling on that side, then into that sibling by focus order, as i3's does. The
+  workspace's floating windows count as tiles, as AeroSpace's `focus` counts them without
+  `--ignore-floating` (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at
+  5f08f9c). macOS with SIP on cannot keep another app's floating windows above the tiles.
+  Focusing or clicking a tile brings it over any floating window it overlaps, so a
+  floating window can end up behind a tile, where hover cannot reach it either. A Space
+  shown above the desktop's keeps one on top, and covers every menu and all system UI too
+  (`kosmos-probe float-layer`, on the floatprobe branch).
+  - Each floating window stands in the container of the tile under its center, just
+    before that tile, or just after it when its center is at or past the tile's center
+    along the container. The tile under a center is the one whose share of the tiling
+    rectangle, with no gaps, holds it, as AeroSpace's virtual rectangles do, and a center
+    off that rectangle counts at its nearest point there. A floating window centered
+    between two side by side tiles therefore stands between them: from the left tile,
+    `focus right` reaches it, and again reaches the right tile. With no tiles, the
+    floating windows stand first in the root. Windows at one place go in the order of
+    their centers along the container, and stacking plays no part.
+  - The frames are the ones the inventory last heard from WindowServer, which the
+    pointer's center uses too (section 5.11), so the command waits on no read. Only the
+    focused workspace's floating windows count, and parked windows never do: minimized,
+    hidden with their app or in native fullscreen.
+  - Into a container, Kosmos goes by each window's own focus order. AeroSpace's temporary
+    placement marks each floating window most recently focused, which its source calls a
+    bug ("floating windows break mru").
+  - `--ignore-floating` counts the tiles alone, as every focus did before. From a
+    floating window the tiles then have no window in any direction.
+  - At the workspace's edge in the direction, with no window there, floating or tiled,
+    `--boundaries all-monitors-outer-frame` goes on to the next display (section 5.13).
+  - Focusing a floating window raises it over the tiles it overlaps through the request
+    every focus makes (section 5.4): AXRaise inside the front app, and the key record,
+    then the worker's AXRaise, for another app. A keyboard focus change centers the
+    pointer on a floating window as on a tile (section 5.11).
+  - Hyprland's `movefocus` looks among windows of the focused window's kind first: from a
+    tile, the tiles beside it on that side, and the floating windows only when no tile is
+    there; from a floating window, the floating windows by angle and distance
+    (`CWindowQuery::inDirection` in src/desktop/state/WindowQuery.cpp, Hyprland main at
+    e368c13). From either of two side by side tiles the other tile is there, so a floating
+    window centered between them is never reached from a tile. Kosmos follows AeroSpace
+    here, where section 1 would follow Omarchy, because only AeroSpace's rule reaches that
+    window. Steve chose it.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
   workspace at their saved position, and Kosmos follows them to that workspace, as it does
   for Command-Tab. For an app that unhides, it follows the window the app keys if that
@@ -1269,7 +1310,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     AXRaise keys a window, and for another app AXRaise follows the key record (section
     5.4), so the tile comes up over any floating window it overlaps, which Hyprland keeps
     on top. Raising the floating windows again after the raise would key one of the front
-    app's, or reorder only a background app's own windows. If it bothers in practice, the
+    app's, or reorder only a background app's own windows. `focus` in a direction reaches a
+    floating window a tile covers (section 5.5). If it bothers in practice, the
     path is yabai's `window_manager_focus_window_without_raise`, which AutoRaise carries
     under FOCUS_FIRST (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a =
     0x02 to the app's key window, 10 ms later one with 0x8a = 0x01 to the target, then the
@@ -1305,7 +1347,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - KosmosCore writes the description and the category from the parsed command
     (`Command.summary` and `Command.category`), so the config holds no descriptions:
     `focus --boundaries all-monitors-outer-frame left` is "Focus left, across monitors" in
-    Focus.
+    Focus, and `focus --ignore-floating left` is "Focus left among tiled windows".
   - The categories are Focus, Move, Workspace, Monitor, Layout, Resize, Profile and Other.
     Moving a window to a workspace or a monitor goes with the workspace or monitor commands.
   - Profiles carry no bindings, so the list is the same under every profile.
@@ -1361,9 +1403,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     workspace of Steve's four profiles would refuse, since each is assigned, and
     AeroSpace's monitor patterns by name.
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
-    display in the direction at the edge of the workspace. `focus` then focuses that
-    display's workspace; `move` moves a tiled window there and follows it. A move is at
-    the edge when the window has no sibling in the direction and no container above its
+    display in the direction at the edge of the workspace. `focus` is at the edge when no
+    window, floating or tiled, stands in the direction (section 5.5), and then focuses
+    that display's workspace; `move` moves a tiled window there and follows it. A move is
+    at the edge when the window has no sibling in the direction and no container above its
     own runs along the direction, where AeroSpace's `moveOut` reaches the workspace and a
     plain `move` wraps the root in a new root along the direction, as AeroSpace and i3 do.
     Past the last display without wrapping, the window stays. With

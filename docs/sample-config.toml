@@ -72,8 +72,10 @@ outer-per-monitor = { builtin = { top = 5 } }
 # SketchyBar itself, so no binding runs `sketchybar --trigger`.
 [mode.main.binding]
 
-# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys). At
-# the edge of the workspace, focus goes on to the next monitor.
+# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys).
+# Floating windows count where they stand among the tiles, so one behind a tile is in
+# reach; --ignore-floating walks the tiles alone. At the edge of the workspace, focus goes
+# on to the next monitor.
 alt-left = 'focus --boundaries all-monitors-outer-frame left'
 alt-right = 'focus --boundaries all-monitors-outer-frame right'
 alt-up = 'focus --boundaries all-monitors-outer-frame up'
