@@ -12,12 +12,16 @@ struct RecoveryPlan: Equatable {
     var stuck: [UInt32] = []
 
     /// - Parameters:
-    ///   - members: the windows in each recorded Space.
-    ///   - stranded: recorded windows that still exist and are on no Space at all.
+    ///   - members: the windows in each recorded Space, each one planned whether or not a
+    ///     read of rows found it: removing a window that is gone does nothing, and one left
+    ///     out would keep the record for good.
+    ///   - recorded: the recorded windows. Each that `alive` names and that is on no Space is
+    ///     added to one.
+    ///   - alive: the windows a read of rows found.
     ///   - hasOrdinarySpace: whether a window belongs to an ordinary Space besides the
     ///     recorded one.
     ///   - destination: the ordinary Space a window without one should go to, if any.
-    static func make(members: [UInt64: [UInt32]], stranded: [UInt32],
+    static func make(members: [UInt64: [UInt32]], recorded: [UInt32], alive: Set<UInt32>,
                      hasOrdinarySpace: (UInt32) -> Bool, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
         var plan = RecoveryPlan()
         /// Adds the window to its destination, or keeps it stuck when it has none. Returns
@@ -38,7 +42,9 @@ struct RecoveryPlan: Equatable {
             }
         }
         let inMembers = Set(members.values.joined())
-        for window in stranded where !inMembers.contains(window) { _ = place(window) }
+        for window in recorded where alive.contains(window) && !inMembers.contains(window) && !hasOrdinarySpace(window) {
+            _ = place(window)
+        }
         return plan
     }
 

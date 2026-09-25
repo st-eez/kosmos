@@ -50,8 +50,7 @@ public enum Recovery {
         let liveSpaces = recorded.filter { !gone.contains($0) }
         let alive = Set(SkyLight.rows(Array(Set(members.values.joined()).union(record.windows.map(\.id)))).map(\.id))
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
-        let stranded = record.windows.map(\.id).filter { alive.contains($0) && spaces(of: $0).isEmpty }
-        let plan = RecoveryPlan.make(members: members.mapValues { $0.filter(alive.contains) }, stranded: stranded,
+        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), alive: alive,
                                      hasOrdinarySpace: { !spaces(of: $0).isEmpty },
                                      destination: { destinationSpace(for: $0, original: original[$0]) })
 
