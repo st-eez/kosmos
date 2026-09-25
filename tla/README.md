@@ -124,9 +124,9 @@ Space, about 0.5 s after it starts to leave.
 
 The `split-` configs run a focus request as the steps the implementation takes
 (`SplitQueue`): the focus queue's, the target app worker's, the app's AXRaise landing
-later, the raise after a background app's key record (`PostRaise`), the app's focus
-notification, whose observer callback runs some time after the change (`NoteDelay`), and
-the activation read, which runs on the app's worker and reads the app's focused window
+later, the raise after a background app's key record (`PostRaise`) and the echo it records
+(`PostRaiseEcho`), the app's focus notification, whose observer callback runs some time
+after the change (`NoteDelay`), and the activation read, which runs on the app's worker and reads the app's focused window
 whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
 unless named `busyb`). AXRaise alone keys a window inside the front app (`RaiseKeys`), and
 a raise in a background app is reported as a focus change (`RaiseReports`), both as
@@ -134,16 +134,18 @@ a raise in a background app is reported as a focus change (`RaiseReports`), both
 without misses and without the miss rule (change 21). In the `background` configs
 background apps also change their own focused window (`AllowBackground`). In the `notice`
 configs the main actor also notices an activation some time after it happens
-(`NoticeDelay`). The split configs also check that the key window is the front window of
-its app at rest (`FocusOnTop`).
+(`NoticeDelay`), with two inputs. `split-open` lets the user open a hidden window, and
+`split-displays` runs it on two displays. The split configs also check that the key window
+is the front window of its app at rest (`FocusOnTop`).
 
-Each run was stopped after 10 minutes. A run that finished gives its state count; one that
-was stopped gives the states it had checked without a violation.
+Each split run used 4 workers and was stopped after 10 minutes. A run that finished gives
+its state count and the depth of its search. One that was stopped gives the states it had
+checked without a violation and the depth it had reached.
 
 SPLITTABLE
 
 Each of these runs one rule the implementation had, or one the spec had, and fails as
-expected (changes 17 to 21):
+expected (changes 17 to 23):
 
 SPLITFAILS
 
@@ -356,7 +358,8 @@ change that removed it:
       (`split-user-reasserttakes`). Only a report Kosmos adopts or follows counts now.
     - A click on a window being concealed had its callback run after the conceal, so the
       window looked hidden, and Kosmos followed it back to the old workspace over the
-      user's next click (`split-user-notefollows`). Only an activation read follows now.
+      user's next click. Only an activation read followed after this change; change 22
+      follows notifications again and exempts this race.
     - With notices late, Kosmos's older request recorded and made its activation after
       the user's Command-Tab and before the main actor noticed the Command-Tab. The read,
       stamped after Kosmos's record, looked overtaken by the user and was dropped
@@ -398,4 +401,36 @@ change that removed it:
     order, 0 times in 10 on top (`kosmos-probe keying`), so `FocusOnTop` fails without the
     raise after it (`split-user-nopostraise`). The app's worker raises the window after
     the key record while the app is front and the window is still its focused window;
-    the key record then AXRaise put it on top 10 times in 10. POSTRAISE
+    the key record then AXRaise put it on top 10 times in 10. Change 23 gives that raise
+    its echo.
+22. **Windows opened inside the front app.** With main's inputs in the split model, the user
+    can open a concealed window of the front app, as its Window menu or `open` on a document
+    does. Only the app's notification reports that change. With only activation reads
+    followed, Kosmos requested its intent again and took the window away from the user
+    (`split-open-readfollows`). A notification of a window hidden at its stamp now follows
+    as an activation read does. That brings back change 20's click on a window being
+    concealed whose callback runs after the conceal, which Kosmos follows back. It joins the
+    exempted race of a switch that changes whether a window is hidden between the user's
+    change and its notice (`lastMis`), now also between the change and its callback. The
+    opened window found two more races, and their exemptions widened:
+    - Kosmos's older request activated another app before the callback of the user's change
+      inside the front app ran, and then brought that app front again. The callback found
+      the app front, and the held notification rule dropped it as a change the app made
+      before Kosmos's activation. The exemption for a click lost to a late callback
+      (`lastLost`) now covers a callback that runs after its app lost the front at all.
+    - The user opened the window Kosmos's older raise was keying, before the app performed
+      the raise. The user's change matched the raise's record, and Kosmos, whose intent had
+      moved on, requested it again. The exemption for the raise after a key record
+      (`lastRaced`) now covers the user keying any window of an app with a raise Kosmos
+      decided and the app has not performed.
+23. **The echo of the raise after a key record.** The worker raises only while the app is
+    front and the target is its focused window, so the raise finds the target key and
+    changes nothing, unless the user keyed another window of the app between the check and
+    the raise. With no record, the raise's report then reads as the user's. When a newer
+    command had concealed the window by then, Kosmos followed it back to the workspace the
+    user left (`split-open-postraisenone`). A record kept until a report matches it stays
+    behind after every raise that changes nothing, and swallowed the user's later opening
+    of that window (`split-open-postraisekept`). The worker now records just before the
+    raise, and once the raise has returned and it has read the app's focused window, tells
+    the main actor, which forgets the record if no report used it. The app's callbacks for
+    the raise have run by then, as they have before its activation read.
