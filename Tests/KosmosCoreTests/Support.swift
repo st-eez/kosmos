@@ -55,6 +55,11 @@ extension Workspace {
         frames(in: rect, gaps: gaps, minimums: [:])
     }
 
+    /// `focus` in a direction among the tiles alone.
+    mutating func focus(_ direction: Direction, from window: WindowID) -> WindowID? {
+        focus(direction, from: window, floating: [:], in: screen, gaps: Gaps(), minimums: [:])
+    }
+
     /// `resize` with no minimums.
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {

@@ -50,6 +50,96 @@ import Testing
     #expect(workspace.fullscreenWindow == nil)
 }
 
+// MARK: Focus in a direction with floating windows
+
+/// Steve's gaps on `screen`: in `h[1 2]` tile 1 spans x 10 to 495 and tile 2 x 505 to 990.
+private let deskGaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
+
+extension Workspace {
+    /// `focus` in a direction with the floating windows at `frames`, on `screen` with `deskGaps`.
+    fileprivate mutating func focus(_ direction: Direction, from window: WindowID, floating frames: [WindowID: CGRect]) -> WindowID? {
+        focus(direction, from: window, floating: frames, in: screen, gaps: deskGaps, minimums: [:])
+    }
+}
+
+@Test func focusReachesFloatingWindowCenteredBetweenTiles() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [9]
+    // Centered on the gap between the tiles.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 300, y: 100, width: 400, height: 400)]
+    #expect(workspace.focus(.right, from: 1, floating: frames) == 9)
+    #expect(workspace.focusedWindow == 9)
+    #expect(workspace.focus(.right, from: 9, floating: frames) == 2)
+    #expect(workspace.focus(.left, from: 2, floating: frames) == 9)
+    #expect(workspace.focus(.left, from: 9, floating: frames) == 1)
+    #expect(workspace.focus(.up, from: 9, floating: frames) == nil)
+    #expect(workspace.tree == "h[1 2]")
+}
+
+@Test func focusReachesFloatingWindowPastTheLastTile() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [9]
+    // Its center is off the display, past tile 2's center.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 800, y: 200, width: 400, height: 200)]
+    #expect(workspace.focus(.right, from: 2, floating: frames) == 9)
+    #expect(workspace.focus(.right, from: 9, floating: frames) == nil)
+    #expect(workspace.focus(.left, from: 9, floating: frames) == 2)
+}
+
+@Test func focusReachesFloatingWindowCoveringATileAfterIt() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [9]
+    // A center at the tile's own goes after the tile.
+    let frames: [WindowID: CGRect] = [9: workspace.frames(in: screen, gaps: deskGaps)[1]!]
+    #expect(workspace.focus(.right, from: 1, floating: frames) == 9)
+    #expect(workspace.focus(.right, from: 9, floating: frames) == 2)
+    #expect(workspace.focus(.left, from: 2, floating: frames) == 9)
+    #expect(workspace.focus(.left, from: 9, floating: frames) == 1)
+}
+
+@Test func focusOrdersFloatingWindowsAtOnePlaceByTheirCenters() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [8, 9]
+    // Overlapping, both between the tiles, 9 left of 8.
+    let frames: [WindowID: CGRect] = [8: CGRect(x: 350, y: 100, width: 400, height: 400),
+                                      9: CGRect(x: 250, y: 100, width: 400, height: 400)]
+    #expect(workspace.focus(.right, from: 1, floating: frames) == 9)
+    #expect(workspace.focus(.right, from: 9, floating: frames) == 8)
+    #expect(workspace.focus(.right, from: 8, floating: frames) == 2)
+}
+
+@Test func focusPutsFloatingWindowInTheContainerOfTheTileUnderIt() {
+    var workspace = Workspace("h[1 v[2 3]]")
+    workspace.floating = [9]
+    // In tile 2, below its center.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 150, width: 200, height: 200)]
+    #expect(workspace.focus(.down, from: 2, floating: frames) == 9)
+    #expect(workspace.focus(.down, from: 9, floating: frames) == 3)
+    #expect(workspace.focus(.right, from: 9, floating: frames) == nil)
+    // Into the column by focus order: 3 was focused last.
+    #expect(workspace.focus(.right, from: 1, floating: frames) == 3)
+}
+
+@Test func focusWalksFloatingWindowsByTheirCentersWithNoTiles() {
+    var workspace = Workspace()
+    workspace.floating = [1, 2, 3]
+    let frames: [WindowID: CGRect] = [1: CGRect(x: 0, y: 0, width: 100, height: 100),
+                                      2: CGRect(x: 10, y: 10, width: 100, height: 100),
+                                      3: CGRect(x: 20, y: 20, width: 100, height: 100)]
+    #expect(workspace.focus(.right, from: 2, floating: frames) == 3)
+    #expect(workspace.focus(.left, from: 3, floating: frames) == 2)
+    #expect(workspace.focus(.left, from: 2, floating: frames) == 1)
+}
+
+@Test func focusSkipsParkedWindowsAndFloatingWindowsWithNoFrame() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [8, 9]
+    workspace.park(9)
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 300, y: 100, width: 400, height: 400)]
+    #expect(workspace.focus(.right, from: 1, floating: frames) == 2)
+    #expect(workspace.focus(.right, from: 8, floating: frames) == nil)
+}
+
 // MARK: Swap
 
 @Test func swapExchangesPlacesAndKeepsShares() {

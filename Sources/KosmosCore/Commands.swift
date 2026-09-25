@@ -13,12 +13,54 @@ extension Workspace {
     /// Focuses the window next to `window` in the direction and returns it, or returns nil
     /// at the edge of the workspace. Like i3's `focus`, it walks up to the nearest container
     /// that runs along the direction and has a sibling on that side, then descends into the
-    /// sibling by focus order.
-    mutating func focus(_ direction: Direction, from window: WindowID) -> WindowID? {
-        guard let path = neighbor(of: window, direction) else { return nil }
-        let target = mostRecentWindow(in: root.node(at: path))
+    /// sibling by focus order. The floating windows `frames` has frames for count as tiles
+    /// where `withFloatingTiled` puts them. `rect`, `gaps` and `minimums` are the ones
+    /// `frames(in:gaps:minimums:)` gets.
+    mutating func focus(_ direction: Direction, from window: WindowID, floating frames: [WindowID: CGRect],
+                        in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
+        let seen = withFloatingTiled(frames, in: rect, gaps: gaps, minimums: minimums)
+        guard let path = seen.neighbor(of: window, direction) else { return nil }
+        let target = seen.mostRecentWindow(in: seen.root.node(at: path))
         focus(target)
         return target
+    }
+
+    /// The workspace with each floating window that `frames` places tiled where AeroSpace's
+    /// `focus` counts it (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`), for a focus
+    /// in a direction to search. A window goes into the container of the tile under its
+    /// center, just before that tile, or just after it when the center is at or past the
+    /// tile's center along the container. The tile under a center is the one whose share of
+    /// the tiling rectangle, with no gaps, holds it, as AeroSpace's virtual rectangles do,
+    /// and a center off that rectangle counts at its nearest point on it. With no tiles, the
+    /// windows go first in the root. Windows at one place go in the order of their centers
+    /// along the container, whatever their stacking. The shares are left unscaled.
+    func withFloatingTiled(_ frames: [WindowID: CGRect], in rect: CGRect, gaps: Gaps,
+                           minimums: [WindowID: CGSize]) -> Workspace {
+        let area = tilingRect(rect, gaps.outer)
+        let shares = tileFrames(in: rect, gaps: Gaps(outer: gaps.outer))
+        let tiles = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        var places: [(window: WindowID, container: Int, index: Int, along: CGFloat)] = []
+        for window in floating {
+            guard let frame = frames[window] else { continue }
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            // The right and bottom edges belong to the next rectangle.
+            let point = CGPoint(x: min(max(center.x, area.minX), area.maxX - 1), y: min(max(center.y, area.minY), area.maxY - 1))
+            guard let tile = shares.first(where: { $0.value.contains(point) })?.key else {
+                places.append((window, root.id, 0, root.orientation == .horizontal ? center.x : center.y))
+                continue
+            }
+            let path = root.path(to: tile)!
+            let container = root[path.dropLast()]
+            let along: (CGPoint) -> CGFloat = container.orientation == .horizontal ? \.x : \.y
+            let after = along(center) >= along(CGPoint(x: tiles[tile]!.midX, y: tiles[tile]!.midY))
+            places.append((window, container.id, path.last! + (after ? 1 : 0), along(center)))
+        }
+        // Each index counts the tiles alone, so the windows furthest along go in first.
+        var seen = self
+        for place in places.sorted(by: { $0.along < $1.along }).reversed() {
+            seen.root[seen.root.path(toContainer: place.container)![...]].insert(.window(place.window), at: place.index)
+        }
+        return seen
     }
 
     /// Exchanges the window with the one `focus` reaches in the direction. Each takes the
