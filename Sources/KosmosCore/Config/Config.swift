@@ -99,27 +99,20 @@ public enum MonitorMatch: Equatable, Sendable {
 
 public struct GapSettings: Equatable, Sendable {
     /// Points between neighboring windows.
-    public var inner = 0
+    public var inner: CGFloat = 0
     /// Points between the windows and each edge of a display.
-    public var outer = OuterGaps()
+    public var outer = Insets()
     /// Changes to `outer` on displays a named monitor matches. The first entry that matches a
     /// display applies.
     public var outerPerMonitor: [MonitorOuterGaps] = []
 }
 
-public struct OuterGaps: Equatable, Sendable {
-    public var top = 0
-    public var left = 0
-    public var bottom = 0
-    public var right = 0
-}
-
 public struct MonitorOuterGaps: Equatable, Sendable {
     public var monitor: String
-    public var top: Int?
-    public var left: Int?
-    public var bottom: Int?
-    public var right: Int?
+    public var top: CGFloat?
+    public var left: CGFloat?
+    public var bottom: CGFloat?
+    public var right: CGFloat?
 }
 
 public struct Binding: Equatable, Sendable {
@@ -232,19 +225,13 @@ extension Config {
     }
 
     public func gaps(on display: Display) -> Gaps {
-        let outer = outerGaps(on: display)
-        return Gaps(inner: CGFloat(gaps.inner), outer: Insets(top: CGFloat(outer.top), left: CGFloat(outer.left),
-                                                              bottom: CGFloat(outer.bottom), right: CGFloat(outer.right)))
-    }
-
-    public func outerGaps(on display: Display) -> OuterGaps {
-        var gaps = self.gaps.outer
-        if let change = self.gaps.outerPerMonitor.first(where: { monitors[$0.monitor]?.matches(display) == true }) {
-            gaps.top = change.top ?? gaps.top
-            gaps.left = change.left ?? gaps.left
-            gaps.bottom = change.bottom ?? gaps.bottom
-            gaps.right = change.right ?? gaps.right
+        var outer = gaps.outer
+        if let change = gaps.outerPerMonitor.first(where: { monitors[$0.monitor]?.matches(display) == true }) {
+            outer.top = change.top ?? outer.top
+            outer.left = change.left ?? outer.left
+            outer.bottom = change.bottom ?? outer.bottom
+            outer.right = change.right ?? outer.right
         }
-        return gaps
+        return Gaps(inner: gaps.inner, outer: outer)
     }
 }

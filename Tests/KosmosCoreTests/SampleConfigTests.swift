@@ -104,7 +104,7 @@ import Testing
         #expect(workspace("com.apple.Safari.WebApp.1234", "YouTube") == "4")
         #expect(workspace("com.google.Chrome", "Google Chrome") == "4")
         #expect(workspace("com.mitchellh.ghostty", "Ghostty") == "1")
-        #expect(config.outerGaps(on: builtIn).top == 5)
-        #expect(config.outerGaps(on: asusMain).top == 35)
+        #expect(config.gaps(on: builtIn).outer.top == 5)
+        #expect(config.gaps(on: asusMain).outer.top == 35)
     }
 }

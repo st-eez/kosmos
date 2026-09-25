@@ -504,8 +504,8 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
     @Test func outerGapsPerMonitor() throws {
         let config = try config()
-        #expect(config.outerGaps(on: builtIn) == OuterGaps(top: 5, left: 10, bottom: 10, right: 10))
-        #expect(config.outerGaps(on: main) == OuterGaps(top: 35, left: 10, bottom: 10, right: 10))
+        #expect(config.gaps(on: builtIn).outer == Insets(top: 5, left: 10, bottom: 10, right: 10))
+        #expect(config.gaps(on: main).outer == Insets(top: 35, left: 10, bottom: 10, right: 10))
     }
 
     @Test func monitorNamesMatchIgnoringCase() {

@@ -1,3 +1,5 @@
+import CoreGraphics
+
 extension Config {
     /// Parses and checks a whole config file and the files its `include` names, which `read`
     /// returns the text of, by the name the file gives, or nil when it cannot. `config` is
@@ -239,7 +241,7 @@ private struct ConfigDecoder {
             gaps.inner = gap(entry.value, path.key(entry.key)) ?? 0
         }
         if let entry = table["outer"], let sides = sides(entry.value, path.key(entry.key)) {
-            gaps.outer = OuterGaps(top: sides.top ?? 0, left: sides.left ?? 0, bottom: sides.bottom ?? 0, right: sides.right ?? 0)
+            gaps.outer = Insets(top: sides.top ?? 0, left: sides.left ?? 0, bottom: sides.bottom ?? 0, right: sides.right ?? 0)
         }
         if let entry = table["outer-per-monitor"], let perMonitor = self.table(entry.value, path.key(entry.key)) {
             for monitor in perMonitor.entries {
@@ -253,21 +255,21 @@ private struct ConfigDecoder {
         return gaps
     }
 
-    private mutating func sides(_ value: TOMLValue, _ path: ValuePath) -> (top: Int?, left: Int?, bottom: Int?, right: Int?)? {
+    private mutating func sides(_ value: TOMLValue, _ path: ValuePath) -> (top: CGFloat?, left: CGFloat?, bottom: CGFloat?, right: CGFloat?)? {
         guard let table = table(value, path, allowed: ["top", "left", "bottom", "right"]) else { return nil }
-        func side(_ name: String) -> Int? {
+        func side(_ name: String) -> CGFloat? {
             table[name].flatMap { gap($0.value, path.key(name)) }
         }
         return (side("top"), side("left"), side("bottom"), side("right"))
     }
 
-    private mutating func gap(_ value: TOMLValue, _ path: ValuePath) -> Int? {
+    private mutating func gap(_ value: TOMLValue, _ path: ValuePath) -> CGFloat? {
         guard let points = integer(value, path) else { return nil }
         guard points >= 0 else {
             fail("gaps cannot be negative", at: value.position, path)
             return nil
         }
-        return points
+        return CGFloat(points)
     }
 
     /// `true`, the default, or a table of settings turns borders on, and `false` off, as
