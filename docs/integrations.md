@@ -8,12 +8,12 @@
   out on. The bar runs no command on a switch. A bar that starts
   after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
   runs `kosmos workspace <name>`.
-- **Borders (JankyBorders).** With a `[borders]` table Kosmos draws borders of its own
-  ([borders.md](borders.md)), in place of JankyBorders, which then need not run. Beside Kosmos,
-  JankyBorders works while its inactive borders are transparent; with visible inactive
-  borders, Kosmos would have to conceal each border window along with its window, as the
-  AeroSpace fork did. During a slide its border scales with the window and can show on
-  the neighbouring display.
+- **Borders (JankyBorders).** Kosmos draws borders of its own by default
+  ([borders.md](borders.md)), in place of JankyBorders, so stop JankyBorders, or set
+  `borders = false` to keep it. Beside Kosmos, JankyBorders works while its inactive
+  borders are transparent; with visible inactive borders, Kosmos would have to conceal
+  each border window along with its window, as the AeroSpace fork did. During a slide its
+  border scales with the window and can show on the neighbouring display.
 - **Display profile scripts.** Scripts that rewrite another window manager's config when
   displays change give way to Kosmos's profiles: Kosmos matches displays by serial,
   switches profile when displays change, and puts the profile name in the bar event

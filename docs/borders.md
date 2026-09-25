@@ -1,23 +1,20 @@
 # Borders
 
 Kosmos draws a border around each tiled and floating window on screen, as Omarchy's
-Hyprland does, in place of JankyBorders. JankyBorders runs in a process
-of its own and draws from WindowServer's events, so it knows nothing of workspaces,
-concealment or slides. In Steve's trial of the slide on 2026-09-25, its border scaled with
-the sliding window, whose Space it copies its border into, and near a display's edge the
-border showed on the neighbouring display, drawn at the window's frame while the slide
-showed the window elsewhere. Kosmos knows each
-window's frame, focus, workspace, concealment and fullscreen state, and during a slide the
-frame the slide shows the window at.
+Hyprland does, in place of JankyBorders. JankyBorders runs in a process of its own and
+draws from WindowServer's events, so it knows nothing of workspaces, concealment or slides.
+In Steve's trial of the slide on 2026-09-25, its border scaled with the sliding window,
+whose Space it copies its border into, and near a display's edge the border showed on the
+neighbouring display, drawn at the window's frame while the slide showed the window
+elsewhere. Kosmos knows each window's frame, focus, workspace, concealment and fullscreen
+state, and during a slide the frame the slide shows the window at.
 
-- Borders are on by default ([config.md](config.md)): a 4 point line around the focused window in
-  the macOS accent color, and none around the others. `borders = false` turns them off, as
-  `animations = false` turns off slides, and a `[borders]` table sets `width`, `active` and
-  `inactive`. The accent is `NSColor.controlAccentColor` in sRGB under Kosmos's
-  appearance. Kosmos reads it again when AppKit posts
-  `NSColor.systemColorsDidChangeNotification`, which a new accent color in System
-  Settings brings, and when its appearance changes between light and dark, which show the
-  accent in shades of their own.
+- The config's `borders` key turns borders on and off and sets their width and colors
+  ([config.md](config.md)). The focused window's color defaults to the macOS accent,
+  `NSColor.controlAccentColor` in sRGB under Kosmos's appearance. Kosmos reads it again
+  when AppKit posts `NSColor.systemColorsDidChangeNotification`, which a new accent color
+  in System Settings brings, and when its appearance changes between light and dark,
+  which show the accent in shades of their own.
 - Steve's dotfiles theme the table: their theme build renders it for each theme from the
   accent and border width that render JankyBorders' `bordersrc`, and `theme-set` links the
   current theme's copy to the file the config includes ([config.md](config.md)) and
@@ -28,8 +25,8 @@ frame the slide shows the window at.
   with a Kosmos fullscreen window, the fullscreen window included. A tiled window the user
   holds lifted by its title bar is parked, and keeps its border ([displays.md](displays.md)).
 - The window with the focus, `Session.focused`, takes `active`, or the accent color, and
-  every other window `inactive`. The color changes with the model's focus: at a command, a hover or a key
-  window report Kosmos adopts, before macOS's key change lands. A fully transparent color
+  every other window `inactive`. The color changes with the model's focus: at a command,
+  a hover or a key window report Kosmos adopts, before macOS's key change lands. A fully transparent color
   draws no border and makes no window, so with Steve's transparent `inactive` only the
   focused window has one.
 - A bordered window gets its border only while it is on screen: not concealed, as a
@@ -37,11 +34,9 @@ frame the slide shows the window at.
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks
   it. A window that a batch still in flight conceals counts as concealed: after a switch
   to workspace B and straight back to A, A's windows get their borders once the batch
-  that conceals them and the one that reveals them have both finished. A window on no display, as a concealed one reads, gets none. So the border hides at
-  a conceal and a switch, a minimize, a hide, native fullscreen and Kosmos's fullscreen,
-  and shows again at the reveal, the return or the toggle back. The outgoing workspace's
-  borders go as Kosmos plans the switch, before its batch conceals the windows, and the
-  incoming ones come when the batch confirms, after the windows show.
+  that conceals them and the one that reveals them have both finished. The outgoing
+  workspace's borders go as Kosmos plans the switch, before its batch conceals the
+  windows, and the incoming ones come when the batch confirms, after the windows show.
 - The shape is JankyBorders' line (`border.c`, Steve's fork): `width` points wide and
   centered on the window's edge, so its outer half lies outside the window, and of its
   inner half only the point next to the edge shows, over the window's own edge. With
@@ -61,8 +56,8 @@ frame the slide shows the window at.
   without a shadow, ignoring the mouse, never key or main, hidden in Mission Control and
   out of the window cycle (`.transient` and `.ignoresCycle`, as the empty workspace's
   window), and kept on screen when Hide Others in another app hides Kosmos
-  (`canHide = false`). The ring is its layer's border, which Core Animation draws with no backing
-  store: a border around 1200 by 800 points added nothing to the probe's memory
+  (`canHide = false`). The ring is its layer's border, which Core Animation draws with no
+  backing store: a border around 1200 by 800 points added nothing to the probe's memory
   footprint. A border hidden is ordered out and goes to a pool, and the next window
   bordered reuses it, so Steve's one border window moves from window to window with the
   focus.
@@ -99,16 +94,16 @@ frame the slide shows the window at.
   read of the row, as JankyBorders trails it by its event's way.
   The Controller shows the borders again after each change of the model (`publishState`),
   each batch's completion, each change of a window's frame, level or corner radius or of
-  whether it is ordered in, and each slide frame; nothing polls. A border that is the same as shown costs no
-  AppKit call, and a move at the same size calls `setFrameOrigin`, 0.014 ms at the median
-  against 0.158 ms for a resize (the probe, 200 of each).
+  whether it is ordered in, and each slide frame; nothing polls. A border that is the
+  same as shown costs no AppKit call, and a move at the same size calls `setFrameOrigin`,
+  0.014 ms at the median against 0.158 ms for a resize (the probe, 200 of each).
 - The border shows on the display that holds the largest part of its window, cut to that
   display, so it never shows on a display the window is not on. At a display's edge it
   is cut there, as the window is.
-- During a slide ([geometry.md](geometry.md)), the border follows the frame the slide shows the window at,
-  as of the display frame its display's link last stepped (`Slides.shown`), at that frame's
-  alpha, so a pop fades it in and scales its frame with the window, at the same line
-  width. Its window then covers its display, and each display frame moves only the
+- During a slide ([geometry.md](geometry.md)), the border follows the frame the slide
+  shows the window at, as of the display frame its display's link last stepped
+  (`Slides.shown`), at that frame's alpha, so a pop fades it in and scales its frame with
+  the window, at the same line width. Its window then covers its display, and each display frame moves only the
   ring's layer, which took a fourth of the main thread's time that moving the window did
   (below). The border stays in the desktop Space, out of the animation Space and its
   transform, so its line keeps its width and its display. The animation Space draws above
@@ -129,12 +124,10 @@ frame the slide shows the window at.
   | Four borders slid, the window moved each display frame | 81.8 and 121.7 ms | 6.2 and 5.3 ms |
   | Four borders slid, the layer moved each display frame | 28.9 and 46.2 ms | 7.7 and 5.9 ms |
 
-  Following four visible borders cost the probe 4.5 and 8.9 ms a relayout, and the main
-  thread 2.9 and 5.5 ms, against 5.9 to 7.1 ms for JankyBorders following the same
-  windows. During slides, each border step took 0.08 and 0.14 ms of the main thread with
-  the layer moved, against 0.32 and 0.49 ms with the window moved. WindowServer took 225
-  to 288 ms each half second, at rest too, so its share is rough: about 42 and 48 ms more
-  a relayout with the windows moved at each display frame, 13 and 15 ms more with the
+  During slides, each border step took 0.08 and 0.14 ms of the main thread with the layer
+  moved, against 0.32 and 0.49 ms with the window moved. WindowServer took 225 to 288 ms
+  each half second, at rest too, so its share is rough: about 42 and 48 ms more a
+  relayout with the windows moved at each display frame, 13 and 15 ms more with the
   layers moved, and nothing measurable for borders following change events. Kosmos's
   slide log gives its display link's callback time, which includes the borders.
 - Open until the live test:

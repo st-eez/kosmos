@@ -71,12 +71,7 @@ outer = { top = 35, left = 10, bottom = 10, right = 10 }
 # put windows 10 points under the bar, as on the other sides.
 outer-per-monitor = { builtin = { top = 5 } }
 
-# A border around each tiled and floating window on screen, in place of JankyBorders. On by
-# default, as in Omarchy: 4 points in the macOS accent color around the focused window, and
-# none around the others. This table gives the focused window Tokyo Night's blue instead;
-# the others' color stays transparent. The line is centered on the window's edge, as
-# JankyBorders draws its width, and its corners follow the window's. Colors are '#rrggbb',
-# or '#rrggbbaa' with the alpha last. `borders = false` turns borders off.
+# The focused window's border in Tokyo Night's blue, in place of the macOS accent color.
 [borders]
 width = 4.0
 active = '#7aa2f7'

@@ -36,10 +36,10 @@
   reads every file again. The last good config keeps the main file alone, so a broken
   config at launch falls back to it without its includes, whose keys take their
   defaults.
-- Borders are on by default, as in Omarchy ([borders.md](borders.md)): a 4 point line in the macOS
-  accent color around the focused window, and none around the others. `borders = false`
-  turns them off, as `animations = false` turns off slides. A `[borders]` table sets
-  `width`, in points, 4 by default; `active`, the focused window's color, the accent color
-  when left out; and `inactive`, every other window's, transparent by default. Colors are
-  `#rrggbb`, or `#rrggbbaa` with the alpha last. The width may be a float, as JankyBorders
-  writes it, `4.0`, so Kosmos's TOML reads floats.
+- Borders are on by default, as in Omarchy ([borders.md](borders.md)): a 4 point line in
+  the macOS accent color around the focused window, and none around the others.
+  `borders = false` turns them off, as `animations = false` turns off slides. A
+  `[borders]` table sets `width`, in points, 4 by default; `active`, the focused window's
+  color, the accent color when left out; and `inactive`, every other window's,
+  transparent by default. Colors are `#rrggbb`, or `#rrggbbaa` with the alpha last. The
+  width may be a float, as JankyBorders writes it, `4.0`, so Kosmos's TOML reads floats.
