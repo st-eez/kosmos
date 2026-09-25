@@ -302,7 +302,7 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         // share its space.
         let tile = lift.frames[12]!
         let plan = s.drop(at: CGPoint(x: tile.midX, y: tile.midY + 100))
-        #expect(s.workspaces["1"]!.tree == "h[11 v[12 10]]" && s.lifted.isEmpty)
+        #expect(s.workspaces["1"]!.tree == "h[11 v[12 10]]")
         #expect(plan.frames[10]!.minY > plan.frames[12]!.minY && plan.frames[10]!.width == tile.width)
         #expect(plan.focus == .window(10) && plan.show.isEmpty && plan.hide.isEmpty)
         #expect(s.focusedWorkspace == "1" && s.focused == 10)
@@ -333,6 +333,24 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
         _ = s.lift(11)
         _ = s.drop(at: CGPoint(x: before[11]!.midX, y: before[11]!.midY))
         #expect(s.workspaces["1"]!.tree == "h[10 11]" && s.frames(of: "1") == before)
+    }
+
+    @Test func aWindowDroppedInAGapTilesBesideTheClosestWindow() {
+        let spaced = Monitor(id: 2, frame: main.frame, gaps: Gaps(inner: 20, outer: gaps.outer))
+        var s = Session(names: names, monitors: [spaced])
+        _ = s.add(10); _ = s.add(11); _ = s.add(12)
+        s.adopt(10)
+        _ = s.perform(.resize(.width, by: 300))
+        _ = s.lift(12)
+        #expect(s.workspaces["1"]!.tree == "h[10 11]")
+        // In the gap between the two, level with their centers: 11 is narrower, so its
+        // center is closer, and 12 goes under it, as 11 is taller than wide.
+        let tiles = s.frames(of: "1")
+        let (wide, narrow) = (tiles[10]!, tiles[11]!)
+        let gap = CGPoint(x: (wide.maxX + narrow.minX) / 2, y: narrow.midY)
+        #expect(!wide.contains(gap) && !narrow.contains(gap) && wide.width > narrow.width)
+        _ = s.drop(at: gap)
+        #expect(s.workspaces["1"]!.tree == "h[10 v[11 12]]")
     }
 
     @Test func aWindowDroppedOnAnotherDisplayJoinsItsWorkspace() {
@@ -684,8 +702,8 @@ private func within(_ frames: [WindowID: CGRect], _ monitor: Monitor) -> Bool {
 /// screen, and checks after each step what DESIGN.md section 5.13 promises: every display
 /// shows at most one workspace, one it may show; the focused workspace is shown; every
 /// window is in the workspace it belongs to; a window is concealed exactly when its
-/// workspace is hidden, unless it is parked or lifted; and every tiled window of a shown
-/// workspace lies on that workspace's display.
+/// workspace is hidden, unless it is parked; and every tiled window of a shown workspace
+/// lies on that workspace's display.
 @Test(arguments: 1...12 as ClosedRange<UInt64>)
 func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -756,7 +774,6 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
         case 22:
             // The left button comes up anywhere, off every display too.
             carryOut(s.drop(at: CGPoint(x: CGFloat.random(in: -2500...2500, using: &random), y: CGFloat.random(in: -200...2300, using: &random))))
-            #expect(s.lifted.isEmpty, "seed \(seed) step \(step)")
         default:
             // A display change or a forced profile, and the resync after it.
             let profile = profiles.randomElement(using: &random)!

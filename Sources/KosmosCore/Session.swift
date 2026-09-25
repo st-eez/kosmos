@@ -617,11 +617,9 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The user started to drag a tiled window of a shown workspace by its title bar. It
-    /// leaves the tree, parked where it stood, and the other windows fill its space at once,
-    /// as Hyprland lifts a dragged window out of its layout. The plan has the workspace's
-    /// frames, none for the window, which macOS moves. Nil when the window is not tiled on a
-    /// shown workspace (DESIGN.md, section 5.13).
+    /// The user started to drag a tiled window of a shown workspace by its title bar: it
+    /// parks where it stood until `drop`. The plan has no frame for it. Nil when the window
+    /// is not tiled on a shown workspace (DESIGN.md, section 5.13).
     public mutating func lift(_ window: WindowID) -> Plan? {
         guard let name = home[window], isShown(name), workspaces[name]!.root.path(to: window) != nil else { return nil }
         workspaces[name]!.park(window)
@@ -642,20 +640,18 @@ public struct Session: Sendable {
     }
 
     /// The left button came up at `point` with windows lifted. Each tiles on the workspace
-    /// shown on the display under the pointer, as Hyprland's dwindle layout drops a window:
-    /// beside the tiled window under the pointer, else the one whose center is closest,
-    /// side by side when that window is wider than it is tall and else one above the other,
-    /// first when the pointer is in its left or top half, and the two share its space
-    /// equally. On an empty workspace it fills it. Off every display, or over one that shows
-    /// no workspace, it returns to where it stood. The drop's workspace takes the focus, and
-    /// the plan focuses the window (DESIGN.md, section 5.13).
+    /// shown on the display under the pointer, beside the tile under it or the closest one,
+    /// and takes the focus; off every display, or over one showing no workspace, it goes
+    /// back to where it stood (DESIGN.md, section 5.13).
     public mutating func drop(at point: CGPoint) -> Plan {
         var plan = Plan()
+        var changed: Set<String> = []
+        let name = workspace(at: point)
         for window in lifted.sorted() {
             let source = home[window]!
-            guard let display = monitors.first(where: { $0.frame.contains(point) }), let name = shown[display.id] else {
+            changed.insert(source)
+            guard let name else {
                 putBack(window)
-                plan.frames.merge(frames(of: source)) { current, _ in current }
                 if !isShown(source) { plan.hide.append(window) }
                 continue
             }
@@ -663,18 +659,22 @@ public struct Session: Sendable {
             func distance(_ frame: CGRect) -> CGFloat { hypot(frame.midX - point.x, frame.midY - point.y) }
             let target = tiles.first { $0.value.contains(point) } ?? tiles.min { distance($0.value) < distance($1.value) }
             _ = workspaces[source]!.remove(window)
-            let across = target.map { $0.value.width > $0.value.height } ?? true
-            let first = target.map { across ? point.x < $0.value.midX : point.y < $0.value.midY } ?? false
-            workspaces[name]!.insert(window, beside: target?.key, across ? .horizontal : .vertical, first: first)
+            if let target {
+                let tile = target.value, across = tile.width > tile.height
+                workspaces[name]!.insert(window, beside: target.key, across ? .horizontal : .vertical,
+                                         first: across ? point.x < tile.midX : point.y < tile.midY)
+            } else {
+                workspaces[name]!.insert(window, first: false)
+            }
             home[window] = name
             if name != source { merged[window] = nil }
             workspaces[name]!.focus(window)
             focusShown(name)
             plan.focus = .window(window)
-            plan.frames.merge(frames(of: source)) { current, _ in current }
-            plan.frames.merge(frames(of: name)) { _, new in new }
+            changed.insert(name)
         }
         lifted = []
+        for name in changed { plan.frames.merge(frames(of: name)) { current, _ in current } }
         return plan
     }
 

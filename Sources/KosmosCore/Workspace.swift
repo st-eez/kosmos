@@ -115,19 +115,21 @@ extension Workspace {
     /// Tiles a window beside `target` as Hyprland's dwindle layout drops one: the two share
     /// the target's space equally, side by side when `orientation` is horizontal, else one
     /// above the other, the window first when `first`. In a container of that orientation
-    /// they become siblings splitting the target's share. With no target, as on an empty
-    /// workspace, the window goes into the root.
-    mutating func insert(_ window: WindowID, beside target: WindowID?, _ orientation: Orientation, first: Bool) {
+    /// they become siblings splitting the target's share.
+    mutating func insert(_ window: WindowID, beside target: WindowID, _ orientation: Orientation, first: Bool) {
         precondition(!contains(window), "window \(window) is already in the workspace")
-        if let target, let path = root.path(to: target) {
-            let pair = [Node(kind: .window(target), weight: 1), Node(kind: .window(window), weight: 1)]
-            root[path.dropLast()].children[path.last!].kind = .container(makeContainer(orientation, first ? pair.reversed() : pair))
-        } else {
-            root.insert(.window(window), at: root.children.count)
-        }
+        pair(window, with: target, orientation, first: first)
         normalize()
         edits += 1
         check()
+    }
+
+    /// Puts the window and the tiled window `target` in a new container of `orientation` in
+    /// the target's place, sharing it equally, the window first when `first`.
+    private mutating func pair(_ window: WindowID, with target: WindowID, _ orientation: Orientation, first: Bool) {
+        let path = root.path(to: target)!
+        let pair = [Node(kind: .window(target), weight: 1), Node(kind: .window(window), weight: 1)]
+        root[path.dropLast()].children[path.last!].kind = .container(makeContainer(orientation, first ? pair.reversed() : pair))
     }
 
     /// Forgets a window. Call it only when the WindowServer reports the window gone.
@@ -434,10 +436,7 @@ extension Workspace {
             root.insert(.window(window), at: 0)
             return
         }
-        let path = root.path(to: roomiest)!
-        let across = root[path.dropLast()].orientation.opposite
-        let pair = makeContainer(across, [Node(kind: .window(roomiest), weight: 1), Node(kind: .window(window), weight: 1)])
-        root[path.dropLast()].children[path.last!].kind = .container(pair)
+        pair(window, with: roomiest, root[root.path(to: roomiest)!.dropLast()].orientation.opposite, first: false)
     }
 
     /// Where the window stands in the tree with every window that has a fresh hint put

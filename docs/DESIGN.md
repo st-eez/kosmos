@@ -861,9 +861,10 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     `precise_mouse_move` is off. On an empty workspace the window fills it.
   - The drop's workspace takes the focus, Kosmos keys the window, and the pointer stays
     where the user let go.
-  - Off every display, the window goes back to where it stood, as it does when a lock, a
-    wake or a display change cuts the drag short. A window minimized or closed while
-    dragged parks there.
+  - Off every display, or over one that shows no workspace, the window goes back to where
+    it stood, as it does when a lock, a wake or a display change cuts the drag short. A
+    window minimized, hidden, closed or put in native fullscreen while dragged parks
+    there.
 - A concealed window keeps its ordinary Space, as on one display, unless its app's most
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display (section
