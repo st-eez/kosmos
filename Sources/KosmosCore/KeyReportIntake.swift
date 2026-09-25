@@ -204,15 +204,19 @@ public struct KeyReportIntake: Sendable {
         return (focus, nil)
     }
 
-    /// `new` took the deselected tab's place (docs/tree.md); `concealing`: the replace's plan
-    /// conceals it. Returns the report of `new` that waited for its place, to decide with
-    /// `decideWaiting` once the plan has run.
-    public mutating func tabReplaced(_ old: WindowID, with new: WindowID, concealing: Bool, facts: Facts) -> Report? {
+    /// `new` takes the deselected tab's place (docs/tree.md), before the replace's plan runs.
+    /// `concealing`: the plan conceals it.
+    public mutating func tabReplaced(_ old: WindowID, with new: WindowID, concealing: Bool) {
         placedHidden[old] = nil
         if concealing { placedHidden[new] = .tab }
         if key == .window(old) { keyHistory.key = .window(new) }
-        // macOS can report the new tab key before it has a place: the user's or the app's
-        // choice, whose key window before it, the deselected tab, did not depart (docs/tree.md).
+    }
+
+    /// Once the replace's plan has run, the report of `new` that waited for its place, to
+    /// decide with `decideWaiting`. macOS can report the new tab key before it has a place:
+    /// the user's or the app's choice, whose key window before it, the deselected tab, did not
+    /// depart (docs/tree.md).
+    public mutating func tabPlaced(_ new: WindowID, facts: Facts) -> Report? {
         guard var report = unplaced, report.key == .window(new), !facts.isParked(new) else { return nil }
         unplaced = nil
         placedHidden[new] = nil
@@ -220,7 +224,7 @@ public struct KeyReportIntake: Sendable {
         return report
     }
 
-    /// A report that waited for its window's place, from `admit` or `tabReplaced`.
+    /// A report that waited for its window's place, from `admit` or `tabPlaced`.
     public mutating func decideWaiting(_ report: Report, facts: Facts, reports: inout FocusReports,
                                        misses: inout FocusMisses) -> Action {
         decidePlaced(report, keyLeft: .stayed, facts: facts, reports: &reports, misses: &misses)

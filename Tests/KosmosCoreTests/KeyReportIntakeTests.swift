@@ -80,8 +80,9 @@ private struct Replay {
     }
 
     mutating func tabReplaced(_ old: WindowID, with new: WindowID, concealing: Bool) -> KeyReportIntake.Report? {
+        intake.tabReplaced(old, with: new, concealing: concealing)
         let facts = facts
-        return intake.tabReplaced(old, with: new, concealing: concealing, facts: facts)
+        return intake.tabPlaced(new, facts: facts)
     }
 
     mutating func decideWaiting(_ report: KeyReportIntake.Report?) -> KeyReportIntake.Action? {
