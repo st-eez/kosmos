@@ -43,9 +43,7 @@ public enum Command: Equatable, Sendable {
 
     case workspace(Workspace)
     case workspaceBackAndForth
-    /// Floating windows count as tiles where they stand, as in AeroSpace, unless
-    /// `ignoreFloating` (Workspace.withFloatingTiled).
-    case focus(Direction, boundaries: Boundaries = .workspace, ignoreFloating: Bool = false)
+    case focus(Direction, boundaries: Boundaries = .workspace)
     case move(Direction, boundaries: Boundaries = .workspace)
     case swap(Direction)
     case joinWith(Direction)
@@ -88,13 +86,11 @@ public enum Command: Equatable, Sendable {
             // --boundaries-action, before or after the direction. AeroSpace wraps only focus;
             // Kosmos wraps a move too, as Steve's `move || move-node-to-monitor --wrap-around`
             // binding did. A move takes only the wrap; no binding needs AeroSpace's `stop` or
-            // `fail` for one. Focus also takes AeroSpace's --ignore-floating.
-            var across = false, wraps = false, ignoreFloating = false, directions: [String] = []
+            // `fail` for one.
+            var across = false, wraps = false, directions: [String] = []
             var words = rest[...]
             while let word = words.popFirst() {
                 switch word {
-                case "--ignore-floating" where name == "focus":
-                    ignoreFloating = true
                 case "--boundaries":
                     switch words.popFirst() {
                     case "workspace": across = false
@@ -116,8 +112,7 @@ public enum Command: Equatable, Sendable {
             guard let direction = direction(directions[0]) else { return fail("\(name): unknown direction \(directions[0])") }
             if wraps, !across { return fail("\(name): wrap-around-all-monitors needs --boundaries all-monitors-outer-frame") }
             let boundaries: Boundaries = wraps ? .allMonitorsWrapping : across ? .allMonitors : .workspace
-            return .success(name == "focus" ? .focus(direction, boundaries: boundaries, ignoreFloating: ignoreFloating)
-                                            : .move(direction, boundaries: boundaries))
+            return .success(name == "focus" ? .focus(direction, boundaries: boundaries) : .move(direction, boundaries: boundaries))
         case "swap", "join-with":
             guard rest.count == 1 else { return usage }
             guard let direction = direction(rest[0]) else { return fail("\(name): unknown direction \(rest[0])") }

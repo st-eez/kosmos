@@ -811,11 +811,11 @@ off the main thread).
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, then into that sibling by focus order, as i3's does. The
-  workspace's floating windows count as tiles, as AeroSpace's `focus` counts them without
-  `--ignore-floating` (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at
-  5f08f9c). macOS with SIP on cannot keep another app's floating windows above the tiles.
-  Focusing or clicking a tile brings it over any floating window it overlaps, so a
-  floating window can end up behind a tile, where hover cannot reach it either. A Space
+  workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
+  (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c). macOS with SIP on
+  cannot keep another app's floating windows above the tiles. Focusing or clicking a tile
+  brings it over any floating window it overlaps, so a floating window can end up behind
+  a tile, where hover cannot reach it either. A Space
   shown above the desktop's keeps one on top, and covers every menu and all system UI too
   (`kosmos-probe float-layer`, on the floatprobe branch).
   - Each floating window stands in the container of the tile under its center, just
@@ -834,8 +834,6 @@ off the main thread).
   - Into a container, Kosmos goes by each window's own focus order. AeroSpace's temporary
     placement marks each floating window most recently focused, which its source calls a
     bug ("floating windows break mru").
-  - `--ignore-floating` counts the tiles alone, as every focus did before. From a
-    floating window the tiles then have no window in any direction.
   - At the workspace's edge in the direction, with no window there, floating or tiled,
     `--boundaries all-monitors-outer-frame` goes on to the next display (section 5.13).
   - Focusing a floating window raises it over the tiles it overlaps through the request
@@ -1347,7 +1345,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   - KosmosCore writes the description and the category from the parsed command
     (`Command.summary` and `Command.category`), so the config holds no descriptions:
     `focus --boundaries all-monitors-outer-frame left` is "Focus left, across monitors" in
-    Focus, and `focus --ignore-floating left` is "Focus left among tiled windows".
+    Focus.
   - The categories are Focus, Move, Workspace, Monitor, Layout, Resize, Profile and Other.
     Moving a window to a workspace or a monitor goes with the workspace or monitor commands.
   - Profiles carry no bindings, so the list is the same under every profile.
