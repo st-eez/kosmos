@@ -105,6 +105,16 @@ final class Slides {
         for (id, display) in displays where !visible(id) || fullscreen.contains(display) { end(id, "as it left the screen") }
     }
 
+    /// The window changed to `frame` during a press: the user moved or resized it, and its
+    /// slide's transform would hold it where the slide shows it, so the slide ends at once.
+    /// A change to where its newest write puts it leaves the slide, since WindowServer can take
+    /// the write's frame after the worker read it back, while the user holds the button on
+    /// another window (SlidingWindow.isWrite).
+    func changedInPress(_ id: WindowID, to frame: CGRect) {
+        guard onscreen.state.withLock({ $0.windows[id].map { !$0.isWrite(frame) } }) == true else { return }
+        end(id, "as the user moved it")
+    }
+
     /// Ends the window's slide at once, and it shows at its own frame. `why` goes to the log.
     func end(_ id: WindowID, _ why: String) {
         guard let window = onscreen.state.withLock({ Onscreen.remove(id, from: &$0) }) else { return }

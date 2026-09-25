@@ -145,6 +145,10 @@ public struct SlidingWindow: Sendable {
     /// `landingWait`.
     public func isAwaiting(at now: Double) -> Bool { landed == nil && now < sent + Self.landingWait }
 
+    /// Whether WindowServer having the window at `frame` is the newest write's doing: `frame`
+    /// is the write's target or the frame the worker read back after it.
+    public func isWrite(_ frame: CGRect) -> Bool { frame == target || frame == readBack }
+
     /// A read found the window at `frame` at `now`. True when the frame is new, and the
     /// Space's transform must show the window where it shows from there.
     public mutating func observed(_ frame: CGRect, at now: Double) -> Bool {

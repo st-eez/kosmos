@@ -634,9 +634,9 @@ final class Controller {
             return
         }
         let button = receivedAt.map { leftButton.state(at: $0) } ?? .up
-        // The user moves or resizes it: its slide's transform would hold it where the slide
-        // shows it. The write's own change, which can come after its read back, leaves it.
-        if button != .up { slides?.end(id, "as the user moved it") }
+        // The user moves or resizes it, unless the change is its own write landing after the
+        // read back, as the other tiles' reflow at a lift lands while the user drags.
+        if button != .up { slides?.changedInPress(id, to: frame) }
         ledger.observe(id, frame: frame)
         // Seen smaller than its minimum, the window loses it. During a press, the mouse up
         // lays its workspace out.

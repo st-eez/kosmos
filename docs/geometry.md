@@ -136,12 +136,16 @@
   - A new relayout mid-slide continues from where the window shows, at the alpha it has.
     A write that does not slide ends the slide at once when it is to another frame, and is
     followed as the slide's own when it is to the same one, as the 100 ms retry after a
-    refused size. A change of the window's frame during a press, a modifier drag taking
+    refused size. A change of the window's frame during a press to a frame other than its
+    newest write's target and read back, as when the user moves it, a modifier drag taking
     it, and a window concealed, parked, closed, on a workspace no longer shown or on a
     display that gains a native fullscreen window end the slide at once, before a batch
     conceals the window. So does a reload, a display change, a wake or an unlock, which
     also stops every display link: a link stops firing when its display goes, and the next
-    slide starts one on a display that has a screen.
+    slide starts one on a display that has a screen. A change to the write's own frame
+    leaves the slide: the worker reads the frame back about 3 ms after the write and
+    WindowServer takes it about 9 ms later, so the other tiles' reflow at a title bar drag's
+    lift lands with the button down.
   - A new window's Space turns transparent before the window joins it, so the window
     vanishes from where its app opened it until its write lands, then pops in where it
     landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
