@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// Gaps in points.
-public struct Gaps: Sendable {
+public struct Gaps: Equatable, Sendable {
     /// Between neighboring windows.
     public var inner: CGFloat
     /// Between the windows and the edges of the display rectangle.
@@ -13,7 +13,7 @@ public struct Gaps: Sendable {
     }
 }
 
-public struct Insets: Sendable {
+public struct Insets: Equatable, Sendable {
     public var top: CGFloat
     public var left: CGFloat
     public var bottom: CGFloat

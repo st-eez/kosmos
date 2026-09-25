@@ -61,32 +61,29 @@ outer-per-monitor = { builtin = { top = 5 } }
 # Bindings of the main mode, the mode Kosmos starts in. Kosmos pushes every change to
 # SketchyBar itself, so no binding runs `sketchybar --trigger`.
 [mode.main.binding]
-# Bindings that wait on multi-monitor support in the command parser:
-#   focus across monitors (AeroSpace's --boundaries all-monitors-outer-frame);
-#   alt-shift-<direction> moving the window onto the next monitor at the edge;
-#   ctrl-alt-shift-left and right, next and previous workspace on the focused monitor;
-#   ctrl-alt-shift-up, down, 1, 2 and 3, move the window to another monitor;
-#   ctrl-alt-h, w, l and s, force a profile until the displays change.
 
-# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys).
-alt-left = 'focus left'
-alt-right = 'focus right'
-alt-up = 'focus up'
-alt-down = 'focus down'
-alt-h = 'focus left'
-alt-l = 'focus right'
-alt-k = 'focus up'
-alt-j = 'focus down'
+# Focus (Caps Lock, which Karabiner turns into left Option, with arrows or vim keys). At
+# the edge of the workspace, focus goes on to the next monitor.
+alt-left = 'focus --boundaries all-monitors-outer-frame left'
+alt-right = 'focus --boundaries all-monitors-outer-frame right'
+alt-up = 'focus --boundaries all-monitors-outer-frame up'
+alt-down = 'focus --boundaries all-monitors-outer-frame down'
+alt-h = 'focus --boundaries all-monitors-outer-frame left'
+alt-l = 'focus --boundaries all-monitors-outer-frame right'
+alt-k = 'focus --boundaries all-monitors-outer-frame up'
+alt-j = 'focus --boundaries all-monitors-outer-frame down'
 
-# Move the window within its workspace.
-alt-shift-left = 'move left'
-alt-shift-right = 'move right'
-alt-shift-up = 'move up'
-alt-shift-down = 'move down'
-alt-shift-h = 'move left'
-alt-shift-l = 'move right'
-alt-shift-k = 'move up'
-alt-shift-j = 'move down'
+# Move the window within its workspace, and at its edge onto the next monitor, where
+# focus follows it. Past the last monitor it wraps to the first, as AeroSpace's
+# `move || move-node-to-monitor --wrap-around` chain did.
+alt-shift-left = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors left'
+alt-shift-right = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors right'
+alt-shift-up = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors up'
+alt-shift-down = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors down'
+alt-shift-h = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors left'
+alt-shift-l = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors right'
+alt-shift-k = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors up'
+alt-shift-j = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors down'
 
 # Switch workspace. On the laptop profile, 6 to 0 do not exist and these keys do nothing.
 alt-1 = 'workspace 1'
@@ -112,7 +109,7 @@ alt-shift-8 = 'move-node-to-workspace --focus-follows-window 8'
 alt-shift-9 = 'move-node-to-workspace --focus-follows-window 9'
 alt-shift-0 = 'move-node-to-workspace --focus-follows-window 0'
 
-# Next and previous wrap around.
+# Next and previous walk the focused monitor's workspaces and wrap around.
 alt-tab = 'workspace next'
 alt-shift-tab = 'workspace prev'
 ctrl-alt-tab = 'workspace-back-and-forth'
@@ -135,6 +132,23 @@ ctrl-alt-r = 'flatten-workspace-tree'
 ctrl-alt-c = 'reload-config'
 # AeroSpace's ctrl-alt-a swapped its focus follows mouse and AutoRaise.
 ctrl-alt-a = 'focus-follows-mouse toggle'
+
+# Move the window to the next or previous workspace of its monitor, and follow it.
+ctrl-alt-shift-left = 'move-node-to-workspace --focus-follows-window prev'
+ctrl-alt-shift-right = 'move-node-to-workspace --focus-follows-window next'
+# Move the window to another monitor, by direction or by number from the left, and
+# follow it.
+ctrl-alt-shift-up = 'move-node-to-monitor --wrap-around --focus-follows-window up'
+ctrl-alt-shift-down = 'move-node-to-monitor --wrap-around --focus-follows-window down'
+ctrl-alt-shift-1 = 'move-node-to-monitor --focus-follows-window 1'
+ctrl-alt-shift-2 = 'move-node-to-monitor --focus-follows-window 2'
+ctrl-alt-shift-3 = 'move-node-to-monitor --focus-follows-window 3'
+
+# Apply a profile until the displays change, as set-profile.sh did.
+ctrl-alt-h = 'profile home'
+ctrl-alt-w = 'profile office'
+ctrl-alt-l = 'profile laptop'
+ctrl-alt-s = 'profile single'
 
 # Window rules. The first rule that matches a new window applies, and Kosmos warns about a
 # rule an earlier one hides. app-id matches the bundle identifier; app-name matches names
@@ -218,9 +232,11 @@ float = true
 app-name = 'FaceTime'
 float = true
 
-# Display profiles. The first profile whose `when` monitors are all connected applies; one
-# without `when` applies to any displays. A profile changes only the keys it sets, and its
-# rules come before the ones above.
+# Display profiles. The first profile whose `when` monitors are all connected applies. One
+# without `when` applies to the built-in display alone, and at launch when no other does.
+# Any other displays keep the profile that applies, as apply-profile.sh kept its profile for
+# displays it did not know. A profile changes only the keys it sets, and its rules come
+# before the ones above.
 
 # Both ASUS panels, with or without the lid open. The base config above is this layout.
 [[profile]]
@@ -237,12 +253,19 @@ name = 'office'
 when = ['ultrawide']
 workspace-monitor = { 1 = 'ultrawide', 2 = 'ultrawide', 3 = 'ultrawide', 4 = 'ultrawide', 5 = 'office-asus', 6 = 'office-asus', 7 = 'office-asus', 8 = 'builtin', 9 = 'builtin', 0 = 'builtin' }
 
-# The laptop alone, and any displays the profiles above do not know.
+# The office's ASUS VA24E without the ultrawide gets the same layout.
+[[profile]]
+name = 'office-va24e'
+when = ['office-asus']
+workspace-monitor = { 1 = 'ultrawide', 2 = 'ultrawide', 3 = 'ultrawide', 4 = 'ultrawide', 5 = 'office-asus', 6 = 'office-asus', 7 = 'office-asus', 8 = 'builtin', 9 = 'builtin', 0 = 'builtin' }
+
+# The laptop alone.
 [[profile]]
 name = 'laptop'
 workspaces = ['1', '2', '3', '4', '5']
 workspace-monitor = { 1 = 'builtin', 2 = 'builtin', 3 = 'builtin', 4 = 'builtin', 5 = 'builtin' }
-# Windows on the workspaces this profile leaves out move here, keeping their spacing.
+# Windows on the workspaces this profile leaves out move here, and go back when a profile
+# with their workspace applies again.
 merge-workspaces = { 6 = '1', 7 = '2', 8 = '3', 9 = '4', 0 = '5' }
 
 # Spotify and YouTube share workspace 4 with Chrome on the laptop.

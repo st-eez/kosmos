@@ -64,6 +64,7 @@ AeroSpace and rolling back.
 | Recovery after `kill -9` | Working in probes | The guardian restored a concealed window in 130 ms |
 | SketchyBar push | Working in probes | 0.02 ms per send |
 | Tiling, switching, hotkeys, config, CLI | In progress | |
+| Several displays and profiles that follow them | In progress | Unit tests; the desk test is pending |
 
 The probes are in `Sources/kosmos-probe`. Each acts only on a window it creates.
 

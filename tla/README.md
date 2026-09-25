@@ -10,9 +10,16 @@ brings it back. The user or an app can also open a specific hidden window. Windo
 can report a window gone a moment after macOS keyed the next one, and fronting another
 window of the key app can miss.
 
+Each display shows one workspace, and each workspace belongs on one display, as the
+active profile assigns them ([DESIGN.md](../docs/DESIGN.md), section 5.13). A window of
+any shown workspace is on screen: a report of it is adopted and moves the focus to its
+display, and a command for a workspace another display shows only moves the focus.
+
 [MC.tla](MC.tla) fixes a small topology: workspace 1 holds w1 and w2, workspace 2 holds
-w3, and workspace 3 is empty. App A owns w1 and w3, app B owns w2. Each configuration
-bounds the user to two or three inputs.
+w3, and workspace 3 is empty. App A owns w1 and w3, app B owns w2. The `displays-`
+configs use two displays: workspaces 1 = {w1} and 2 = {w3} on display 1, and workspace
+3 = {w2} on display 2, with the same apps. Each configuration bounds the user to two or
+three inputs.
 
 ## Running
 
@@ -44,9 +51,17 @@ Java 11 or newer is required.
 | `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 |
 | `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 71,139 |
 | `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 |
+| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 |
+| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 |
+| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 |
+| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 |
+| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 |
+| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 |
+| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 3,506 |
+| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 7,208 |
 
-The first three expected failures record trade-offs, and the others record the behaviour
-this model replaced:
+`mixed`, `conceal-first`, `fallback-user` and `displays-fallback` record trade-offs, and
+the others record the behaviour this model replaced:
 
 - **`mixed` and `conceal-first`.** Revealing first shows windows of both workspaces for
   one bridged operation. Concealing first shows an empty desktop for the same time. Kosmos
@@ -58,6 +73,15 @@ this model replaced:
   Command-Tab for its grace (change 11), a re-key onto a window of the shown workspace
   replaces it, and the workspace is wrong too. Re-keys have not been seen on hardware;
   the probes in the virtual machine will settle it.
+- **`displays-fallback`.** With two displays a re-key has a window on screen to land on
+  whatever the switch does. After `workspace 2` concealed w1, macOS re-keys w2 on the
+  other display, Kosmos adopts it as it would a click there, and the focus leaves the
+  display the command chose. A click on w2 at that moment is the user's, and the report
+  cannot tell the two apart. Only a re-key after a hide causes this, and none has been
+  seen: a concealed window stays ordered in and key until Kosmos focuses the next one.
+- **`displays-focused`.** Adopting only windows of the focused workspace takes every click
+  on the other display for a visible window of another workspace mid-switch, and Kosmos
+  focuses its own display again (change 14).
 - **`leave-follow`.** When the key window closes or minimizes, or its app hides, macOS
   keys another window, which can be concealed on another workspace. Following that
   report switches workspaces the user never asked for. This happened live: Command-H on
@@ -206,3 +230,12 @@ Each change below started as a counterexample from TLC.
     - A click or Command-Tab during the animation reads as macOS's own key change, since
       the window key before it has left, and Kosmos keeps its workspace. The model leaves
       such input out.
+14. **Several displays.** Each display shows a workspace, so a window of another
+    workspace can be on screen with no switch in flight. Adopting only windows of the
+    focused workspace, the rule for one display, took every click on the other display
+    back (`displays-focused`). A report of a window of any shown workspace is now adopted,
+    and the focus moves to that display. After the key window leaves, macOS can key a
+    window on the other display; Kosmos adopts it, and each display keeps its workspace,
+    which `KeepsWorkspaceAfterLeave` now checks per display. Holding those reports for the
+    grace would delay every click on another display by 100 ms. The single display
+    configs find the same state counts as before.
