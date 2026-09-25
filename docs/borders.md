@@ -80,9 +80,11 @@ frame the slide shows the window at.
   back in its own display's current Space. A display's current Space can be another app's
   native fullscreen Space, so whenever a border is shown for another window or its
   display changes, Kosmos reads its Spaces and its target's off the main thread, since a
-  read can wait out a Space transition, and moves the border to its target's Space with
-  `SLSMoveWindowsToManagedSpace` when it is in none of them. A border moved to another
-  display's Space was there when read back.
+  read can wait out a Space transition, and moves the border to its target's ordinary
+  Space with `SLSMoveWindowsToManagedSpace` when it is in none of them. A border moved to
+  another display's Space was there when read back. The target's Spaces can include the
+  holding Space or a slide's animation Space, whose transform would draw the border too,
+  so Kosmos chooses from the displays' ordinary Spaces alone.
 - The border follows the frame WindowServer last reported for its window: the inventory's
   row, read after each change event, so it follows every move and resize, the user's,
   the app's and Kosmos's own. It trails the window by the event's way to Kosmos and the

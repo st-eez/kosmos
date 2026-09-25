@@ -91,15 +91,18 @@ final class Borders {
         windows[target]?.order(.above, relativeTo: Int(target))
     }
 
-    /// Puts the border in its target's Space. A new window joins the current Space of its
-    /// display, a window moved onto another display joins that display's current Space, and
-    /// a window keeps its Space while ordered out (kosmos-probe borders). The current Space
-    /// can be another app's native fullscreen Space, so a border shown for another window, or
-    /// moved to another display, goes to its target's Space when it is in none of them.
+    /// Puts the border in its target's ordinary Space. A new window joins the current Space
+    /// of its display, a window moved onto another display joins that display's current
+    /// Space, and a window keeps its Space while ordered out (kosmos-probe borders). The
+    /// current Space can be another app's native fullscreen Space, so a border shown for
+    /// another window, or moved to another display, goes to its target's ordinary Space when
+    /// it is in none of them. The target's list can also name the holding Space, or a slide's
+    /// animation Space, whose transform would draw the border too, so neither counts.
     private func pin(_ window: BorderWindow, to target: WindowID) {
         let border = UInt32(window.windowNumber)
         spaces.async {
-            let targetSpaces = kosmos_window_spaces(target) as? [UInt64] ?? []
+            let ordinary = Displays.current().ordinarySpaces
+            let targetSpaces = (kosmos_window_spaces(target) as? [UInt64] ?? []).filter(ordinary.contains)
             let borderSpaces = kosmos_window_spaces(border) as? [UInt64] ?? []
             guard let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) else { return }
             SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
