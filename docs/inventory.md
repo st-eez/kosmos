@@ -15,16 +15,31 @@
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
 - The inventory reads each process's activation policy once, since each read is a
-  synchronous LaunchServices call, and forgets it when the process's exit source fires. An
-  app that changes its policy while it runs keeps the one read first, as it keeps the
-  Accessibility worker Apps gave it at launch; observing activationPolicy with key-value
-  observing would follow a change. An app found regular only at its launch gets a sweep
-  for the windows left out before it.
+  synchronous LaunchServices call, and forgets it when the process's exit source fires.
+  Read at every window event and at every row of a sweep, the call showed up on the main
+  thread in samples of workspace switches (2026-09-24). The running apps come from
+  NSWorkspace's list at start, since `NSRunningApplication(processIdentifier:)` returned
+  nil for a running app then, and a later process is read as it launches or at its first
+  window. A process LaunchServices does not know, such as JankyBorders, is not regular. The
+  exit source is there because NSWorkspace reports no exit of a background-only or
+  LSUIElement app, and pids come round again, about every 7 hours on the development Mac. A
+  process that exited before its source started reports its exit at once (macOS 27).
+  WindowServer names pid 0 as the owner of some windows (2 of 34 rows on the development
+  Mac), and dispatch aborts on a process source for pid 0 or less, so such a pid's answer
+  stays cached. An app that changes its policy while it runs keeps the one read first, as
+  it keeps the Accessibility worker Apps gave it at launch; observing activationPolicy with
+  key-value observing would follow a change. An app found regular only at its launch gets a
+  sweep for the windows left out before it.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
   Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. A workspace
   switch posts no Space event, so it starts no sweep (`kosmos-probe events`, 40 switches
   on 2026-09-24). Sweeps asked for while one runs start one more when it ends, so a burst
-  of Space events ends with a sweep that started after the last of them. A window a sweep
+  of Space events ends with a sweep that started after the last of them. The Space list
+  omits windows on no Space, such as one created but not yet shown, so a sweep reads the
+  tracked windows missing from it directly before it counts them gone, and the windows
+  first seen while locked too, which an unlock sweep admits even when ordered out. Those
+  reads can block during a Space transition, so they run off the main thread, after the
+  reads for events already waiting. A window a sweep
   finds or loses that no event reported is logged as "missed by events", and so is a known
   window whose ordered in state or candidate status (level 0, no parent) a sweep corrects,
   so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
@@ -41,7 +56,9 @@
   reads a window's row again on either, and otherwise at the window's next move, resize,
   reorder, order change or Space change, or at the next sweep, which logs the change as
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
-  level change is unmeasured, as the probe keeps its window invisible.
+  level change is unmeasured, as the probe keeps its window invisible. A window that stops
+  being a candidate stays in the inventory: apps such as Helium change a window's level
+  while it lives, and dropping the window would lose it until the next sweep.
 - An event that names a window is answered with the window's row, read from WindowServer,
   and a read during a switch waits for WindowServer to commit the switch's Space
   transaction. Every switch posts 815 about twice for each watched window, including
@@ -77,7 +94,8 @@
   Kosmos reads the displays again ([displays.md](displays.md)), writes every tiled window of the shown
   workspaces to its frame on their areas whatever the frame ledger holds, conceals and
   reveals every window again, requests the focus intent and publishes the state. A wake can post both `didWake` and `screensDidWake`; each restarts a 0.5 s
-  wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. A wake
+  wait, so a burst gets one resync, and an unlock inside the wait resyncs instead. No
+  measurement chose the 0.5 s; the log gives the gap between the two. A wake
   gates nothing. A sleeping Mac runs nothing, and one that asks for a password after sleep
   locks its screen first.
 - The model can still change while locked, as when a window minimizes or returns, its app

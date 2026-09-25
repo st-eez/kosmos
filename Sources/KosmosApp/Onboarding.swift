@@ -1,10 +1,9 @@
 import AppKit
 
-/// The setup window: each permission Kosmos waits for, with a checkmark or a button to its
-/// pane in System Settings, checked twice a second (docs/onboarding.md).
+/// The setup window. macOS sends no notification for a grant, so it checks the permissions
+/// twice a second (docs/onboarding.md).
 @MainActor
 final class Onboarding {
-    /// What the window shows.
     struct State: Equatable {
         var accessibility: Bool
         /// Nil while the window does not list Input Monitoring.
@@ -20,15 +19,11 @@ final class Onboarding {
     /// follows mouse turns off, so its grant shows as a checkmark.
     private var listsInputMonitoring: Bool
     private var timer: Timer?
-    /// The close after the success state, until it runs.
     private var closing: DispatchWorkItem?
-    /// Reads the permissions and acts on a grant. Input Monitoring is nil while focus follows
-    /// mouse is off.
+    /// Input Monitoring reads nil while focus follows mouse is off.
     private let check: @MainActor () -> State
     private let finished: @MainActor () -> Void
 
-    /// `closedWithKey` runs as the window closes while it has the key, with whether that key
-    /// came from another app.
     init(_ state: State, check: @escaping @MainActor () -> State,
          closedWithKey: @escaping @MainActor (_ fromAnotherApp: Bool) -> Void, finished: @escaping @MainActor () -> Void) {
         self.state = state
@@ -41,9 +36,8 @@ final class Onboarding {
         startChecking()
     }
 
-    /// Brings the window to the front of the normal level, and keeps it open if it was about
-    /// to close. Only a launch without Accessibility lets Kosmos take the key: otherwise a
-    /// background accessory app does not become the front app (docs/focus.md).
+    /// Only a launch without Accessibility takes the key: a background accessory app does not
+    /// become the front app (docs/focus.md).
     func show(takingKey: Bool) {
         if let closing {
             closing.cancel()
@@ -65,9 +59,8 @@ final class Onboarding {
         listsInputMonitoring = next.inputMonitoring != nil && (listsInputMonitoring || next.inputMonitoring == false)
         if !listsInputMonitoring { next.inputMonitoring = nil }
         let granting = next.accessibility && !state.accessibility || next.inputMonitoring == true && state.inputMonitoring == false
-        if next != state, next.granted, !granting {
-            // The missing row left the list, as when focus follows mouse turns off: nothing was
-            // granted, so the window closes without saying Kosmos is running.
+        let missingRowLeft = next != state && next.granted && !granting
+        if missingRowLeft {
             timer?.invalidate()
             window.close()
             return finished()
@@ -77,7 +70,6 @@ final class Onboarding {
             window.setContent(Self.content(for: state, icon: icon))
         }
         guard state.granted else { return }
-        // Everything listed is granted: the window says Kosmos is running and closes 1.5 s later.
         timer?.invalidate()
         guard window.isVisible else { return finished() }
         let close = DispatchWorkItem { [weak self] in
@@ -97,7 +89,6 @@ extension Onboarding {
     private static let width: CGFloat = 480
     private static let margin: CGFloat = 24
 
-    /// A permission the window lists.
     fileprivate enum Permission {
         case accessibility, inputMonitoring
 
@@ -106,7 +97,6 @@ extension Onboarding {
         var symbol: String { self == .accessibility ? "accessibility" : "keyboard" }
         var color: NSColor { self == .accessibility ? .systemBlue : .systemGray }
 
-        /// Opens its pane in System Settings, Privacy & Security.
         func openSettings() {
             if self == .accessibility {
                 // Adds Kosmos to the Accessibility list so the user only has to switch it on.
@@ -118,8 +108,6 @@ extension Onboarding {
         }
     }
 
-    /// The window's content at `state`, headed by the app `icon`, which `onboarding-snapshot`
-    /// also draws.
     static func content(for state: State, icon: NSImage) -> NSView {
         let title = NSTextField(labelWithString: "Set up Kosmos")
         title.font = .systemFont(ofSize: 22, weight: .bold)
@@ -226,7 +214,7 @@ extension Onboarding {
         return check
     }
 
-    /// A line between rows, from the text's edge, as System Settings draws its lists.
+    /// From the text's edge, as System Settings draws its lists.
     private static func separator() -> NSView {
         Drawing(size: NSSize(width: NSView.noIntrinsicMetric, height: 1)) { bounds in
             NSColor.separatorColor.setFill()
@@ -234,7 +222,6 @@ extension Onboarding {
         }
     }
 
-    /// While waiting, what the grant does; once everything is granted, that Kosmos runs.
     private static func footer(for state: State) -> NSView {
         let symbol: NSView
         let text: NSTextField
@@ -265,10 +252,8 @@ extension Onboarding {
 // MARK: Snapshot
 
 extension Onboarding {
-    /// `Kosmos onboarding-snapshot <directory>`: draws the window in each state, in light and
-    /// dark mode, into PNG files in the directory. The window is never shown. Run from the
-    /// repository root: outside the bundle the app icon is the generic executable icon, so the
-    /// snapshot reads the checked-in file.
+    /// Run from the repository root: outside the bundle the app icon is the generic executable
+    /// icon, so the snapshot reads the checked-in file.
     static func snapshot(_ arguments: [String]) -> Int32 {
         guard arguments.count == 1 else {
             FileHandle.standardError.write(Data("usage: Kosmos onboarding-snapshot <directory>\n".utf8))
@@ -308,8 +293,8 @@ extension Onboarding {
     }
 }
 
-/// Draws with a closure. AppKit sets the view's appearance as current while it draws, so
-/// the closure's colors follow light and dark mode.
+/// AppKit sets the view's appearance as current while it draws, so the closure's colors
+/// follow light and dark mode.
 private final class Drawing: NSView {
     private let size: NSSize
     private let drawing: @MainActor (NSRect) -> Void
@@ -328,7 +313,6 @@ private final class Drawing: NSView {
     override func draw(_ dirtyRect: NSRect) { drawing(bounds) }
 }
 
-/// Opens its permission's pane in System Settings.
 private final class SettingsButton: NSButton {
     private var permission = Onboarding.Permission.accessibility
 
@@ -339,21 +323,18 @@ private final class SettingsButton: NSButton {
         action = #selector(open)
     }
 
-    /// While Kosmos is in the background, as it is mid-session, a click on the button presses
-    /// it and does not only bring the window forward.
+    /// Kosmos is in the background mid-session, and the first click should press the button.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     @objc private func open() { permission.openSettings() }
 }
 
-/// A window at the normal level whose title bar shows only the close button. Escape and
-/// Command-W close it, since Kosmos has no main menu to carry Close.
+/// Escape and Command-W close it, since Kosmos has no main menu to carry Close.
 private final class SetupWindow: NSWindow {
-    /// Runs as the window closes while it has the key, with whether that key came from
-    /// another app: Kosmos was not active before the window took it.
+    /// Runs as the window closes with the key, told whether Kosmos was inactive before the
+    /// window took it.
     var closedWithKey: (@MainActor (_ fromAnotherApp: Bool) -> Void)?
     private var tookKeyFromAnotherApp = false
-    /// Kosmos is becoming active, until one of its windows takes the key.
     private var activating = false
 
     init() {
@@ -372,8 +353,6 @@ private final class SetupWindow: NSWindow {
         center.addObserver(self, selector: #selector(windowBecameKey), name: NSWindow.didBecomeKeyNotification, object: nil)
     }
 
-    /// Activates Kosmos and takes the key, which only a launch can do, from the app that was
-    /// active before.
     func takeKey() {
         activating = true
         NSApp.activate()
@@ -392,7 +371,6 @@ private final class SetupWindow: NSWindow {
         super.close()
     }
 
-    /// Replaces the content and fits the window to it, keeping its top edge.
     func setContent(_ view: NSView) {
         let top = frame.maxY
         contentView = view

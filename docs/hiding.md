@@ -30,7 +30,8 @@
   that it was sent, so a barrier after the adds, about 1.3 ms and only in a batch that
   adds, and a read of each added window's Spaces come before the removals. The read
   compares the window's Spaces with the displays' ordinary Spaces, whether or not the
-  window's Space list names fullscreen Spaces. A window whose add did not land stays in
+  window's Space list names fullscreen Spaces. The displays are read for it, up to 7 ms on
+  the development Mac, also only in a batch that adds. A window whose add did not land stays in
   the holding Space, so the batch fails its confirmation and recovery adds it again.
 - A batch is confirmed when the Spaces it touched show each revealed window out of them
   and each concealed window in them. Kosmos reads them directly, on its own connection,
