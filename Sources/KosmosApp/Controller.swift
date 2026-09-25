@@ -1226,10 +1226,6 @@ final class Controller {
     private func pointerEntered(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         // The pointer moved on before this ran. While a window is lifted the pointer is the user's.
         guard !sessionLocked, !dragging, pointer?.window == entered.window else { return }
-        focusUnderPointer(entered, at: stamp)
-    }
-
-    private func focusUnderPointer(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         let window = entered.window
         let fullscreen = fullscreenParked.contains(window)
         let skip = focusFollowsMouse.skip(window, in: session, fullscreen: fullscreen, key: key,
