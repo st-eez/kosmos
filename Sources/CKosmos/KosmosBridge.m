@@ -77,6 +77,19 @@ static id readAlpha(uint64_t space) {
     return perform([[cls alloc] initWithSpaceID:space]);
 }
 
+static bool setTransform(uint64_t space, CGAffineTransform transform) {
+    Class cls = operationClass(@"SLSBridgedSpaceSetTransformOperation", @selector(initWithSpaceID:transform:options:));
+    return perform([[cls alloc] initWithSpaceID:space transform:transform options:0]) != nil;
+}
+
+static bool readTransform(uint64_t space, CGAffineTransform *transform) {
+    Class cls = operationClass(@"SLSBridgedSpaceGetTransformOperation", @selector(initWithSpaceID:));
+    id result = perform([[cls alloc] initWithSpaceID:space]);
+    if (![result respondsToSelector:@selector(affineTransform)]) return false;
+    *transform = [result affineTransform];
+    return true;
+}
+
 // Creates an auxiliary Space at the absolute level, with the transform and alpha read back,
 // then shows it. Returns 0 on failure, with any partial Space destroyed.
 static uint64_t createSpace(int32_t absoluteLevel, CGAffineTransform wanted, float wantedAlpha) {
@@ -89,12 +102,9 @@ static uint64_t createSpace(int32_t absoluteLevel, CGAffineTransform wanted, flo
         Class level = operationClass(@"SLSBridgedSpaceSetAbsoluteLevelOperation", @selector(initWithSpaceID:level:));
         if (!perform([[level alloc] initWithSpaceID:space level:absoluteLevel])) goto fail;
 
-        Class transform = operationClass(@"SLSBridgedSpaceSetTransformOperation", @selector(initWithSpaceID:transform:options:));
-        if (!perform([[transform alloc] initWithSpaceID:space transform:wanted options:0])) goto fail;
-        Class getTransform = operationClass(@"SLSBridgedSpaceGetTransformOperation", @selector(initWithSpaceID:));
-        id actual = perform([[getTransform alloc] initWithSpaceID:space]);
-        if (![actual respondsToSelector:@selector(affineTransform)]
-            || !CGAffineTransformEqualToTransform([actual affineTransform], wanted)) goto fail;
+        CGAffineTransform actual;
+        if (!setTransform(space, wanted) || !readTransform(space, &actual)
+            || !CGAffineTransformEqualToTransform(actual, wanted)) goto fail;
 
         if (!setAlpha(space, wantedAlpha)) goto fail;
         id alpha = readAlpha(space);
@@ -119,6 +129,18 @@ uint64_t kosmos_holding_create(void) {
 
 uint64_t kosmos_float_space_create(int32_t level) {
     return createSpace(level, CGAffineTransformIdentity, 1);
+}
+
+bool kosmos_space_set_transform(uint64_t space, CGAffineTransform transform) {
+    @try { return setTransform(space, transform); } @catch (NSException *exception) { return false; }
+}
+
+bool kosmos_space_get_transform(uint64_t space, CGAffineTransform *transform) {
+    @try { return readTransform(space, transform); } @catch (NSException *exception) { return false; }
+}
+
+bool kosmos_space_set_alpha(uint64_t space, float alpha) {
+    @try { return setAlpha(space, alpha); } @catch (NSException *exception) { return false; }
 }
 
 bool kosmos_space_set_ordering_weight(uint64_t space, int32_t weight) {

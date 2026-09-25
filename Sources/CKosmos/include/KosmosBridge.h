@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CGAffineTransform.h>
 
 // Creates the holding Space: an auxiliary Space at absolute level 400, moved far off
 // every display and fully transparent, then shown. Returns 0 on failure, with any
@@ -15,6 +16,13 @@ uint64_t kosmos_holding_create(void);
 // opaque (alpha 1), then shown: the float Space of `kosmos-probe float-layer`. Returns 0
 // on failure, with any partial Space destroyed.
 uint64_t kosmos_float_space_create(int32_t level);
+// Sets a Space's transform (`kosmos-probe space-anim` measures its convention). Returns once
+// the operation is sent.
+bool kosmos_space_set_transform(uint64_t space, CGAffineTransform transform);
+// Reads a Space's transform, a synchronous bridged read. Returns false if the read fails.
+bool kosmos_space_get_transform(uint64_t space, CGAffineTransform *transform);
+// Sets a Space's alpha. Returns once the operation is sent.
+bool kosmos_space_set_alpha(uint64_t space, float alpha);
 // Sets a Space's ordering weight, a bridged operation with no reading counterpart.
 bool kosmos_space_set_ordering_weight(uint64_t space, int32_t weight);
 bool kosmos_space_destroy(uint64_t space);

@@ -364,14 +364,7 @@ import KosmosSkyLight
 
     func ordinarySpaces(_ window: UInt32) -> [UInt64] { kosmos_window_spaces(window) as? [UInt64] ?? [] }
 
-    /// Destroys the Space and returns whether it is gone.
-    func destroy(_ space: UInt64) -> Bool {
-        _ = kosmos_space_destroy(space)
-        _ = kosmos_barrier(space)
-        let gone = poll { kosmos_space_windows(space) == nil }
-        if gone { untrack(space: space) }
-        return gone
-    }
+    func destroy(_ space: UInt64) -> Bool { destroySpace(space) }
 
     func settle(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
 }
@@ -396,9 +389,9 @@ func axFrame(_ element: AXUIElement) -> CGRect {
     return frame
 }
 
-/// A stub app for float-layer. Its arguments are its activation policy (prohibited, or
-/// accessory to take focus), its name, then one "x,y" offset per window, in points from the
-/// bottom left of the built-in display's visible frame. It prints the window ids on one line,
+/// A stub app for float-layer and space-anim. Its arguments are its activation policy
+/// (prohibited, or accessory to take focus), its name, then one offset per window (FloatStub.open),
+/// in points from the bottom left of the built-in display's visible frame. It prints the window ids on one line,
 /// answers each command on standard input with one line (FloatStub.command), and exits when
 /// standard input closes.
 @MainActor func floatStub(_ arguments: [String]) -> Never {
@@ -426,17 +419,23 @@ func axFrame(_ element: AXUIElement) -> CGRect {
     static var windows: [Int: NSWindow] = [:]
     static var typed = ""
 
-    /// Opens a 100 by 100 point window at `offset` ("x,y") and `level`, and returns its id.
+    /// Opens a window at `offset` and `level`, and returns its id. The offset "x,y" opens a
+    /// resizable 100 by 100 point window; "x,y,width,height" opens one of that size that cannot
+    /// be resized, which takes clicks only inside its frame, where a resizable window also
+    /// takes them about 4 points outside it (space-anim).
     static func open(_ offset: String, level: Int, color: NSColor) -> Int {
-        let xy = offset.split(separator: ",").compactMap { Double($0) }
-        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        var xy = offset.split(separator: ",").compactMap { Double($0) }
+        let resizable = xy.count < 4
+        if resizable { xy += [100, 100] }
+        let window = NSWindow(contentRect: .zero, styleMask: resizable ? [.titled, .resizable] : [.titled],
+                              backing: .buffered, defer: false)
         window.title = "kosmos-probe \(name)"
         window.backgroundColor = color
         window.level = NSWindow.Level(rawValue: level)
         window.isReleasedWhenClosed = false
         window.contentView = TypingView()
         window.makeFirstResponder(window.contentView)
-        window.setFrame(NSRect(x: origin.x + xy[0], y: origin.y + xy[1], width: 100, height: 100), display: false)
+        window.setFrame(NSRect(x: origin.x + xy[0], y: origin.y + xy[1], width: xy[2], height: xy[3]), display: false)
         window.orderFrontRegardless()
         windows[window.windowNumber] = window
         return window.windowNumber
@@ -489,6 +488,15 @@ final class TypingView: NSView {
     }
 }
 
+/// Destroys a tracked Space and returns whether it is gone.
+func destroySpace(_ space: UInt64) -> Bool {
+    _ = kosmos_space_destroy(space)
+    _ = kosmos_barrier(space)
+    let gone = poll { kosmos_space_windows(space) == nil }
+    if gone { untrack(space: space) }
+    return gone
+}
+
 /// Waits up to a second for `done`, checking every 20 ms.
 func poll(_ done: () -> Bool) -> Bool {
     for _ in 0..<50 {
@@ -503,20 +511,20 @@ nonisolated(unsafe) private var leftovers: (stubs: [Process], spaces: [UInt64]) 
 private let leftoversLock = NSLock()
 nonisolated(unsafe) private var signalSources: [DispatchSourceSignal] = []
 
-private func track(stub: Process) {
+func track(stub: Process) {
     leftoversLock.withLock { leftovers.stubs.append(stub) }
 }
 
-private func track(space: UInt64) {
+func track(space: UInt64) {
     leftoversLock.withLock { leftovers.spaces.append(space) }
 }
 
-private func untrack(space: UInt64) {
+func untrack(space: UInt64) {
     leftoversLock.withLock { leftovers.spaces.removeAll { $0 == space } }
 }
 
 /// Cleans up at exit, and on SIGINT, SIGTERM and SIGHUP before exiting.
-private func installCleanup() {
+func installCleanup() {
     atexit { cleanUp() }
     for signal in [SIGINT, SIGTERM, SIGHUP] {
         Darwin.signal(signal, SIG_IGN)

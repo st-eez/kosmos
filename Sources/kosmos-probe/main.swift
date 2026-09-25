@@ -119,6 +119,8 @@
 //   kosmos-probe float-layer [key]  Can a Space shown above the desktop Space keep another
 //                                   app's floating window above its tiled ones, however the
 //                                   tiles are ordered (FloatLayer.swift)? key takes focus.
+//   kosmos-probe space-anim         Can a window alone in a shown Space be animated by setting
+//                                   the Space's transform (SpaceAnim.swift)?
 import AppKit
 import CKosmos
 import KosmosCore
@@ -157,6 +159,7 @@ case "holding": holding()
 case "mission-control": missionControl(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 120)
 case "float-stub": floatStub(Array(arguments.dropFirst()))
 case "float-layer": floatLayer(key: arguments.dropFirst().first == "key")
+case "space-anim": spaceAnim()
 default:
     print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | float-layer [key]")
     exit(2)
