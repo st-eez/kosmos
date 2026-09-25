@@ -1,14 +1,10 @@
 import Darwin
 import Dispatch
 
-/// Serves the Kosmos socket. Each connection carries one request. A command gets one
-/// response. A subscription gets every published frame until either side closes.
-///
-/// All socket I/O runs on the server's own serial queue, which is also the actor's executor.
-/// Only the handler runs on the main actor, and the server waits for it without holding up
-/// other clients.
+/// All socket I/O runs on the server's serial queue, which is also the actor's executor. Only
+/// the handler runs on the main actor, and waiting for it holds up no other client.
 public actor IPCServer {
-    /// A client must send its whole request within this time of connecting.
+    /// For the whole request, from connecting.
     static let requestDeadline = DispatchTimeInterval.seconds(1)
 
     private let queue: DispatchSerialQueue
@@ -27,12 +23,8 @@ public actor IPCServer {
         queue.asUnownedSerialExecutor()
     }
 
-    /// Starts listening at `socketPath`, whose directory must belong to this user; the server
-    /// narrows its mode to 0700. A file already at the path is taken as stale and replaced, so
-    /// start only after taking Kosmos's instance lock.
-    ///
-    /// `handler` turns a command's arguments into a response. `log` receives rejected clients
-    /// and accept failures. The server runs until `stop()`.
+    /// A file already at the path is taken as stale and replaced, so start only after taking
+    /// Kosmos's instance lock.
     public init(
         socketPath: String,
         log: @escaping @Sendable (String) -> Void,
@@ -65,18 +57,14 @@ public actor IPCServer {
         listener.activate()
     }
 
-    /// Sends `payload` to every subscriber, and to each new subscriber when it joins. The
-    /// payload must be one JSON value without newlines, because `kosmos subscribe` prints each
-    /// frame as one line. Returns at once. Each frame is a full snapshot, so a subscriber still
-    /// receiving an earlier frame gets only the newest one after it, and never holds up the
-    /// caller.
+    /// One JSON value without newlines, since `kosmos subscribe` prints each frame as a line. A
+    /// subscriber still receiving a frame gets only the newest one after it.
     public nonisolated func publish(_ payload: [UInt8]) {
         let data = frameData(payload)
         queue.async { self.assumeIsolated { $0.broadcast(data) } }
     }
 
-    /// Closes every connection and removes the socket file. Waits only for the server's
-    /// queue, which never blocks on a client.
+    /// Waits only for the server's queue, which never blocks on a client.
     public nonisolated func stop() {
         queue.sync { self.assumeIsolated { $0.shutDown() } }
     }
@@ -87,8 +75,7 @@ public actor IPCServer {
         let io: DispatchIO
         var decoder = FrameDecoder()
         var state = State.awaitingRequest
-        /// The channel gets one frame at a time. The next frame waits here, and a newer one
-        /// replaces it.
+        /// The channel gets one frame at a time; a newer frame replaces the one waiting.
         var writing = false
         var waiting: DispatchData?
 
@@ -102,10 +89,8 @@ public actor IPCServer {
             let fd = accept(listenerFD, nil, nil)
             guard fd >= 0 else {
                 if errno == EINTR || errno == ECONNABORTED { continue }
-                // When accept fails for lack of a descriptor (EMFILE or ENFILE), macOS removes
-                // the pending connection and closes it, so the listener stops firing and this
-                // loop cannot spin. Measured on macOS 27: the client reads EOF, and the next
-                // accept returns EAGAIN.
+                // Out of descriptors (EMFILE or ENFILE), macOS closes the pending connection, so
+                // this loop cannot spin: the client reads EOF, and the next accept gets EAGAIN.
                 if errno != EAGAIN { log("accept failed: \(String(cString: strerror(errno)))") }
                 return
             }
@@ -192,9 +177,8 @@ public actor IPCServer {
         }
     }
 
-    /// Writes `frame` now, or keeps it until the frame being written is done. Only subscribers
-    /// get a frame during a write, since the subscribe response is always a connection's first
-    /// frame, and each of their frames is a full snapshot, so it replaces any frame waiting.
+    /// Only a subscriber gets a frame during a write, since the subscribe response is its first,
+    /// and each of its frames is a full snapshot, so it replaces any frame waiting.
     private func send(_ frame: DispatchData, to id: Int) {
         guard let connection = connections[id] else { return }
         if connection.writing {
@@ -243,13 +227,11 @@ public actor IPCServer {
     }
 }
 
-/// The frame for `body`, copied once into dispatch data that every write of it shares.
+/// Copied once into dispatch data that every write of it shares.
 private func frameData(_ body: [UInt8]) -> DispatchData {
     frame(body).withUnsafeBytes { DispatchData(bytes: $0) }
 }
 
-/// Checks that the socket's directory belongs to this user and narrows its mode to 0700, so
-/// no other user can reach the socket.
 private func secureDirectory(of socketPath: String) throws(IPCError) {
     guard let slash = socketPath.lastIndex(of: "/"), socketPath.first == "/" else {
         throw IPCError.unsafeDirectory("the socket path must be absolute: \(socketPath)")
@@ -268,7 +250,6 @@ private func secureDirectory(of socketPath: String) throws(IPCError) {
     }
 }
 
-/// Binds a nonblocking listening socket at `path`, replacing any file already there.
 private func listen(at path: String) throws(IPCError) -> Int32 {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { throw IPCError.system("socket", errno) }
