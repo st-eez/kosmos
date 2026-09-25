@@ -73,7 +73,6 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(load("mouse-modifier = 'option'").diagnostics == [
             "3:18: error: mouse-modifier: 'option' is not a modifier; use cmd, ctrl, alt or shift",
         ])
-        #expect(load("mouse-modifier = 'alt-alt'").diagnostics == ["3:18: error: mouse-modifier: 'alt' appears twice"])
         #expect(load("mouse-modifier = 'alt-'").diagnostics == [
             "3:18: error: mouse-modifier: expected modifiers joined by '-', such as ctrl-alt",
         ])

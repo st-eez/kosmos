@@ -1380,31 +1380,40 @@ pointer gets none of the drag's events.
   has named the window under the pointer there with its own hit test
   (`kCGMouseEventWindowUnderMousePointer`, as for focus follows mouse, section 5.11), so
   deciding a press reads no window list. KosmosCore's DragGate decides each event on the
-  tap's thread, under a lock the main actor holds only to hand it the modifiers and the
-  windows, so no event waits on the main actor. Section 3 turns down a keyboard tap
+  tap's thread, under a lock the main actor holds only to hand it the modifiers, the
+  windows and the displays, so no event waits on the main actor. Section 3 turns down a keyboard tap
   because every keystroke would wait on the manager. This tap costs each button event one
   round trip to its thread, which answers at once, and it takes no movement without a
   button down.
 - A press is taken when its modifiers are exactly the configured ones, Caps Lock and Fn
-  aside, and the window under it is a tiled or floating window of a shown workspace
-  (`DragGate.windows`, renewed with each published state). Every other press passes
-  untouched: on the Dock, where Option and the right button give Force Quit, the menu bar,
-  SketchyBar, the desktop, a dialog or panel, a native fullscreen window or a window of
-  Kosmos's own. The log names each modifier press passed on for its window.
-- Kosmos takes the press, the drag's movements and that button's mouse up whatever the
-  modifiers are by then, and a press of the other button during the drag with its own
-  mouse up. WindowServer turns off a tap that falls behind, and events pass untouched
-  until Kosmos turns it on again; a drag whose button is up by then ends where the pointer
-  is. A mouse up missed any other way ends the drag at the button's next press, where the
-  pointer last moved, and a hotkey ends it at once.
-- Movements coalesce. The tap tells the main actor once and keeps the latest point until
-  the main actor takes it, so a busy main actor gets fewer points, each the newest.
+  aside, it is on a display, and the window under it is a tiled or floating window of a
+  shown workspace (`DragGate.windows`, renewed with each published state). Every other
+  press passes untouched: on the Dock, where Option and the right button give Force Quit,
+  the menu bar, SketchyBar, the desktop, a dialog or panel, a native fullscreen window or
+  a window of Kosmos's own, and the focus path's key record, a left down far off every
+  display with no mouse up (section 3). The log names each modifier press passed on for
+  its window.
+- Kosmos takes the press, every movement until that button's mouse up, whichever button
+  macOS names with both down, and the mouse up, whatever the modifiers are by then. A
+  press of the other button during the drag passes to the app with its mouse up.
+- The drag ends at its mouse up. WindowServer turns off a tap that falls behind, passes
+  on the event it waited for, and passes every event until Kosmos turns the tap on again.
+  When the event it passed was the drag's press, the app has the press, so the drag ends
+  and the rest of the press passes too (`DragGate.timedOut`); this rests on WindowServer
+  handing the tap one event at a time and reporting the timeout right after the event it
+  gave up on, which no live test can provoke. A drag whose mouse up passed is ended when
+  its button reads up: as the tap turns on again, at the other button's press, and at a
+  hotkey, lock, resync or config load. A press of the drag's own button ends it too, where
+  the pointer last moved. A hotkey during a drag whose button is still down ends Kosmos's
+  drag at once, and the tap takes the rest of the press, which changes nothing.
+- Each movement goes to the main actor in order, and AppWorker merges the frame writes an
+  app has not taken yet. The debug log gives each movement's lag from the tap; if a fast
+  drag lags, coalescing the movements comes back with that measurement.
 - The press focuses the window, as a command stamped when the tap saw it, as Hyprland's
   `dragBegin` focuses the window it grabs. Nothing moves until the pointer is more than
   10 pt from the press, as for the title-bar lift (`Session.liftDistance`); from then on
-  the window catches up with the pointer and follows it. A press that moves less only
-  focuses the window. Omarchy leaves `binds:drag_threshold` at 0, so Hyprland lifts at
-  the press.
+  the window catches up with the pointer and follows it. Omarchy leaves
+  `binds:drag_threshold` at 0, so Hyprland lifts at the press.
 - The left button lifts a tiled window as a title-bar drag does (section 5.13): the other
   windows fill its space, it drops at the mouse up by the same dwindle rule, and a hotkey
   drops it first. Kosmos writes the lifted window's position at each movement, keeping
@@ -1435,19 +1444,23 @@ pointer gets none of the drag's events.
   that.
 - An active tap filters events, which macOS allows a process with Accessibility
   (`CGPreflightPostEventAccess`); yabai, skhd and Rectangle make theirs with
-  Accessibility alone. Input Monitoring gates listen-only taps (section 5.11), so Kosmos
-  does not expect macOS to ask for it here, but macOS 27 asked a process with neither
-  grant for Input Monitoring at a listen-only mouse tap, and whether an active one with
-  Accessibility asks is for the live test. Kosmos makes the tap only after the
-  Accessibility grant and logs both grants as it does. A refused tap is logged, and
-  modifier drags stay off until the next config load makes it again.
+  Accessibility alone. Kosmos makes the tap only after the Accessibility grant and logs
+  both grants as it does. A refused tap is logged, and modifier drags stay off until the
+  next config load makes it again.
+- The `NSEvent` global monitors of the left button (section 5.2) leave out a press and a
+  mouse up they hear during a modifier drag, whose own end drops its window, and the log
+  says when they hear one.
 - Open until the live test:
+  - whether macOS asks for Input Monitoring. It gates listen-only taps (section 5.11), so
+    Kosmos does not expect it here, but macOS 27 asked a process with neither grant for
+    it at a listen-only mouse tap;
+  - whether the global monitors hear the events the tap takes;
   - whether WindowServer takes an active tap at the annotated location and fills in the
     window under the pointer for button events there. If not, a tap at the session
     location with a hit test per modifier press (`SLSFindWindowAndOwner`, as yabai's
     `window_manager_find_window_at_point`) stands in for the field;
   - whether a taken press still activates its app; Kosmos focuses the window either way;
-  - how smoothly apps follow a position write per movement.
+  - how smoothly apps follow a position write per movement, and whether a fast drag lags.
 - Left out:
   - Snapping, which Omarchy leaves off, `general:resize_corner` and keeping a floating
     window's aspect ratio, until a config asks for them.

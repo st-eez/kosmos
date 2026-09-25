@@ -19,16 +19,14 @@ extension KeyCombo.Modifiers {
 }
 
 /// Decides on the drag tap's thread which mouse button events Kosmos takes, so no event
-/// waits on the main actor (DESIGN.md, section 5.14). A press with exactly the modifiers,
-/// over a window the gate holds as WindowServer's hit test names it, begins a drag. Kosmos
-/// takes that press, the drag's movements and the button's mouse up, whatever the modifiers
-/// are by then, and a press of the other button during the drag with its own mouse up. Every
-/// other event passes to the app under the pointer untouched.
+/// waits on the main actor (DESIGN.md, section 5.14). A press with exactly the modifiers, on
+/// a display and over a window the gate holds as WindowServer's hit test names it, begins a
+/// drag. Kosmos takes that press, every movement until the button's mouse up and that mouse
+/// up, whatever the modifiers are by then. Every other event passes to the app under the
+/// pointer untouched, a press of the other button during the drag too.
 public struct DragGate: Sendable {
     /// A drag, as its press began it.
     public struct Grab: Equatable, Sendable {
-        /// Counts the drags, so the main actor can tell a late movement of an earlier one.
-        public let number: Int
         public let button: DragButton
         public let window: WindowID
         /// Where the button went down.
@@ -46,14 +44,10 @@ public struct DragGate: Sendable {
         /// Kosmos takes the event: the app under the pointer never gets it.
         public var take = false
         public var began: Grab?
-        /// The drag's button came up, or went down again with no mouse up heard since, as
-        /// while WindowServer had the tap off. That drag then ends where the pointer last
-        /// moved.
         public var ended: End?
-        /// The number of the drag whose movement the main actor is to take
-        /// (`takeMovement`), when none was waiting.
-        public var moved: Int?
-        /// A press with the modifiers passed on, as over the Dock, for the log.
+        /// Where the pointer moved during the drag.
+        public var moved: CGPoint?
+        /// A press with the modifiers passed on for its window, as over the Dock, for the log.
         public var passedOver: WindowID?
     }
 
@@ -61,71 +55,67 @@ public struct DragGate: Sendable {
     public var modifiers: KeyCombo.Modifiers?
     /// The windows a press may take: the tiled and floating windows of the shown workspaces.
     public var windows: Set<WindowID> = []
+    /// The displays, from the session. A press off every display passes, as the focus
+    /// path's key record is one (Controller.leftMouseDown).
+    public var monitors: [Monitor] = []
     public private(set) var grab: Grab?
-    /// Buttons whose press Kosmos took, until their mouse up.
-    public private(set) var held: Set<DragButton> = []
     /// Where the pointer last moved during the drag.
-    private var last: CGPoint?
-    /// A movement waits for the main actor, which takes only the latest.
-    private var waiting = false
-    private var count = 0
+    private var last = CGPoint.zero
+    /// The drag's press is the last event the gate decided (`timedOut`).
+    private var pressWasLast = false
 
     public init() {}
 
     public mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags,
                                  at point: CGPoint) -> Outcome {
+        pressWasLast = false
         var outcome = Outcome()
-        if held.remove(button) != nil, let grab, grab.button == button {
-            outcome.ended = End(grab: grab, point: last ?? grab.start)
+        if let grab {
+            guard grab.button == button else { return outcome }
+            // The drag's button went down again, so its mouse up went unheard, as while
+            // WindowServer had the tap off. The drag ends where the pointer last moved, and
+            // this press is decided afresh.
+            outcome.ended = End(grab: grab, point: last)
             self.grab = nil
         }
-        if grab != nil {
-            held.insert(button)
-            outcome.take = true
-            return outcome
-        }
-        guard let modifiers, KeyCombo.Modifiers(flags) == modifiers else { return outcome }
+        guard let modifiers, KeyCombo.Modifiers(flags) == modifiers, monitors.contains(where: { $0.frame.contains(point) })
+        else { return outcome }
         guard windows.contains(window) else {
             outcome.passedOver = window
             return outcome
         }
-        count += 1
-        let grab = Grab(number: count, button: button, window: window, start: point)
-        self.grab = grab
-        held.insert(button)
-        (last, waiting) = (point, false)
+        let grab = Grab(button: button, window: window, start: point)
+        (self.grab, last, pressWasLast) = (grab, point, true)
         outcome.take = true
         outcome.began = grab
         return outcome
     }
 
-    public mutating func dragged(_ button: DragButton, to point: CGPoint) -> Outcome {
-        guard held.contains(button) else { return Outcome() }
-        var outcome = Outcome(take: true)
-        if let grab {
-            last = point
-            if !waiting { outcome.moved = grab.number }
-            waiting = true
-        }
-        return outcome
+    /// A movement with a button down, whichever button macOS names: with both down it can
+    /// name the one the drag does not hold.
+    public mutating func dragged(to point: CGPoint) -> Outcome {
+        pressWasLast = false
+        guard grab != nil else { return Outcome() }
+        last = point
+        return Outcome(take: true, moved: point)
     }
 
     public mutating func released(_ button: DragButton, at point: CGPoint) -> Outcome {
-        guard held.remove(button) != nil else { return Outcome() }
-        var outcome = Outcome(take: true)
-        if let grab, grab.button == button {
-            outcome.ended = End(grab: grab, point: point)
-            self.grab = nil
-        }
-        return outcome
+        pressWasLast = false
+        guard let grab, grab.button == button else { return Outcome() }
+        self.grab = nil
+        return Outcome(take: true, ended: End(grab: grab, point: point))
     }
 
-    /// Where the pointer last moved during drag `number`, once for each `moved` the gate
-    /// gave. Nil once the drag has ended, as its end carries the point.
-    public mutating func takeMovement(of number: Int) -> CGPoint? {
-        guard waiting, grab?.number == number else { return nil }
-        waiting = false
-        return last
+    /// WindowServer turned the tap off after waiting too long on an event, and passed that
+    /// event on. When it was the drag's press, the last event the gate decided, the app has
+    /// the press: the drag ends where it began, and the rest of the press passes, so the app
+    /// gets its mouse up. After any other event the drag goes on.
+    public mutating func timedOut() -> Outcome {
+        guard pressWasLast, let grab else { return Outcome() }
+        self.grab = nil
+        pressWasLast = false
+        return Outcome(ended: End(grab: grab, point: grab.start))
     }
 }
 

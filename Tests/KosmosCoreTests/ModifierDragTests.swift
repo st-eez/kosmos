@@ -8,40 +8,41 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
     var gate = DragGate()
     gate.modifiers = .alt
     gate.windows = windows
+    gate.monitors = [Monitor(id: 1, frame: display)]
     return gate
 }
 
 @Suite struct DragGateTests {
+    private let point = CGPoint(x: 100, y: 100)
+
     @Test func aPressWithTheModifierOverAManagedWindowTakesTheWholeDrag() {
         var gate = gate()
-        let press = gate.pressed(.left, over: 10, flags: .maskAlternate, at: CGPoint(x: 100, y: 100))
-        let grab = DragGate.Grab(number: 1, button: .left, window: 10, start: CGPoint(x: 100, y: 100))
+        let press = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point)
+        let grab = DragGate.Grab(button: .left, window: 10, start: point)
         #expect(press == DragGate.Outcome(take: true, began: grab))
-        // The main actor hears of the first movement, and takes only the latest.
-        #expect(gate.dragged(.left, to: CGPoint(x: 120, y: 100)) == DragGate.Outcome(take: true, moved: 1))
-        #expect(gate.dragged(.left, to: CGPoint(x: 130, y: 100)) == DragGate.Outcome(take: true))
-        #expect(gate.takeMovement(of: 1) == CGPoint(x: 130, y: 100) && gate.takeMovement(of: 1) == nil)
-        #expect(gate.dragged(.left, to: CGPoint(x: 140, y: 100)).moved == 1)
+        #expect(gate.dragged(to: CGPoint(x: 120, y: 100)) == DragGate.Outcome(take: true, moved: CGPoint(x: 120, y: 100)))
         // The mouse up is taken whatever the modifiers are by then, and ends the drag.
         let up = gate.released(.left, at: CGPoint(x: 150, y: 100))
         #expect(up == DragGate.Outcome(take: true, ended: DragGate.End(grab: grab, point: CGPoint(x: 150, y: 100))))
-        #expect(gate.grab == nil && gate.takeMovement(of: 1) == nil)
+        #expect(gate.grab == nil && gate.dragged(to: point) == DragGate.Outcome())
         // The right button resizes the same way.
-        #expect(gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began?.button == .right)
-        #expect(gate.released(.right, at: .zero).ended?.grab.number == 2)
+        #expect(gate.pressed(.right, over: 10, flags: .maskAlternate, at: point).began?.button == .right)
+        #expect(gate.released(.right, at: point).ended?.grab.button == .right)
     }
 
     @Test func everyOtherPressPassesUntouched() {
         var gate = gate()
-        let point = CGPoint(x: 100, y: 100)
         // Without the modifier, with another one too, and over a window Kosmos does not
         // manage, as the Dock.
         for flags: CGEventFlags in [[], [.maskAlternate, .maskShift], .maskControl] {
             #expect(gate.pressed(.left, over: 10, flags: flags, at: point) == DragGate.Outcome())
         }
         #expect(gate.pressed(.right, over: 99, flags: .maskAlternate, at: point) == DragGate.Outcome(passedOver: 99))
+        // Off every display, as the focus path's key record, a left down at 300000, 300000
+        // with no mouse up.
+        #expect(gate.pressed(.left, over: 10, flags: .maskAlternate, at: CGPoint(x: 300_000, y: 300_000)) == DragGate.Outcome())
         // Their movements and mouse ups pass too.
-        #expect(gate.dragged(.left, to: point) == DragGate.Outcome() && gate.released(.left, at: point) == DragGate.Outcome())
+        #expect(gate.dragged(to: point) == DragGate.Outcome() && gate.released(.left, at: point) == DragGate.Outcome())
         #expect(gate.released(.right, at: point) == DragGate.Outcome())
         // Caps Lock and Fn do not count.
         #expect(gate.pressed(.left, over: 10, flags: [.maskAlternate, .maskAlphaShift, .maskSecondaryFn], at: point).take)
@@ -51,44 +52,43 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
         #expect(gate.pressed(.left, over: 10, flags: .maskAlternate, at: point) == DragGate.Outcome())
     }
 
-    @Test func aPressOfTheOtherButtonDuringTheDragIsTakenWithItsMouseUp() {
+    @Test func theOtherButtonPassesDuringTheDrag() {
         var gate = gate()
-        let point = CGPoint(x: 100, y: 100)
         _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point)
-        #expect(gate.pressed(.right, over: 0, flags: [], at: point) == DragGate.Outcome(take: true))
-        #expect(gate.released(.right, at: point) == DragGate.Outcome(take: true))
-        _ = gate.pressed(.right, over: 0, flags: [], at: point)
-        #expect(gate.released(.left, at: point).ended != nil)
-        // Held past the drag's end, the other button's movements and mouse up are still taken.
-        #expect(gate.dragged(.right, to: point) == DragGate.Outcome(take: true))
-        #expect(gate.released(.right, at: point) == DragGate.Outcome(take: true))
+        #expect(gate.pressed(.right, over: 10, flags: .maskAlternate, at: point) == DragGate.Outcome())
         #expect(gate.released(.right, at: point) == DragGate.Outcome())
+        // With both buttons down, macOS can name the other one: the movement is the drag's.
+        #expect(gate.dragged(to: CGPoint(x: 130, y: 100)).moved == CGPoint(x: 130, y: 100))
+        #expect(gate.released(.left, at: point).ended != nil)
     }
 
     @Test func aPressWithNoMouseUpHeardEndsTheDragWhereThePointerLastMoved() {
         var gate = gate()
-        let first = gate.pressed(.left, over: 10, flags: .maskAlternate, at: .zero).began!
-        _ = gate.dragged(.left, to: CGPoint(x: 50, y: 0))
-        // WindowServer had the tap off as the button came up. The next press ends the drag,
-        // and is decided afresh: this one passes, and one with the modifier begins another.
-        let press = gate.pressed(.left, over: 10, flags: [], at: CGPoint(x: 300, y: 300))
-        #expect(press == DragGate.Outcome(ended: DragGate.End(grab: first, point: CGPoint(x: 50, y: 0))))
-        #expect(gate.takeMovement(of: 1) == nil)
-        _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: .zero)
-        let again = gate.pressed(.left, over: 10, flags: .maskAlternate, at: CGPoint(x: 5, y: 5))
-        #expect(again.ended?.grab.number == 2 && again.ended?.point == .zero && again.began?.number == 3 && again.take)
+        let right = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
+        _ = gate.dragged(to: CGPoint(x: 50, y: 0))
+        // WindowServer had the tap off as the right button came up. A left press passes to
+        // the app, with its mouse up.
+        #expect(gate.pressed(.left, over: 10, flags: [], at: point) == DragGate.Outcome())
+        #expect(gate.released(.left, at: point) == DragGate.Outcome())
+        // The next right press ends the drag and is decided afresh: this one passes, and one
+        // with the modifier begins another.
+        let press = gate.pressed(.right, over: 10, flags: [], at: point)
+        #expect(press == DragGate.Outcome(ended: DragGate.End(grab: right, point: CGPoint(x: 50, y: 0))))
+        let first = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
+        let again = gate.pressed(.right, over: 10, flags: .maskAlternate, at: point)
+        #expect(again.ended == DragGate.End(grab: first, point: .zero) && again.began?.start == point && again.take)
     }
 
-    @Test func aLateMovementOfAnEndedDragIsNotTaken() {
+    @Test func aDragWhosePressTimedOutPassesTheRestOfIt() {
         var gate = gate()
-        _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: .zero)
-        #expect(gate.dragged(.left, to: CGPoint(x: 20, y: 0)).moved == 1)
-        _ = gate.released(.left, at: CGPoint(x: 30, y: 0))
-        _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: .zero)
-        #expect(gate.dragged(.left, to: CGPoint(x: 40, y: 0)).moved == 2)
-        // The first drag's movement reaches the main actor after the second drag moved.
-        #expect(gate.takeMovement(of: 1) == nil)
-        #expect(gate.takeMovement(of: 2) == CGPoint(x: 40, y: 0))
+        let grab = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
+        // WindowServer gave up on the press and passed it on: the app gets the mouse up too.
+        #expect(gate.timedOut() == DragGate.Outcome(ended: DragGate.End(grab: grab, point: point)))
+        #expect(gate.dragged(to: .zero) == DragGate.Outcome() && gate.released(.left, at: .zero) == DragGate.Outcome())
+        // It gave up on a later event: the drag goes on.
+        _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point)
+        _ = gate.dragged(to: .zero)
+        #expect(gate.timedOut() == DragGate.Outcome() && gate.grab != nil)
     }
 }
 
@@ -104,7 +104,7 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
     }
 
     private func grab(_ window: WindowID, at start: CGPoint, _ button: DragButton = .right) -> DragGate.Grab {
-        DragGate.Grab(number: 1, button: button, window: window, start: start)
+        DragGate.Grab(button: button, window: window, start: start)
     }
 
     @Test func nothingMovesUntilThePointerGoesPastTheLiftDistance() throws {

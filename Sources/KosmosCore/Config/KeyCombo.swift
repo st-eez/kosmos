@@ -56,7 +56,7 @@ public struct KeyCombo: Hashable, Sendable {
 
 extension KeyCombo.Modifiers {
     /// Modifiers joined by '-', such as `ctrl-alt`, named as in bindings.
-    public init(_ text: String) throws(KeyComboError) {
+    init(_ text: String) throws(KeyComboError) {
         let parts = text.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
         guard !parts.contains("") else { throw KeyComboError("expected modifiers joined by '-', such as ctrl-alt") }
         try self.init(names: parts[...])

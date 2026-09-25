@@ -7,11 +7,11 @@ let dragLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "drag")
 
 /// Mouse button events for modifier drags (DESIGN.md, section 5.14), from an active event
 /// tap on its own thread. It sits at the annotated session location, where WindowServer has
-/// named the window under the pointer with its own hit test, so deciding a press queries no
+/// named the window under the pointer with its own hit test, so deciding a press reads no
 /// window list. A DragGate decides each event under a lock that the main actor holds only
-/// to hand it the modifiers and the windows, and the tap never waits on the main actor: a
-/// press it takes, the drag's movements and the mouse up go to the main actor afterwards,
-/// and never reach the app under the pointer. Every other event passes untouched.
+/// to hand it the modifiers, windows and displays, and the tap never waits on the main
+/// actor: what a taken event means goes to the main actor afterwards, and the event never
+/// reaches the app under the pointer. Every other event passes untouched.
 ///
 /// An active tap needs Accessibility, which Kosmos has before it makes one.
 final class DragTap: Sendable {
@@ -20,17 +20,12 @@ final class DragTap: Sendable {
     private nonisolated(unsafe) var port: CFMachPort?
     private let gate = Mutex(DragGate())
     private let heard = Atomic<Bool>(false)
-    private let began: @MainActor (DragGate.Grab, ContinuousClock.Instant) -> Void
-    private let moved: @MainActor (Int) -> Void
-    private let ended: @MainActor (DragGate.End) -> Void
+    private let handle: @MainActor (DragGate.Outcome, ContinuousClock.Instant) -> Void
 
-    /// `began` runs on the main actor with a drag's press and when the tap saw it, `moved`
-    /// with the number of a drag whose latest movement waits in `takeMovement`, and `ended`
-    /// with a drag that ended. Nil when WindowServer refuses the tap.
-    init?(began: @escaping @MainActor (DragGate.Grab, ContinuousClock.Instant) -> Void,
-          moved: @escaping @MainActor (Int) -> Void,
-          ended: @escaping @MainActor (DragGate.End) -> Void) {
-        (self.began, self.moved, self.ended) = (began, moved, ended)
+    /// `handle` runs on the main actor with each outcome that ends, begins or moves a drag,
+    /// and when the tap saw its event. Nil when WindowServer refuses the tap.
+    init?(handle: @escaping @MainActor (DragGate.Outcome, ContinuousClock.Instant) -> Void) {
+        self.handle = handle
         let types: [CGEventType] = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown, .rightMouseDragged, .rightMouseUp]
         port = CGEvent.tapCreate(
             tap: .cgAnnotatedSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
@@ -64,9 +59,21 @@ final class DragTap: Sendable {
         gate.withLock { $0.windows = windows }
     }
 
-    /// Where the pointer last moved during drag `number` (DragGate.takeMovement).
-    func takeMovement(of number: Int) -> CGPoint? {
-        gate.withLock { $0.takeMovement(of: number) }
+    func setMonitors(_ monitors: [Monitor]) {
+        gate.withLock { $0.monitors = monitors }
+    }
+
+    /// Ends the gate's drag if its button is up by now, as when its mouse up passed while
+    /// WindowServer had the tap off, where the pointer is. A drag whose button is still down
+    /// goes on to its mouse up, which the tap takes.
+    func endIfReleased() {
+        let outcome = gate.withLock { gate -> DragGate.Outcome? in
+            guard let grab = gate.grab,
+                  !CGEventSource.buttonState(.combinedSessionState, button: grab.button == .left ? .left : .right)
+            else { return nil }
+            return gate.released(grab.button, at: CGEvent(source: nil)?.location ?? grab.start)
+        }
+        if let outcome { post(outcome) }
     }
 
     /// Whether Kosmos takes the event, so the app under the pointer never gets it.
@@ -74,10 +81,12 @@ final class DragTap: Sendable {
         let outcome: DragGate.Outcome
         switch type {
         case .leftMouseDown, .rightMouseDown:
+            // The other button's press during a drag whose own button is up already.
+            endIfReleased()
             let window = WindowID(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer))
             outcome = gate.withLock { $0.pressed(type == .leftMouseDown ? .left : .right, over: window, flags: event.flags, at: event.location) }
         case .leftMouseDragged, .rightMouseDragged:
-            outcome = gate.withLock { $0.dragged(type == .leftMouseDragged ? .left : .right, to: event.location) }
+            outcome = gate.withLock { $0.dragged(to: event.location) }
         case .leftMouseUp, .rightMouseUp:
             outcome = gate.withLock { $0.released(type == .leftMouseUp ? .left : .right, at: event.location) }
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
@@ -92,27 +101,24 @@ final class DragTap: Sendable {
         return outcome.take
     }
 
-    /// WindowServer turns off a tap whose thread falls behind, and events pass untouched
-    /// until it is on again. A button whose mouse up passed meanwhile is up by then, and its
-    /// drag ends where the pointer is. A mouse up missed otherwise ends its drag at the
-    /// button's next press (DragGate.pressed).
+    /// WindowServer turns off a tap whose thread falls behind, passes on the event it waited
+    /// for, and passes every event until the tap is on again. A drag whose press it passed
+    /// ends, so the app gets the rest of that press (DragGate.timedOut), and a drag whose
+    /// mouse up passed meanwhile ends where the pointer is.
     private func turnOnAgain(_ type: CGEventType) {
         dragLog.notice("drag tap turned off by WindowServer (\(type.rawValue)); turning it on again")
         guard let port else { return }
+        if type == .tapDisabledByTimeout { post(gate.withLock { $0.timedOut() }) }
         CGEvent.tapEnable(tap: port, enable: true)
-        let point = CGEvent(source: nil)?.location ?? .zero
-        for button in gate.withLock({ $0.held }) {
-            guard !CGEventSource.buttonState(.combinedSessionState, button: button == .left ? .left : .right) else { continue }
-            post(gate.withLock { $0.released(button, at: point) })
-        }
+        endIfReleased()
     }
 
+    /// Hands the main actor what an outcome ends, begins and moves, in one turn and in that
+    /// order: a press can end one drag and begin the next.
     private func post(_ outcome: DragGate.Outcome) {
+        guard outcome.ended != nil || outcome.began != nil || outcome.moved != nil else { return }
         let stamp = ContinuousClock.now
-        let (began, moved, ended) = (self.began, self.moved, self.ended)
-        // In this order: a press can end one drag and begin the next.
-        if let end = outcome.ended { DispatchQueue.main.async { MainActor.assumeIsolated { ended(end) } } }
-        if let grab = outcome.began { DispatchQueue.main.async { MainActor.assumeIsolated { began(grab, stamp) } } }
-        if let number = outcome.moved { DispatchQueue.main.async { MainActor.assumeIsolated { moved(number) } } }
+        let handle = self.handle
+        DispatchQueue.main.async { MainActor.assumeIsolated { handle(outcome, stamp) } }
     }
 }

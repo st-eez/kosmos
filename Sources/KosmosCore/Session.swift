@@ -742,7 +742,7 @@ public struct Session: Sendable {
     /// layout does for a window at the display's edge, and one with neighbours on neither
     /// side moves no edge on that axis.
     public func beginDrag(_ grab: DragGate.Grab, frame: CGRect) -> ModifierDrag? {
-        guard let name = home[grab.window], isShown(name), !isParked(grab.window) else { return nil }
+        guard isVisible(grab.window), let name = home[grab.window] else { return nil }
         let workspace = workspaces[name]!
         let sides: [Direction] = [grab.start.x < frame.midX ? .left : .right, grab.start.y < frame.midY ? .up : .down]
         if workspace.floating.contains(grab.window) {

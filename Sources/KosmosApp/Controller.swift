@@ -141,10 +141,7 @@ final class Controller {
         }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
-            MainActor.assumeIsolated {
-                self?.leftButton.released(at: .now)
-                self?.leftMouseUp(at: point)
-            }
+            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point) }
         }
     }
 
@@ -159,6 +156,7 @@ final class Controller {
         session.reconfigure(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays,
                             merge: setup.mergeWorkspaces)
         pointer?.setMonitors(session.monitors)
+        dragTap?.setMonitors(session.monitors)
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
         controllerLog.notice("""
             profile \(setup.profile ?? "base", privacy: .public), workspace on each display \
@@ -204,10 +202,9 @@ final class Controller {
     /// (DESIGN.md, section 5.14).
     private func updateDragTap() {
         if dragTap == nil, managing, mouseModifier != nil {
-            dragTap = DragTap(began: { [weak self] grab, stamp in self?.dragBegan(grab, at: stamp) },
-                              moved: { [weak self] number in self?.dragMoved(number) },
-                              ended: { [weak self] end in self?.dragEnded(end) })
+            dragTap = DragTap { [weak self] outcome, stamp in self?.dragHeard(outcome, at: stamp) }
             dragTap?.setWindows(draggable)
+            dragTap?.setMonitors(session.monitors)
         }
         dragTap?.setModifiers(mouseModifier)
     }
@@ -608,9 +605,11 @@ final class Controller {
     /// A hotkey was pressed. During a drag it first ends the press as the left button coming
     /// up does, where the pointer is now, and its command then runs on the layout with the
     /// window dropped, as Hyprland's KeybindManager ends a drag in ensureMouseBindState before
-    /// a bind fires (DESIGN.md, sections 5.13 and 5.14). A modifier drag ends the same way,
-    /// and the rest of its press changes nothing.
+    /// a bind fires (DESIGN.md, sections 5.13 and 5.14). A modifier drag ends the same way;
+    /// the tap goes on taking the rest of its press, which changes nothing, and ends a drag
+    /// whose mouse up it missed (DragTap.endIfReleased).
     func endDrag() {
+        dragTap?.endIfReleased()
         if modifierDrag != nil {
             controllerLog.info("hotkey during a modifier drag: it ends where the pointer is")
             return finishDrag(at: nil)
@@ -627,6 +626,11 @@ final class Controller {
     /// Dock, when autohide is on, starts to hide once the pointer leaves it, which can be
     /// before the app it activates reports its window key (pickedAwayFromPointer).
     private func leftMouseDown(at point: CGPoint, location: NSPoint) {
+        // Whether the monitor hears a press the drag tap took is for the live test.
+        guard modifierDrag == nil else {
+            controllerLog.info("left mouse down heard during a modifier drag: left out")
+            return
+        }
         var display: CGDirectDisplayID = 0, count: UInt32 = 0
         let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
         controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
@@ -638,11 +642,24 @@ final class Controller {
 
     /// Forgets the left button's presses, at a lock and a resync: a press whose mouse up
     /// Kosmos never heard would count as on until the next click. A modifier drag ends
-    /// there too, and the resync puts a window it lifted back where it stood
-    /// (Session.reconfigure).
+    /// there too, as at a hotkey (endDrag), and the resync puts a window it lifted back
+    /// where it stood (Session.reconfigure).
     func forgetPresses() {
         leftButton = LeftButton()
         modifierDrag = nil
+        dragTap?.endIfReleased()
+    }
+
+    /// The left button came up, as the global monitor heard it. During a modifier drag the
+    /// drag's own end drops its window (finishDrag), so a mouse up the tap took, if the
+    /// monitor hears one, drops nothing twice.
+    private func leftMouseUpHeard(at point: CGPoint?) {
+        leftButton.released(at: .now)
+        guard modifierDrag == nil else {
+            controllerLog.info("left mouse up heard during a modifier drag: left out")
+            return
+        }
+        leftMouseUp(at: point)
     }
 
     /// The left button came up at `point`, or at the pointer when nil. A lifted window tiles
@@ -1110,15 +1127,26 @@ final class Controller {
 
     // MARK: Modifier drags
 
-    /// A press with the modifier began a drag of a window the tap took for managed
-    /// (DESIGN.md, section 5.14). The window takes the focus, as Hyprland's dragBegin focuses
-    /// the window it grabs, through a command stamped when the tap saw the press, and the
-    /// drag waits for the pointer to go past the lift distance. A window no longer tiled or
-    /// floating on a shown workspace, or one pressed while the session is locked, is left
-    /// alone, its press taken all the same.
+    /// What the drag tap took, as it happened: a drag's end, then a drag's start, then a
+    /// movement (DESIGN.md, section 5.14). `stamp` is when the tap saw the event. Each
+    /// movement is carried as it comes, and AppWorker merges the frame writes a busy app has
+    /// not taken yet; the debug log gives each movement's lag.
+    private func dragHeard(_ outcome: DragGate.Outcome, at stamp: ContinuousClock.Instant) {
+        if let end = outcome.ended { dragEnded(end) }
+        if let grab = outcome.began { dragBegan(grab, at: stamp) }
+        if let point = outcome.moved, modifierDrag != nil {
+            dragLog.debug("movement carried \(Self.ms(ContinuousClock.now - stamp), privacy: .public) ms after the tap saw it")
+            carryDrag(to: point)
+        }
+    }
+
+    /// A press with the modifier began a drag of a window the tap took for managed. The
+    /// window takes the focus, as Hyprland's dragBegin focuses the window it grabs, through a
+    /// command stamped when the tap saw the press, and the drag waits for the pointer to go
+    /// past the lift distance. A window no longer tiled or floating on a shown workspace is
+    /// left alone, its press taken all the same.
     private func dragBegan(_ grab: DragGate.Grab, at stamp: ContinuousClock.Instant) {
-        guard managing, !sessionLocked, let frame = inventory.windows[grab.window]?.frame,
-              let drag = session.beginDrag(grab, frame: frame) else {
+        guard let frame = inventory.windows[grab.window]?.frame, let drag = session.beginDrag(grab, frame: frame) else {
             dragLog.info("modifier press on \(grab.window): no tiled or floating window of a shown workspace, nothing to drag")
             return
         }
@@ -1135,12 +1163,6 @@ final class Controller {
         publishState()
     }
 
-    /// The pointer moved during drag `number`; the tap keeps only the latest movement.
-    private func dragMoved(_ number: Int) {
-        guard modifierDrag?.grab.number == number, let point = dragTap?.takeMovement(of: number) else { return }
-        carryDrag(to: point)
-    }
-
     /// Carries the modifier drag to `point`. Past the lift distance, the left button lifts a
     /// tiled window out of the layout, as a title-bar drag does, and moves it with the
     /// pointer, and moves a floating window. The right button moves a tile's edges, or
@@ -1148,7 +1170,7 @@ final class Controller {
     /// else: a layout's plan would read the floating windows' frames from WindowServer each
     /// time (bringFloatingHome).
     private func carryDrag(to point: CGPoint) {
-        guard var drag = modifierDrag, managing, !sessionLocked else { return }
+        guard var drag = modifierDrag else { return }
         let window = drag.grab.window
         // Closed, minimized, hidden or put in native fullscreen since, it is no longer the
         // user's to drag.
@@ -1189,9 +1211,10 @@ final class Controller {
         execute(plan)
     }
 
-    /// The drag's button came up at `end.point`, or went down again with no mouse up heard.
+    /// The drag's button came up at `end.point`, or the tap ended the drag for a mouse up it
+    /// missed or a press WindowServer passed on (DragGate.timedOut).
     private func dragEnded(_ end: DragGate.End) {
-        guard modifierDrag?.grab.number == end.grab.number else { return }
+        guard modifierDrag?.grab == end.grab else { return }
         carryDrag(to: end.point)
         finishDrag(at: end.point)
     }
