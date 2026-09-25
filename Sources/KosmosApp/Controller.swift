@@ -828,7 +828,7 @@ final class Controller {
                          movePointer: Bool = false) {
         guard managing, !sessionLocked, !plan.isEmpty else { return publishState() }
         // A size refused while hidden is no limit of the app's: the write that shows the
-        // window is a first attempt, retried after the reveal (DESIGN.md, section 5.2).
+        // window is a first attempt, retried until the reveal lands (DESIGN.md, section 5.2).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
         writeFrames(plan.frames)
         if movePointer { centerPointer() }
