@@ -9,12 +9,6 @@
 import AppKit
 import CKosmos
 
-@MainActor private let wallClock: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss.SSS"
-    return formatter
-}()
-
 @MainActor func missionControl(seconds: Double) -> Never {
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
     // The notifications and the event arrive in an AppKit event loop, as in Kosmos.

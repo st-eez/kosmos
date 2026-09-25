@@ -28,9 +28,6 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    // The switch at the top runs before main.swift's globals below it are initialized.
-    levelEvents = []
-    levelSteps = []
     let start = uptime()
     // Registered before the child starts, so the window's creation shows too. In the reverse
     // engineered CGSInternal headers, the ids below 750 include input events, which the probe
@@ -113,10 +110,6 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
     // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
-    // The switch at the top runs before main.swift's globals below it are initialized.
-    eventAppNames = [:]
-    eventTime = DateFormatter()
-    eventTime.dateFormat = "HH:mm:ss.SSS"
     for id in WindowServerEvent.ids {
         _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
             let at = Date()
@@ -136,10 +129,9 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
 
 /// Each app's name by pid, read once. Main thread only.
 nonisolated(unsafe) var eventAppNames: [pid_t: String] = [:]
-nonisolated(unsafe) var eventTime = DateFormatter()
 
 @MainActor func printEvent(_ id: UInt32, window: UInt32?, payload: String, at: Date) {
-    var line = "\(eventTime.string(from: at)) \(id)"
+    var line = "\(wallClock.string(from: at)) \(id)"
     if let window {
         let pid = SkyLight.rows([window]).first?.pid
         let name = pid.map { pid in

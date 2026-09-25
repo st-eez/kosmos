@@ -17,5 +17,12 @@ func percentile(_ values: [Double], _ p: Double) -> Double {
     return sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * p))]
 }
 
+/// The wall clock time the unified log prints.
+@MainActor let wallClock: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "HH:mm:ss.SSS"
+    return formatter
+}()
+
 /// Milliseconds since boot, the same in every process.
 func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
