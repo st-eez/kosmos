@@ -380,7 +380,7 @@ actor AppWorker {
         // app to answer again. One whose read failed otherwise waits for the app's next
         // frame write: dropped, it would leave the ledger's target pending for good.
         guard !backoff.backedOff, var readBack = frame(element) else {
-            queuedWrites[id] = entry
+            requeue(id, entry)
             return nil
         }
         // A height AppKit ignored near a display edge lands through one 40 pt shorter; a
@@ -390,7 +390,7 @@ actor AppWorker {
             set(element, kAXSizeAttribute, CGSize(width: target.width, height: target.height - 40))
             set(element, kAXSizeAttribute, target.size)
             guard !backoff.backedOff, let retried = frame(element) else {
-                queuedWrites[id] = entry
+                requeue(id, entry)
                 return nil
             }
             readBack = retried
@@ -399,11 +399,18 @@ actor AppWorker {
         return (id, entry.target, readBack)
     }
 
+    /// Queues a write that did not land for the next drain. A tween's write can be older than
+    /// one queued since, held by a backoff or waiting for its drain, and the newer target wins:
+    /// the older one would leave the ledger's newer target pending for good.
+    private func requeue(_ id: UInt32, _ entry: QueuedWrite) {
+        queuedWrites[id] = queuedWrites[id].map { ($0.write.replacing(entry.write, target: $0.target), $0.target, $0.animate) } ?? entry
+    }
+
     /// One step of every tween. A tween that is over ends with its ordinary write and read
     /// back. An app that stops answering gets its targets written whole once it answers.
     private func tick() {
         guard !backoff.backedOff else {
-            for (id, entry) in tweens { queuedWrites[id] = (entry.write, entry.target, false) }
+            for (id, entry) in tweens { requeue(id, (entry.write, entry.target, false)) }
             tweens = [:]
             stopTweenTimer()
             return
