@@ -130,9 +130,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     and the pointer stayed over the old window, whose next bump would take the focus back,
     before this. A window its app keys just after Kosmos admitted it on a shown workspace
     brings the pointer too, when no other key window report came between
-    (`Controller.admittedUnkeyed`). A window that was there when Kosmos launched, or that
-    Kosmos first saw while the session was locked, leaves the pointer where it is, at
-    startup and at the unlock. The ceiling: Kosmos does not tell who opened a window, so
+    (`Controller.admittedUnkeyed`). A window that was there when Kosmos launched leaves
+    the pointer where it is, so it stays put at startup. The ceiling: Kosmos does not tell
+    who opened a window, so
     an agent's or a script's new window that its app keys brings the pointer too, as it
     takes the focus or brings the follow. If that pulls the pointer away while Steve
     works, the rule can ask for a key or a click in the seconds before the app launched

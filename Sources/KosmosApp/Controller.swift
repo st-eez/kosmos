@@ -40,7 +40,7 @@ final class Controller {
     /// one: at its admission, as an app keys a window before Kosmos admits it, or at a tab
     /// switch, as macOS can report the new tab key before the switch pairs.
     private var unplacedKey: KeyReport?
-    /// The new windows (Inventory.isNew) admitted on a shown workspace since the last key
+    /// The windows admitted since launch on a shown workspace since the last key
     /// window report, which their apps had not keyed. The next report takes them: one of
     /// these windows is its app keying the window it opened, which brings the pointer as a
     /// key before the admission does.
@@ -50,8 +50,7 @@ final class Controller {
     /// them. macOS keyed such a window by the user's or the app's choice, so its report
     /// counts as one of a concealed window whose key window before it stayed: an app keys a
     /// window it opens, and the window key before a tab is the tab deselected. It is
-    /// followed at once, and the follow of a new window admitted there brings the pointer
-    /// (decide).
+    /// followed at once, and the follow of an admitted window brings the pointer (decide).
     private var placedHidden: [WindowID: Placed] = [:]
     private enum Placed { case admitted, tab }
     /// The key window macOS last reported, and the one before it. Too old to skip a focus
@@ -425,15 +424,15 @@ final class Controller {
         // A window opened after launch onto a shown workspace pops in (Slides). A new window
         // its app keyed brings the pointer on any display, as a keyboard focus change does,
         // and so does one its app keys next (docs/focus-follows-mouse.md).
-        let new = reopened || inventory.isNew(id)
-        if new, shown, !keyed, !sessionLocked, !session.isParked(id) { admittedUnkeyed.insert(id) }
-        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && new,
-                floatingCheck: floats, popping: atLaunch ? nil : id)
+        let launched = !atLaunch
+        if launched, shown, !keyed, !sessionLocked, !session.isParked(id) { admittedUnkeyed.insert(id) }
+        execute(plan, movePointer: mouseFollowsFocus && focus == .adopt && launched,
+                floatingCheck: floats, popping: launched ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden[id] = nil
             report.concealed = true
-            report.admitted = new
+            report.admitted = true
             decidePlaced(report, keyLeft: .stayed)
         }
     }
@@ -858,10 +857,9 @@ final class Controller {
             // read: only its notification reports a window opened inside the front app
             // (tla/README.md, change 22).
             let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
-            let admitted = keyedAfterAdmission || placed == .admitted && id.map(inventory.isNew) == true
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
                                    concealed: placed != nil || id.map { hiding.wasConcealed($0, at: report.received) } ?? false,
-                                   miss: miss, admitted: admitted),
+                                   miss: miss, admitted: keyedAfterAdmission || placed == .admitted),
                          keyLeft: placed != nil ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
             // Parked as closed and kept already if its order-out was looked at before this
@@ -911,8 +909,8 @@ final class Controller {
         var concealed: Bool
         /// Whether it is a miss of Kosmos's own request.
         let miss: Miss
-        /// The reported window is a new one (Inventory.isNew) its app keys as Kosmos admits
-        /// it: to its rule's hidden workspace (AdmissionFocus.placedHidden), or on a shown
+        /// The reported window is one its app keys as Kosmos admits it after launch: to its
+        /// rule's hidden workspace (AdmissionFocus.placedHidden), or on a shown
         /// workspace just before this report (admittedUnkeyed). Following or adopting it
         /// brings the pointer.
         var admitted = false
