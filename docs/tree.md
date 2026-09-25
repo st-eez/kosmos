@@ -181,10 +181,7 @@
   - Closing the selected tab is a switch. When the destroy comes before the next tab, the
     closed tab's place waits the pairing window for it, if the app has windows ordered
     out, in native fullscreen too. Closing the group's last tab is a close. A switch in
-    the meantime leaves the closed tab out of its batch ([hiding.md](hiding.md)), as when
-    an app quits with windows closed and kept. A batch that named it failed before it sent
-    anything, since WindowServer had no row to record it by, and recovery showed every
-    concealed window (bench stub, live log, September 25, 2026).
+    the meantime leaves the closed tab out of its batch ([hiding.md](hiding.md)).
   - A window ordered in with no tab leaving is back after the pairing window if it is
     still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It

@@ -263,12 +263,19 @@ private final class HidingStore: @unchecked Sendable {
     private func send(show: [UInt32], on showDisplays: [UInt32: CGDirectDisplayID], hide: [UInt32],
                       stripping: Set<UInt32>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
         guard load() else { return nil }
-        // A window closed since the batch was planned has no row, nothing to conceal and no
-        // owner to record, so the batch leaves it out (docs/hiding.md).
-        let rows = Dictionary(SkyLight.rows(Array(Set(hide))).map { ($0.id, $0) }) { first, _ in first }
-        let hide = hide.filter { rows[$0] != nil }
+        // A window closed since the batch was planned has no row, and one new to the record
+        // whose app quit can keep its row after its process is gone, so its owner reads as
+        // nil. Neither has anything to conceal or can be recorded, so the batch leaves it out
+        // (docs/hiding.md). A failed row query reads as every window gone and leaves the
+        // windows to hide on screen. If that shows up, the upgrade is for SkyLight.rows to
+        // return nil for a failed query, and for the batch to keep its whole hide set then.
+        let rows = Dictionary(SkyLight.rows(hide).map { ($0.id, $0) }) { first, _ in first }
+        let recorded = Set(state!.windows.map(\.id))
+        var owners: [UInt32: ProcessIdentity] = [:]
+        for (id, row) in rows where !recorded.contains(id) { owners[id] = ProcessIdentity.of(row.pid) }
+        let hide = hide.filter { recorded.contains($0) ? rows[$0] != nil : owners[$0] != nil }
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
-        if !fresh.isEmpty, !prepare(Array(fresh), rows: rows) { return nil }
+        if !fresh.isEmpty, !prepare(Array(fresh), owners: owners) { return nil }
         let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,
                                  hasOrdinarySpace: Self.hasOrdinarySpace)
         // Adds land before any removal is sent: a window removed from its only Space lands on
@@ -322,8 +329,8 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     /// Records the holding Space before any window enters it, and each window before its
-    /// first hide, from its row in `rows`. A change is kept only once it is published.
-    private func prepare(_ windows: [UInt32], rows: [UInt32: WindowRow]) -> Bool {
+    /// first hide, with its owner in `owners`. A change is kept only once it is published.
+    private func prepare(_ windows: [UInt32], owners: [UInt32: ProcessIdentity]) -> Bool {
         var next = state!
         var created: UInt64 = 0
         if space == 0 {
@@ -337,7 +344,7 @@ private final class HidingStore: @unchecked Sendable {
         let known = Set(next.windows.map(\.id))
         let new = windows.filter { !known.contains($0) }
         for id in new {
-            guard let row = rows[id], let owner = ProcessIdentity.of(row.pid) else { return abandon(created) }
+            guard let owner = owners[id] else { return abandon(created) }
             let original = (kosmos_window_spaces(id) as? [UInt64])?.first ?? 0
             next.windows.append(.init(id: id, owner: owner, originalSpace: original))
         }
