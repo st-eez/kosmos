@@ -48,25 +48,39 @@ run() {
     fi
 }
 
-# SIGTERM quits Kosmos through AppKit, which restores its hidden windows.
+# Waits up to $1 tenths of a second for the processes after it to exit.
+wait_for_exit() {
+    local tenths=$1 i pid alive
+    shift
+    for ((i = 0; i < tenths; i++)); do
+        alive=false
+        for pid in "$@"; do kill -0 "$pid" 2>/dev/null && alive=true; done
+        $alive || return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# SIGTERM quits Kosmos through AppKit, which restores its hidden windows. The guardian retries
+# an incomplete recovery for about 30 s after Kosmos exits (docs/overview.md).
 was_running=false
 stop_kosmos() {
-    local pids pid
+    local pids guardians
     # -c keeps out other processes that map the file, such as lldb, sample or ReportCrash.
     pids=$(lsof -t -a -d txt -c Kosmos "$app/Contents/MacOS/Kosmos" 2>/dev/null || true)
     if [[ -z $pids ]]; then return; fi
     was_running=true
     run kill -TERM $pids 2>/dev/null || true
     if $dry_run; then return; fi
-    pids="$pids $(lsof -t -a -d txt -c kosmos-guardian "$app/Contents/Helpers/kosmos-guardian" 2>/dev/null || true)"
-    for _ in {1..100}; do
-        local alive=false
-        for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive=true; done
-        $alive || return 0
-        sleep 0.1
-    done
-    echo "Kosmos did not quit within 10 s; nothing was changed." >&2
-    exit 1
+    guardians=$(lsof -t -a -d txt -c kosmos-guardian "$app/Contents/Helpers/kosmos-guardian" 2>/dev/null || true)
+    if ! wait_for_exit 100 $pids; then
+        echo "Kosmos did not quit within 10 s; nothing was changed." >&2
+        exit 1
+    fi
+    if ! wait_for_exit 350 $guardians; then
+        echo "kosmos-guardian was still restoring hidden windows 35 s after Kosmos quit; nothing was changed." >&2
+        exit 1
+    fi
 }
 
 if [[ -L $app ]]; then
