@@ -59,6 +59,19 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
 }
 
+@Test func aUserResizeEndsARefusal() {
+    var ledger = FrameLedger()
+    let kept = CGRect(x: 0, y: 0, width: 500, height: 600)
+    _ = ledger.writes(for: [1: resized])
+    ledger.confirm(1, target: resized, readBack: kept)
+    // The app's own report of the size it kept changes nothing.
+    ledger.observe(1, frame: kept)
+    #expect(ledger.writes(for: [1: resized]).isEmpty)
+    // A drag to another size does: the target's size is written again.
+    ledger.observe(1, frame: CGRect(x: 30, y: 0, width: 700, height: 600))
+    #expect(ledger.writes(for: [1: resized]) == [1: .frame(resized)])
+}
+
 @Test func aPositionWriteReplacingAnUnwrittenFrameWriteWritesTheWholeFrame() {
     var ledger = FrameLedger()
     let first = ledger.writes(for: [1: a])[1]!

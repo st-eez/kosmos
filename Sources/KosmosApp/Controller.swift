@@ -57,6 +57,17 @@ final class Controller {
     /// Set after a batch that did not conceal what it should have; the next switch conceals
     /// every window of every hidden workspace again.
     private var needsResync = false
+    /// Tiled windows moved or resized with the left button down and not lifted, with their
+    /// frames before the press and whether the user resizes them by their edges, which
+    /// never lifts them. They go back to their tiles when the button comes up.
+    private var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
+    /// Windows written their tiles at a mouse up, dropped or sent back, until the write
+    /// reads back.
+    private var releasedWrites: Set<WindowID> = []
+    /// Windows whose write at a mouse up read back larger than the tile, as when the app
+    /// applied a live resize step after it. The tile is written once more when the app goes
+    /// quiet, and only that write can show a minimum (framesApplied).
+    private var writeAgain: Set<WindowID> = []
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     /// Window rules, first match wins.
@@ -78,6 +89,8 @@ final class Controller {
         }
     }
     private var pointer: PointerTap?
+    /// The user is dragging a tiled window, lifted out of the layout.
+    private var dragging: Bool { !session.lifted.isEmpty }
     /// The active display profile, for the bar.
     private(set) var profile: String?
     /// Each connected display as the bar numbers it, read with the displays.
@@ -110,7 +123,14 @@ final class Controller {
             self?.orderChanged(id, pid: pid, orderedIn, frame: frame, at: at)
         }
         inventory.onAppHidden = { [weak self] pid, hidden, at in hidden ? self?.appHidden(pid) : self?.appUnhidden(pid, at: at) }
-        inventory.onFrameChange = { [weak self] id, frame in self?.frameChanged(id, to: frame) }
+        inventory.onFrameChange = { [weak self] id, old, frame, changed in
+            self?.frameChanged(id, from: old, to: frame, changed: changed)
+        }
+        // AppKit calls a global monitor's handler on the main thread.
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            let point = event.cgEvent?.location
+            MainActor.assumeIsolated { self?.leftMouseUp(at: point) }
+        }
     }
 
     /// Applies a config reload, an unlock, a wake or a display change: the profile's
@@ -286,17 +306,20 @@ final class Controller {
         closedByApp.remove(id)
         tabs.forget(id)
         placedHidden.remove(id)
+        releasedWrites.remove(id)
+        writeAgain.remove(id)
         ledger.forget(id)
         hiding.forgetHistory(of: id)
         execute(session.remove(id))
     }
 
     /// A window in native fullscreen is on a Space of its own: parked, Kosmos neither
-    /// conceals it nor writes its frame. When it leaves, it returns to its workspace.
-    /// `since` is when it started to leave its Space.
+    /// conceals it nor writes its frame. When it leaves, it returns to its workspace, and a
+    /// window that entered while the user dragged it returns to where it stood. `since` is
+    /// when it started to leave its Space.
     private func fullscreenChanged(_ id: WindowID, _ entered: Bool, since: ContinuousClock.Instant) {
         if entered {
-            guard !session.isParked(id) else { return }
+            guard !session.isParked(id) || session.lifted.contains(id) else { return }
             fullscreenParked.insert(id)
             execute(session.park([id]))
         } else if fullscreenParked.remove(id) != nil {
@@ -379,9 +402,10 @@ final class Controller {
     /// Its app ordered the window out and kept it, as a closed NSWindowController window: it
     /// parks as a minimized window does, and returns when the app orders it in again
     /// (orderChanged). Removing it would lose its place, and the inventory would not admit
-    /// it again, since it stays managed. A deselected tab has left the session already.
+    /// it again, since it stays managed. A deselected tab has left the session already. A
+    /// window closed while the user drags it parks too, where it stood.
     private func keptOrderedOut(_ id: WindowID) {
-        guard session.workspace(of: id) != nil, !session.isParked(id) else { return }
+        guard session.workspace(of: id) != nil, !session.isParked(id) || session.lifted.contains(id) else { return }
         controllerLog.info("\(id) closed and kept by its app: parked")
         closedByApp.insert(id)
         depart([id])
@@ -425,9 +449,12 @@ final class Controller {
         }
     }
 
-    /// An app hid its windows: they leave the layout, and switches leave them alone.
+    /// An app hid its windows: they leave the layout, and switches leave them alone. A
+    /// window the user drags parks too, where it stood.
     private func appHidden(_ pid: pid_t) {
-        let windows = owner.filter { $0.value == pid && session.workspace(of: $0.key) != nil && !session.isParked($0.key) }.map(\.key)
+        let windows = owner.filter { id, app in
+            app == pid && session.workspace(of: id) != nil && (!session.isParked(id) || session.lifted.contains(id))
+        }.map(\.key)
         guard !windows.isEmpty else { return }
         hiddenApps[pid, default: []] += windows
         depart(windows)
@@ -448,19 +475,89 @@ final class Controller {
         }
     }
 
-    /// A floating window of a shown workspace moved or resized. The frame ledger records
-    /// where it is, since the floating check compares its targets with it. Dragged onto a
-    /// display showing another workspace, the window joins that workspace, so the check
-    /// leaves it there (Session.dragged). A change while a write of Kosmos's is in flight is
-    /// that write's. A drag needs the left button down on the key window, as AeroSpace's
-    /// isManipulatedWithMouse checks, so macOS moving the windows of a display that leaves
-    /// is none (DESIGN.md, section 5.13).
-    private func frameChanged(_ id: WindowID, to frame: CGRect) {
-        guard managing, !sessionLocked, !ledger.isWriting(id), session.shownFloatingWindows.contains(id) else { return }
+    /// A tiled or floating window of a shown workspace moved or resized, not by a write of
+    /// Kosmos's in flight: the frame ledger records it. A `.changed` event with the left
+    /// button down is the user's. The key tiled window lifts out of the layout until the
+    /// button comes up once it has moved whole more than 10 pt, so a click that jitters the
+    /// title bar does not lift it. A tiled window resized by its edges, moved less, or moved
+    /// while another is key, as by a Command drag, goes back to its tile then
+    /// (leftMouseUp). The key floating window may join another display's workspace, as
+    /// AeroSpace's isManipulatedWithMouse has it (DESIGN.md, sections 5.2 and 5.13).
+    private func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changed: Bool) {
+        guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
+              let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
         ledger.observe(id, frame: frame)
-        guard key == .window(id), NSEvent.pressedMouseButtons == 1, let plan = session.dragged(id, to: frame) else { return }
-        controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
-        execute(plan)
+        guard changed else { return }
+        guard NSEvent.pressedMouseButtons == 1 else {
+            // The app went on with the user's live resize after the write at mouse up.
+            if writeAgain.contains(id) { writeTileAgain(id) }
+            return
+        }
+        if session.shownFloatingWindows.contains(id) {
+            guard key == .window(id), let plan = session.dragged(id, to: frame) else { return }
+            controllerLog.info("\(id) dragged to workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)")
+            execute(plan)
+            return
+        }
+        let press = mouseMoved[id]
+        let before = press?.before ?? old
+        // WindowServer can apply a resize by the left or top edge as a move before the
+        // resize, so the pointer on a resize border at the first event marks one too.
+        let onBorder = press == nil && CGEvent(source: nil).map { Session.onResizeBorder($0.location, of: frame) } == true
+        let resized = press?.resized == true || onBorder || frame.size != before.size
+        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > 10,
+           let plan = session.lift(id) {
+            mouseMoved[id] = nil
+            controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
+            execute(plan)
+        } else {
+            mouseMoved[id] = (before, resized)
+        }
+    }
+
+    /// A hotkey was pressed. During a drag it first ends the press as the left button coming
+    /// up does, where the pointer is now, and its command then runs on the layout with the
+    /// window dropped, as Hyprland's KeybindManager ends a drag in ensureMouseBindState before
+    /// a bind fires (DESIGN.md, section 5.13).
+    func endDrag() {
+        guard dragging else { return }
+        controllerLog.info("hotkey during a drag: the window drops where the pointer is")
+        leftMouseUp(at: nil)
+    }
+
+    /// The left button came up at `point`, or at the pointer when nil. A lifted window tiles
+    /// where it was dropped (Session.drop), and the other tiled windows moved or resized with
+    /// the button down go back to their tiles (Session.released).
+    private func leftMouseUp(at point: CGPoint?) {
+        guard managing, !sessionLocked else { return }
+        let moved = Set(mouseMoved.keys)
+        let released = session.lifted.union(moved)
+        guard !released.isEmpty else { return }
+        mouseMoved = [:]
+        // Whole frame writes: the ledger holds a lifted window's frame from before the drag,
+        // and a resize can have gone on past the last frame it heard of.
+        for id in released { ledger.forget(id) }
+        if !session.lifted.isEmpty, let point = point ?? CGEvent(source: nil)?.location {
+            let dropped = session.lifted
+            let plan = session.drop(at: point)
+            controllerLog.info("dropped \(dropped.sorted().map(String.init).joined(separator: " "), privacy: .public) at \(Int(point.x)), \(Int(point.y))")
+            execute(plan)
+        }
+        if !moved.isEmpty {
+            controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
+            execute(session.released(moved))
+        }
+        releasedWrites.formUnion(released.filter(ledger.isWriting))
+    }
+
+    /// Writes the window's tile once more, after its write at a mouse up read back larger
+    /// (framesApplied): when the app's next change event arrives with the button up, or
+    /// 100 ms after the read back. A window the user holds again waits for that press's
+    /// mouse up.
+    private func writeTileAgain(_ id: WindowID) {
+        guard writeAgain.remove(id) != nil, mouseMoved[id] == nil,
+              let name = session.workspace(of: id), session.isShown(name) else { return }
+        writeFrames(session.frames(of: name))
     }
 
     private func handle(_ report: AXReport) {
@@ -521,19 +618,27 @@ final class Controller {
         case .framesApplied(let results):
             for result in results {
                 ledger.confirm(result.id, target: result.target, readBack: result.readBack)
-                // A window that kept more than it was given refused the size: that is its
-                // minimum on that axis (DESIGN.md, section 5.2). A few points of slack keep
-                // apps that round their size from reading as a refusal.
-                let wider = result.readBack.width > result.target.width + 2
-                let taller = result.readBack.height > result.target.height + 2
-                if wider || taller {
-                    controllerLog.notice("""
-                        minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
-                        kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
-                        """)
-                    execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
-                                                                 height: taller ? result.readBack.height : 0)))
+                let released = releasedWrites.remove(result.id) != nil
+                // A window that kept more than it was given, past the slack, refused the
+                // size: that is its minimum on that axis (DESIGN.md, section 5.2).
+                let wider = result.readBack.width > result.target.width + FrameLedger.slack
+                let taller = result.readBack.height > result.target.height + FrameLedger.slack
+                guard wider || taller else { continue }
+                if released {
+                    // The app may have applied a live resize step, queued before the
+                    // button came up, after the write.
+                    controllerLog.info("\(result.id) kept \(Int(result.readBack.width))x\(Int(result.readBack.height)) after the mouse up; its tile is written again")
+                    ledger.forget(result.id)
+                    writeAgain.insert(result.id)
+                    after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
+                    continue
                 }
+                controllerLog.notice("""
+                    minimum for \(result.id): asked \(Int(result.target.width))x\(Int(result.target.height)), \
+                    kept \(Int(result.readBack.width))x\(Int(result.readBack.height))
+                    """)
+                execute(session.setMinimum(result.id, CGSize(width: wider ? result.readBack.width : 0,
+                                                             height: taller ? result.readBack.height : 0)))
             }
         case .windowCreated, .windowDestroyed, .answering:
             break
@@ -811,7 +916,9 @@ final class Controller {
     /// already, as with AeroSpace's `move-mouse window-lazy-center`. A tile's frame is the
     /// layout's after the change, the one Kosmos is writing, and a floating window's the last
     /// one the inventory heard, so nothing waits on WindowServer (DESIGN.md, section 5.11).
+    /// During a drag the pointer is the user's.
     private func centerPointer() {
+        guard !dragging else { return }
         let frame: CGRect? = if let window = session.focused {
             session.frames(of: session.focusedWorkspace)[window] ?? inventory.windows[window]?.frame
         } else {
@@ -861,8 +968,9 @@ final class Controller {
     /// path as a focus command when FocusFollowsMouse.skip allows it.
     private func pointerEntered(_ entered: PointerGate.Entered, at stamp: ContinuousClock.Instant) {
         after(Self.dwell) { controller in
-            // The pointer left the window during the dwell, or moved on before this ran.
-            guard !controller.sessionLocked, controller.pointer?.window == entered.window else { return }
+            // The pointer left the window during the dwell, or moved on before this ran. While
+            // a window is lifted the pointer is the user's.
+            guard !controller.sessionLocked, !controller.dragging, controller.pointer?.window == entered.window else { return }
             controller.focusUnderPointer(entered, at: stamp)
         }
     }
