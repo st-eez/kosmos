@@ -153,14 +153,15 @@ extension Workspace {
     }
 
     /// Moves the window's edge on the `direction` side by `amount` points, outward when
-    /// positive, as a resize by that edge with the mouse does in AeroSpace
-    /// (resizeWithMouse.swift). The nearest container along the direction with children
-    /// beyond the window's branch on that side gives the branch the space, taking it from
-    /// those children in proportion to their shares, so the other edge stays. Each
-    /// container along the direction between that one and the window gives the space to
-    /// the window's branch alone, and its other children keep their lengths. It stops at
-    /// the limits `resize` keeps. False when no container has children beyond the window,
-    /// as at the workspace's edge, or when nothing could change.
+    /// positive, as a modifier drag with the right button does (DESIGN.md, section 5.14).
+    /// The nearest container along the direction with children beyond the window's branch
+    /// on that side gives the branch the space, taking it from the child next to the branch
+    /// alone, as i3's resize with the mouse moves only the border between two neighbours
+    /// (resize_find_tiling_participants) and Hyprland's dwindle splits hold two nodes each.
+    /// Every other edge stays. Each container along the direction between that one and the
+    /// window gives the space to the window's branch alone, and its other children keep
+    /// their lengths. It stops at the limits `resize` keeps. False when no container has
+    /// children beyond the window, as at the workspace's edge, or when nothing could change.
     @discardableResult
     mutating func moveEdge(_ window: WindowID, _ direction: Direction, by amount: CGFloat, in rect: CGRect, gaps: Gaps,
                            minimums: [WindowID: CGSize]) -> Bool {
@@ -176,14 +177,12 @@ extension Workspace {
         return change(by: amount, along: direction.orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
             let parent = path.prefix(depth), index = path[depth]
             let children = before[parent].children
-            let beyond = direction.isForward ? Array(index + 1 ..< children.count) : Array(0 ..< index)
+            let neighbour = index + direction.step
             let share = points / usable[depth]!
-            let held = beyond.reduce(0) { $0 + children[$1].weight }
-            let new = children[index].weight + share
-            let scale = (held - share) / held
-            guard new > 0, scale > 0 else { return false }
+            let new = children[index].weight + share, left = children[neighbour].weight - share
+            guard new > 0, left > 0 else { return false }
             workspace.root[parent].children[index].weight = new
-            for sibling in beyond { workspace.root[parent].children[sibling].weight = children[sibling].weight * scale }
+            workspace.root[parent].children[neighbour].weight = left
             for level in inner {
                 let parent = path.prefix(level), index = path[level]
                 let children = before[parent].children

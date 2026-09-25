@@ -348,7 +348,7 @@ import Testing
 
 // MARK: Move an edge
 
-@Test func movingAnEdgeTakesFromTheWindowsBeyondIt() {
+@Test func movingAnEdgeTakesFromTheWindowBeyondIt() {
     var workspace = Workspace("h[1 2 3]")
     let before = workspace.frames(in: screen, gaps: Gaps())
     #expect(workspace.moveEdge(2, .right, by: 100, in: screen, gaps: Gaps(), minimums: [:]) == true)
@@ -360,6 +360,14 @@ import Testing
     #expect(workspace.moveEdge(2, .left, by: -50, in: screen, gaps: Gaps(), minimums: [:]) == true)
     frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1]!.maxX == before[1]!.maxX + 50 && frames[2]!.maxX == before[2]!.maxX + 100)
+}
+
+@Test func movingAnEdgeTakesFromTheNeighbourNextToItAlone() {
+    var workspace = Workspace("h[1 2 3]")
+    let before = workspace.frames(in: screen, gaps: Gaps())
+    #expect(workspace.moveEdge(3, .left, by: 50, in: screen, gaps: Gaps(), minimums: [:]) == true)
+    let frames = workspace.frames(in: screen, gaps: Gaps())
+    #expect(frames[1] == before[1] && frames[2]!.maxX == before[2]!.maxX - 50 && frames[3]!.minX == before[3]!.minX - 50)
 }
 
 @Test func movingAnEdgeKeepsTheLengthsOfNestedNeighbors() {
