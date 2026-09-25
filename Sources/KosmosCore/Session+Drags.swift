@@ -63,7 +63,7 @@ extension Session {
                 workspaces[name]!.insert(window, first: false)
             }
             home[window] = name
-            if name != source { merged[window] = nil }
+            if name != source { mergedFrom[window] = nil }
             workspaces[name]!.focus(window)
             focusShown(name)
             plan.focus = .window(window)

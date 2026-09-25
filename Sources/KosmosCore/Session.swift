@@ -44,7 +44,6 @@ public struct Session: Sendable {
     var shown: [DisplayID: String] = [:]
     /// Among the connected displays. A workspace left out is free.
     var assigned: [String: DisplayID] = [:]
-    /// A display always shows it.
     public internal(set) var focusedWorkspace: String
     var previous: String?
     var home: [WindowID: String] = [:]
@@ -57,7 +56,7 @@ public struct Session: Sendable {
     var mergedAway: [String: Workspace] = [:]
     /// The workspace a profile merged each window out of. A window the user moves or closes
     /// leaves it.
-    var merged: [WindowID: String] = [:]
+    var mergedFrom: [WindowID: String] = [:]
     /// The workspace a display showed before it left, or before a profile left that
     /// workspace out.
     var shownBefore: [DisplayID: String] = [:]
@@ -125,7 +124,7 @@ public struct Session: Sendable {
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
-        for (window, origin) in merged {
+        for (window, origin) in mergedFrom {
             if home[window] == nil { problems.append("merged window \(window) belongs to no workspace") }
             if mergedAway[origin]?.contains(window) != true { problems.append("merged window \(window) is not in \(origin)") }
         }
@@ -194,7 +193,7 @@ public struct Session: Sendable {
         defer { check() }
         guard let name = home.removeValue(forKey: window) else { return Plan() }
         minimums[window] = nil
-        merged[window] = nil
+        mergedFrom[window] = nil
         parkedConcealed.remove(window)
         lifted.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
@@ -222,8 +221,8 @@ public struct Session: Sendable {
         home[old] = nil
         home[new] = name
         if let minimum = minimums.removeValue(forKey: old), !parked { minimums[new] = minimum }
-        merged[new] = merged.removeValue(forKey: old)
-        if let origin = merged[new] {
+        mergedFrom[new] = mergedFrom.removeValue(forKey: old)
+        if let origin = mergedFrom[new] {
             mergedAway[origin]?.remove(new)
             mergedAway[origin]?.replace(old, with: new)
         }
@@ -351,7 +350,6 @@ public struct Session: Sendable {
             guard let previous, previous != focusedWorkspace else { return nil }
             return reach(previous)
         case .moveNodeToWorkspace(let target, let follow, let chosen):
-            // A minimized or hidden window stays where it will return to.
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
@@ -481,7 +479,7 @@ public struct Session: Sendable {
         let onScreen = isShown(source)
         let floating = workspaces[source]!.floating.contains(window)
         _ = workspaces[source]!.remove(window)
-        merged[window] = nil
+        mergedFrom[window] = nil
         if let entering, !floating {
             let orientation = workspaces[name]!.root.orientation
             workspaces[name]!.insert(window, first: entering.isForward && orientation == entering.orientation)
