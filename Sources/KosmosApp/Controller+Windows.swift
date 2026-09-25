@@ -45,10 +45,10 @@ extension Controller {
             // Perhaps a selected tab closed before the next tab came in: its place waits a
             // pairing window for that tab (docs/tree.md).
             after(TabSwitches.window) { controller in
-                if !controller.inventory.isManaged(id) { controller.forget(id, pid: pid) }
+                if !controller.inventory.isManaged(id) { controller.forget(id) }
             }
         } else {
-            forget(id, pid: pid)
+            forget(id)
         }
     }
 
@@ -73,8 +73,6 @@ extension Controller {
         if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
                                                minimized: inventory.isMinimized(id),
                                                appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {
-            if reason == .fullscreen { fullscreenParked.insert(id) }
-            if reason == .appHidden { hiddenApps[pid, default: []].append(id) }
             plan.frames = session.park([id], because: reason).frames
             plan.hide.removeAll { $0 == id }
         }
@@ -85,12 +83,9 @@ extension Controller {
         windowPlaced(id)
     }
 
-    private func forget(_ id: WindowID, pid: pid_t) {
+    private func forget(_ id: WindowID) {
         owner[id] = nil
         recent.removeAll { $0 == id }
-        hiddenApps[pid]?.removeAll { $0 == id }
-        fullscreenParked.remove(id)
-        closedByApp.remove(id)
         tabs.forget(id)
         intake.forgetPlacedHidden([id])
         ledger.forget(id)
@@ -103,15 +98,13 @@ extension Controller {
         if entered {
             // Parked as closed and kept, as when its transition posted no Space event near its
             // order-out: it changes reason.
-            if closedByApp.remove(id) != nil {
-                fullscreenParked.insert(id)
+            if session.parkReason(of: id) == .closedByApp {
                 _ = session.park([id], because: .fullscreen)
                 return
             }
             guard !session.isParked(id) || session.lifted.contains(id) else { return }
-            fullscreenParked.insert(id)
             execute(session.park([id], because: .fullscreen))
-        } else if fullscreenParked.remove(id) != nil {
+        } else if session.parkReason(of: id) == .fullscreen {
             // macOS restores the frame it had; write the tile's frame again all the same.
             ledger.forget(id)
             returned([id], follow: id, at: spaceChangeBegan)
@@ -130,15 +123,16 @@ extension Controller {
            tabSwitched(from: change.old, to: change.new, frame: frame) {
             return
         }
-        guard orderedIn, tabs.hidden.contains(id) || closedByApp.contains(id) else { return }
+        let closed = session.parkReason(of: id) == .closedByApp
+        guard orderedIn, tabs.hidden.contains(id) || closed else { return }
         // Ceiling: a window that waits and is no tab switch shows at its old place for the
         // wait; a pool Space could hold it transparent (docs/tree.md).
-        if closedByApp.contains(id), !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
+        if closed, !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
             return reopen(id, pid: pid)
         }
         after(TabSwitches.window) { controller in
             guard controller.inventory.windows[id]?.orderedIn == true else { return }
-            if controller.closedByApp.contains(id) {
+            if controller.session.parkReason(of: id) == .closedByApp {
                 controller.reopen(id, pid: pid)
             } else if controller.tabs.detached(id), let pid = controller.owner[id] {
                 controller.place(id, pid: pid, ruleWorkspace: false, reopened: false)
@@ -149,7 +143,6 @@ extension Controller {
     /// An ordered out window leaves every Space, the holding Space too, so a conceal from
     /// before it closed would fail the next batch's confirmation.
     private func reopen(_ id: WindowID, pid: pid_t) {
-        closedByApp.remove(id)
         ledger.forget(id)
         hiding.forgetClosed(id)
         place(id, pid: pid, ruleWorkspace: true, reopened: true)
@@ -170,15 +163,11 @@ extension Controller {
         }
         // Parked as closed and kept before the switch took effect, as when the new tab's
         // admission outlasted the claimed tab's wait. The replace's plan lays the place out.
-        let parked = closedByApp.remove(old) != nil
+        let parked = session.parkReason(of: old) == .closedByApp
         if parked { _ = session.unpark([old], follow: nil) }
         guard let plan = session.replace(old, with: new) else { return false }
         controllerLog.info("tab \(new) replaces \(old)\(parked ? ", after \(old) parked as closed and kept" : "", privacy: .public)")
         tabs.replaced(old, with: new)
-        // Parked as closed by its app, as a window Merge All Windows made a tab.
-        closedByApp.remove(new)
-        // A switch inside a native fullscreen group: the new tab is the one in fullscreen.
-        if fullscreenParked.remove(old) != nil { fullscreenParked.insert(new) }
         // A deselected tab leaves every Space, and the tab selected lands on its ordinary
         // Space whatever was concealed (kosmos-probe tabs); the plan conceals it afresh.
         hiding.forget([old, new])
@@ -204,7 +193,6 @@ extension Controller {
             return
         }
         controllerLog.info("\(id) closed and kept by its app: parked \((ContinuousClock.now - orderedOut).milliseconds, format: .fixed(precision: 3)) ms after it was seen ordered out")
-        closedByApp.insert(id)
         depart([id], because: .closedByApp, remaining: owner[id].map { inventory.otherWindows(of: $0, besides: id) } ?? [])
     }
 
@@ -244,18 +232,18 @@ extension Controller {
             app == pid && session.workspace(of: id) != nil && (!session.isParked(id) || session.lifted.contains(id))
         }.map(\.key)
         guard !windows.isEmpty else { return }
-        hiddenApps[pid, default: []] += windows
         depart(windows, because: .appHidden)
     }
 
     private func appUnhidden(_ pid: pid_t, at received: ContinuousClock.Instant) {
-        guard hiddenApps[pid]?.isEmpty == false else { return }
+        func hidden() -> [WindowID] { session.parked(because: .appHidden).filter { owner[$0] == pid } }
+        guard !hidden().isEmpty else { return }
         Task {
             // An app that does not answer names no window, and the fallback is followed.
             let keyed = await inventory.worker(pid)?.focusedWindow() ?? nil
+            let windows = hidden()
             // Hidden again while the worker answered: the windows wait for the next unhide.
-            guard NSRunningApplication(processIdentifier: pid)?.isHidden != true,
-                  let windows = hiddenApps.removeValue(forKey: pid), !windows.isEmpty else { return }
+            guard NSRunningApplication(processIdentifier: pid)?.isHidden != true, !windows.isEmpty else { return }
             returned(windows, follow: session.followOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows)),
                      at: received)
         }
@@ -268,9 +256,6 @@ extension Controller {
         case .focusedWindowChanged(let id):
             focusedWindowChanged(id, report: report)
         case .minimized(let id, true):
-            // Parked as closed and kept if its order-out was looked at first: it is minimized
-            // instead.
-            closedByApp.remove(id)
             depart([id], because: .minimized)
         case .minimized(let id, false):
             returned([id], follow: id, at: report.received)

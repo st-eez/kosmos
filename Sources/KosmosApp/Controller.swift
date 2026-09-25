@@ -25,11 +25,6 @@ final class Controller {
     var owner: [WindowID: pid_t] = [:]
     /// Newest last.
     var recent: [WindowID] = []
-    /// The windows of each hidden app, parked until it unhides.
-    var hiddenApps: [pid_t: [WindowID]] = [:]
-    var fullscreenParked: Set<WindowID> = []
-    /// Parked, as their app ordered them out and kept them (docs/tree.md).
-    var closedByApp: Set<WindowID> = []
     var tabSwitches = TabSwitches()
     var tabs = TabGroups()
     var intake = KeyReportIntake(ownApp: getpid())
@@ -201,7 +196,7 @@ final class Controller {
         let keyWindow: WindowID? = if case .window(let id)? = key { id } else { nil }
         return showsFullscreenSpace(key: key, keyManaged: keyWindow.map { session.workspace(of: $0) != nil } ?? false,
                                     keyApp: keyWindow.flatMap { owner[$0] ?? inventory.windows[$0]?.pid },
-                                    fullscreen: Dictionary(uniqueKeysWithValues: fullscreenParked.compactMap { id in owner[id].map { (id, $0) } }))
+                                    fullscreen: Dictionary(uniqueKeysWithValues: session.parked(because: .fullscreen).compactMap { id in owner[id].map { (id, $0) } }))
     }
 
     /// `floatingCheck` runs the floating check for an empty plan too, as a floating window
@@ -329,7 +324,7 @@ final class Controller {
                 session.monitors.first { $0.frame.contains(CGPoint(x: row.frame.midX, y: row.frame.midY)) }?.id
             }
         }
-        let displays = Set(fullscreenParked.compactMap(display))
+        let displays = Set(session.parked(because: .fullscreen).compactMap(display))
         guard !displays.isEmpty, case .window(let id)? = key, !inFullscreenSpace, let desktop = display(of: id)
         else { return displays }
         return displays.subtracting([desktop])
