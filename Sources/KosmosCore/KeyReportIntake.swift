@@ -122,7 +122,7 @@ public struct KeyReportIntake: Sendable {
     private var held = HeldReport<Report>()
     /// A departure waiting for macOS's report of the next key window (DepartureFocus).
     private var awaitingKey: (window: WindowID, number: Int)?
-    private var departures = 0
+    private var departureNumber = 0
 
     /// `ownApp`: Kosmos's process, whose report of no key window is its empty workspace's.
     public init(ownApp: Int32) {
@@ -249,9 +249,9 @@ public struct KeyReportIntake: Sendable {
     /// A departure waits for macOS's report of the key window after `window` (DepartureFocus).
     /// Returns the number of the wait's bound.
     public mutating func awaitNextKey(after window: WindowID) -> Int {
-        departures += 1
-        awaitingKey = (window, departures)
-        return departures
+        departureNumber += 1
+        awaitingKey = (window, departureNumber)
+        return departureNumber
     }
 
     /// Whether bound `number` ends a wait no report ended, so the departure focuses.
