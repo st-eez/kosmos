@@ -26,3 +26,12 @@
     PNG files without showing a window.
 - Launch at login uses `SMAppService` with a `KeepAlive` agent, and config errors appear
   in one AppKit panel.
+  - Registering starts the agent at once. While another Kosmos holds the instance lock,
+    the agent's copy exits successfully and launchd leaves it stopped until the next
+    login, so a Kosmos opened by hand runs without crash restarts until then
+    ([INSTALL.md](INSTALL.md)). Starting the agent with `launchctl kickstart` whenever it is
+    enabled would close that gap. When the lock is still held with no other Kosmos
+    running, as the guardian holds it for up to about a second after a crash, the copy
+    exits 1 and launchd starts it again.
+  - `script/install.sh` registers and unregisters through `Kosmos launch-at-login`, since
+    `SMAppService` acts for the bundle of the process that calls it.

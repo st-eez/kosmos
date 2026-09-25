@@ -5,17 +5,11 @@ import os
 
 private let hotkeysLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "hotkeys")
 
-/// 'KSMS'. The event handler ignores hotkeys that other code in the process registers.
+/// 'KSMS', so the event handler ignores hotkeys that other code in the process registers.
 private let signature: OSType = 0x4B53_4D53
 
-/// Key bindings as Carbon hotkeys (docs/hotkeys.md). WindowServer matches keys itself,
-/// so a keystroke that is no binding never reaches Kosmos, and Carbon sends no repeats, so a
-/// binding fires once per press. Hotkeys are registered exclusive: another app's exclusive
-/// hotkey on the same combination makes registration fail and is reported, where a shared
-/// registration would give the key to both apps.
-///
-/// Presses arrive on the main thread through the event dispatcher and go straight to the
-/// handler, which should only enqueue a command.
+/// Key bindings as Carbon hotkeys, registered exclusive (docs/hotkeys.md). Presses reach the
+/// handler on the main thread, so it should only enqueue a command.
 @MainActor
 final class Hotkeys: NSObject {
     struct Problem: Equatable, CustomStringConvertible {
@@ -30,16 +24,15 @@ final class Hotkeys: NSObject {
     private(set) var mode = "main"
     private(set) var modes: [String: [Binding]] = [:]
     private var layout: [Character: UInt16]
-    /// The active mode's bindings on the current layout. A pressed key's command comes from
-    /// here, so a key two modes share stays registered across a switch.
+    /// A pressed key's command comes from here, so a key two modes share stays registered
+    /// across a switch.
     private var table = HotkeyTable([], layout: [:])
     private var registered: [PhysicalKey: EventHotKeyRef] = [:]
     private let handler: @MainActor (Binding) -> Void
     private let layoutProblems: @MainActor ([Problem]) -> Void
 
-    /// Installs the Carbon event handler, which keeps this object alive for the process.
-    /// Create one. `layoutProblems` receives the problems after a keyboard layout change,
-    /// found the way `load` finds them.
+    /// The Carbon event handler keeps this object alive for the process, so create only one.
+    /// `layoutProblems` gets the problems a keyboard layout change finds.
     init(layoutProblems: @escaping @MainActor ([Problem]) -> Void, handler: @escaping @MainActor (Binding) -> Void) {
         self.handler = handler
         self.layoutProblems = layoutProblems
@@ -68,17 +61,15 @@ final class Hotkeys: NSObject {
             object: nil, suspensionBehavior: .deliverImmediately)
     }
 
-    /// Replaces every mode's bindings, as after a config load, and activates mode main. The
-    /// problems are bindings macOS also uses as keyboard shortcuts, in any mode, and main's
-    /// bindings that could not be registered.
+    /// Activates mode main. The problems are the bindings of any mode that macOS also uses as
+    /// keyboard shortcuts, and main's bindings that could not be registered.
     func load(_ modes: [String: [Binding]]) -> [Problem] {
         self.modes = modes
         mode = "main"
         return systemShortcutProblems() + apply()
     }
 
-    /// Activates a mode. Only the keys the two modes do not share are unregistered and
-    /// registered. The problems are the mode's bindings that could not be registered.
+    /// The problems are the mode's bindings that could not be registered.
     func switchMode(to name: String) -> [Problem] {
         guard name == "main" || modes[name] != nil else {
             return [Problem(mode: name, key: "", message: "no mode has this name")]
@@ -93,8 +84,7 @@ final class Hotkeys: NSObject {
             Problem(mode: mode, key: collision.dropped.key,
                     message: "is the same key as \(collision.kept.key) on the current keyboard layout and is left out")
         }
-        // Changes are computed against what is registered, so a key that failed to register
-        // before is tried again.
+        // Against what is registered, so a key that failed to register before is tried again.
         let changes = next.changes(from: registered.keys)
         for key in changes.unregister { unregister(key) }
         table = next
@@ -129,14 +119,9 @@ final class Hotkeys: NSObject {
         handler(binding)
     }
 
-    /// Bindings that macOS also uses as keyboard shortcuts. WindowServer and the Dock take
-    /// those before any app's hotkey (hotkeys research, section 2).
-    ///
-    /// Ceiling: macOS lists arrow and function keys with the fn flag, which may mean the Globe
-    /// key or only the flag those keys always carry. Kosmos never registers fn, so those
-    /// shortcuts never compare equal and a clash on an arrow or function key goes unreported.
-    /// A probe that settles what the flag means (hotkeys research, open question 6) would let
-    /// arrows be compared with fn masked out.
+    /// Bindings that macOS also uses as keyboard shortcuts, which take the key first
+    /// (docs/hotkeys.md). Ceiling: a clash on an arrow or function key goes unreported, as
+    /// macOS lists those with the fn flag; settling what the flag means would mask it out.
     private func systemShortcutProblems() -> [Problem] {
         var list: Unmanaged<CFArray>?
         guard CopySymbolicHotKeys(&list) == noErr, let shortcuts = list?.takeRetainedValue() as? [[String: Any]] else {
@@ -169,9 +154,8 @@ final class Hotkeys: NSObject {
         layoutProblems(systemShortcutProblems() + apply())
     }
 
-    /// The characters the current ASCII capable layout types and their key codes. Empty when
-    /// the layout has no Unicode data, and then every character key takes its place on a US
-    /// keyboard.
+    /// Empty when the layout has no Unicode data, and then every character key takes its
+    /// place on a US keyboard.
     private static func currentLayout() -> [Character: UInt16] {
         guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
               let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData),
@@ -184,8 +168,6 @@ final class Hotkeys: NSObject {
 }
 
 extension PhysicalKey {
-    /// The id Carbon hands back with a press. It holds the key code and the modifiers, so a
-    /// press names its key.
     var hotkeyID: EventHotKeyID {
         EventHotKeyID(signature: signature, id: UInt32(code) << 8 | UInt32(modifiers.rawValue))
     }
@@ -204,17 +186,12 @@ private func carbonModifiers(_ modifiers: KeyCombo.Modifiers) -> UInt32 {
     return UInt32(flags)
 }
 
-/// The process holding Secure Input, which a password field turns on. While it is on, some
-/// bindings stop (docs/hotkeys.md).
+/// The process holding Secure Input, which stops some bindings (docs/hotkeys.md).
 struct SecureInput: Equatable, CustomStringConvertible {
-    /// The process WindowServer names. When a process with no windows of its own turns Secure
-    /// Input on, WindowServer names the frontmost app instead (measured on macOS 27 with a
-    /// command line probe).
+    /// For a holder with no windows of its own, WindowServer names the frontmost app.
     var pid: pid_t?
     var appName: String?
 
-    /// Nil while Secure Input is off. Naming the holder, which copies the session dictionary,
-    /// runs only while Secure Input is on.
     static func current() -> SecureInput? {
         guard IsSecureEventInputEnabled() else { return nil }
         let session = CGSessionCopyCurrentDictionary() as? [String: Any]

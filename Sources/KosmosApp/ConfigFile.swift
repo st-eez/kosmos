@@ -3,30 +3,22 @@ import KosmosCore
 import KosmosRecovery
 import KosmosSkyLight
 
-/// The config file at ~/.config/kosmos/kosmos.toml and what it resolves to on the connected
-/// displays (docs/config.md).
+/// The config file and what it resolves to on the connected displays (docs/config.md).
 enum ConfigFile {
     static var url: URL {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/kosmos/kosmos.toml")
     }
 
-    /// The last file that loaded without errors, used when the file is broken at launch. The
-    /// files it includes are not kept, so it loads without them.
+    /// Kept without the files it includes, so it loads without them (docs/config.md).
     static var lastGood: URL { KosmosFiles.support.appending(path: "last-good.toml") }
 
     struct Loaded {
-        /// Nil when there is nothing to apply.
         var config: Config?
-        /// Problems that kept the config from loading.
         var errors: [String] = []
-        /// Problems in a config that loaded anyway.
         var warnings: [String] = []
-        /// Where `config` came from, for the log.
         var source = "the config file"
     }
 
-    /// Reads and checks the config and the files it includes. At launch a broken config falls
-    /// back to the last good file.
     static func load(atLaunch: Bool) -> Loaded {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return Loaded(config: nil, warnings: ["no config at \(url.path); using workspaces 1 to 9 and no bindings"],
@@ -55,8 +47,7 @@ enum ConfigFile {
         return loaded
     }
 
-    /// The connected displays, as the config's monitor matchers and the session see them.
-    /// Empty while NSScreen lists none, as it can in the middle of a change.
+    /// Empty while NSScreen lists none, as it can in the middle of a display change.
     static func displays() -> [Display] {
         NSScreen.screens.map { screen in
             Display(id: screen.displayID, name: screen.localizedName, serial: DisplayIdentity.serial(of: screen.displayID),
@@ -65,7 +56,6 @@ enum ConfigFile {
         }
     }
 
-    /// Each display by SketchyBar's number for it (BarSnapshot.displayNumber).
     static func barDisplays(_ displays: [Display]) -> [DisplayID: BarSnapshot.Display] {
         let active = DisplayIdentity.active().count, managed = DisplayIdentity.managed()
         return Dictionary(uniqueKeysWithValues: displays.map { display in
