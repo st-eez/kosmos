@@ -371,9 +371,6 @@ public struct Session: Sendable {
                   let name = shown[monitor.id], name != source else { return nil }
             let entering: Direction? = if case .direction(let direction) = target { direction } else { nil }
             return move(window, from: source, to: name, follow: follow, entering: entering)
-        case .reloadConfig, .mode, .profile, .focusFollowsMouse:
-            return nil   // the app reloads the config, switches hotkeys, applies the profile
-                         // or turns focus follows mouse on or off
         default:
             return performOnFocused(command, frame: frame)
         }
