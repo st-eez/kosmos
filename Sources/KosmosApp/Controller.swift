@@ -94,8 +94,9 @@ final class Controller {
         inventory.onFrameChange = { [weak self] id, old, frame, changed in
             self?.frameChanged(id, from: old, to: frame, changed: changed)
         }
+        // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-            Task { @MainActor in self?.leftMouseUp() }
+            MainActor.assumeIsolated { self?.leftMouseUp() }
         }
     }
 
