@@ -228,21 +228,6 @@ func spawnPanel(_ command: String = "panel") -> (Process, UInt32) {
     return (process, id)
 }
 
-func inSpace(_ window: UInt32, _ space: UInt64) -> Bool {
-    let windows = SkyLight.windows(in: space) ?? []
-    return windows.contains(window)
-}
-
-func elapsed(_ start: ContinuousClock.Instant) -> Double {
-    let d = ContinuousClock.now - start
-    return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
-}
-
-func percentile(_ values: [Double], _ p: Double) -> Double {
-    let sorted = values.sorted()
-    return sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * p))]
-}
-
 func barrier(cycles: Int) {
     let (panel, window) = spawnPanel()
     let start = ContinuousClock.now
@@ -447,9 +432,6 @@ nonisolated(unsafe) var probeWindow: UInt32 = 0
     app.run()
     exit(0)
 }
-
-/// Milliseconds since boot, the same in every process.
-func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
 
 /// Two windows of an accessory app. The first is minimized and restored. It is minimized
 /// again while the second is keyed during the animation: does macOS still key a window
