@@ -65,10 +65,10 @@
     observer was registered, and its activation read got no answer while it launched.
     Kosmos concealed the window, keyed Claude on workspace 8 again, and Steve pressed alt-4
     himself. A worker now reports its app's focused window when it starts, before any of
-    the app's windows is admitted (geometry.md). KosmosCore's tests cover `AdmissionFocus`
-    and the classification. No test covers the worker's report at its start, its refusal
-    of window reads before it, or the Controller handing the waiting report to the
-    classification at the admission: they are in KosmosApp, which has no test target.
+    the app's windows is admitted (geometry.md). KosmosCore's tests cover `AdmissionFocus`,
+    the classification, and the waiting report decided at the admission
+    (`KeyReportIntake`). No test covers the worker's report at its start or its refusal of
+    window reads before it: they are in KosmosApp, which has no test target.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
     window key before it. A report of another window replaces it, and a held report whose

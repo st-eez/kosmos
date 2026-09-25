@@ -40,9 +40,10 @@ prefix.
   `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+KeyReports.swift`, `KosmosApp/Controller+Windows.swift`,
   `KosmosApp/UserInput.swift`, `KosmosCore/FocusReports.swift`,
-  `KosmosCore/KeyRequest.swift`, `KosmosCore/FocusRead.swift`,
-  `KosmosCore/FocusMisses.swift`, `KosmosCore/Departures.swift`,
-  `KosmosCore/ConcealHistory.swift`, `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
+  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/KeyRequest.swift`,
+  `KosmosCore/FocusRead.swift`, `KosmosCore/FocusMisses.swift`,
+  `KosmosCore/Departures.swift`, `KosmosCore/ConcealHistory.swift`,
+  `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
@@ -74,7 +75,7 @@ prefix.
   Code: `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
   `KosmosApp/Controller+Pointer.swift`, `KosmosApp/Controller+KeyReports.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/UserInput.swift`,
-  `KosmosCore/Config/Config.swift`.
+  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/Config/Config.swift`.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
