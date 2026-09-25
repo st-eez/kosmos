@@ -118,6 +118,8 @@
 //                                   it changes no Space or window, opens none and takes no focus.
 //   kosmos-probe bench-windows <count> [display] | eui [pid...] | cpu <pid...>
 //                                   What script/bench-relayout.sh uses (Bench.swift).
+//   kosmos-probe borders | borders-cpu [relayouts]
+//                                   What Kosmos's border windows need and cost (Borders.swift).
 import AppKit
 import CKosmos
 import KosmosCore
@@ -158,8 +160,12 @@ case "bench-windows" where arguments.count >= 2 && Int(arguments.dropFirst().fir
     benchWindows(Int(arguments.dropFirst().first!)!, on: arguments.dropFirst(2).first)
 case "eui": enhancedUserInterface(arguments.dropFirst().compactMap { pid_t($0) })
 case "cpu" where arguments.count >= 2: cpu(arguments.dropFirst().compactMap { pid_t($0) })
+case "borders": borders()
+case "borders-cpu": bordersCPU(relayouts: arguments.dropFirst().first.flatMap(Int.init) ?? 12)
+case "border-targets" where arguments.count >= 2 && Int(arguments.dropFirst().first!) != nil:
+    borderTargets(Int(arguments.dropFirst().first!)!)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...] | cpu <pid...>")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] [finder] | level [onscreen|opaque] | events [seconds] | key-holder [seconds] | mission-control [seconds] | holding | bench-windows <count> [display] | eui [pid...] | cpu <pid...> | borders | borders-cpu [relayouts]")
     exit(2)
 }
 
