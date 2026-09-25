@@ -7,12 +7,10 @@ import Testing
     #expect(startsAsking && backoff.backedOff)
     let since = backoff.answered()
     #expect(since == t0 + .milliseconds(1) && !backoff.backedOff)
-    // Writing the held frames times out again.
     let startsAgain = backoff.timedOut(at: t0 + .milliseconds(2))
     let stops = backoff.settled(started: true)
     #expect(!startsAgain && !stops)
     #expect(backoff.asking && backoff.backedOff)
-    // The next answer, with no timeout after it, ends the backoff.
     let sinceAgain = backoff.answered()
     let stopsNow = backoff.settled(started: true)
     #expect(sinceAgain == t0 + .milliseconds(2) && stopsNow)
@@ -22,7 +20,7 @@ import Testing
 @Test func aWorkerThatHasNotStartedKeepsAsking() {
     var backoff = AXBackoff()
     let startsAsking = backoff.notStarted()
-    // Calls still go: a launching app fails fast rather than waiting out the timeout.
+    // A launching app fails fast, so calls still go.
     #expect(startsAsking && !backoff.backedOff)
     let since = backoff.answered()
     let stops = backoff.settled(started: false)

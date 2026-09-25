@@ -1,16 +1,13 @@
 import CoreGraphics
 
-/// One frame write for one window.
 public enum FrameWrite: Equatable, Sendable {
-    /// Only the origin changes.
     case position(CGPoint)
-    /// The size changes: write size, then position, then size again, because an app may
-    /// clamp the size against the old position.
+    /// Written size, position, then size again: an app can clamp the size against the old
+    /// position (docs/geometry.md).
     case frame(CGRect)
 
-    /// This write in place of `queued`, a write for the same window that has not run. The
-    /// ledger chose a position write assuming the size of the write before it had landed, so
-    /// after a frame write that has not run it writes its whole target instead.
+    /// `queued` is a write for the same window that has not run. A position write assumed
+    /// the size before it had landed, so after a queued frame write it writes the whole target.
     public func replacing(_ queued: FrameWrite, target: CGRect) -> FrameWrite {
         if case .position = self, case .frame = queued { return .frame(target) }
         return self
@@ -23,34 +20,27 @@ public enum Fit: Equatable, Sendable {
     case took
     /// Larger than a target written for the first time: the target is written whole again.
     case refused
-    /// Larger again when the target was written again: the size kept on each axis it
-    /// refused, zero on the other, which is the window's minimum.
+    /// Larger at the target's second write: the size kept on each axis it refused, zero on
+    /// the other.
     case minimum(CGSize)
 }
 
-/// Decides which windows need a frame write (docs/geometry.md). It remembers the frame
-/// last read back from each window, the target sent and not yet confirmed, and sizes an app
-/// refused.
+/// Decides which windows need a frame write (docs/geometry.md).
 public struct FrameLedger: Sendable {
-    /// How much larger than its target a window may read back on an axis and still count as
-    /// having taken it, so apps that round their size do not read as refusing it.
+    /// Apps round their size, so a window may read back this much larger than its target on
+    /// an axis and still have taken it.
     public static let slack: CGFloat = 2
 
     private var confirmed: [WindowID: CGRect] = [:]
     private var pending: [WindowID: CGRect] = [:]
-    /// When each window's last write was confirmed. It outlasts `forget`, as a change that
-    /// came before the confirm is still that write's.
+    /// Outlasts `forget`: a change that came before the confirm is still that write's.
     private var confirmedAt: [WindowID: ContinuousClock.Instant] = [:]
-    /// A target whose size the app refused, and the size it kept instead.
     private var refused: [WindowID: (target: CGRect, kept: CGSize)] = [:]
-    /// A target the window read back larger than, past the slack, until the target changes.
+    /// A target the window read back larger than once, past the slack.
     private var refusedLarger: [WindowID: CGRect] = [:]
 
     public init() {}
 
-    /// The writes that bring each window to its target. A window already at its target, or
-    /// already sent it, gets none. A window that refused this target's size gets its
-    /// position only, until the target changes.
     public mutating func writes(for targets: [WindowID: CGRect]) -> [WindowID: FrameWrite] {
         var writes: [WindowID: FrameWrite] = [:]
         for (id, target) in targets {
@@ -71,11 +61,8 @@ public struct FrameLedger: Sendable {
         return writes
     }
 
-    /// Records the frame read back after a write, confirmed `now`. A size other than the
-    /// target's is a refusal, remembered until the target changes. The first time a window
-    /// reads back larger than a target past the slack, the refusal is not remembered, so the
-    /// next write of the target is whole: an app can ignore a size written as its window
-    /// changes display or Space. Only a second such read back shows a minimum.
+    /// A first read back larger than the target is not remembered, so the next write is whole:
+    /// an app can ignore a size written as its window changes display or Space.
     @discardableResult
     public mutating func confirm(_ id: WindowID, target: CGRect, readBack: CGRect, at now: ContinuousClock.Instant) -> Fit {
         confirmed[id] = readBack
@@ -97,9 +84,7 @@ public struct FrameLedger: Sendable {
         return kept == .zero ? .took : .minimum(kept)
     }
 
-    /// Records a frame observed without a write of Kosmos's, such as a user resize. A size
-    /// other than the one the window kept when it refused its target ends that refusal, so
-    /// the target's size is written again, and a larger read back is a first refusal.
+    /// A frame seen with no write of Kosmos's in flight, as after a user resize.
     public mutating func observe(_ id: WindowID, frame: CGRect) {
         confirmed[id] = frame
         if let refusal = refused[id], refusal.kept != frame.size {
@@ -108,29 +93,22 @@ public struct FrameLedger: Sendable {
         }
     }
 
-    /// Forgets the target the window read back larger than, so its next larger read back is
-    /// a first refusal. A window concealed or on a hidden workspace can ignore a size on its
-    /// way to the holding Space or another display, so a refusal read back then, or before
-    /// its workspace was last shown, says nothing of the app's limit.
+    /// A window concealed or on a hidden workspace can ignore a size on its way to the
+    /// holding Space or another display, so such a refusal says nothing of the app's limit.
     public mutating func forgetLargerReadBack(_ id: WindowID) {
         refusedLarger[id] = nil
     }
 
-    /// Records a frame read for a change that came before the last confirm, the write's own
-    /// change, when it differs from the frame confirmed. The change applies after the
-    /// confirm, and its row can hold a later change, as the app's next live resize step,
-    /// whose own event then finds the frame the same.
+    /// For a change that came before the last confirm. Its row, read after the confirm, can
+    /// hold the app's next live resize step, whose own event then finds no difference.
     public mutating func observeAfterConfirm(_ id: WindowID, frame: CGRect) {
         if confirmed[id] != frame { observe(id, frame: frame) }
     }
 
-    /// Whether a target sent for the window is not confirmed yet: a change of its frame now
-    /// can be that write's.
     public func isWriting(_ id: WindowID) -> Bool { pending[id] != nil }
 
-    /// Whether a change of the window's frame that came at `stamp` can be a write's: a target
-    /// is not confirmed yet, or the change came before the last confirm. The inventory
-    /// applies a change after an off main read, by which time the write can be confirmed.
+    /// Whether a change that came at `stamp` can be a write's. The inventory applies a change
+    /// after an off main read, by which time its write can be confirmed.
     ///
     /// Ceiling: a change that came before a write was sent counts too. Recording when each
     /// write was sent would tell the two apart.
@@ -138,8 +116,6 @@ public struct FrameLedger: Sendable {
         isWriting(id) || confirmedAt[id].map { stamp < $0 } == true
     }
 
-    /// Forgets the window's frames and refusals, so its next write is whole and a larger read
-    /// back is a first refusal again.
     public mutating func forget(_ id: WindowID) {
         confirmed[id] = nil
         pending[id] = nil

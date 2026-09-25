@@ -1,7 +1,15 @@
 # Hotkeys and Secure Input
 
 - Carbon hotkeys for every binding. A mode switch re-registers only the keys that differ,
-  at 8 µs per call.
+  at 8 µs per call, and a key whose command changed stays registered, since Kosmos looks
+  up the command when the key is pressed.
+- Each binding names a physical key on the current keyboard layout: a key named by a
+  character is the one that types it unshifted, else its key on a US keyboard. So two
+  bindings of a mode can name one key; the first registers, and the log names the other
+  as left out. On a French layout 6 needs Shift, so `alt-6` takes the key a US keyboard
+  has 6 on, which types §, the key `alt-sectionSign` names. Keypad keys stay out of the
+  layout's table: on French and Czech layouts only the keypad types a digit unshifted, so
+  `alt-1` names the number row key, which a laptop has.
 - Secure Input (a password field in any app) stops some hotkeys. `kosmos-probe
   secure-input` registers ten test hotkeys, and its window asks for a real press of each
   with Secure Input off and with its own password field focused. A hotkey that fires

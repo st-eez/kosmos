@@ -12,10 +12,8 @@ private func gate(_ windows: Set<WindowID> = [10]) -> DragGate {
     return gate
 }
 
-/// HID with each button down and one press of it counted: the press the gate saw goes on.
 private func held(_ button: DragButton) -> DragGate.ButtonState { DragGate.ButtonState(down: true, presses: 1) }
 
-/// Each press and mouse up with mouse event number 1, unless a test gives one.
 extension DragGate {
     fileprivate mutating func pressed(_ button: DragButton, over window: WindowID, flags: CGEventFlags, at point: CGPoint,
                                       hid: (DragButton) -> ButtonState = held) -> Outcome {
@@ -36,33 +34,25 @@ extension DragGate {
         let grab = DragGate.Grab(button: .left, window: 10, start: point)
         #expect(press == DragGate.Outcome(take: true, began: grab))
         #expect(gate.dragged(to: CGPoint(x: 120, y: 100)) == DragGate.Outcome(take: true, moved: CGPoint(x: 120, y: 100)))
-        // The mouse up is taken whatever the modifiers are by then, and ends the drag.
         let up = gate.released(.left, at: CGPoint(x: 150, y: 100))
         #expect(up == DragGate.Outcome(take: true, ended: DragGate.End(grab: grab, point: CGPoint(x: 150, y: 100))))
         #expect(gate.grab == nil && gate.dragged(to: point) == DragGate.Outcome())
-        // The right button resizes the same way.
         #expect(gate.pressed(.right, over: 10, flags: .maskAlternate, at: point).began?.button == .right)
         #expect(gate.released(.right, at: point).ended?.grab.button == .right)
     }
 
     @Test func everyOtherPressPassesUntouched() {
         var gate = gate()
-        // Without the modifier, with another one too, and over a window Kosmos does not
-        // manage, as the Dock.
         for flags: CGEventFlags in [[], [.maskAlternate, .maskShift], .maskControl] {
             #expect(gate.pressed(.left, over: 10, flags: flags, at: point) == DragGate.Outcome())
         }
         #expect(gate.pressed(.right, over: 99, flags: .maskAlternate, at: point) == DragGate.Outcome(passedOver: 99))
-        // Off every display, as the focus path's key record, a left down at 300000, 300000
-        // with no mouse up.
+        // The focus path's key record: a left down off every display.
         #expect(gate.pressed(.left, over: 10, flags: .maskAlternate, at: CGPoint(x: 300_000, y: 300_000)) == DragGate.Outcome())
-        // Their movements and mouse ups pass too.
         #expect(gate.dragged(to: point) == DragGate.Outcome() && gate.released(.left, at: point) == DragGate.Outcome())
         #expect(gate.released(.right, at: point) == DragGate.Outcome())
-        // Caps Lock and Fn do not count.
         #expect(gate.pressed(.left, over: 10, flags: [.maskAlternate, .maskAlphaShift, .maskSecondaryFn], at: point).take)
         _ = gate.released(.left, at: point)
-        // Off, nothing is taken.
         gate.modifiers = nil
         #expect(gate.pressed(.left, over: 10, flags: .maskAlternate, at: point) == DragGate.Outcome())
     }
@@ -72,7 +62,7 @@ extension DragGate {
         _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point)
         #expect(gate.pressed(.right, over: 10, flags: .maskAlternate, at: point) == DragGate.Outcome())
         #expect(gate.released(.right, at: point) == DragGate.Outcome())
-        // With both buttons down, macOS can name the other one: the movement is the drag's.
+        // With both buttons down, macOS can name the other one.
         #expect(gate.dragged(to: CGPoint(x: 130, y: 100)).moved == CGPoint(x: 130, y: 100))
         #expect(gate.released(.left, at: point).ended != nil)
     }
@@ -80,8 +70,8 @@ extension DragGate {
     @Test func thePressOfTheFocusPathsKeyRecordLeavesTheDragAlone() {
         var gate = gate()
         let grab = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
-        // The drag focuses a window of an app in the background, and the key record comes as
-        // a left down off every display.
+        // Focusing a background app's window posts the key record, a left down off every
+        // display.
         #expect(gate.pressed(.left, over: 10, flags: .maskAlternate, at: CGPoint(x: 300_000, y: 300_000)) == DragGate.Outcome())
         #expect(gate.grab == grab)
         #expect(gate.dragged(to: .zero).take && gate.released(.left, at: .zero).ended?.grab == grab)
@@ -91,8 +81,7 @@ extension DragGate {
         var gate = gate()
         let right = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
         _ = gate.dragged(to: CGPoint(x: 50, y: 0))
-        // Its mouse up went unheard. The next right press ends the drag and is decided afresh:
-        // this one passes, and one with the modifier begins another.
+        // Its mouse up went unheard.
         let press = gate.pressed(.right, over: 10, flags: [], at: point)
         #expect(press == DragGate.Outcome(ended: DragGate.End(grab: right, point: CGPoint(x: 50, y: 0))))
         let first = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
@@ -104,15 +93,11 @@ extension DragGate {
         var gate = gate()
         let grab = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
         _ = gate.dragged(to: CGPoint(x: 50, y: 0))
-        // As the tap turns on again, at a hotkey, a lock or a resync, the drag goes on while
-        // HID reads its press on.
         #expect(gate.endIfReleased(hid: held, at: .zero) == DragGate.Outcome() && gate.grab == grab)
-        // Its mouse up passed while WindowServer had the tap off. The drag ends where the
-        // pointer is, or where it last moved when the pointer cannot be read.
+        // Its mouse up passed while WindowServer had the tap off.
         let up = { (_: DragButton) in DragGate.ButtonState(down: false, presses: 1) }
         #expect(gate.endIfReleased(hid: up, at: nil) == DragGate.Outcome(ended: DragGate.End(grab: grab, point: CGPoint(x: 50, y: 0))))
-        // The button came up and went down again while the tap was off: it reads down, with
-        // a newer press counted. The new press's movements and mouse up pass.
+        // The button came up and went down again while the tap was off.
         let next = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
         let again = { (_: DragButton) in DragGate.ButtonState(down: true, presses: 2) }
         #expect(gate.endIfReleased(hid: again, at: .zero) == DragGate.Outcome(ended: DragGate.End(grab: next, point: .zero)))
@@ -130,8 +115,7 @@ extension DragGate {
         #expect(gate.released(.right, number: 7, at: point) == DragGate.Outcome())
         #expect(gate.released(.left, number: 7, at: point) == DragGate.Outcome(take: true))
         #expect(gate.released(.left, number: 7, at: point) == DragGate.Outcome())
-        // Its mouse up passed while WindowServer had the tap off: the button's next press
-        // passes, and so does every mouse up after it.
+        // Its mouse up passed while WindowServer had the tap off.
         _ = gate.pressed(.left, number: 8, over: 10, flags: .maskAlternate, at: point, hid: held)
         _ = gate.endIfReleased(hid: up, at: point)
         #expect(gate.pressed(.left, number: 9, over: 10, flags: [], at: point, hid: up) == DragGate.Outcome())
@@ -142,8 +126,7 @@ extension DragGate {
         var gate = gate()
         let grab = gate.pressed(.left, number: 7, over: 10, flags: .maskAlternate, at: point, hid: held).began!
         // Its mouse up and the next press passed while WindowServer had the tap off, and HID
-        // counted that press before the tap saw the drag's (DragGate.endIfReleased). The app
-        // has the press, so it gets the mouse up.
+        // counted that press before the tap saw the drag's.
         #expect(gate.released(.left, number: 8, at: point) == DragGate.Outcome(ended: DragGate.End(grab: grab, point: point)))
         #expect(gate.grab == nil && gate.released(.left, number: 7, at: point) == DragGate.Outcome())
     }
@@ -151,13 +134,11 @@ extension DragGate {
     @Test func theOtherButtonsPressEndsADragWhosePressIsOver() {
         var gate = gate()
         let right = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero).began!
-        // The right button came up while WindowServer had the tap off. A left press ends the
-        // drag where it lands and passes to the app, with its mouse up.
+        // The right button came up while WindowServer had the tap off.
         let rightUp = { (button: DragButton) in DragGate.ButtonState(down: button == .left, presses: 1) }
         let press = gate.pressed(.left, over: 10, flags: [], at: point, hid: rightUp)
         #expect(press == DragGate.Outcome(ended: DragGate.End(grab: right, point: point)))
         #expect(gate.released(.left, at: point) == DragGate.Outcome())
-        // With the modifier, it begins a drag of its own.
         _ = gate.pressed(.right, over: 10, flags: .maskAlternate, at: .zero)
         let left = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point, hid: rightUp)
         #expect(left.ended?.grab.button == .right && left.began?.button == .left && left.take)
@@ -166,10 +147,10 @@ extension DragGate {
     @Test func aDragWhosePressTimedOutPassesTheRestOfIt() {
         var gate = gate()
         let grab = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point).began!
-        // WindowServer gave up on the press and passed it on: the app gets the mouse up too.
+        // WindowServer gave up on the press and passed it on.
         #expect(gate.timedOut() == DragGate.Outcome(ended: DragGate.End(grab: grab, point: point)))
         #expect(gate.dragged(to: .zero) == DragGate.Outcome() && gate.released(.left, at: .zero) == DragGate.Outcome())
-        // It gave up on a later event: the drag goes on.
+        // It gave up on a later event.
         _ = gate.pressed(.left, over: 10, flags: .maskAlternate, at: point)
         _ = gate.dragged(to: .zero)
         #expect(gate.timedOut() == DragGate.Outcome() && gate.grab != nil)
@@ -177,7 +158,6 @@ extension DragGate {
 }
 
 @Suite struct ModifierDragTests {
-    /// Tiles 10, 11 and 12 side by side on `display`, with 11 focused.
     private func row() -> Session {
         var s = Session(names: ["1", "2"], display: display)
         _ = s.add(10); _ = s.add(11)
@@ -197,7 +177,6 @@ extension DragGate {
         var drag = try #require(s.beginDrag(grab(11, at: CGPoint(x: tile.midX, y: tile.midY), .left), frame: tile))
         #expect(drag.delta(to: CGPoint(x: tile.midX + 6, y: tile.midY + 8)) == nil)
         #expect(drag.delta(to: CGPoint(x: tile.midX + 7, y: tile.midY + 8)) == CGSize(width: 7, height: 8))
-        // Past it once, the window follows the pointer back too.
         #expect(drag.delta(to: CGPoint(x: tile.midX + 1.4, y: tile.midY)) == CGSize(width: 1, height: 0))
         #expect(drag.moved(by: CGSize(width: 1, height: 0)) == tile.offsetBy(dx: 1, dy: 0))
     }
@@ -206,14 +185,12 @@ extension DragGate {
         var s = row()
         let before = s.frames(of: "1")
         let tile = before[11]!
-        // In the top right quarter: the right edge. No tile is above or below it.
         let drag = try #require(s.beginDrag(grab(11, at: CGPoint(x: tile.maxX - 10, y: tile.minY + 10)), frame: tile))
         #expect(drag.edges == [.right] && !drag.floating)
         let plan = s.dragEdges(drag, by: CGSize(width: 60, height: 30))
         var frames = try #require(plan).frames
         #expect(frames[11]!.minX == tile.minX && frames[11]!.maxX == tile.maxX + 60 && frames[11]!.height == tile.height)
         #expect(frames[10] == before[10] && frames[12]!.maxX == before[12]!.maxX)
-        // The edge follows the pointer back past where it started.
         let back = s.dragEdges(drag, by: CGSize(width: -30, height: 0))
         frames = try #require(back).frames
         #expect(frames[11]!.maxX == tile.maxX - 30 && frames[11]!.minX == tile.minX)
@@ -231,7 +208,6 @@ extension DragGate {
         let frames = try #require(plan).frames
         #expect(frames[12]!.minX == tile.minX - 50 && frames[12]!.maxX == tile.maxX)
         #expect(frames[11]!.minX == before[11]!.minX && frames[10] == before[10])
-        // A lone tile has no edge to move.
         var lone = Session(names: ["1"], display: display)
         _ = lone.add(20)
         let whole = lone.frames(of: "1")[20]!
@@ -261,7 +237,6 @@ extension DragGate {
         let drag = try #require(s.beginDrag(grab(10, at: CGPoint(x: tile.maxX - 1, y: tile.midY)), frame: tile))
         let far = s.dragEdges(drag, by: CGSize(width: 2000, height: 0))
         #expect(far?.frames[11]?.width == 1)
-        // The edge goes where the pointer is, not 1900 pt left of where the limit stopped it.
         let back = s.dragEdges(drag, by: CGSize(width: 100, height: 0))
         #expect(back?.frames[10]?.maxX == tile.maxX + 100)
     }
@@ -274,7 +249,7 @@ extension DragGate {
         for window: WindowID in [20, 21, 99] {
             #expect(s.beginDrag(grab(window, at: .zero), frame: display) == nil)
         }
-        // A workspace in fullscreen resizes nothing: the fullscreen window covers the tiles.
+        // The fullscreen window covers the tiles, so they resize nothing.
         let tile = s.frames(of: "1")[11]!
         let drag = s.beginDrag(grab(11, at: CGPoint(x: tile.maxX - 1, y: tile.midY)), frame: tile)!
         _ = s.perform(.fullscreen)
@@ -289,12 +264,10 @@ extension DragGate {
         let topLeft = try #require(s.beginDrag(grab(20, at: CGPoint(x: 150, y: 150)), frame: frame))
         #expect(topLeft.floating && topLeft.edges == [.left, .up])
         #expect(s.resized(topLeft, by: CGSize(width: 50, height: -20)) == CGRect(x: 150, y: 80, width: 350, height: 320))
-        // Past the other edges, the window keeps 20 pt, and its far edges stay.
         #expect(s.resized(topLeft, by: CGSize(width: 1000, height: 1000)) == CGRect(x: 480, y: 380, width: 20, height: 20))
         let bottomRight = try #require(s.beginDrag(grab(20, at: CGPoint(x: 300, y: 250)), frame: frame))
         #expect(bottomRight.edges == [.right, .down])
         #expect(s.resized(bottomRight, by: CGSize(width: 30, height: -500)) == CGRect(x: 100, y: 100, width: 430, height: 20))
-        // A minimum the window showed holds too.
         _ = s.setMinimum(20, CGSize(width: 200, height: 0))
         #expect(s.resized(bottomRight, by: CGSize(width: -1000, height: 0)).width == 200)
     }
