@@ -127,6 +127,12 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     workspace 4 on the main panel, and the pointer stayed on the built-in display, before
     this. A launch by an agent or a script that brings the app front brings the pointer
     too, as it brings the follow.
+  - A new window its app keyed before Kosmos admitted it, which becomes the focus on a
+    shown workspace of another display than the pointer, as when its rule's workspace is
+    shown there, brings the pointer the same way (`AdmissionFocus.bringsPointer`), as a
+    keyboard focus change onto another display does. On the pointer's display the pointer
+    stays, as it does for a new window with no rule. A window its app keys only after
+    Kosmos admitted it on a shown workspace is judged as a Command-Tab.
   - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
     window it activates the same way. Left on the Dock, the pointer would focus every
     window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and

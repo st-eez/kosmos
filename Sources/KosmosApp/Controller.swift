@@ -352,7 +352,8 @@ final class Controller {
     /// launch or as a tab that lost its group, it waits parked for its return, with no frame
     /// and no concealing. A minimized or fullscreen window of a hidden app returns on its
     /// own, not when the app unhides. A window its app keyed first becomes the focus, and
-    /// Kosmos follows it to a hidden workspace (AdmissionFocus).
+    /// Kosmos follows it to a hidden workspace (AdmissionFocus). The pointer comes along to
+    /// it there, or on another display than the pointer's.
     private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
@@ -385,6 +386,10 @@ final class Controller {
         case .none: break
         }
         execute(plan, floatingCheck: floats)
+        if mouseFollowsFocus, focus.bringsPointer(toAnotherDisplay: focusAwayFromPointer) {
+            pointerLog.debug("\(id) keyed at admission on another display than the pointer")
+            centerPointer()
+        }
         // The follow's switch reveals the window the plan conceals.
         if focus == .placedHidden, var report {
             placedHidden[id] = nil

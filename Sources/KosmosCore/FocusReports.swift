@@ -74,6 +74,15 @@ public enum AdmissionFocus: Equatable, Sendable {
         if shown { return keyed ? .adopt : .none }
         return atLaunch ? .none : .placedHidden
     }
+
+    /// Whether mouse-follows-focus brings the pointer to the window as Kosmos admits it,
+    /// whatever input came before, as a keyboard focus change does: its app keyed it, and it
+    /// becomes the focus on another display than the pointer (`toAnotherDisplay`). On the
+    /// pointer's display the pointer stays. A window placed hidden brings the pointer when
+    /// Kosmos follows it (ActivationInput.bringsPointer, `admitted`).
+    public func bringsPointer(toAnotherDisplay: Bool) -> Bool {
+        self == .adopt && toAnotherDisplay
+    }
 }
 
 /// Whether macOS shows a native fullscreen window's Space: that window is key, or a window

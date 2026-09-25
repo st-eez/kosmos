@@ -27,7 +27,9 @@
   Hyprland switches to it, unless the rule adds `silent` (Hyprland wiki, Window Rules).
   With `mouse-follows-focus` the pointer comes along whatever input came before, since an
   app can open its window seconds after the launcher's hotkey
-  ([focus-follows-mouse.md](focus-follows-mouse.md)). A window its app opens in the
+  ([focus-follows-mouse.md](focus-follows-mouse.md)). It comes along too when the rule's
+  workspace is shown on another display than the pointer, where the window becomes the
+  focus with no switch. A window its app opens in the
   background changes no workspace. The ceiling: a launch by an agent or a script that
   brings the app front also follows and brings the pointer, since its app keys the window
   as one the user launched does, and Kosmos does not tell who asked for a launch. The
