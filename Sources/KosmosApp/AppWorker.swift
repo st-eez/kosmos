@@ -340,6 +340,8 @@ actor AppWorker {
         var results: [(id: UInt32, target: CGRect, readBack: CGRect)] = []
         for (id, entry) in writes {
             guard let element = elements[id] else { continue }
+            let start = ContinuousClock.now
+            var sets = 1
             switch entry.write {
             case .position(let origin):
                 set(element, kAXPositionAttribute, origin)
@@ -347,6 +349,7 @@ actor AppWorker {
                 set(element, kAXSizeAttribute, frame.size)
                 set(element, kAXPositionAttribute, frame.origin)
                 set(element, kAXSizeAttribute, frame.size)
+                sets = 3
             }
             // A write or read the app did not answer waits, with the ones after it, for the
             // app to answer again. One whose read failed otherwise waits for the app's next
@@ -366,8 +369,13 @@ actor AppWorker {
                     continue
                 }
                 readBack = retried
+                sets += 2
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
+            // script/bench-relayout.sh counts these lines.
+            let spent = ContinuousClock.now - start
+            let ms = Double(spent.components.seconds) * 1000 + Double(spent.components.attoseconds) / 1e15
+            log.info("\(id) written in \(sets) sets, AX time \(ms, format: .fixed(precision: 2)) ms")
             results.append((id, entry.target, readBack))
         }
         if !results.isEmpty { send(.framesApplied(results)) }
