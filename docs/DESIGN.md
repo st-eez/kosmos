@@ -1411,10 +1411,10 @@ pointer gets none of the drag's events.
   (`kCGMouseEventWindowUnderMousePointer`, as for focus follows mouse, section 5.11), so
   deciding a press reads no window list. KosmosCore's DragGate decides each event on the
   tap's thread, under a lock the main actor holds only to hand it the modifiers, the
-  windows and the displays, so no event waits on the main actor. Section 3 turns down a keyboard tap
-  because every keystroke would wait on the manager. This tap costs each button event one
-  round trip to its thread, which answers at once, and it takes no movement without a
-  button down.
+  windows and the displays and to end a drag whose press is over, so no event waits on
+  the main actor. Section 3 turns down a keyboard tap because every keystroke would wait
+  on the manager. This tap costs each button event one round trip to its thread, which
+  answers at once, and it takes no movement without a button down.
 - A press is taken when its modifiers are exactly the configured ones, Caps Lock and Fn
   aside, it is on a display, and the window under it is a tiled or floating window of a
   shown workspace (`DragGate.windows`, renewed with each published state). Every other

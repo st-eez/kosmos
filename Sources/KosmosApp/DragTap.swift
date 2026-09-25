@@ -9,9 +9,10 @@ let dragLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "drag")
 /// tap on its own thread. It sits at the annotated session location, where WindowServer has
 /// named the window under the pointer with its own hit test, so deciding a press reads no
 /// window list. A DragGate decides each event under a lock that the main actor holds only
-/// to hand it the modifiers, windows and displays, and the tap never waits on the main
-/// actor: what a taken event means goes to the main actor afterwards, and the event never
-/// reaches the app under the pointer. Every other event passes untouched.
+/// to hand it the modifiers, windows and displays and to end a drag whose press is over,
+/// and the tap never waits on the main actor: what a taken event means goes to the main
+/// actor afterwards, and the event never reaches the app under the pointer. Every other
+/// event passes untouched.
 ///
 /// An active tap needs Accessibility, which Kosmos has before it makes one.
 final class DragTap: Sendable {
