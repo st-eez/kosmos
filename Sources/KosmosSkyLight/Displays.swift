@@ -38,10 +38,8 @@ public struct Displays: Sendable {
         }
     }
 
-    /// Whether the window is in a native fullscreen Space. Nil while it is in no Space, as
-    /// during the transition in and out, when it has left one Space and not yet joined the
-    /// other. The queries can block during a Space transition, so call it off the main
-    /// thread.
+    /// Nil while the window is in no Space, as during the transition in and out. The queries
+    /// can block during a Space transition, so call it off the main thread.
     public static func isFullscreen(_ window: UInt32) -> Bool? {
         guard let spaces = SkyLight.spaces(of: window), !spaces.isEmpty else { return nil }
         return !current().fullscreenSpaces.isDisjoint(with: spaces)
@@ -51,20 +49,15 @@ public struct Displays: Sendable {
     var fullscreenSpaces: Set<UInt64> { Set(displays.flatMap(\.allSpaces).filter { $0.type == 4 }.map(\.id)) }
     var allSpaces: [UInt64] { displays.flatMap(\.allSpaces).map(\.id) }
 
-    /// The ordinary Space for a window that has none: the main display's current Space,
-    /// else the window's `original` Space if it still exists, else the main display's first
-    /// ordinary Space. A native fullscreen Space on screen is never one, so a reveal works
-    /// while one is shown. Nil only when no ordinary Space exists.
+    /// The main display's choice for a window with no ordinary Space (docs/hiding.md).
     public func ordinarySpace(original: UInt64?) -> UInt64? {
         let main = display(for: CGMainDisplayID()) ?? displays.first
         return Self.ordinarySpace(current: main?.currentSpace, spaces: (main?.ordinarySpaces ?? []) + displays.flatMap(\.ordinarySpaces),
                                   original: original)
     }
 
-    /// The ordinary Space for a window with none that is revealed on the display `id`: that
-    /// display's current Space, else the window's `original` Space if that display has it,
-    /// else that display's first ordinary Space (docs/hiding.md). A display missing
-    /// from the Space list, or none given, leaves the choice to `ordinarySpace(original:)`.
+    /// The choice on display `id`. A display missing from the Space list, or none, leaves it to
+    /// the main display (docs/hiding.md).
     public func ordinarySpace(on id: CGDirectDisplayID?, original: UInt64?) -> UInt64? {
         guard let id, let display = display(for: id),
               let space = Self.ordinarySpace(current: display.currentSpace, spaces: display.ordinarySpaces, original: original)
@@ -72,17 +65,15 @@ public struct Displays: Sendable {
         return space
     }
 
-    /// The choice itself: `current` is the display's current Space when it is ordinary, and
-    /// `spaces` every ordinary Space to choose from, the display's first.
+    /// `spaces` lists the display's own Spaces first.
     static func ordinarySpace(current: UInt64?, spaces: [UInt64], original: UInt64?) -> UInt64? {
         if let current { return current }
         if let original, spaces.contains(original) { return original }
         return spaces.first
     }
 
-    /// Whether the window belongs to an ordinary Space. Native fullscreen Spaces and Kosmos's
-    /// holding Space are not ordinary, whether or not the window's Space list names them. A
-    /// window whose Spaces do not read is in none.
+    /// Native fullscreen Spaces and the holding Space are not ordinary, whether or not the
+    /// window's Space list names them.
     public func isInOrdinarySpace(_ window: UInt32) -> Bool {
         SkyLight.spaces(of: window).map { !ordinarySpaces.isDisjoint(with: $0) } ?? false
     }

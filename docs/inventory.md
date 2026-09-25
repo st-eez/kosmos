@@ -4,7 +4,9 @@
 - Events come from three sources:
   - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
     in and out, moved, resized, Space and session changes. The watch list is always sent
-    whole.
+    whole. Their ids and payloads were measured on macOS 27 and are decoded in one place,
+    WindowServerEvent: a window event carries the window id first, and a Space membership
+    event a 64 bit Space id, then the window id.
   - One AX observer per app: creation, focus, main window, destroy and minimize.
   - NSWorkspace app lifecycle events, plus a process exit source for each app. The
     inventory alone observes an app's hide and unhide: it records the departure or return

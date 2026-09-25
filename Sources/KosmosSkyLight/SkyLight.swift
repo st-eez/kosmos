@@ -5,13 +5,12 @@ import os
 
 private let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "skylight")
 
-/// A window change reported by WindowServer on Kosmos's own connection. Event ids and
-/// payloads were measured on macOS 27 (wm-research discovery note, section 2).
+/// Ids and payloads measured on macOS 27 (docs/inventory.md).
 public enum WindowServerEvent: Sendable {
     case created(UInt32)
     case destroyed(UInt32)
-    case changed(UInt32)   // moved (806), resized (807), ordered in (815) or out (816)
-    /// Ordered above or below other windows (808), as when its app raises it.
+    case changed(UInt32)
+    /// As when its app raises it.
     case reordered(UInt32)
     case spaceMembership(UInt32)
     case spacesChanged     // a Space was created or destroyed, or the active Space changed
@@ -36,7 +35,6 @@ public enum WindowServerEvent: Sendable {
         }
     }
 
-    /// The window the event names, if any.
     public var window: UInt32? {
         switch self {
         case .created(let id), .destroyed(let id), .changed(let id), .reordered(let id), .spaceMembership(let id): id
@@ -45,7 +43,6 @@ public enum WindowServerEvent: Sendable {
     }
 }
 
-/// One window as WindowServer describes it.
 public struct WindowRow: Sendable, Equatable {
     public let id: UInt32
     public let pid: pid_t
@@ -53,8 +50,7 @@ public struct WindowRow: Sendable, Equatable {
     public let level: Int32
     public let orderedIn: Bool
     public let frame: CGRect
-    /// The radius WindowServer rounds the window's corners by, 0 for square corners or when
-    /// the read left the radii out (`SkyLight.rows`).
+    /// 0 for square corners, or when the read left the radii out.
     public let cornerRadius: CGFloat
 }
 
@@ -83,11 +79,8 @@ public enum SkyLight {
         }
     }
 
-    /// Calls `changed` on the main queue when Secure Input turns on (event 752) or off (753).
-    /// The events follow the session's state, whichever process changes it. Measured
-    /// September 24, 2026 with throwaway programs: another process turning it on and off sent
-    /// 752 and 753; with two overlapping holders, only the first enable and the last release
-    /// sent one; and a holder that exited without releasing sent 753 at its exit. Call once.
+    /// Calls `changed` on the main queue when Secure Input turns on or off, whichever process
+    /// changes it (docs/hotkeys.md). Call once.
     @MainActor public static func watchSecureInput(_ changed: @escaping @MainActor () -> Void) {
         secureInputChanged = changed
         for id: UInt32 in [752, 753] {
@@ -98,8 +91,7 @@ public enum SkyLight {
         }
     }
 
-    /// Replaces the list of windows whose per-window events (804, 806 to 808, 815, 816) are
-    /// delivered. WindowServer keeps only the latest list.
+    /// WindowServer keeps only the latest list, so each call names every window to watch.
     public static func watch(_ windows: [UInt32]) {
         var windows = windows
         let result = SLSRequestNotificationsForWindows(connection, &windows, Int32(windows.count))
@@ -114,8 +106,7 @@ public enum SkyLight {
     /// exists (`kosmos-probe destroyed-space`).
     public static func windows(in space: UInt64) -> [UInt32]? { kosmos_space_windows(space) as? [UInt32] }
 
-    /// Every window on every Space of every display. It can block during a Space
-    /// transition, so the inventory calls it off the main thread.
+    /// It can block during a Space transition, so call it off the main thread.
     public static func allWindowIDs() -> [UInt32] {
         let spaces = Displays.current().allSpaces
         var setTags: UInt64 = 0, clearTags: UInt64 = 0
@@ -124,10 +115,8 @@ public enum SkyLight {
         return ids ?? []
     }
 
-    /// Rows for the given windows. Windows that no longer exist are left out. `cornerRadii`
-    /// reads each window's corner radius too, which took a read of 2 windows from 14 to
-    /// 15 µs at the median (kosmos-probe borders), so only the inventory, whose rows the
-    /// borders use, reads them, and Slides' poll, which reads every 100 µs, does not.
+    /// Windows that no longer exist are left out. The radii add about 1 µs to a read of 2
+    /// windows, so only the inventory reads them (docs/borders.md).
     public static func rows(_ ids: [UInt32], cornerRadii: Bool = false) -> [WindowRow] {
         guard !ids.isEmpty, let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return [] }
         defer { query.release() }

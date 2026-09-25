@@ -25,7 +25,8 @@
   working.
 - WindowServer sends event 752 when Secure Input turns on and 753 when it turns off,
   whichever process changes it, and 753 when the last holder exits (measured September 24,
-  2026 with throwaway programs that turned it on and off from other processes). Kosmos
+  2026 with throwaway programs that turned it on and off from other processes). With two
+  overlapping holders, only the first enable and the last release sent one. Kosmos
   registers both on its own connection, then reads `IsSecureEventInputEnabled` and names
   the holder from the session dictionary. Nothing polls. The handler runs on the main
   actor when an event arrives, never inside a switch, though it can run right after one:
