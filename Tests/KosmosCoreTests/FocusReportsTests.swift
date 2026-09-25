@@ -294,3 +294,16 @@ import Testing
     reports.focusRequested(.window(1), app: 7, at: 20)
     #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: 21) == .retry)
 }
+
+@Test func onlyAVerdictThatDependsOnTheDepartureReadsIt() {
+    var reports = FocusReports<Int>()
+    var reads = 0
+    func departure(_ answer: Departure) -> Departure { reads += 1; return answer }
+    reports.focusRequested(.window(1), app: nil, at: 10)
+    #expect(reports.classify(.window(1), receivedAt: 11, onShownWorkspace: true, concealed: false, keyLeft: departure(.left)) == .echo)
+    #expect(reports.classify(.window(2), receivedAt: 12, onShownWorkspace: true, concealed: false, keyLeft: departure(.left)) == .adopt(2))
+    #expect(reads == 0)
+    #expect(reports.classify(.window(3), receivedAt: 13, onShownWorkspace: false, concealed: true, keyLeft: departure(.left)) == .reassert)
+    #expect(reports.classify(.none, receivedAt: 14, onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
+    #expect(reads == 2)
+}

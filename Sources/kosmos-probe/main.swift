@@ -82,6 +82,12 @@
 //                                   the window is watched. Prints every event in time order
 //                                   with the level changes, then counts the events of other ids
 //                                   near a change and at other times.
+//   kosmos-probe events [seconds]   Which SkyLight events reach Kosmos, and when: prints each
+//                                   event Kosmos registers, with the wall clock time the
+//                                   unified log uses, the window and its app, for 30 s by
+//                                   default. Every window is watched on the probe's own
+//                                   connection. Passive: it opens no window and takes no
+//                                   focus, so it runs beside Kosmos while switches are timed.
 import AppKit
 import CKosmos
 import KosmosCore
@@ -114,8 +120,9 @@ case "ax-timeout": axTimeout()
 case "key-stub": keyStub(arguments.dropFirst().first ?? "S", Array(arguments.dropFirst(2)))
 case "keying": keying(rounds: arguments.dropFirst().first.flatMap(Int.init) ?? 3)
 case "level": levels()
+case "events": events(seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 30)
 default:
-    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] | level [onscreen|opaque]")
+    print("usage: kosmos-probe barrier [cycles] | survive-kill | bar | destroyed-space | gone-space-recovery | fullscreen | departures | tabs [strip|keep] | reveal | displays | secure-input | ax-timeout | keying [rounds] | level [onscreen|opaque] | events [seconds]")
     exit(2)
 }
 
@@ -1232,4 +1239,50 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
         print("  event \(id): \(near) near a change, \(events.count - near) at other times")
     }
     if others.isEmpty { print("  none") }
+}
+
+@MainActor func events(seconds: Double) -> Never {
+    // SkyLight delivers events inside a running AppKit event loop, as in Kosmos.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    // The switch at the top runs before main.swift's globals below it are initialized.
+    eventAppNames = [:]
+    eventTime = DateFormatter()
+    eventTime.dateFormat = "HH:mm:ss.SSS"
+    for id in WindowServerEvent.ids {
+        _ = SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
+            let at = Date()
+            let bytes = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
+            let payload = bytes.prefix(16).map { String(format: "%02x", $0) }.joined()
+            let window = WindowServerEvent(id: id, payload: bytes)?.window
+            DispatchQueue.main.async { MainActor.assumeIsolated { printEvent(id, window: window, payload: payload, at: at) } }
+        }, id, nil)
+    }
+    var watched = SkyLight.allWindowIDs()
+    SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
+    print("watching \(watched.count) windows for \(seconds) s")
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
+    app.run()
+    exit(0)
+}
+
+/// Each app's name by pid, read once. Main thread only.
+nonisolated(unsafe) var eventAppNames: [pid_t: String] = [:]
+nonisolated(unsafe) var eventTime = DateFormatter()
+
+@MainActor func printEvent(_ id: UInt32, window: UInt32?, payload: String, at: Date) {
+    var line = "\(eventTime.string(from: at)) \(id)"
+    if let window {
+        let pid = SkyLight.rows([window]).first?.pid
+        let name = pid.map { pid in
+            if let name = eventAppNames[pid] { return name }
+            let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
+            eventAppNames[pid] = name
+            return name
+        } ?? "gone"
+        line += " window \(window) (\(name))"
+    } else {
+        line += " payload \(payload)"
+    }
+    print(line)
 }

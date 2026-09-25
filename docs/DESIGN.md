@@ -120,19 +120,26 @@ off the main thread).
 - Only WindowServer evidence or app exit removes a window. AX silence, AX errors and the
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
+- The inventory reads each process's activation policy once, since each read is a
+  synchronous LaunchServices call, and forgets it when the process's exit source fires. An
+  app that changes its policy while it runs keeps the one read first, as it keeps the
+  Accessibility worker Apps gave it at launch; observing activationPolicy with key-value
+  observing would follow a change. An app found regular only at its launch gets a sweep
+  for the windows left out before it.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
-  Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. Sweeps
-  asked for while one runs start one more when it ends, so a burst of Space events ends
-  with a sweep that started after the last of them. A window a sweep finds or loses that
-  no event reported is logged as "missed by events", and so is a known window whose
-  ordered in state or candidate status (level 0, no parent) a sweep corrects, so a gap in
-  macOS's notifications shows in the log. The unlock sweep counts none of the windows the
-  lock held back: one that arrived while locked, and one destroyed while locked or whose
-  app exited then. An event handled after a sweep, for a change its snapshot already had,
-  came late and still counts, so an event for a window within 1 s after a sweep counted it
-  is logged too, and the count can be corrected by eye. The 3 s sweep this replaced found
-  and lost none on 2026-09-24, over a day of use and live tests. It counted none of its
-  corrections, which it logged only at debug or info level.
+  Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. A workspace
+  switch posts no Space event, so it starts no sweep (`kosmos-probe events`, 40 switches
+  on 2026-09-24). Sweeps asked for while one runs start one more when it ends, so a burst
+  of Space events ends with a sweep that started after the last of them. A window a sweep
+  finds or loses that no event reported is logged as "missed by events", and so is a known
+  window whose ordered in state or candidate status (level 0, no parent) a sweep corrects,
+  so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
+  windows the lock held back: one that arrived while locked, and one destroyed while
+  locked or whose app exited then. An event handled after a sweep, for a change its
+  snapshot already had, came late and still counts, so an event for a window within 1 s
+  after a sweep counted it is logged too, and the count can be corrected by eye. The 3 s
+  sweep this replaced found and lost none on 2026-09-24, over a day of use and live tests.
+  It counted none of its corrections, which it logged only at debug or info level.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
   other app's window came or went. In three runs while other apps' windows came and went,
@@ -141,6 +148,14 @@ off the main thread).
   reorder, order change or Space change, or at the next sweep, which logs the change as
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
   level change is unmeasured, as the probe keeps its window invisible.
+- Open item: every switch posts 815 about twice for each watched window, including windows
+  the switch never touched. Kosmos watches only the windows it tracks, those of regular
+  apps. In 40 switches (`kosmos-probe events`, 2026-09-24) they got 278 of 815 and 41 of
+  808: Activity Monitor's, Ghostty's, Helium's and ChatGPT's windows. The probe watches
+  every window, so it also counted JankyBorders' (279 and 41) and Wispr Flow's (83), which
+  Kosmos never gets. Each event reads its window's row synchronously on the main thread,
+  about 0.8 ms a switch (33 of about 66 busy main thread samples). One query for every
+  window named in a run loop turn would cut that if it ever matters.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
@@ -250,6 +265,20 @@ off the main thread).
   that is not key, against 0.50 ms for the barrier, which also waits behind
   WindowManager.app. WindowServer applies a batch's operations in order, so a window
   seen out of the holding Space implies the add sent before its removal.
+- A batch's completion and the focus request after it run on the main actor, so work
+  queued there delays both. Three reads had kept the main actor busy after a switch. Each
+  app's activation policy is now read once (section 5.1), the departure of the window key
+  before a report only when its verdict needs it (5.4), and the pointer's target frame on
+  the focus queue (5.11). Live on 2026-09-24, 40 alternating switches between two
+  workspaces of one window each, back to back under the same load (load average 5 to 8):
+  main at 636a019 took 3.53 ms from keypress to the end at the median and 8.42 ms at most,
+  and the completion waited over 1 ms for the main actor in 12 switches; with the three
+  changes (367cd28), 3.75 and 10.25 ms, and 3 such waits, so the switch time is the same
+  within noise. Busy main thread samples in 40 switches fell from about 290 to about 66,
+  but the first sample's build still ran the 3 s sweep timer, whose sweeps caused its 6 to
+  10 ms stalls until 248f668 removed it. Half of the about 66 left are the 815 reads in
+  section 5.1. On a quiet machine, 53dc6af took 1.81 ms at the median, 2.21 ms at p90 and
+  2.50 ms at most, and the completion waited at most 0.39 ms.
 - A window with no ordinary Space goes to the current Space of the display that shows its
   workspace, else to the Space it had before its first hide if that display still has it,
   else to that display's first ordinary Space. A display missing from WindowServer's Space
@@ -427,6 +456,13 @@ off the main thread).
   cover the public path. If the app keys the requested window late, after the user chose
   another of its windows, that late report reads as the user's and pulls focus back, change
   6's bounce in the fallback alone.
+- Open item: a focus request reads WindowServer on the main thread to skip a window that
+  just left the screen (`leftScreen`). Right after a switch that read waits on
+  WindowServer's Space transaction: 29 of about 290 busy main thread samples in 40
+  switches on 2026-09-24. The focus queue could read it at FocusStart instead, off the
+  main thread and closer to the key call. That changes RequestFocus and FocusStart in
+  tla/Kosmos.tla, as the request would take a new generation even when the queue drops its
+  target, so it waits for the focus spec's merge.
 - Open item: a switch requested while a native fullscreen Space is on screen. The private
   path keys the target window but leaves the fullscreen Space on screen. On 2026-09-24 at
   00:37:39 Kosmos fronted Ghostty, and the display stayed on Helium's fullscreen Space
@@ -673,7 +709,9 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
 - The pointer follows focus the other way too. A command that focuses a window moves the
   pointer to its center unless the pointer is already inside it, and so does Command-Tab
   to a window that is not under the pointer. A click always happens under the pointer, so
-  it never moves it.
+  it never moves it. The focus queue moves the pointer right before it keys the window,
+  and reads the window's frame there, off the main thread; a request already stale when
+  the focus queue reaches it, or one naming a concealed window, moves nothing.
 - `focus-follows-mouse = true` turns it on, with ignored apps and the pause key as settings;
   the command `focus-follows-mouse on|off|toggle` switches it at run time.
 

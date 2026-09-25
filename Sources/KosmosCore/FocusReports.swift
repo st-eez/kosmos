@@ -159,17 +159,18 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     ///     so a click reaches them too. Otherwise a visible window of a workspace no display
     ///     shows is key only during a switch.
     ///   - miss: what `miss` said of the report.
-    ///   - keyLeft: whether the window key before this report has just left the screen. If
+    ///   - keyLeft: whether the window key before this report has just left the screen, read
+    ///     only when the verdict depends on it, as it can read WindowServer. If
     ///     it has, macOS keyed this window itself, so it is not a Command-Tab to follow;
     ///     Kosmos keeps its workspace and focuses it again (tla/Kosmos.tla, KeyLeft).
     public mutating func classify(_ key: KeyWindow, receivedAt stamp: Stamp, onShownWorkspace: Bool,
                                   concealed: Bool, recovered: Bool = false, miss: Miss = .none,
-                                  keyLeft: Departure) -> ReportVerdict {
+                                  keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if consumeEcho(key, receivedAt: stamp) { return .echo }
         if isStale(stamp) { return .reassert }
         // No key window: if the key window left, its departure focuses when this came
         // first.
-        guard case .window(let id) = key else { return keyLeft == .left ? .reassert : .ignore }
+        guard case .window(let id) = key else { return keyLeft() == .left ? .reassert : .ignore }
         // A miss is no one's choice: request the focus again, and after one retry accept the
         // key window, which Kosmos can adopt only on a shown workspace.
         switch miss {
@@ -179,7 +180,7 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
         }
         if onShownWorkspace { return .adopt(id) }
         guard concealed || recovered else { return .reassert }
-        switch keyLeft {
+        switch keyLeft() {
         case .left: return .reassert
         case .stayed: return .follow(id)
         case .unknown: return .undecided

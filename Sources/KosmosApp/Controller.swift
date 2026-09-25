@@ -463,11 +463,12 @@ final class Controller {
             // The window key before this report left the screen just now: macOS keyed this
             // window after that one closed, minimized or hid (DESIGN.md, section 5.4).
             // Concealing a window leaves it ordered in, so a concealed window counts only if
-            // it left too.
+            // it left too. classify reads it only when the verdict depends on it. After a
+            // switch the read waited on WindowServer's Space transaction.
             let placed = id.map { placedHidden.remove($0) != nil } ?? false
-            let keyLeft: Departure = placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed
             decidePlaced(KeyReport(key: reported, received: report.received, pid: report.pid, previous: previous,
-                                   concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss), keyLeft: keyLeft)
+                                   concealed: placed || id.map(hiding.isConcealed) ?? false, miss: miss),
+                         keyLeft: placed ? .stayed : previous.map { inventory.leftScreen($0) ? .left : .unknown } ?? .stayed)
         case .minimized(let id, true):
             depart([id])
         case .minimized(let id, false):
@@ -516,23 +517,23 @@ final class Controller {
 
     /// Decides the key window report of a window with a place. The kill switch counts it, and
     /// a report that is no echo answers the app's public requests (DESIGN.md, section 5.4).
-    private func decidePlaced(_ report: KeyReport, keyLeft: Departure) {
+    private func decidePlaced(_ report: KeyReport, keyLeft: @autoclosure () -> Departure) {
         let echo = reports.isEcho(report.key, receivedAt: report.received)
         misses.reported(report.key, pid: report.pid, receivedAt: report.received, echo: echo)
         if !echo { reports.publicRequestsAnswered(by: report.pid, receivedAt: report.received) }
-        decide(report, keyLeft: keyLeft)
+        decide(report, keyLeft: keyLeft())
     }
 
     /// Acts on a key window report. A report whose verdict depends on a departure that is
     /// not known yet is held until the departure arrives or the grace ends
     /// (tla/Kosmos.tla, Adopt and Hold).
-    private func decide(_ report: KeyReport, keyLeft: Departure) {
+    private func decide(_ report: KeyReport, keyLeft: @autoclosure () -> Departure) {
         let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
         // After a failed batch, recovery showed the windows of hidden workspaces, so a click
         // reaches them (needsResync).
         let verdict = reports.classify(report.key, receivedAt: report.received,
                                        onShownWorkspace: id.flatMap(session.workspace(of:)).map(session.isShown) ?? false,
-                                       concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft)
+                                       concealed: report.concealed, recovered: needsResync, miss: report.miss, keyLeft: keyLeft())
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
         // A newer activation of a window ends a held report. Kosmos's own echo and a report
         // of no key window leave it held.
@@ -710,7 +711,6 @@ final class Controller {
         // A window that just left the screen, before Kosmos heard: fronting it would
         // unminimize it or unhide its app. Its departure focuses.
         if case .window(let id) = target, inventory.leftScreen(id) { return }
-        if movePointer, case .window(let id) = target { centerPointer(on: id) }
         // The focus queue skips a target that is key already, checked when the request runs:
         // the key window last reported here can be older than a request still in flight.
         let pid: pid_t?
@@ -724,7 +724,7 @@ final class Controller {
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: focusQueue.killSwitch.isOn,
-                           concealed: concealed, generation: focusQueue.newGeneration(),
+                           concealed: concealed, movePointer: movePointer, generation: focusQueue.newGeneration(),
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
@@ -745,14 +745,6 @@ final class Controller {
         focusQueue.killSwitch.turnOff(.wrongWindows)
         controllerLog.fault("private focus keyed another window \(FocusMisses<ContinuousClock.Instant>.limit) times in a row; focus uses the public path")
         onFocusProblem?(focusProblem)
-    }
-
-    /// Moves the pointer to the window's center unless it is already inside the window,
-    /// as AeroSpace's `move-mouse window-lazy-center` does.
-    private func centerPointer(on window: WindowID) {
-        guard let frame = SkyLight.rows([window]).first?.frame, !frame.isEmpty,
-              let pointer = CGEvent(source: nil)?.location, !frame.contains(pointer) else { return }
-        CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     private func touch(_ window: WindowID) {
