@@ -140,7 +140,8 @@ func leavingAndReturningInAnyOrder(seed: UInt64) {
             let tiled = workspace.root.windows
             let window = tiled.randomElement(using: &random) ?? 0
             let direction = [Direction.left, .right, .up, .down].randomElement(using: &random)!
-            switch Int.random(in: 0..<7, using: &random) {
+            let amount = CGFloat(Int.random(in: -200...200, using: &random))
+            switch Int.random(in: 0..<12, using: &random) {
             case 0, 1:
                 if tiled.count < 10 {
                     workspace.insert(nextWindow)
@@ -150,9 +151,12 @@ func leavingAndReturningInAnyOrder(seed: UInt64) {
             case 3: workspace.joinWith(window, direction)
             case 4: workspace.toggleLayout(window)
             case 5: workspace.focus(window)
-            default:
-                let amount = CGFloat(Int.random(in: -200...200, using: &random))
-                workspace.resize(window, .smart, by: amount, in: screen, gaps: Gaps())
+            case 6: workspace.resize(window, .smart, by: amount, in: screen, gaps: Gaps())
+            case 7: workspace.swap(window, direction)
+            case 8: workspace.layout(window, direction.orientation)
+            case 9: workspace.moveEdge(window, direction, by: amount, in: screen, gaps: Gaps(), minimums: [:])
+            case 10: workspace.balanceSizes()
+            default: workspace.flattenWorkspaceTree()
             }
         }
     }
