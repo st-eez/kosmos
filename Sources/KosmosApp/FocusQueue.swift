@@ -44,12 +44,10 @@ final class FocusQueue: Sendable {
     ///
     /// Each side records the echo right before its own call that changes the key window, and
     /// never for the other's: `performing` runs on the main actor with a stamp and the path,
-    /// before any report of the change, which reaches main only after the change starts. The
-    /// key record's echo is an activation's (`act` in tla/Kosmos.tla) and a raise's a change
-    /// inside the front app (`note`). `dropped` gets that stamp when the call fails, and when
-    /// the raise after a key record is done, which forgets its record unless a report used it.
-    /// Recording when the request is made failed TLC: a request still queued took a click on
-    /// its window for its echo.
+    /// before any report of the change, which reaches main only after the change starts.
+    /// `dropped` gets that stamp when the call fails, and when the raise after a key record is
+    /// done, which forgets its record unless a report used it. Recording when the request is
+    /// made failed TLC: a request still queued took a click on its window for its echo.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
                  generation: UInt64,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
@@ -57,15 +55,15 @@ final class FocusQueue: Sendable {
         queue.async { [self] in
             let isCurrent = { @Sendable [self] in current.load(ordering: .relaxed) == generation }
             guard isCurrent(), !concealed else { return }
+            let raising: @Sendable (ContinuousClock.Instant) -> Void = { stamp in Self.onMain { performing(stamp, .raise) } }
+            let dropping: @Sendable (ContinuousClock.Instant) -> Void = { stamp in Self.onMain { dropped(stamp) } }
             let front = kosmos_front_pid() == pid
             if privately {
                 let stamp: ContinuousClock.Instant
                 switch key {
                 case .window(let id):
                     let request = KeyRequest(appWasFront: front)
-                    Self.wait(for: worker, id, isCurrent, request,
-                              performing: { stamp in Self.onMain { performing(stamp, .raise) } },
-                              dropped: { stamp in Self.onMain { dropped(stamp) } })
+                    Self.wait(for: worker, id, isCurrent, request, performing: raising, dropped: dropping)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     stamp = ContinuousClock.now
                 case .none:
@@ -80,12 +78,11 @@ final class FocusQueue: Sendable {
                     case .none: kosmos_make_key(pid, emptyWorkspace.window)
                     }
                 }
-                guard performed else { return Self.onMain { dropped(stamp) } }
+                guard performed else { return dropping(stamp) }
                 // `WorkerPost`: the key record left the window where it sits in its app's
                 // stacking order, and the app's worker raises it next.
                 if case .window(let id) = key {
-                    worker?.raiseAfterKeyRecord(id, performing: { stamp in Self.onMain { performing(stamp, .raise) } },
-                                                raised: { stamp in Self.onMain { dropped(stamp) } })
+                    worker?.raiseAfterKeyRecord(id, performing: raising, raised: dropping)
                 }
                 return
             }
@@ -93,7 +90,7 @@ final class FocusQueue: Sendable {
             case .window(let id):
                 worker?.focusPublicly(id, readFocus: front, isCurrent: isCurrent,
                                       performing: { stamp in Self.onMain { performing(stamp, .activation) } },
-                                      dropped: { stamp in Self.onMain { dropped(stamp) } })
+                                      dropped: dropping)
             case .none:
                 // Only the private path keys Kosmos's own window: an accessory app that
                 // activated itself became front in 0 of 10 trials. With that path off after a

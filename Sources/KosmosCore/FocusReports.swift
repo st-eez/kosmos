@@ -110,10 +110,10 @@ public struct FocusReports<Stamp: Comparable & Sendable>: Sendable {
     /// Consumes the expectation `key` answers, if any. An echo names the requested window and
     /// arrives after the request. Earlier expectations are dropped with it, so one whose echo
     /// never comes, as when an app the key record activated keys another window itself
-    /// before reporting the requested one, swallows no later report; a report that matches
-    /// none leaves them all. A report from an
-    /// app that is not front calls this alone: it is no key window report, but it can still
-    /// be Kosmos's echo (tla/Kosmos.tla, ObserveSplit).
+    /// before reporting the requested one, goes once a later request's echo comes; a report
+    /// that matches none leaves them all. A report from an app that is not front calls this
+    /// alone: it is no key window report, but it can still be Kosmos's echo (tla/Kosmos.tla,
+    /// ObserveSplit).
     ///
     /// The ceiling: each app reports on its own threads, so on a fast sweep of the pointer
     /// across apps an earlier request's echo can arrive after a later one's, find its

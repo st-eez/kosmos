@@ -2,9 +2,7 @@
 /// take it (DESIGN.md, section 5.4). It follows the split model in tla/Kosmos.tla step for
 /// step, and each method names the action it implements. Inside the front app only the
 /// worker's raise keys a window, and for a background app only the queue's key record does.
-/// Each side records the echo right before its own call that changes the key window. Only
-/// the raise after a key record, which changes it only when the user keyed another window of
-/// the app first, has its record forgotten once the raise is done.
+/// Each side records the echo right before its own call that changes the key window.
 ///
 /// - `FocusStart` (FocusQueue.request): the queue ends a stale or concealed request, reads
 ///   whether the target's app is front, and hands the app's worker its job.
