@@ -243,7 +243,6 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
 
     // The events WindowServer sends for T and C at each step: moved (806), resized (807),
     // reordered (808), ordered in (815) and out (816).
-    borderEvents = []
     stepEvents = []
     for id: UInt32 in [806, 807, 808, 815, 816] {
         SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { id, data, length, _, _ in
@@ -492,8 +491,41 @@ func cornerRadii(_ ids: [UInt32]) -> [UInt32: [Double]] {
     }
 }
 
-nonisolated(unsafe) var borderEvents: Set<UInt32> = []
 nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
+
+/// Moves the borders after WindowServer's change events, as Kosmos does: the events of one
+/// run loop turn, one read of their rows, and each border placed at its window's frame.
+@MainActor final class Follower {
+    static var current: Follower?
+    var on = false
+    var updates = 0, updateTime = 0.0
+    private var pending: Set<UInt32> = []
+    private let borders: [UInt32: ProbeBorder]
+    private let radii: [UInt32: [Double]]
+    private let color: CGColor
+
+    init(borders: [UInt32: ProbeBorder], radii: [UInt32: [Double]], color: CGColor) {
+        self.borders = borders
+        self.radii = radii
+        self.color = color
+    }
+
+    func heard(_ window: UInt32) {
+        guard on else { return }
+        if pending.isEmpty { DispatchQueue.main.async { MainActor.assumeIsolated { self.flush() } } }
+        pending.insert(window)
+    }
+
+    private func flush() {
+        let began = CACurrentMediaTime()
+        for row in SkyLight.rows(Array(pending)) {
+            borders[row.id]?.place(around: appKitRect(row.frame), radius: CGFloat(radii[row.id]?.first ?? 0), color: color)
+        }
+        pending = []
+        updateTime += CACurrentMediaTime() - began
+        updates += 1
+    }
+}
 
 @MainActor func bordersCPU(relayouts: Int) -> Never {
     let app = NSApplication.shared
@@ -511,7 +543,6 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
         return pid_t(String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             .split(separator: "\n").first ?? "")
     }
-    borderEvents = []
     let targets = BorderTargets(4)
     let windowServer = pid("WindowServer"), janky = pid("borders")
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
@@ -519,31 +550,32 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     print("\(relayouts) relayouts of 4 windows, \(interval) s apart; JankyBorders \(janky.map { "runs, pid \($0)" } ?? "is not running")")
     wait(0.5)
 
+    let rows = Dictionary(SkyLight.rows(targets.windows).map { ($0.id, $0) }) { first, _ in first }
+    let radii = cornerRadii(targets.windows)
+    let borders = Dictionary(uniqueKeysWithValues: targets.windows.map { ($0, ProbeBorder()) })
+    let follower = Follower(borders: borders, radii: radii, color: color)
+    Follower.current = follower
     // Move and resize events for the child's windows, on the probe's own connection.
     for id: UInt32 in [806, 807] {
         SLSRegisterConnectionNotifyProc(SLSMainConnectionID(), { _, data, length, _, _ in
             guard let data, length >= 4 else { return }
             let window = data.loadUnaligned(as: UInt32.self)
-            DispatchQueue.main.async { borderEvents.insert(window) }
+            DispatchQueue.main.async { MainActor.assumeIsolated { Follower.current?.heard(window) } }
         }, id, nil)
     }
     var watched = targets.windows
     SLSRequestNotificationsForWindows(SLSMainConnectionID(), &watched, Int32(watched.count))
-
-    let rows = Dictionary(SkyLight.rows(targets.windows).map { ($0.id, $0) }) { first, _ in first }
-    let radii = cornerRadii(targets.windows)
-    let borders = Dictionary(uniqueKeysWithValues: targets.windows.map { ($0, ProbeBorder()) })
 
     struct Reading { var probe = 0.0, child = 0.0, windowServer = 0.0, janky = 0.0 }
     func read() -> Reading {
         Reading(probe: rusageCPU(getpid()) ?? 0, child: rusageCPU(targets.process.processIdentifier) ?? 0,
                 windowServer: windowServer.flatMap(psCPU) ?? 0, janky: janky.flatMap(rusageCPU) ?? 0)
     }
+    func each(_ a: Double, _ b: Double) -> String { String(format: "%6.2f", (b - a) / Double(relayouts)) }
     var layout = 0
-    var updateTime = 0.0, updates = 0
-    /// Runs the relayouts, `follow` moving the borders at each change event, and returns the
-    /// CPU spent meanwhile.
-    func run(_ mode: String, follow: Bool, slide: SlideStepper? = nil) {
+    /// Runs the relayouts, the borders following each change event while the follower is on,
+    /// or stepped by `slide`, and prints the CPU each process spent per relayout.
+    func run(_ mode: String, slide: SlideStepper? = nil) {
         let before = read()
         let started = ContinuousClock.now
         for _ in 0..<relayouts {
@@ -552,10 +584,10 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
                 // The border slides from where it shows to the new frame, as the window would.
                 let next = targetLayout(layout, count: 4, in: builtInScreen().visibleFrame)
                 let top = NSScreen.screens[0].frame.height
+                func flipped(_ rect: NSRect) -> CGRect { CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height) }
                 for (id, frame) in zip(targets.windows, next) {
                     let border = borders[id]!
                     let from = border.window.frame.insetBy(dx: 2, dy: 2)
-                    func flipped(_ rect: NSRect) -> CGRect { CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height) }
                     slide.add(border, .move(from: flipped(from), to: flipped(frame), at: CACurrentMediaTime()),
                               radius: CGFloat(radii[id]?.first ?? 0))
                 }
@@ -563,22 +595,9 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
             }
             targets.send("layout \(layout)")
             _ = targets.line()
-            let deadline = Date(timeIntervalSinceNow: interval)
-            while Date() < deadline {
-                pumpEvents(min(deadline.timeIntervalSinceNow, 0.002))
-                guard follow, !borderEvents.isEmpty else { continue }
-                let changed = Array(borderEvents)
-                borderEvents = []
-                let began = CACurrentMediaTime()
-                for row in SkyLight.rows(changed) {
-                    borders[row.id]?.place(around: appKitRect(row.frame), radius: CGFloat(radii[row.id]?.first ?? 0), color: color)
-                }
-                updateTime += CACurrentMediaTime() - began
-                updates += 1
-            }
+            wait(interval)
         }
         let after = read(), seconds = elapsed(started) / 1000
-        func each(_ a: Double, _ b: Double) -> String { String(format: "%6.2f", (b - a) / Double(relayouts)) }
         print("\(mode.padding(toLength: 34, withPad: " ", startingAt: 0)) ms CPU per relayout: probe \(each(before.probe, after.probe)), " +
               "child \(each(before.child, after.child)), WindowServer \(each(before.windowServer, after.windowServer)), " +
               "JankyBorders \(janky == nil ? "-" : each(before.janky, after.janky)) (\(String(format: "%.1f", seconds)) s)")
@@ -588,11 +607,10 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     let rest = read()
     wait(Double(relayouts) * interval)
     let rested = read()
-    func each(_ a: Double, _ b: Double) -> String { String(format: "%6.2f", (b - a) / Double(relayouts)) }
     print("\("rest, per relayout's time".padding(toLength: 34, withPad: " ", startingAt: 0)) ms CPU: probe \(each(rest.probe, rested.probe)), " +
           "child \(each(rest.child, rested.child)), WindowServer \(each(rest.windowServer, rested.windowServer)), " +
           "JankyBorders \(janky == nil ? "-" : each(rest.janky, rested.janky))")
-    run("relayouts, no border of the probe's", follow: false)
+    run("relayouts, no border of the probe's")
     for (id, border) in borders {
         border.place(around: appKitRect(rows[id]!.frame), radius: CGFloat(radii[id]?.first ?? 0), color: color)
         border.window.order(.above, relativeTo: Int(id))
@@ -601,11 +619,14 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     for row in SkyLight.rows(targets.windows) {
         borders[row.id]?.place(around: appKitRect(row.frame), radius: CGFloat(radii[row.id]?.first ?? 0), color: color)
     }
-    run("borders follow change events", follow: true)
-    print(String(format: "  %d updates on the main thread, %.3f ms each on average", updates, updateTime * 1000 / Double(max(updates, 1))))
+    follower.on = true
+    run("borders follow change events")
+    follower.on = false
+    print(String(format: "  %d updates on the main thread, %.3f ms each on average", follower.updates,
+                 follower.updateTime * 1000 / Double(max(follower.updates, 1))))
     for inPlace in [false, true] {
         let stepper = SlideStepper(color: color, inPlace: inPlace)
-        run(inPlace ? "borders slide, layer steps" : "borders slide, window steps", follow: false, slide: stepper)
+        run(inPlace ? "borders slide, layer steps" : "borders slide, window steps", slide: stepper)
         print(String(format: "  %d border steps, %.3f ms each on average", stepper.steps, stepper.stepTime * 1000 / Double(max(stepper.steps, 1))))
     }
     for border in borders.values { border.window.orderOut(nil) }
