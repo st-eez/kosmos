@@ -59,7 +59,7 @@ prefix.
   permissions, and launch at login.
   Code: `KosmosApp/StatusItem.swift`, `KosmosApp/Onboarding.swift`,
   `KosmosApp/LaunchAtLogin.swift`.
-- [distribution.md](distribution.md): the release zip and Homebrew cask, signing,
+- [distribution.md](distribution.md): the planned release zip and Homebrew cask, signing,
   notarization and the app icon.
   Code: `script/bundle.sh`, `script/install.sh`, `script/test-install.sh`,
   `script/icon.swift`, `Resources/`, `KosmosIPC/Version.swift`.
