@@ -651,10 +651,9 @@ final class Controller {
         case .backgroundFocus(let id):
             // An app that is not front changed its own focused window, as after AXRaise in
             // it, or its activation read ran after it lost the front: no key window report,
-            // neither the key window last heard of nor the last report taken. It can still be
-            // Kosmos's echo, and is otherwise ignored (tla/README.md, change 17). It leaves
-            // the kill switch's count alone: a raise's report says nothing about the key
-            // record.
+            // and never the key window last heard of. It can still be Kosmos's echo, and is
+            // otherwise ignored (tla/README.md, change 17). It leaves the kill switch's count
+            // alone: a raise's report says nothing about the key record.
             guard !sessionLocked else { return }
             _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .none, receivedAt: report.received)
         case .focusedWindowChanged(let id):
@@ -766,16 +765,16 @@ final class Controller {
                                        onShownWorkspace: id.flatMap(session.workspace(of:)).map(session.isShown) ?? false,
                                        concealed: report.concealed, recovered: needsResync, keyLeft: keyLeft())
         controllerLog.debug("focus report \(String(describing: report.key), privacy: .public): \(String(describing: verdict), privacy: .public)")
-        // A newer activation of a window ends a held report. Kosmos's own echo, an overtaken
-        // report and a report of no key window leave it held.
-        if id != nil, verdict != .echo, verdict != .overtaken, let ended = held.end() {
+        // A newer activation of a window ends a held report. Kosmos's own echo and a report
+        // of no key window leave it held.
+        if id != nil, verdict != .echo, let ended = held.end() {
             controllerLog.notice("""
                 held focus report \(String(describing: ended.key), privacy: .public): replaced by \
                 \(String(describing: report.key), privacy: .public) after \(Self.ms(ContinuousClock.now - ended.received), privacy: .public) ms
                 """)
         }
         switch verdict {
-        case .echo, .overtaken:
+        case .echo:
             break
         case .ignore:
             // Another app has no key window while an empty workspace has the focus, and no key

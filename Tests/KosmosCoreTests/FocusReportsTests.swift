@@ -231,27 +231,3 @@ import Testing
     #expect(reports.classify(.none, receivedAt: 14, onShownWorkspace: false, concealed: false, keyLeft: departure(.left)) == .reassert)
     #expect(reads == 2)
 }
-
-// Change 19: reports of different apps arrive out of order.
-
-@Test func aReportStampedBeforeTheLastOneTakenForTheUsersIsOvertaken() {
-    var reports = FocusReports<Int>()
-    // The user clicked window 1 of one app, then window 2 of another, and the first app's
-    // report came last.
-    #expect(reports.classify(.window(2), receivedAt: 12, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(2))
-    #expect(reports.classify(.window(1), receivedAt: 11, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .overtaken)
-    // A follow counts too.
-    #expect(reports.classify(.window(3), receivedAt: 14, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(3))
-    #expect(reports.classify(.window(4), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .overtaken)
-    // Kosmos's own echo is still one.
-    reports.focusRequested(.window(5), app: nil, at: 10)
-    #expect(reports.classify(.window(5), receivedAt: 13, onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
-}
-
-@Test func aReportKosmosReassertsOverDoesNotOvertakeAnOlderOne() {   // change 20
-    var reports = FocusReports<Int>()
-    // A visible window of a hidden workspace, key mid-switch, then an older report of a
-    // concealed window, which still follows.
-    #expect(reports.classify(.window(5), receivedAt: 12, onShownWorkspace: false, concealed: false, keyLeft: .stayed) == .reassert)
-    #expect(reports.classify(.window(3), receivedAt: 11, onShownWorkspace: false, concealed: true, keyLeft: .stayed) == .follow(3))
-}

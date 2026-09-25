@@ -477,15 +477,10 @@ off the main thread).
   - A report from an app that is not the front process, at the notification's callback or
     when the app answers the activation read, consumes an echo it matches and is otherwise
     ignored: background apps report windows they open, and a raise in a background app
-    reports a focus change. Such a report is neither the key window Kosmos last heard of
-    nor the last report taken (change 17). The ceiling: when an older request of Kosmos's
+    reports a focus change. Such a report is never the key window Kosmos last heard of
+    (change 17). The ceiling: when an older request of Kosmos's
     fronts another app before an activation read runs, the user's activation of the read's
     app, as a Command-Tab, is lost (`split-user-actcheck`; Deferred, below).
-  - A report stamped before the last report Kosmos adopted or followed was overtaken by
-    it: the user clicked a window of one app, then of another, and the first app's report
-    came last (change 19). A report that only made Kosmos request its intent again does
-    not count, or it overtook an older report that still had to be followed (change 20,
-    `split-user-reasserttakes`).
   - A click or Command-Tab received before the latest command is stale. The command wins,
     and its focus is requested again.
   - A window on a workspace that a display shows becomes the focus intent, and its
@@ -510,9 +505,8 @@ off the main thread).
     change 24).
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
-    window key before it. A later report of a window that is no echo and was not overtaken
-    replaces it, even one stamped before the held report (Deferred, below). Every held
-    report logs its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
+    window key before it. A report of another window replaces it. Every held report logs
+    its outcome. A Command-Tab after that report follows as usual, 100 ms late. This
     happened live: Command-H on the only window of workspace 2 took Kosmos to workspace
     1, where macOS keyed Ghostty.
   - No report is taken for a miss of Kosmos's request. The miss rule took a report that
@@ -791,11 +785,16 @@ off the main thread).
     that second, with no report of a next key window, reads as macOS's re-key, and Kosmos
     keeps its workspace. The live evidence: a Command-Tab to another workspace ignored just
     after the key window closed or minimized.
-  - A report stamped before a held report, overtaken by it (change 21). Without it, an
-    older report of another app arriving late ends the held report as a newer activation
-    and replaces it. The split configs found the race, and none keeps the old rule. The
-    live evidence: a held report's log line "replaced by" naming a report stamped before
-    it.
+  - Reports overtaken by a newer one (changes 19 to 21). A report stamped before the last
+    report Kosmos adopted or followed is ignored, as is one stamped before a held report,
+    which it would otherwise end and replace: the user clicked a window of one app, then of
+    another, and the first app's report came last. It comes only with the rule above that a
+    notification of Kosmos's key record only joins that record. Without it, one of the two
+    reports of Kosmos's own activation is adopted and counts as the last report taken, and
+    a Command-Tab of the user's whose notification arrives after it is dropped. The live
+    evidence: a late older report adopted, as focus going back to a window the user left,
+    with its report logged after the report of the window the user chose next, or a held
+    report's log line "replaced by" naming a report stamped before it.
 
 ### 5.5 Tree
 
