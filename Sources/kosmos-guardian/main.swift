@@ -38,8 +38,7 @@ func watch(_ pid: Int32) -> Never {
     recover(printing: false)
 }
 
-/// Runs recovery until it is final, every 2 s for about 30 s: without launch at login, no
-/// other recovery comes until Kosmos is started again.
+/// Retries for about 30 s, freeing the lock a starting Kosmos waits 3 s for (docs/overview.md).
 func recover(printing: Bool) -> Never {
     let deadline = ContinuousClock.now + .seconds(30)
     while true {
@@ -51,8 +50,6 @@ func recover(printing: Bool) -> Never {
     }
 }
 
-/// One recovery, under the lock. The lock is released between attempts, since a starting
-/// Kosmos waits only 3 s for it; one that took it runs recovery itself.
 func attempt() -> Recovery.Outcome {
     do {
         guard let lock = try FileLock(KosmosFiles.lock) else {
