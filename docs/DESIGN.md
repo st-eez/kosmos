@@ -329,6 +329,27 @@ off the main thread).
   another display, the app's windows concealed before keep the membership they had until
   they are concealed again. The per-app tracking and the membership job outside switches
   of commit a0f9e6d (branch `switch`) would update them, if the desk shows the case.
+- Known limit: Mission Control shows each concealed window that keeps its ordinary Space
+  as an empty placeholder with its app's icon, and Kosmos leaves it so. Stripping every
+  concealed window takes away the ordinary Space that puts it there, at the switch cost
+  measured above, 2.6 to 33.2 ms against 0.7 to 5.0 ms. Stripping only while Mission
+  Control is open needs a signal that macOS 27 does not send (`kosmos-probe
+  mission-control`, 26A428, September 24 and 25, 2026):
+  - The Dock accepted yabai's four notifications (AXExposeShowAllWindows,
+    AXExposeShowFrontWindows, AXExposeShowDesktop and AXExposeExit, yabai
+    src/mission_control.c) and posted none while Mission Control opened by swipe and by
+    Control-Up, or while App Exposé opened. It refused the two controls, AXMenuOpened and
+    AXWindowCreated, with kAXErrorNotificationUnsupported (-25207), so no notification
+    confirmed that the observer receives any at all.
+  - WindowManager.app, which holds Mission Control's classes and the same four names on
+    macOS 27, refused all six with -25207.
+  - WindowServer event 1204, which yabai reads for Mission Control before macOS 12,
+    registered and never arrived.
+  - In both runs two windows that were not the probe's stayed in the holding Space after
+    the probe's windows left it. A live window with a neighbouring id was WindowManager's
+    "App Icon Window" at layer 17, so WindowManager draws the placeholders as windows of
+    its own and adds them to the holding Space. In the second run WindowServer posted no
+    event 1325 or 1326 for them.
 
 ### 5.4 Focus
 
