@@ -324,7 +324,7 @@ final class Controller {
             reports.commandExecuted(receivedAt: received)
             // A focus in a direction reads floating windows where the inventory last heard
             // them, as the pointer's center does, so nothing waits on WindowServer.
-            if let plan = session.perform(command, frames: inventory.windows.mapValues(\.frame)) {
+            if let plan = session.perform(command, frame: { [inventory] in inventory.windows[$0]?.frame }) {
                 execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: command, from: source))
             }
             return (0, "")

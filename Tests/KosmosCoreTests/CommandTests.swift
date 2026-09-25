@@ -87,7 +87,7 @@ import Testing
     for (tree, floating, frames, tiled) in cases {
         var workspace = Workspace(tree)
         workspace.floating = floating
-        #expect(workspace.withFloatingTiled(frames, in: screen, gaps: deskGaps, minimums: [:]).tree == tiled, "\(frames)")
+        #expect(workspace.withFloatingTiled({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:]).tree == tiled, "\(frames)")
     }
 }
 
