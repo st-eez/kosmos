@@ -53,13 +53,18 @@
     no frame. A window already minimized, hidden or in fullscreen when Kosmos admits it,
     as at launch, is parked at once on the workspace it joins.
   - A window its app orders out and keeps, as a closed NSWindowController window, parks
-    as a minimized one does, its focus moves on as [focus.md](focus.md) says for a window
-    closed and kept, and it returns when the app orders it in again. Kosmos takes a
-    managed window ordered out for none of the other reasons as one, and looks at it as
-    soon as the read that saw its order-out is applied with no other read of window rows
-    under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A conceal
-    leaves a window ordered in (`kosmos-probe reveal`). Before this, the look came a
-    pairing window, 250 ms, after the order-out, and Activity Monitor's Command-W parked
+    as a minimized one does, and its focus moves on as [focus.md](focus.md) says for a
+    window closed and kept. When the app orders it in again it opens as a new window does
+    (`Session.reopen`): it leaves its parked place, joins the focused workspace or its
+    rule's, and keeps the minimum size Kosmos learned for it. To the user a closed window
+    is closed, and in Omarchy reopening makes a new window on the current workspace.
+    Before this, Activity Monitor closed with Command-W on workspace 3 came back there
+    when reopened from workspace 5 (live, September 25, 2026). Kosmos takes a managed
+    window ordered out for none of the other reasons as closed and kept, and looks at it
+    as soon as the read that saw its order-out is applied with no other read of window
+    rows under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A
+    conceal leaves a window ordered in (`kosmos-probe reveal`). Before this, the look came
+    a pairing window, 250 ms, after the order-out, and Activity Monitor's Command-W parked
     257 and 267 ms after it (live log, September 25, 2026).
   - A deselected tab is not one: its switch has paired by the look, and it left the
     session. A switch's two halves came 0.2 ms apart (`kosmos-probe tabs`), and a read took
@@ -87,8 +92,10 @@
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize
     reported after the look changes the window's reason, and it returns when restored.
-    The ceiling: a hide reported after the look leaves the window parked as closed and
-    kept, to return a pairing window after its own order-in rather than with its app. The
+    The ceiling: after a hide whose report lands after the look, the app's windows park
+    as closed and kept, and when the app unhides they reopen on the focused workspace, or
+    their rule's, instead of going back to their places. The log shows it as a "closed
+    and kept by its app: parked" line for each window before the app's "hid" line. The
     upgrade path is for the hide to take its app's windows that parked as closed and kept
     within the departure bound.
   - A tab whose place a new tab claims before Kosmos admits it waits for that admission
@@ -178,9 +185,9 @@
     still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It
     floats when a rule floats its app, and the workspace a rule names does not apply to it.
-    A window its app had closed and kept returns to its place, and Kosmos follows it, so
-    a reopened Settings window returns 250 ms late. Merge All Windows parks the merged
-    windows that way, and selecting one's tab brings it to the group's place.
+    A window its app had closed and kept opens again as a new window, so a reopened
+    Settings window opens 250 ms late. Merge All Windows parks the merged windows that
+    way, and selecting one's tab brings it to the group's place.
   - Kosmos does not read the AXTabGroup of the selected tab. Frames tell the cases seen
     so far apart at no cost, and a false switch now needs two windows of one app with one
     frame, one leaving and one arriving within 250 ms. The AXTabs of the incoming window

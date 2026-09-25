@@ -54,6 +54,13 @@ public enum AdmissionFocus: Equatable, Sendable {
     /// The window was key before it had a place, on a shown workspace: it becomes the focus
     /// there.
     case adopt
+    /// The window's place is on a shown workspace, and its app has not keyed it yet. A key
+    /// window report of it within a second of the admission is its app keying the window
+    /// it opened, as a launch does that keys its first window more than a second after the
+    /// launcher's key, past the Command-Tab test's second (ActivationInput). Adopting it
+    /// brings the pointer as `adopt` does (docs/focus-follows-mouse.md). A window there at
+    /// launch waits for nothing.
+    case awaitKey
     /// The window's place is on a hidden workspace. Its key window report, one that waited
     /// for the place or one that comes before its conceal completes, is decided as one of a
     /// concealed window whose key window before it stayed, which Kosmos follows as it
@@ -70,7 +77,7 @@ public enum AdmissionFocus: Equatable, Sendable {
     ///   - locked: the session is locked, and Kosmos ignores focus reports.
     public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
         guard !locked, !parked else { return .none }
-        if shown { return keyed ? .adopt : .none }
+        if shown { return keyed ? .adopt : atLaunch ? .none : .awaitKey }
         return atLaunch ? .none : .placedHidden
     }
 }

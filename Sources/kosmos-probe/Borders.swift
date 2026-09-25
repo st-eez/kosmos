@@ -124,8 +124,8 @@ final class BorderTargets {
 }
 
 /// A border window as Kosmos makes one: borderless, clear, click-through, out of the window
-/// cycle and Mission Control, and never key. The ring is a layer's border, `width / 2 + 1`
-/// wide, from half the width outside the target's frame to 1 point inside it, its corners
+/// cycle and Mission Control, and never key. The ring is a layer's border, `width / 2`
+/// wide, from half the width outside the target's frame in to its edge, its corners
 /// concentric with the target's.
 @MainActor final class ProbeBorder {
     let window: NSWindow
@@ -158,7 +158,7 @@ final class BorderTargets {
         window.setFrame(outer, display: false)
         ring.frame = CGRect(origin: .zero, size: outer.size)
         ring.cornerRadius = radius + width / 2
-        ring.borderWidth = width / 2 + 1
+        ring.borderWidth = width / 2
         ring.borderColor = color
         CATransaction.commit()
     }
@@ -278,13 +278,9 @@ final class BorderTargets {
     wait(0.2)
     print(String(format: "100 more orders above T: %.3f ms median, %.3f ms at most; ", percentile(orders, 0.5), orders.max()!) + events())
 
-    // Hit tests: 0.5 pt inside T's left edge, under the ring's inner point, and 1 pt
-    // outside it, under the ring alone.
-    let inside = NSPoint(x: frame.minX + 0.5, y: frame.midY), outside = NSPoint(x: frame.minX - 1, y: frame.midY)
-    for (label, point) in [("inside T under the ring", inside), ("outside T under the ring", outside)] {
-        let hit = UInt32(NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0))
-        print("hit test \(label): \(hit == b ? "B" : hit == t ? "T" : String(hit))")
-    }
+    // Hit test 1 pt outside T's left edge, under the ring.
+    let hit = UInt32(NSWindow.windowNumber(at: NSPoint(x: frame.minX - 1, y: frame.midY), belowWindowWithWindowNumber: 0))
+    print("hit test outside T under the ring: \(hit == b ? "B" : hit == t ? "T" : String(hit))")
 
     // Spaces as the border is ordered out and in.
     func spaces(_ window: UInt32) -> [UInt64] { kosmos_window_spaces(window) as? [UInt64] ?? [] }

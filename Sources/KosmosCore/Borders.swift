@@ -2,11 +2,12 @@ import CoreGraphics
 
 /// The config's `borders`: Kosmos draws a border around each tiled and floating window on
 /// screen, as Omarchy's Hyprland does and JankyBorders did (docs/borders.md). The defaults
-/// draw a 4 point line in the macOS accent color around the focused window alone.
+/// draw a 2 point ring outside the focused window's edge (`width` 4) in the macOS accent
+/// color, and none around the others.
 public struct BorderSettings: Equatable, Sendable {
-    /// The width of the line along the window's edge, centered on the edge as JankyBorders
-    /// draws its `width`: the outer half lies outside the window, and of the inner half only
-    /// the point next to the edge shows, over the window's own edge.
+    /// JankyBorders' `width`: its line is centered on the window's edge, below the window,
+    /// which covers the inner half. The border is the outer half, from the window's edge
+    /// outward by half the width.
     public var width: Double
     /// The focused window's color, or nil for the macOS accent color.
     public var active: BorderColor?
@@ -58,10 +59,10 @@ public struct BorderColor: Equatable, Sendable {
 public struct Border: Equatable, Sendable {
     /// The ring's outer edge.
     public var ring: CGRect
-    /// The outer edge's corner radius. The inner edge's is `cornerRadius - lineWidth`, so
-    /// both are concentric with the window's corners.
+    /// The outer edge's corner radius. The inner edge's is `cornerRadius - lineWidth`, the
+    /// window's own.
     public var cornerRadius: CGFloat
-    /// The ring's width, from its outer edge in.
+    /// The ring's width, from its outer edge in to the window's edge.
     public var lineWidth: CGFloat
     public var color: BorderColor
     /// The display that holds the largest part of the window, where the border shows.
@@ -82,8 +83,7 @@ public struct Border: Equatable, Sendable {
         let half = CGFloat(width) / 2
         ring = frame.insetBy(dx: -half, dy: -half)
         cornerRadius = radius > 0 ? radius + half : 0
-        // JankyBorders keeps 1 point of the inner half, over the window's own edge.
-        lineWidth = half + min(half, 1)
+        lineWidth = half
         self.color = color
         self.display = display.id
         displayFrame = display.frame

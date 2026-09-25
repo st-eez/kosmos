@@ -338,9 +338,14 @@ import Testing
     // there, at launch too.
     #expect(decide(shown: true) == .adopt)
     #expect(decide(shown: true, atLaunch: true) == .adopt)
-    #expect(decide(keyed: false, shown: true) == .none)
-    // Kosmos's launch sweep, a parked window and a locked session follow nothing.
+    // One its app has not keyed yet waits for its key there, as after a slow launch.
+    #expect(decide(keyed: false, shown: true) == .awaitKey)
+    // Kosmos's launch sweep, a parked window and a locked session follow nothing and wait
+    // for no key.
     #expect(decide(atLaunch: true) == .none)
+    #expect(decide(keyed: false, shown: true, atLaunch: true) == .none)
     #expect(decide(parked: true) == .none)
+    #expect(decide(keyed: false, shown: true, parked: true) == .none)
     #expect(decide(locked: true) == .none)
+    #expect(decide(keyed: false, shown: true, locked: true) == .none)
 }
