@@ -180,7 +180,12 @@
     as when Finder opens several tabs or Command-T is pressed twice.
   - Closing the selected tab is a switch. When the destroy comes before the next tab, the
     closed tab's place waits the pairing window for it, if the app has windows ordered
-    out, in native fullscreen too. Closing the group's last tab is a close.
+    out, in native fullscreen too. Closing the group's last tab is a close. A switch in
+    the meantime leaves the closed tab out of its batch. A batch that named it failed
+    before it sent anything, as WindowServer has no row to record the window by, and
+    recovery showed every concealed window. On September 25, 2026 the bench stub quit with
+    windows closed and kept, the two windows it destroyed before those waited so, and a
+    switch 0.2 s later failed that way.
   - A window ordered in with no tab leaving is back after the pairing window if it is
     still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It
