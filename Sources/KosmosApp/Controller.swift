@@ -126,8 +126,8 @@ final class Controller {
             if !animations { slides?.endAll("as animations turned off") }
         }
     }
-    /// The config's borders, or nil while they are off (docs/borders.md).
-    var borders: BorderSettings? {
+    /// The config's borders, or nil while `borders = false` turns them off (docs/borders.md).
+    var borders: BorderSettings? = BorderSettings() {
         didSet { if borders != oldValue { updateBorders() } }
     }
     private let borderWindows = Borders()
@@ -158,6 +158,7 @@ final class Controller {
             self?.updateBorders()
         }
         inventory.onReordered = { [weak self] id in self?.borderWindows.raise(id) }
+        borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         // AppKit calls a global monitor's handler on the main thread.
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let point = event.cgEvent?.location else { return }
@@ -1490,7 +1491,7 @@ final class Controller {
     private func updateBorders() {
         guard !sessionLocked else { return }
         guard managing, let borders else { return borderWindows.show([:]) }
-        let shown = session.borders(borders) { id in
+        let shown = session.borders(borders, accent: borderWindows.accent) { id in
             guard !hiding.isConcealed(id), let row = inventory.windows[id], row.orderedIn else { return nil }
             return (slides?.shown(id)?.frame ?? row.frame, row.cornerRadius)
         }

@@ -41,7 +41,8 @@ private struct ConfigDecoder {
     /// returns the files' paths in order, the first being file 1 (SourcePosition). A path is
     /// relative to the main file's directory and stays inside it, so a copy of the directory
     /// loads the same (ConfigFile's last good config). An included file sets keys the main
-    /// file and the files before it leave out, and includes nothing.
+    /// file and the files before it leave out, and includes nothing. A file that cannot be
+    /// read is left out with a warning.
     mutating func include(into root: inout TOMLTable, read: (String) -> String?) -> [String] {
         guard let entry = root["include"], let paths = stringOrList(entry.value, ValuePath().key(entry.key)) else { return [] }
         var files: [String] = []
@@ -52,8 +53,10 @@ private struct ConfigDecoder {
                 continue
             }
             files.append(path.value)
+            // Missing, as before a theme links it on a fresh install, the file is left out.
             guard let text = read(path.value) else {
-                fail("cannot read '\(path.value)' in the config's directory", at: path.position, path.path)
+                warn("cannot read '\(path.value)' in the config's directory; the config loads without it",
+                     at: path.position, path.path)
                 continue
             }
             let table: TOMLTable
@@ -269,9 +272,18 @@ private struct ConfigDecoder {
         return points
     }
 
+    /// `true`, the default, or a table of settings turns borders on, and `false` off, as
+    /// `animations` takes true or false.
     private mutating func borders(_ value: TOMLValue, _ path: ValuePath) -> BorderSettings? {
+        switch value.kind {
+        case .boolean(let on): return on ? BorderSettings() : nil
+        case .table: break
+        default:
+            fail("expected true, false or a table, found \(kindName(value))", at: value.position, path)
+            return BorderSettings()
+        }
         guard let table = table(value, path, allowed: ["width", "active", "inactive"]) else { return nil }
-        var settings = BorderSettings(active: .clear)
+        var settings = BorderSettings()
         if let entry = table["width"], let width = number(entry.value, path.key(entry.key)) {
             if width > 0 {
                 settings.width = width
@@ -279,11 +291,9 @@ private struct ConfigDecoder {
                 fail("the width must be above 0", at: entry.value.position, path.key(entry.key))
             }
         }
-        guard let active = table["active"] else {
-            fail("missing key 'active', the focused window's color, such as '#7aa2f7'", at: value.position, path)
-            return nil
+        if let entry = table["active"] {
+            settings.active = color(entry.value, path.key(entry.key))
         }
-        settings.active = color(active.value, path.key(active.key)) ?? .clear
         if let entry = table["inactive"] {
             settings.inactive = color(entry.value, path.key(entry.key)) ?? .clear
         }

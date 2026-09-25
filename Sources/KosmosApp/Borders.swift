@@ -30,6 +30,42 @@ final class Borders {
     private var spare: [BorderWindow] = []
     /// Space reads and moves, off the main thread: a read can wait out a Space transition.
     private let spaces = DispatchQueue(label: "kosmos.borders", qos: .userInitiated)
+    /// The macOS accent color, the focused window's border unless the config gives one,
+    /// as the current appearance shows it.
+    private(set) var accent = Borders.readAccent()
+    /// Called when the user changes the accent color or the appearance.
+    var onAccentChange: (@MainActor () -> Void)?
+    private var appearance: NSKeyValueObservation?
+
+    init() {
+        // AppKit posts this when the accent or highlight color changes in System Settings.
+        NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil,
+                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.readAccentAgain() }
+        }
+        // Light and dark show the accent in shades of their own.
+        appearance = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.readAccentAgain() } }
+        }
+    }
+
+    private func readAccentAgain() {
+        let next = Self.readAccent()
+        guard next != accent else { return }
+        accent = next
+        onAccentChange?()
+    }
+
+    /// NSColor.controlAccentColor in sRGB under the app's appearance, else the system blue.
+    private static func readAccent() -> BorderColor {
+        var accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+            guard let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return }
+            accent = BorderColor(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent,
+                                 alpha: color.alphaComponent)
+        }
+        return accent
+    }
 
     /// Shows exactly these borders, by target window, and hides every other one. A border
     /// that is the same as shown costs nothing.

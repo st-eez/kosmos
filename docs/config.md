@@ -28,13 +28,17 @@
   gives them and new windows pop in ([geometry.md](geometry.md)). `animations = false`
   turns both off, and a reload that turns them off ends every slide at once.
 - `include` names files in the config's directory whose top-level keys join the config's,
-  as Hyprland's `source` brings an Omarchy theme's colors into its config. A key set in
-  two files is an error, an included file includes nothing and sets no `config-version`,
-  and each problem names its file. A reload reads every file again. At launch, broken
-  files fall back to a copy of the config's directory as it last loaded, which is why a
-  path cannot leave the directory.
-- A `[borders]` table turns on the borders Kosmos draws around windows ([borders.md](borders.md)):
-  `width`, in points, 4 by default; `active`, the focused window's color, which the table
-  must give; and `inactive`, every other window's, transparent by default. Colors are
+  as Hyprland's `source` brings an Omarchy theme's colors into its config. The files are
+  checked with the same schema. A key set in two files is an error, an included file
+  includes nothing and sets no `config-version`, and each problem names its file. A file
+  that cannot be read is left out with a warning, so a fresh install loads before a theme
+  links its file, and the defaults stand in for its keys. A reload reads every file again.
+  At launch, broken files fall back to a copy of the config's directory as it last loaded,
+  which is why a path cannot leave the directory.
+- Borders are on by default, as in Omarchy ([borders.md](borders.md)): a 4 point line in the macOS
+  accent color around the focused window, and none around the others. `borders = false`
+  turns them off, as `animations = false` turns off slides. A `[borders]` table sets
+  `width`, in points, 4 by default; `active`, the focused window's color, the accent color
+  when left out; and `inactive`, every other window's, transparent by default. Colors are
   `#rrggbb`, or `#rrggbbaa` with the alpha last. The width may be a float, as JankyBorders
   writes it, `4.0`, so Kosmos's TOML reads floats.

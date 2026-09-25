@@ -4,6 +4,8 @@ import Testing
 
 private let blue = BorderColor(hex: "#7aa2f7")!
 private let steve = BorderSettings(width: 4, active: blue)
+/// macOS's blue accent in the light appearance.
+private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
 
 @Test func colorsAreHexWithOptionalAlphaLast() {
     #expect(blue == BorderColor(red: 0x7A / 255, green: 0xA2 / 255, blue: 0xF7 / 255, alpha: 1))
@@ -15,12 +17,15 @@ private let steve = BorderSettings(width: 4, active: blue)
     }
 }
 
-/// A transparent color draws no border, as Steve's inactive color does.
+/// A transparent color draws no border, as Steve's inactive color does, and with no color
+/// given the focused window's border is the accent color.
 @Test func aTransparentColorDrawsNoBorder() {
-    #expect(steve.color(focused: true) == blue)
-    #expect(steve.color(focused: false) == nil)
+    #expect(steve.color(focused: true, accent: accent) == blue)
+    #expect(steve.color(focused: false, accent: accent) == nil)
     let both = BorderSettings(width: 2, active: blue, inactive: BorderColor(hex: "#414868")!)
-    #expect(both.color(focused: false) == BorderColor(hex: "#414868"))
+    #expect(both.color(focused: false, accent: accent) == BorderColor(hex: "#414868"))
+    #expect(BorderSettings().color(focused: true, accent: accent) == accent)
+    #expect(BorderSettings().color(focused: false, accent: accent) == nil)
 }
 
 /// The line is centered on the window's edge as JankyBorders draws it: 2 of its 4 points
@@ -95,9 +100,10 @@ private let steve = BorderSettings(width: 4, active: blue)
     let frames: [WindowID: CGRect] = [1: CGRect(x: 10, y: 10, width: 300, height: 700), 2: CGRect(x: 320, y: 10, width: 300, height: 700)]
     // Window 3 is concealed or ordered out, so `shown` finds it nowhere.
     let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
-    #expect(Array(s.borders(steve, shown: shown).keys) == [2])
+    #expect(Array(s.borders(steve, accent: accent, shown: shown).keys) == [2])
+    #expect(s.borders(BorderSettings(), accent: accent, shown: shown).mapValues(\.color) == [2: accent])
     let both = BorderSettings(width: 4, active: blue, inactive: BorderColor(hex: "#414868")!)
-    let borders = s.borders(both, shown: shown)
+    let borders = s.borders(both, accent: accent, shown: shown)
     #expect(Set(borders.keys) == [1, 2] && borders[1]?.color == both.inactive && borders[2]?.color == blue)
     #expect(borders[2]?.ring == frames[2]!.insetBy(dx: -2, dy: -2))
 }

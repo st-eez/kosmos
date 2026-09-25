@@ -1,7 +1,7 @@
 # Borders
 
-With a `[borders]` table ([config.md](config.md)), Kosmos draws a border around each tiled
-and floating window on screen, in place of JankyBorders. JankyBorders runs in a process
+Kosmos draws a border around each tiled and floating window on screen, as Omarchy's
+Hyprland does, in place of JankyBorders. JankyBorders runs in a process
 of its own and draws from WindowServer's events, so it knows nothing of workspaces,
 concealment or slides. In Steve's trial of the slide on 2026-09-25, its border scaled with
 the sliding window, whose Space it copies its border into, and near a display's edge the
@@ -10,6 +10,14 @@ showed the window elsewhere. Kosmos knows each
 window's frame, focus, workspace, concealment and fullscreen state, and during a slide the
 frame the slide shows the window at.
 
+- Borders are on by default ([config.md](config.md)): a 4 point line around the focused window in
+  the macOS accent color, and none around the others. `borders = false` turns them off, as
+  `animations = false` turns off slides, and a `[borders]` table sets `width`, `active` and
+  `inactive`. The accent is `NSColor.controlAccentColor` in sRGB under Kosmos's
+  appearance. Kosmos reads it again when AppKit posts
+  `NSColor.systemColorsDidChangeNotification`, which a new accent color in System
+  Settings brings, and when its appearance changes between light and dark, which show the
+  accent in shades of their own.
 - Steve's dotfiles theme the table: their theme build renders it for each theme from the
   accent and border width that render JankyBorders' `bordersrc`, and `theme-set` links the
   current theme's copy to the file the config includes ([config.md](config.md)) and
@@ -19,8 +27,8 @@ frame the slide shows the window at.
   app, in native fullscreen, or closed and kept by its app), and no tile of a workspace
   with a Kosmos fullscreen window, the fullscreen window included. A tiled window the user
   holds lifted by its title bar is parked, and keeps its border ([displays.md](displays.md)).
-- The window with the focus, `Session.focused`, takes `active`, and every other window
-  `inactive`. The color changes with the model's focus: at a command, a hover or a key
+- The window with the focus, `Session.focused`, takes `active`, or the accent color, and
+  every other window `inactive`. The color changes with the model's focus: at a command, a hover or a key
   window report Kosmos adopts, before macOS's key change lands. A fully transparent color
   draws no border and makes no window, so with Steve's transparent `inactive` only the
   focused window has one.
@@ -88,7 +96,7 @@ frame the slide shows the window at.
   display, so it never shows on a display the window is not on. At a display's edge it
   is cut there, as the window is.
 - During a slide ([geometry.md](geometry.md)), the border follows the frame the slide shows the window at,
-  as of the display frame the display link last stepped (`Slides.shown`), at that frame's
+  as of the display frame its display's link last stepped (`Slides.shown`), at that frame's
   alpha, so a pop fades it in and scales its frame with the window, at the same line
   width. Its window then covers its display, and each display frame moves only the
   ring's layer, which took a fourth of the main thread's time that moving the window did
@@ -120,6 +128,7 @@ frame the slide shows the window at.
   layers moved, and nothing measurable for borders following change events. Kosmos's
   slide log gives its display link's callback time, which includes the borders.
 - Open until the live test:
+  - whether the border follows a new accent color and a switch between light and dark;
   - whether focus follows mouse and modifier drags, which read WindowServer's hit test
     from each event (`kCGMouseEventWindowUnderMousePointer`), see through a border as
     `NSWindow.windowNumber(at:)` does;

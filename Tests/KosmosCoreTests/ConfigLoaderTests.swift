@@ -55,18 +55,19 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     @Test func borders() throws {
         let steve = try #require(load("borders = { width = 4.0, active = '#7aa2f7', inactive = '#00000000' }").config)
         #expect(steve.borders == BorderSettings(width: 4, active: BorderColor(hex: "#7aa2f7")!, inactive: .clear))
-        // Width 4 and no inactive border unless the table says otherwise, and off with no table.
-        let table = try #require(load("[borders]\nactive = '#7aa2f7'\nwidth = 2").config)
-        #expect(table.borders == BorderSettings(width: 2, active: BorderColor(hex: "#7aa2f7")!))
-        #expect(try #require(load("[borders]\nactive = '#7aa2f7'").config).borders?.width == 4)
-        #expect(try #require(load("").config).borders == nil)
+        // On by default, as in Omarchy: 4 points in the macOS accent color around the focused
+        // window alone. False turns them off, as for animations.
+        #expect(try #require(load("").config).borders == BorderSettings(width: 4, active: nil, inactive: .clear))
+        #expect(Config.defaults.borders == BorderSettings())
+        #expect(try #require(load("borders = true").config).borders == BorderSettings())
+        #expect(try #require(load("borders = false").config).borders == nil)
+        let table = try #require(load("[borders]\nwidth = 2\ninactive = '#414868'").config)
+        #expect(table.borders == BorderSettings(width: 2, active: nil, inactive: BorderColor(hex: "#414868")!))
     }
 
     @Test func borderMistakes() {
-        #expect(load("borders = { width = 0, inactive = '#414868' }").diagnostics == [
-            "3:11: error: borders: missing key 'active', the focused window's color, such as '#7aa2f7'",
-            "3:21: error: borders.width: the width must be above 0",
-        ])
+        #expect(load("borders = { width = 0 }").diagnostics == ["3:21: error: borders.width: the width must be above 0"])
+        #expect(load("borders = 'off'").diagnostics == ["3:11: error: borders: expected true, false or a table, found a string"])
         #expect(load("borders = { width = '4', active = '7aa2f7', inactive = '#4148', style = 'round' }").diagnostics == [
             "3:21: error: borders.width: expected a number, found a string",
             "3:35: error: borders.active: expected a color as '#rrggbb' or '#rrggbbaa', found '7aa2f7'",
@@ -97,7 +98,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
                                  including: { files[$0] })
         #expect(result.config == nil)
         #expect(result.diagnostics.map { "\($0.file ?? "main"): \($0)" } == [
-            "main: 3:26: error: include[1]: cannot read 'missing.toml' in the config's directory",
+            "main: 3:26: warning: include[1]: cannot read 'missing.toml' in the config's directory; the config loads without it",
             "main: 3:42: error: include[2]: name a file in the config's directory, such as 'theme.toml'",
             "main: 3:56: error: include[3]: name a file in the config's directory, such as 'theme.toml'",
             "main: 4:18: error: gaps.inner: expected an integer, found a string",
@@ -107,8 +108,11 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
             "broken.toml: 1:9: error: borders: expected ']' to close the table header",
             "second.toml: 1:1: error: borders: set in 'theme.toml' too",
         ])
-        // With no reader, as for docs/sample-config.toml, every include is unreadable.
-        #expect(load("include = ['theme.toml']").diagnostics == ["3:12: error: include[0]: cannot read 'theme.toml' in the config's directory"])
+        // A missing file is left out with a warning, so a fresh install loads before a theme
+        // links it, and the defaults stand in for its keys.
+        let fresh = load("include = ['theme.toml']")
+        #expect(fresh.diagnostics == ["3:12: warning: include[0]: cannot read 'theme.toml' in the config's directory; the config loads without it"])
+        #expect(fresh.config?.borders == BorderSettings())
     }
 
     @Test func focusFollowsMouseMistakes() {

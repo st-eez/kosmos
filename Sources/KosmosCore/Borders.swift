@@ -1,27 +1,28 @@
 import CoreGraphics
 
-/// The config's `borders` table: Kosmos draws a border around each tiled and floating
-/// window on screen, as JankyBorders did (docs/borders.md).
+/// The config's `borders`: Kosmos draws a border around each tiled and floating window on
+/// screen, as Omarchy's Hyprland does and JankyBorders did (docs/borders.md). The defaults
+/// draw a 4 point line in the macOS accent color around the focused window alone.
 public struct BorderSettings: Equatable, Sendable {
     /// The width of the line along the window's edge, centered on the edge as JankyBorders
     /// draws its `width`: the outer half lies outside the window, and of the inner half only
     /// the point next to the edge shows, over the window's own edge.
     public var width: Double
-    /// The focused window's color.
-    public var active: BorderColor
+    /// The focused window's color, or nil for the macOS accent color.
+    public var active: BorderColor?
     /// Every other window's color. Fully transparent, the default, gives them no border.
     public var inactive: BorderColor
 
-    public init(width: Double = 4, active: BorderColor, inactive: BorderColor = .clear) {
+    public init(width: Double = 4, active: BorderColor? = nil, inactive: BorderColor = .clear) {
         self.width = width
         self.active = active
         self.inactive = inactive
     }
 
-    /// The color of a window with or without the focus, or nil when that color is fully
-    /// transparent, which draws no border.
-    public func color(focused: Bool) -> BorderColor? {
-        let color = focused ? active : inactive
+    /// The color of a window with or without the focus, `accent` being the macOS accent
+    /// color, or nil when that color is fully transparent, which draws no border.
+    public func color(focused: Bool, accent: BorderColor) -> BorderColor? {
+        let color = focused ? active ?? accent : inactive
         return color.alpha > 0 ? color : nil
     }
 }
@@ -108,11 +109,12 @@ extension Session {
 
     /// The border of each window in `bordered` whose color shows, where `shown` finds the
     /// window on screen: the frame it shows at and its corner radius, or nil for a window
-    /// concealed or ordered out.
-    public func borders(_ settings: BorderSettings, shown: (WindowID) -> (frame: CGRect, radius: CGFloat)?) -> [WindowID: Border] {
+    /// concealed or ordered out. `accent` is the macOS accent color.
+    public func borders(_ settings: BorderSettings, accent: BorderColor,
+                        shown: (WindowID) -> (frame: CGRect, radius: CGFloat)?) -> [WindowID: Border] {
         var borders: [WindowID: Border] = [:]
         for (window, focused) in bordered {
-            guard let color = settings.color(focused: focused), let target = shown(window),
+            guard let color = settings.color(focused: focused, accent: accent), let target = shown(window),
                   let border = Border(around: target.frame, radius: target.radius, width: settings.width, color: color,
                                       displays: monitors) else { continue }
             borders[window] = border
