@@ -85,8 +85,12 @@
   app's role with a 50 ms timeout every 0.5 s. When the app answers, the worker tracks the
   windows created meanwhile and writes the held frames. It stops asking and reports that
   the app answers only if none of those calls timed out, and the inventory then reads the
-  facts it could not read before. A focus change during the backoff went unread, so while
-  the app is the front process its focused window is reported as a key window report. A launching app fails fast and is
-  left to the launch retries. Its worker reports the front app's focused window when it
-  starts too: a key change before the observer was registered posts nothing, and the
-  activation read made while the app launched got no answer (focus.md).
+  facts it could not read before. A launching app fails fast and is left to the launch
+  retries.
+- A worker that starts, or whose app answers again, reports the app's focused window after
+  `answering`. A focus change the worker could not read is lost otherwise: one during the
+  backoff, as a Command-Tab to the app, and one before the observer was registered, as a
+  launching app's first window, whose activation read got no answer while the app
+  launched (focus.md). The app can leave the front while the worker reads, so the report
+  is a key window report only when the app is front after the read, and a background one
+  otherwise, as for an activation read.
