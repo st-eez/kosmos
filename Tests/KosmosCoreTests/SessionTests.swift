@@ -240,16 +240,34 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2)
     s.adopt(1)
     _ = s.constrain(2, to: CGSize(width: 400, height: 0))
-    // 2 keeps its left edge on its 200 point tile and goes 200 points past the right edge.
-    var plan = s.perform(.resize(.width, by: 300))
-    #expect(plan?.frames[1] == CGRect(x: 0, y: 0, width: 800, height: 800))
-    #expect(plan?.frames[2] == CGRect(x: 800, y: 0, width: 400, height: 800))
+    // 2 keeps its left edge on its 250 point tile and goes 150 points past the right edge.
+    var plan = s.perform(.resize(.width, by: 250))
+    #expect(plan?.frames[1] == CGRect(x: 0, y: 0, width: 750, height: 800))
+    #expect(plan?.frames[2] == CGRect(x: 750, y: 0, width: 400, height: 800))
     // At the left edge, 1 keeps its right edge and goes past the left edge.
     _ = s.constrain(1, to: CGSize(width: 400, height: 0))
     s.adopt(2)
     plan = s.perform(.resize(.width, by: 500))
-    #expect(plan?.frames[1] == CGRect(x: -100, y: 0, width: 400, height: 800))
-    #expect(plan?.frames[2] == CGRect(x: 300, y: 0, width: 700, height: 800))
+    #expect(plan?.frames[1] == CGRect(x: -150, y: 0, width: 400, height: 800))
+    #expect(plan?.frames[2] == CGRect(x: 250, y: 0, width: 750, height: 800))
+}
+
+/// Steve's main panel with his gaps, where 1 was written to y = -165 before (review of
+/// September 25, 2026).
+@Test func aWindowHeldTallerThanItsTileAtTheTopSpillsDown() {
+    let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
+    var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
+    _ = s.add(1, minimum: CGSize(width: 0, height: 588))
+    _ = s.add(2)
+    _ = s.perform(.layout(.orientation(.vertical)))
+    s.adopt(2)
+    let before = s.frames(of: "1")
+    let plan = s.perform(.resize(.height, by: 200))!
+    #expect(plan.frames[2] == CGRect(x: 10, y: 433, width: 1900, height: 637))
+    #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 1900, height: 588))
+    // It stays where it was, so the plan moves it nowhere and it does not flash.
+    #expect(plan.frames[1] == before[1])
+    #expect(s.spilling(plan.frames) { before[$0] }.isEmpty)
 }
 
 /// Steve's Helium beside Outlook on the 1920 by 1080 main panel with his gaps, Helium held to

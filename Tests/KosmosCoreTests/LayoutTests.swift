@@ -156,9 +156,38 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
     #expect(frames.values.allSatisfy { $0.width == 700 && $0.height == 1000 })
 }
 
-@Test func aMinimumLargerThanTheScreenGoesPastItsFarEdges() {
+/// Its top stays on screen before its center does.
+@Test func aMinimumTallerThanTheScreenGoesPastItsFarEdgesFromItsTop() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let frames = Workspace("v[1 2]").frames(in: display, gaps: Gaps(), minimums: [2: CGSize(width: 2000, height: 2000)])
-    #expect(frames[2] == CGRect(x: 0, y: 500, width: 2000, height: 2000))
+    #expect(frames[2] == CGRect(x: 0, y: 0, width: 2000, height: 2000))
     #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 500))
+}
+
+/// macOS keeps a titled window's top on its display, so Kosmos never writes it above.
+@Test func aWindowKeepsItsTopEdgeAndSpillsDown() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = [WindowID(1): CGSize(width: 0, height: 588), 2: CGSize(width: 0, height: 400)]
+    let frames = Workspace("v[1:3 2:4 3:3]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 588))
+    #expect(frames[2] == CGRect(x: 0, y: 300, width: 1728, height: 400))
+    let bottom = Workspace("v[3:7 2:3]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(bottom[2] == CGRect(x: 0, y: 700, width: 1728, height: 400))
+}
+
+/// With separate Spaces, macOS shows a window only on the display with most of it. Helium,
+/// held to 785 points, at the 5% floor of Steve's 1920 by 1080 main panel.
+@Test func aSpillKeepsTheWindowsCenterOnItsDisplay() {
+    let display = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    let helium = [WindowID(2): CGSize(width: 785, height: 588)]
+    // Its 96 point tile starts at 1824, which would put its center at 2216.5, and it overlaps
+    // 1 until its center is half a point inside.
+    let right = Workspace("h[1:95 2:5]").frames(in: display, gaps: Gaps(), minimums: helium)
+    #expect(right[2] == CGRect(x: 1527, y: 0, width: 785, height: 1080))
+    let left = Workspace("h[2:5 1:95]").frames(in: display, gaps: Gaps(), minimums: helium)
+    #expect(left[2] == CGRect(x: -392, y: 0, width: 785, height: 1080))
+    // At the bottom, over the built-in display below the panel at Steve's desk.
+    let bottom = Workspace("v[1:9 2:1]").frames(in: display, gaps: Gaps(), minimums: helium)
+    #expect(bottom[2] == CGRect(x: 0, y: 785, width: 1920, height: 588))
+    #expect([right[2]!, left[2]!, bottom[2]!].allSatisfy { display.contains(CGPoint(x: $0.midX, y: $0.midY)) })
 }

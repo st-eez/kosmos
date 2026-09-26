@@ -35,7 +35,7 @@ extension Workspace {
         var frames = tileFrames(in: rect, gaps: gaps)
         let area = tilingRect(rect, gaps.outer)
         for (id, minimum) in minimums {
-            if let tile = frames[id] { frames[id] = spill(tile, to: minimum, from: area) }
+            if let tile = frames[id] { frames[id] = spill(tile, to: minimum, from: area, on: rect.standardized) }
         }
         if let fullscreenWindow { frames[fullscreenWindow] = rect.standardized }
         return frames
@@ -106,19 +106,25 @@ private func containerPaths(_ container: Container, _ path: [Int] = []) -> [[Int
     }
 }
 
-/// On each axis where the minimum is longer than the tile, the window keeps the tile's edge
-/// that faces the other windows: at the far edge of the area its near edge, and at the near
-/// edge its far edge, so the rest goes off screen, and between windows its near edge, so it
-/// overlaps the next (docs/tree.md).
-private func spill(_ tile: CGRect, to minimum: CGSize, from area: CGRect) -> CGRect {
-    func span(_ start: CGFloat, _ length: CGFloat, _ least: CGFloat, _ low: CGFloat, _ high: CGFloat) -> (CGFloat, CGFloat) {
-        let least = least.rounded(.up)
-        guard least > length else { return (start, length) }
-        return (start <= low && start + length < high ? start + length - least : start, least)
+/// On each axis where the minimum is longer than the tile, the window takes it. Across, it keeps
+/// the tile's edge that faces the other windows: its right edge at the left of the area, else
+/// its left edge. Down, it keeps its top edge. On each axis more than half of it stays on
+/// `display` (docs/tree.md).
+private func spill(_ tile: CGRect, to minimum: CGSize, from area: CGRect, on display: CGRect) -> CGRect {
+    func kept(_ length: CGFloat) -> CGFloat { (length / 2).rounded(.down) + 1 }
+    var frame = tile
+    let width = minimum.width.rounded(.up), height = minimum.height.rounded(.up)
+    if width > tile.width {
+        let x = tile.minX <= area.minX && tile.maxX < area.maxX ? tile.maxX - width : tile.minX
+        frame.origin.x = min(max(x, display.minX + kept(width) - width), display.maxX - kept(width))
+        frame.size.width = width
     }
-    let (x, width) = span(tile.minX, tile.width, minimum.width, area.minX, area.maxX)
-    let (y, height) = span(tile.minY, tile.height, minimum.height, area.minY, area.maxY)
-    return CGRect(x: x, y: y, width: width, height: height)
+    if height > tile.height {
+        // macOS keeps a titled window's top on its display (docs/tree.md).
+        frame.origin.y = max(area.minY, min(tile.minY, display.maxY - kept(height)))
+        frame.size.height = height
+    }
+    return frame
 }
 
 /// Gaps shrink to leave each window this long (docs/tree.md).

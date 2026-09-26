@@ -15,17 +15,23 @@
   `MIN_SANE_W` and `MIN_SANE_H` (include/sway/tree/node.h): the outer gaps on an axis in
   proportion, as `workspace_add_gaps` does, and the inner gaps to whole points, as
   `apply_horiz_layout` does (sway/tree/arrange.c).
-- A window whose minimum is longer than its tile on an axis spills to its minimum there,
-  and keeps the tile's edge that faces the other windows. At the far edge of the tiling
-  rectangle, right or bottom, it keeps its near edge, and at the near edge its far edge,
-  so the rest goes off screen, onto the display beside it if there is one. Between
-  windows it keeps its near edge and overlaps the next window. A tile across the whole
-  axis keeps its near edge. Kosmos writes the spilled frame, so the app takes a size it
-  accepts, and its border flashes ([borders.md](borders.md)).
-  - Open until the live test: whether macOS lets a write put a titled window's top above
-    its display's top edge, as a window at the top edge spills. If it keeps the title bar
-    on screen, the window overlaps the window below it instead, and the frame read back
-    differs from the target in position alone, which the ledger takes as taken.
+- A window whose minimum is longer than its tile on an axis spills to its minimum there.
+  Across, it keeps the tile's edge that faces the other windows: at the right edge of the
+  tiling rectangle its left edge, and at the left edge its right edge, so the rest goes
+  off screen; between windows its left edge, over the next window. A tile across the whole
+  width keeps its left edge. Down, it always keeps its top edge, over the window below or
+  off the bottom. macOS keeps a titled window's title bar on its display, so a top written
+  above it lands lower, differing from the target in position alone, which the ledger
+  takes as taken, and every plan for the workspace would write the window and flash it
+  again. Kosmos writes the spilled frame, so the app takes a size it accepts, and its
+  border flashes ([borders.md](borders.md)).
+  - On each axis the window keeps its center in its display's visible frame, moving in
+    over its neighbour as far as that takes, since with separate Spaces macOS shows a
+    window only on the display that holds most of it, and can move it to that display's
+    Space. At the 5% floor at the right of a 1920 pt panel with no gaps, Helium, held to
+    785 pt, would start at x = 1824, its center at 2216; it starts at 1527. Its top stays
+    at or below the tiling rectangle's, which wins for a window more than about twice as
+    tall as the room below that top.
 - Kosmos gives windows their minimums where it chooses a split itself: a new window's
   placement, a window moved to another workspace or display or dropped after a drag,
   `move`, `join-with`, `layout`, `balance-sizes` and `flatten-workspace-tree`. Where the

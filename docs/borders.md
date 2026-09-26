@@ -46,9 +46,10 @@ state, and during a slide the frame the slide shows the window at.
     log).
   - The ceiling: a minimum learned from refusals, where WindowServer holds none
     ([geometry.md](geometry.md)), flashes only where the spill moves the window, as at the
-    left edge. At the right edge and between windows the app's refusal has already left
-    the window where it spills, so Kosmos has no frame to write. A flash at the refusal
-    that records the minimum would cover it.
+    left edge or where its center would leave its display. At the right edge, between
+    windows and down a column the app's refusal has already left the window where it
+    spills, so Kosmos has no frame to write. A flash at the refusal that records the
+    minimum would cover it.
 - A bordered window gets its border only while it is on screen: not concealed, as a
   switch's incoming windows are until the batch that reveals them confirms, and ordered
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks

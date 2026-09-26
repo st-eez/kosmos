@@ -123,13 +123,17 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         let tileFrames = workspace.tileFrames(in: screen, gaps: gaps)
         #expect(tileFrames.values.allSatisfy { $0.width >= 0 && $0.height >= 0 && area.contains($0) }, "seed \(seed)")
         #expect(tiles(tileFrames), "seed \(seed)")
-        // Each window is at least its minimum, and keeps a tile edge on each axis.
+        // Each window is at least its minimum, with its center on the screen. Across, it keeps
+        // a tile edge, or has its center at the screen's edge; down, it keeps its top edge, or
+        // has its center at the screen's bottom edge.
         for (id, frame) in frames {
             let tile = tileFrames[id]!, minimum = minimums[id] ?? .zero
             #expect(frame.width == max(tile.width, minimum.width.rounded(.up)), "seed \(seed)")
             #expect(frame.height == max(tile.height, minimum.height.rounded(.up)), "seed \(seed)")
-            #expect(frame.minX == tile.minX || frame.maxX == tile.maxX, "seed \(seed)")
-            #expect(frame.minY == tile.minY || frame.maxY == tile.maxY, "seed \(seed)")
+            #expect(screen.contains(CGPoint(x: frame.midX, y: frame.midY)), "seed \(seed)")
+            #expect(frame.minX == tile.minX || frame.maxX == tile.maxX
+                        || [screen.minX, screen.maxX].contains { abs(frame.midX - $0) <= 1 }, "seed \(seed)")
+            #expect(frame.minY == tile.minY || frame.minY < tile.minY && screen.maxY - frame.midY <= 1, "seed \(seed)")
         }
     }
 }
