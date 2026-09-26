@@ -493,6 +493,11 @@ public struct Session: Sendable {
             guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
         case .fullscreen:
             guard workspace.toggleFullscreen(window, frame: frame(window)) else { return nil }
+        case .resize(let dimension, let amount) where workspace.floating.contains(window):
+            // Hyprland's resize refuses a fullscreen window (docs/tree.md).
+            guard workspace.fullscreenWindow != window, let old = frame(window) else { return nil }
+            let new = resizedFloating(old, dimension, by: amount, minimum: minimums[window] ?? .zero, in: display)
+            return new == old ? nil : Plan(frames: [window: new])
         case .resize(let dimension, let amount):
             guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
         case .balanceSizes:
@@ -687,4 +692,21 @@ private func floatingFrame(_ frame: CGRect, from: CGRect, movingTo area: CGRect)
     let y = area.minY + (frame.minY - from.minY) * area.height / from.height
     return CGRect(x: min(max(x, area.minX), area.maxX - size.width), y: min(max(y, area.minY), area.maxY - size.height),
                   width: size.width, height: size.height).integral
+}
+
+/// A floating window's `resize` keeps its center, as Hyprland's does, and `smart` is the width,
+/// as Omarchy's Super minus and equal change it. Never below the minimum or
+/// `ModifierDrag.smallestSide`, and inside `area` (docs/tree.md).
+private func resizedFloating(_ frame: CGRect, _ dimension: ResizeDimension, by amount: CGFloat, minimum: CGSize,
+                             in area: CGRect) -> CGRect {
+    var size = frame.size
+    if dimension == .height {
+        size.height = max(size.height + amount, minimum.height, ModifierDrag.smallestSide)
+    } else {
+        size.width = max(size.width + amount, minimum.width, ModifierDrag.smallestSide)
+    }
+    size = CGSize(width: min(size.width, area.width), height: min(size.height, area.height))
+    let x = min(max(frame.midX - size.width / 2, area.minX), area.maxX - size.width)
+    let y = min(max(frame.midY - size.height / 2, area.minY), area.maxY - size.height)
+    return CGRect(origin: CGPoint(x: x, y: y), size: size)
 }

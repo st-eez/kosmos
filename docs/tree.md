@@ -81,6 +81,32 @@
   5% of the 1890 pt between the gaps on Steve's main panel is about 95 pt, near sway's
   100 pt sane width. Stopping there does as much as the key press can, so repeated
   presses reach the floor exactly.
+  - On a floating window `resize` changes the window's frame and keeps its center, as
+    Hyprland's floating layout does (`pos.translate(-Δ / 2)` in
+    `CDefaultFloatingAlgorithm::resizeTarget`,
+    src/layout/algorithm/floating/default/DefaultFloatingAlgorithm.cpp, Hyprland main at
+    e368c13). AeroSpace's `resize` fails on a floating window (ResizeCommand.swift in
+    aerospace-steez at 40b2b44d). `smart` changes the width: Omarchy binds Super minus and
+    equal to a resize of the width alone by 100 pt, and adds Shift for the height
+    (default/hypr/bindings/tiling.lua in basecamp/omarchy at c5b4db7). Steve's Option
+    minus and equal run `resize smart` by 100 pt, and by 50 with Shift.
+  - The frame stays in the area of its workspace's display, moved in from an edge it
+    would cross, and never goes below the window's minimum or 20 pt, as a modifier drag's
+    resize ([modifier-drags.md](modifier-drags.md)). A press that changes nothing does
+    nothing.
+  - A floating window in fullscreen keeps the display's area, as Hyprland's `resize` refuses
+    a fullscreen window (`Actions::resize` in src/config/shared/actions/ConfigActions.cpp).
+  - A floating window's border does not flash where its minimum stops a resize
+    ([borders.md](borders.md)). The flash marks a window that spills past its tile, and a
+    floating window has none; it stops, which shows the limit.
+  - Left out: a size the app changes from the one written, below a minimum WindowServer
+    does not hold, above a maximum or to keep an aspect ratio. The window keeps the
+    target's top left corner, so its center moves by half the change. The 100 ms retry
+    after a refusal writes tiles alone ([geometry.md](geometry.md)), so no minimum is
+    recorded, and each press at such a minimum moves the window by half the amount.
+    Keeping WindowServer's maximum, which `SkyLight.minimum` reads with the minimum and
+    drops, would cover a maximum it holds, and a retry of the floating target would record
+    the minimum.
 - `fullscreen` gives the focused window the display's area, tiled or floating, and a second
   `fullscreen` gives it back its place. One window of a workspace covers the area at a time,
   so `fullscreen` on another window moves it there. The area leaves out the menu bar and the
