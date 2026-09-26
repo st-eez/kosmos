@@ -86,7 +86,8 @@ extension Controller {
         let saved = session.savedWorkspace(of: id)
         let placed: Session.Plan? = arrival == .reopened
             ? session.reopen(id, to: workspace, floating: floats, minimum: minimum, parked: reason)
-            : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason)
+            : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason,
+                          concealed: hiding.isConcealed(id))
         guard var plan = placed else { return }
         let floating = session.isFloating(id)
         if let saved {
@@ -104,9 +105,6 @@ extension Controller {
             touch(id)
             (plan, movePointer, action) = (session.follow(id), bringsPointer || followPointer, .none)
         }
-        // A window already concealed, as one taken over at launch, shows unless its plan hides
-        // it: its workspace is shown, or it parks (docs/hiding.md).
-        if hiding.isConcealed(id), !plan.hide.contains(id), !plan.show.contains(id) { plan.show.append(id) }
         execute(plan, movePointer: movePointer, floatingCheck: floating, popping: atLaunch ? nil : id)
         run(action)
     }

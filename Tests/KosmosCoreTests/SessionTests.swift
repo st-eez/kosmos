@@ -35,6 +35,17 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.workspace(of: 7) == "3")
 }
 
+/// A window taken over concealed at launch is revealed unless its plan hides it: on a shown
+/// workspace, and parked at its admission. On a hidden workspace it stays concealed
+/// (docs/hiding.md).
+@Test func aConcealedWindowIsRevealedUnlessItsPlanHidesIt() {
+    var session = Desk.session()
+    #expect(session.add(1, to: "1", concealed: true).show == [1])
+    #expect(session.add(2, to: "2", concealed: true).hide == [2])
+    let parked = session.add(3, to: "2", parked: .minimized, concealed: true)
+    #expect(parked.show == [3] && parked.hide.isEmpty)
+}
+
 @Test func aWindowARuleFloatsKeepsTheFrameItsAppGaveIt() {
     var s = session()
     _ = s.add(1); _ = s.add(2)

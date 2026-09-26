@@ -368,15 +368,21 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(s.savedLayout().windows.map(\.window) == [1])
     }
 
-    /// ChatGPT (20) waits on hidden 2. A switch to 2 before it is admitted shows 2 without it,
-    /// and its admission plans no reveal, since a window admitted to a shown workspace is on
-    /// screen already. So the controller reveals a window it took over concealed that its plan
-    /// does not hide (docs/hiding.md).
-    @Test func aWindowTakenOverOnAWorkspaceShownSinceIsNotRevealedByItsPlan() {
+    /// ChatGPT (20) waits on hidden 2, concealed since Kosmos took it over at launch. A switch
+    /// to 2 before it is admitted shows 2 without it, so its admission reveals it. One not
+    /// concealed is on screen already, and one whose workspace is hidden stays concealed
+    /// (docs/hiding.md).
+    @Test func aWindowTakenOverOnAWorkspaceShownSinceIsRevealedByItsPlan() {
         var session = Self.restored(Self.desk().savedLayout())
         #expect(session.perform(.workspace(.named("2")))?.show.contains(20) == false)
-        let plan = session.add(20)
+        let plan = session.add(20, concealed: true)
         #expect(session.workspace(of: 20) == "2" && session.isShown("2"))
-        #expect(plan.show.isEmpty && plan.hide.isEmpty)
+        #expect(plan.show == [20] && plan.hide.isEmpty)
+        var other = Self.restored(Self.desk().savedLayout())
+        _ = other.perform(.workspace(.named("2")))
+        #expect(other.add(20).show.isEmpty)
+        var hidden = Self.restored(Self.desk().savedLayout())
+        let kept = hidden.add(20, concealed: true)
+        #expect(kept.hide == [20] && kept.show.isEmpty)
     }
 }

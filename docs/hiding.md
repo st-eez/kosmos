@@ -237,7 +237,8 @@
   - A kept window's admission to its hidden workspace finds it in the ledger, so its batch
     only confirms it. A concealed window whose admission plan does not hide it is revealed
     with that plan: one of a shown workspace, one whose workspace a switch showed before
-    its admission, or one that parks (`handover-noreveal`). A kept window that no admission
+    its admission, or one that parks (`handover-noreveal`). `Session.add` plans that reveal
+    from its `concealed` input, and KosmosCore's tests cover it. A kept window that no admission
     places within 5 s of the adoption, as one whose app never answers, is revealed where it
     is (`handover-nobackstop`); every window of the launch of 02:08:38 was admitted within
     68 ms of its start. A window whose app answers after the 5 s shows over the shown
