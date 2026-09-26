@@ -247,13 +247,14 @@
     as when Finder opens several tabs or Command-T is pressed twice.
   - Closing the selected tab is a switch. When the destroy comes before the next tab, the
     closed tab's place waits the pairing window for it, if the app has windows ordered
-    out, in native fullscreen too. When the next tab came first and claims the place
-    before Kosmos admits it, as a tab not selected since Kosmos launched, which no sweep
-    lists while it is ordered out, the place waits for that admission until a second after
-    the destroy, as a look does for a claim. Before this, the destroy dropped the claim,
-    the place reflowed away, and the tab took a place of its own once admitted. Closing
-    the group's last tab is a close. A switch in the meantime leaves the closed tab out of
-    its batch ([hiding.md](hiding.md)).
+    out, in native fullscreen too. While a tab Kosmos has not admitted yet claims the
+    place, as a tab not selected since Kosmos launched, which no sweep lists while it is
+    ordered out, the place waits for that admission until a second after the destroy, as a
+    look does for a claim. Each wait is decided again when it ends, as a look's is, so a
+    claim made during the pairing window extends it. Before this, the destroy dropped the
+    claim, the place reflowed away, and the tab took a place of its own once admitted.
+    Closing the group's last tab is a close. A switch in the meantime leaves the closed tab
+    out of its batch ([hiding.md](hiding.md)).
   - A hidden member ordered in with no tab leaving is back after the pairing window if it
     is still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It

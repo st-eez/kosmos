@@ -42,18 +42,23 @@ extension Controller {
             case .own: break
             }
             place(id, pid: pid, .admitted)
-        } else if session.workspace(of: id) != nil,
-                  let wait = ClosedAndKept.hold(orderedOut: .now, claimed: tabs.isClaimed(id),
-                                                sibling: inventory.hasOrderedOutWindows(pid, besides: id),
-                                                spacesChanged: nil, at: .now) {
-            // Perhaps a selected tab closed: its place waits for the next tab, or for the
-            // admission of the tab that claims it (docs/tree.md).
-            after(wait) { controller in
-                if !controller.inventory.isManaged(id) { controller.forget(id) }
-            }
         } else {
-            forget(id)
+            unmanaged(id, pid: pid, at: .now)
         }
+    }
+
+    /// Perhaps a selected tab closed: its place waits for the next tab, or for the admission of
+    /// a tab that claims it, decided again when each wait ends, as a look is (docs/tree.md).
+    private func unmanaged(_ id: WindowID, pid: pid_t, at unmanagedAt: ContinuousClock.Instant) {
+        guard !inventory.isManaged(id) else { return }
+        if session.workspace(of: id) != nil,
+           let wait = ClosedAndKept.hold(orderedOut: unmanagedAt, claimed: tabs.isClaimed(id),
+                                         sibling: inventory.hasOrderedOutWindows(pid, besides: id),
+                                         spacesChanged: nil, at: .now) {
+            after(wait) { $0.unmanaged(id, pid: pid, at: unmanagedAt) }
+            return
+        }
+        forget(id)
     }
 
     /// A tab dragged out of its group keeps out of its rule's workspace, and a window its app
