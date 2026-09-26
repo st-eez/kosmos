@@ -35,6 +35,21 @@ final class Slides {
         var callbacks = 0, time = 0.0, slowest = 0.0
     }
 
+    /// A window a display frame stepped, and whether its transform was sent, for the log.
+    private struct Stepped {
+        let id: WindowID
+        let slide: Slide?
+        let sent: Bool
+
+        static func describe(_ windows: [Stepped], at time: Double) -> String {
+            windows.map { window in
+                guard let slide = window.slide else { return "\(window.id) waiting to pop" }
+                return String(format: "%u %.1f ms into its slide, %.4f of the way%@", window.id, (time - slide.start) * 1000,
+                              Slide.ease((time - slide.start) / slide.duration), window.sent ? "" : ", unchanged")
+            }.joined(separator: "; ")
+        }
+    }
+
     init(hiding: Hiding) {
         self.hiding = hiding
         hiding.createAnimationSpaces(Self.poolSize, level: Self.level) { [weak self] spaces in
@@ -176,9 +191,10 @@ final class Slides {
         }
     }
 
-    private func frame(_ link: CADisplayLink, on display: DisplayID) {
+    /// `timestamp` and `at` are the link's timestamp and target for this display frame.
+    private func frame(timestamp: Double, at: Double, on display: DisplayID) {
         let began = CACurrentMediaTime()
-        let at = link.targetTimestamp
+        var stepped: [Stepped] = []
         let done = onscreen.state.withLock { state in
             var done: [(WindowID, SlidingWindow)] = []
             for (id, var window) in state.windows where window.display == display {
@@ -190,9 +206,18 @@ final class Slides {
                 if window.shown != shown { window.show() }
                 if window.alpha != alpha { kosmos_space_set_alpha(window.space, Float(window.alpha)) }
                 state.windows[id] = window
+                stepped.append(Stepped(id: id, slide: window.slide, sent: window.shown != shown))
             }
             return done
         }
+        // Places each display frame's transform against the frames script/bench-frames.sh
+        // captures (docs/geometry.md).
+        slideLog.debug("""
+            frame \((self.links[display]?.callbacks ?? 0) + 1) on display \(display): stepped \
+            \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after the link's timestamp, target \
+            \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it; \
+            \(Stepped.describe(stepped, at: at), privacy: .public)
+            """)
         for (id, window) in done { finished(id, window) }
         if done.isEmpty { onChange?() }
         let spent = CACurrentMediaTime() - began
@@ -205,9 +230,15 @@ final class Slides {
     private func startLink(on display: DisplayID) -> Bool {
         guard links[display] == nil else { return true }
         guard let screen = NSScreen.screens.first(where: { $0.displayID == display }) else { return false }
-        // The link keeps its target.
-        let link = screen.displayLink(target: LinkTarget { [weak self] in self?.frame($0, on: display) },
-                                      selector: #selector(LinkTarget.frame))
+        // The link keeps its target. WindowServer takes a change into the next composite only
+        // until about 0.3 ms after the vsync, and the link calls back 0.05 ms after it, so each
+        // frame's transforms and borders go a quarter of a refresh later, and land together a
+        // refresh after the target (kosmos-probe slide-sync, docs/geometry.md).
+        let link = screen.displayLink(target: LinkTarget { [weak self] link in
+            let (timestamp, at) = (link.timestamp, link.targetTimestamp)
+            let step: @MainActor () -> Void = { self?.frame(timestamp: timestamp, at: at, on: display) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + link.duration / 4) { MainActor.assumeIsolated(step) }
+        }, selector: #selector(LinkTarget.frame))
         let rate = Float(screen.maximumFramesPerSecond)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
         link.add(to: .main, forMode: .common)
@@ -289,13 +320,19 @@ private final class Onscreen: Sendable {
             guard let soon else { break }
             let rows = SkyLight.rows(ids)
             let read = CACurrentMediaTime()
-            state.withLock { state in
+            let moved = state.withLock { state in
+                var moved: [WindowRow] = []
                 for row in rows {
                     guard var window = state.windows[row.id], window.isAwaiting(at: read) else { continue }
-                    if window.observed(row.frame, at: read) { window.show() }
+                    if window.observed(row.frame, at: read) {
+                        window.show()
+                        moved.append(row)
+                    }
                     state.windows[row.id] = window
                 }
+                return moved
             }
+            for row in moved { slideLog.debug("\(row.id) read at \(String(describing: row.frame), privacy: .public), its transform sent") }
             reads += 1
             if soon { fast += 1 }
             usleep(soon ? 100 : 1000)

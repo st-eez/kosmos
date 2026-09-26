@@ -206,6 +206,28 @@ state, and during a slide the frame the slide shows the window at.
   window below the target on that display. Sizing it to the union of the slide's frames,
   as `kosmos-probe borders-cpu` does, would limit that to the slide's path. A new window
   waiting for its write to land, transparent, shows no border yet.
+- A display frame's ring moves go out with its transforms, a quarter of a refresh after the
+  link's callback, and land in the same composite ([geometry.md](geometry.md) has
+  WindowServer's cut-off). In `kosmos-probe slide-sync` on 2026-09-26 the ring showed with
+  its window in 137 of 137 and 116 of 122 frames.
+  - Sent from the callback, after the border work, the ring often missed the composite its
+    window's transform made. It showed with its window in 91 of 136 and 86 of 122 frames in
+    the probe. In the first run of the frame benchmark it trailed its sliding window by a
+    frame, about 24 px, in the first frames of 15 of 20 move lefts and 15 of 20 move
+    rights, and in close, new window, order out, reopen and balance.
+  - The border's window grows to cover its display as the slide starts, through AppKit, and
+    AppKit's window moves landed a refresh after a transform sent with them in 74 of 84
+    frames of the probe. So a first frame sent from the callback showed the ring where it
+    had been. Sent a quarter of a refresh later, the first frame comes after the resize.
+  - `CATransaction.flush()` after the border work left the ring out of step as often in the
+    probe: each border's changes already commit in a transaction of their own.
+  - The ring's window in the slide's animation Space showed with its window in all 71 and
+    all 123 frames of two runs. It is left out: a window's transform changes when its
+    write lands, and the ring's window, framed through AppKit, would follow a refresh later,
+    displaced by the whole move for that refresh, and a resize's transform would scale the
+    ring's width.
+  - The ceiling: a display frame the main actor holds past the next cut-off shows a refresh
+    late, the ring with its window.
 - Borders need no recovery: they are Kosmos's own windows, so they go with its process,
   and a border hides by being ordered out, never through the holding Space.
 - `kosmos-probe borders-cpu` times four windows of a child app, each moved and resized by
@@ -255,6 +277,7 @@ state, and during a slide the frame the slide shows the window at.
   - whether Hide Others in another app leaves the borders on screen;
   - how far the border lags a window dragged by its title bar, whose moves WindowServer
     may not report while the button is down ([displays.md](displays.md));
-  - whether a border steps in time with its sliding window, and the CPU of a relayout of
-    Steve's windows with borders against JankyBorders (`script/bench-relayout.sh`, whose
-    Kosmos log gives the slide frames' time).
+  - whether a border steps in time with its sliding window in Steve's slides, now that its
+    moves go with the transforms (the frame benchmark's flash border and flash other in
+    slides), and the CPU of a relayout of Steve's windows with borders against JankyBorders
+    (`script/bench-relayout.sh`, whose Kosmos log gives the slide frames' time).
