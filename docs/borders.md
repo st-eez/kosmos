@@ -41,14 +41,14 @@ state, and during a slide the frame the slide shows the window at.
   - at the refusal that records a minimum, the second of a written size. A first refusal
     can pass, as when an app applies a queued live resize step after the mouse up, and
     does not flash;
-  - at each layout that writes a frame on a workspace where a window takes its minimum
-    over its neighbours, because the minimums do not fit ([tree.md](tree.md)): that
-    window.
+  - at each layout that writes a frame on a workspace where a container's minimums do not
+    fit, so its children overlap ([tree.md](tree.md)): the windows with a minimum along
+    that container.
 
   On September 25, 2026, Outlook kept 1145 points and Helium beside it 785, which with
   the 10 point gap between them is 40 more than the 1900 points between the main panel's
   outer gaps. Outlook covered 290 points of Helium, and each `resize` moved only Helium's
-  edge (live log). The flash uses the border window any color uses: an inactive window's
+  edge, with nothing to say why (live log). The flash uses the border window any color uses: an inactive window's
   comes from its display's pool, and goes back when the flash ends. A window that flashes
   again keeps `warning` until 0.3 s after the last flash. A modifier drag stopped at a
   minimum does not flash, as the drag's edge already stops there.

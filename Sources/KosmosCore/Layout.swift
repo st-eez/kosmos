@@ -32,10 +32,6 @@ extension Workspace {
     /// vertical container is on top. `minimums` bind as docs/tree.md says.
     func frames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
         var frames = splitFrames(in: rect, gaps: gaps, minimums: minimums)
-        let area = tilingRect(rect, gaps.outer)
-        for (id, minimum) in minimums {
-            if let frame = frames[id] { frames[id] = grow(frame, to: minimum, within: area) }
-        }
         if let fullscreenWindow { frames[fullscreenWindow] = rect.standardized }
         return frames
     }
@@ -45,13 +41,13 @@ extension Workspace {
         splitFrames(in: rect, gaps: gaps, minimums: [:])
     }
 
-    /// The windows that take their minimum over their neighbours, as the minimums do not fit.
+    /// The windows with a minimum along a container whose minimums do not fit, so its
+    /// children overlap.
     func overlapping(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Set<WindowID> {
         guard !minimums.isEmpty else { return [] }
-        let split = splitFrames(in: rect, gaps: gaps, minimums: minimums), area = tilingRect(rect, gaps.outer)
-        return Set(minimums.compactMap { id, minimum in
-            split[id].flatMap { grow($0, to: minimum, within: area) != $0 ? id : nil }
-        })
+        var overlapping: Set<WindowID> = []
+        _ = splitFrames(in: rect, gaps: gaps, minimums: minimums) { overlapping.insert($0) }
+        return overlapping
     }
 
     /// The windows whose share is below their minimum, which `frames` gives them anyway.
@@ -63,15 +59,22 @@ extension Workspace {
         })
     }
 
-    private func splitFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
+    private func splitFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize],
+                             overlapping: (WindowID) -> Void = { _ in }) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         func place(_ container: Container, in rect: CGRect) {
-            let least = container.children.map { minimumLength(of: $0, along: container.orientation, minimums, gap: gaps.inner) }
-            for (child, frame) in zip(container.children, split(rect, container, gap: gaps.inner, minimums: least)) {
+            let orientation = container.orientation
+            let least = container.children.map { minimumLength(of: $0, along: orientation, minimums, gap: gaps.inner) }
+            let (split, overlaps) = split(rect, container, gap: gaps.inner, minimums: least)
+            for (child, frame) in zip(container.children, split) {
                 switch child.kind {
                 case .window(let id): frames[id] = frame
                 case .container(let nested): place(nested, in: frame)
                 }
+            }
+            guard overlaps else { return }
+            for id in container.windows where (minimums[id].map { orientation == .horizontal ? $0.width : $0.height } ?? 0) > 0 {
+                overlapping(id)
             }
         }
         place(root, in: tilingRect(rect, gaps.outer))
@@ -83,7 +86,7 @@ extension Workspace {
     func usableLength(of path: ArraySlice<Int>, in rect: CGRect, gaps: Gaps) -> CGFloat {
         var area = tilingRect(rect, gaps.outer)
         for level in path.indices {
-            area = split(area, root[path[..<level]], gap: gaps.inner, minimums: [])[path[level]]
+            area = split(area, root[path[..<level]], gap: gaps.inner, minimums: []).frames[path[level]]
         }
         let container = root[path]
         let length = container.orientation == .horizontal ? area.width : area.height
@@ -92,7 +95,8 @@ extension Workspace {
     }
 }
 
-/// Gaps shrink to leave each window this long (docs/tree.md).
+/// Gaps shrink to leave each window this long, and where minimums do not fit, a window with
+/// none takes it (docs/tree.md).
 private func minimumLength(_ orientation: Orientation) -> CGFloat {
     orientation == .horizontal ? 100 : 60
 }
@@ -126,13 +130,28 @@ private func innerGap(_ gap: CGFloat, count: Int, length: CGFloat, orientation: 
 
 /// Edges are rounded from cumulative lengths and the last child ends at the container's
 /// edge, so sizes add up, none is negative, and changing one weight moves only later edges.
-private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimums: [CGFloat]) -> [CGRect] {
+/// `overlaps` when the minimums do not fit even with no gaps.
+private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimums: [CGFloat]) -> (frames: [CGRect], overlaps: Bool) {
     let horizontal = container.orientation == .horizontal
     let start = horizontal ? rect.minX : rect.minY
     let length = horizontal ? rect.width : rect.height
     let count = container.children.count
     let gap = innerGap(gap, count: count, length: length, orientation: container.orientation)
     let usable = length - gap * CGFloat(max(0, count - 1))
+    guard minimums.reduce(0, +) <= usable else {
+        // The seams share the excess alike, their gaps first (docs/tree.md).
+        let lengths = minimums.map { min($0 > 0 ? $0 : minimumLength(container.orientation), length) }
+        let total = lengths.reduce(0, +)
+        let step = count > 1 ? (total - length) / CGFloat(count - 1) : 0
+        var edge = start
+        let frames = lengths.map { size in
+            defer { edge += size - step }
+            let origin = min(max(edge.rounded(), start), start + length - size)
+            return horizontal ? CGRect(x: origin, y: rect.minY, width: size, height: rect.height)
+                : CGRect(x: rect.minX, y: origin, width: rect.width, height: size)
+        }
+        return (frames, total > length)
+    }
     var total = 0.0
     let ends: [CGFloat]
     if let lengths = fitted(container.children.map(\.weight), minimums, usable) {
@@ -150,7 +169,7 @@ private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimum
             : CGRect(x: rect.minX, y: edge + offset, width: rect.width, height: end - edge))
         edge = end
     }
-    return frames
+    return (frames, false)
 }
 
 /// Each child at least its minimum and the rest by weight (docs/tree.md). Nil when no minimum
@@ -182,12 +201,4 @@ private func minimumLength(of node: Node, along orientation: Orientation, _ mini
         // Gaps are whole points and only ever shrink from the configured one.
         return total > 0 ? total + max(0, gap).rounded(.down) * CGFloat(lengths.count - 1) : 0
     }
-}
-
-private func grow(_ frame: CGRect, to minimum: CGSize, within area: CGRect) -> CGRect {
-    let width = min(max(frame.width, minimum.width.rounded(.up)), area.width)
-    let height = min(max(frame.height, minimum.height.rounded(.up)), area.height)
-    return CGRect(x: min(max(frame.minX, area.minX), area.maxX - width),
-                  y: min(max(frame.minY, area.minY), area.maxY - height),
-                  width: width, height: height)
 }

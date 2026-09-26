@@ -179,7 +179,8 @@ public struct Session: Sendable {
         names.reduce(into: [:]) { frames, name in frames.merge(self.frames(of: name)) { current, _ in current } }
     }
 
-    /// The windows of `names` that take their minimum over their neighbours (docs/tree.md).
+    /// The windows of `names` with a minimum along a container whose children overlap, as
+    /// its minimums do not fit (docs/tree.md).
     public func overlapping(in names: some Sequence<String>) -> Set<WindowID> {
         guard !minimums.isEmpty else { return [] }
         return Set(names).reduce(into: []) { windows, name in

@@ -3,7 +3,8 @@ import Testing
 @testable import KosmosCore
 
 /// After each random operation the workspace is sound, a failed operation changed nothing,
-/// a move moved the window, and the frames tile the area, each with its minimum when they fit.
+/// a move moved the window, and the frames tile the area when the minimums fit, each window
+/// with its minimum cut to the area.
 @Test(arguments: 1...8 as ClosedRange<UInt64>)
 func randomOperationsKeepTheInvariants(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -112,12 +113,13 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         #expect(frames.values.allSatisfy { $0.width >= 0 && $0.height >= 0 && area.contains($0) }, "seed \(seed)")
         #expect(tiles(workspace.tileFrames(in: screen, gaps: gaps)), "seed \(seed)")
         let least = leastSize(of: workspace.root, minimums, gap: gaps.inner)
-        if least.width <= area.width, least.height <= area.height {
-            #expect(tiles(frames), "seed \(seed)")
-            for (id, minimum) in minimums {
-                guard let frame = frames[id] else { continue }
-                #expect(frame.width >= minimum.width && frame.height >= minimum.height, "seed \(seed)")
-            }
+        if least.width <= area.width, least.height <= area.height { #expect(tiles(frames), "seed \(seed)") }
+        // Each window takes its minimum, or the whole area where it is larger, whether the
+        // minimums fit or not.
+        for (id, minimum) in minimums {
+            guard let frame = frames[id] else { continue }
+            #expect(frame.width >= min(minimum.width.rounded(.up), area.width), "seed \(seed)")
+            #expect(frame.height >= min(minimum.height.rounded(.up), area.height), "seed \(seed)")
         }
     }
 }

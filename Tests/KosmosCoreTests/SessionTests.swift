@@ -249,24 +249,21 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 
 /// Steve's Outlook beside Helium on workspace 3, on the 1920 by 1080 main panel with his
 /// gaps, after `resize smart -100` on Outlook (live log, September 25, 2026).
-@Test func minimumsThatDoNotFitLeaveAResizeOnlyTheNeighbour() {
+@Test func aResizeOfMinimumsThatDoNotFitFlashesThem() {
     let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
     var s = Session(names: ["3"], display: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
     _ = s.add(1); _ = s.add(2)
     s.adopt(2)
     #expect(s.perform(.resize(.smart, by: -100))?.frames[2] == CGRect(x: 1065, y: 35, width: 845, height: 1035))
-    // Outlook kept 1145, then Helium kept 785: 1145, 10 and 785 make 1940 of the 1900 points.
-    #expect(s.setMinimum(2, CGSize(width: 1145, height: 1035)).frames[1] == CGRect(x: 10, y: 35, width: 745, height: 1035))
+    #expect(s.setMinimum(2, CGSize(width: 1145, height: 0)).frames[1] == CGRect(x: 10, y: 35, width: 745, height: 1035))
     #expect(s.overlapping(in: ["3"]).isEmpty)
-    let frames = s.setMinimum(1, CGSize(width: 785, height: 1035)).frames
-    #expect(frames[1] == CGRect(x: 10, y: 35, width: 1045, height: 1035))
+    let frames = s.setMinimum(1, CGSize(width: 785, height: 0)).frames
     #expect(frames[2] == CGRect(x: 765, y: 35, width: 1145, height: 1035))
-    #expect(s.overlapping(in: ["3"]) == [2])
-    // Each press moves only Helium's edge, until Helium's minimum stops it.
-    for width: CGFloat in [945, 845, 785] {
+    #expect(s.overlapping(in: ["3"]) == [1, 2])
+    // Each press changes only the weights, until Helium's minimum stops it.
+    for stopped: Set<WindowID> in [[2], [2], [1, 2]] {
         let plan = s.perform(.resize(.smart, by: 100))
-        #expect(plan?.frames[1]?.width == width && plan?.frames[2] == frames[2])
-        #expect(plan?.blocked == (width == 785 ? [1, 2] : [2]))
+        #expect(plan?.frames == frames && plan?.blocked == stopped)
     }
     #expect(s.perform(.resize(.smart, by: 100))?.blocked == [1])
 }

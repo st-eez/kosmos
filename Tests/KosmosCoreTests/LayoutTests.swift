@@ -139,14 +139,42 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
 @Test func minimumsThatDoNotFitStayOnScreen() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let minimums = Dictionary(uniqueKeysWithValues: (1...3).map { (WindowID($0), CGSize(width: 700, height: 0)) })
-    let frames = Workspace("h[1 2 3]").frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect([1, 2, 3].map { frames[$0]!.minX } == [0, 576, 1028])
+    let workspace = Workspace("h[1 2 3]")
+    let frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
+    // 2100 points in 1728: each of the two seams overlaps by 186.
+    #expect([1, 2, 3].map { frames[$0]!.minX } == [0, 514, 1028])
     #expect(frames.values.allSatisfy { $0.width == 700 && display.contains($0) })
+    #expect(workspace.overlapping(in: display, gaps: Gaps(), minimums: minimums) == [1, 2, 3])
+}
+
+/// Steve's Helium beside Outlook on the 1920 by 1080 main panel with his gaps, after
+/// `resize smart -100` on Outlook, once each kept its minimum (live log, September 25, 2026).
+@Test func minimumsThatDoNotFitOverlapOnlyByTheirExcess() {
+    let display = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
+    let workspace = Workspace("h[1:1045 2:845]")
+    let minimums = [WindowID(1): CGSize(width: 785, height: 0), 2: CGSize(width: 1145, height: 0)]
+    let frames = workspace.frames(in: display, gaps: gaps, minimums: minimums)
+    // 785, 10 and 1145 make 1940 of the 1900 points: the seam loses its gap and overlaps by 30.
+    #expect(frames[1] == CGRect(x: 10, y: 35, width: 785, height: 1035))
+    #expect(frames[2] == CGRect(x: 765, y: 35, width: 1145, height: 1035))
+    #expect(workspace.overlapping(in: display, gaps: gaps, minimums: minimums) == [1, 2])
+    // The weights stay, so the split is theirs again once a minimum stops binding.
+    #expect(workspace.frames(in: display, gaps: gaps, minimums: [2: CGSize(width: 1145, height: 0)])[1]!.width == 745)
+    #expect(workspace.frames(in: display, gaps: gaps, minimums: [:]) == [
+        1: CGRect(x: 10, y: 35, width: 1045, height: 1035), 2: CGRect(x: 1065, y: 35, width: 845, height: 1035),
+    ])
+    // Five points over take them from the gap, and nothing overlaps.
+    let tight = [WindowID(1): CGSize(width: 750, height: 0), 2: minimums[2]!]
+    let narrowed = workspace.frames(in: display, gaps: gaps, minimums: tight)
+    #expect(narrowed[1]!.maxX == 760 && narrowed[2]!.minX == 765 && narrowed[2]!.maxX == 1910)
+    #expect(workspace.overlapping(in: display, gaps: gaps, minimums: tight).isEmpty)
 }
 
 @Test func minimumLargerThanTheScreenIsCutToIt() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let frames = Workspace("v[1 2]").frames(in: display, gaps: Gaps(), minimums: [2: CGSize(width: 2000, height: 2000)])
     #expect(frames[2] == display)
-    #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 500))
+    // With nothing left, a window with no minimum keeps the sane 60 points, over the other.
+    #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 60))
 }

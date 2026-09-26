@@ -13,13 +13,17 @@
   and a fullscreen window gets the whole area. When a container's minimums fit, each
   window gets at least its minimum and the rest goes by weight, as rift's
   `solve_axis_lengths` does. The weights stay as the user set them, so they apply again
-  once a minimum stops binding. When the minimums do not fit, the container splits by
-  weight alone, and each window with a minimum takes it anyway, moved back inside the
-  tiling rectangle over its neighbours. Outer and inner gaps shrink as sway's do, to leave
-  each window 100 by 60 pt, sway's `MIN_SANE_W` and `MIN_SANE_H`
-  (include/sway/tree/node.h): the outer gaps on an axis in proportion, as
-  `workspace_add_gaps` does, and the inner gaps to whole points, as `apply_horiz_layout`
-  does (sway/tree/arrange.c).
+  once a minimum stops binding. When the minimums do not fit, each child with a minimum
+  takes it, cut to the container, and each child without one the sane length below, as
+  nothing is left. The seams share the excess alike, first their gaps, then an overlap,
+  and no frame leaves the tiling rectangle. Before this, the container split by weight
+  and each window grew to its minimum over its neighbours: Outlook's 1145 pt beside
+  Helium's 785, 40 pt over Steve's main panel with its 10 pt gap, covered 290 pt of
+  Helium, where the seam now overlaps by 30 (live log, September 25, 2026). Outer and
+  inner gaps shrink as sway's do, to leave each window 100 by 60 pt, sway's `MIN_SANE_W`
+  and `MIN_SANE_H` (include/sway/tree/node.h): the outer gaps on an axis in proportion,
+  as `workspace_add_gaps` does, and the inner gaps to whole points, as
+  `apply_horiz_layout` does (sway/tree/arrange.c).
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
   A workspace with tiled or floating windows always has a focused one, as in i3.
