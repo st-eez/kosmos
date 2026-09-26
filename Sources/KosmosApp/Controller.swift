@@ -117,9 +117,9 @@ final class Controller {
         let count = saved.windows.count
         // A closed window would hold its tile until the next write, and one ordered out, as
         // minimized since, until the tree changes. A failed read keeps every window.
-        if let open = Self.openRows(saved.windows.map(\.id)) {
-            saved.windows.removeAll { open[$0.id] == nil }
-            for index in saved.windows.indices where open[saved.windows[index].id]?.orderedIn == false {
+        if let open = Self.openRows(saved.windows.map(\.window)) {
+            saved.windows.removeAll { open[$0.window] == nil }
+            for index in saved.windows.indices where open[saved.windows[index].window]?.orderedIn == false {
                 saved.windows[index].parked = true
             }
         } else {

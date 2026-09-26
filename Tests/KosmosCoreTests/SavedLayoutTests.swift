@@ -256,11 +256,11 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         after.restore(layout)
         _ = after.add(1)
         func byID(_ layout: SavedLayout) -> [WindowID: SavedLayout.Window] {
-            Dictionary(uniqueKeysWithValues: layout.windows.map { ($0.id, $0) })
+            Dictionary(uniqueKeysWithValues: layout.windows.map { ($0.window, $0) })
         }
         #expect(byID(after.savedLayout()) == byID(layout))
         _ = after.forgetPending { $0 == 3 }
-        #expect(after.savedLayout().windows.map(\.id).sorted() == [1, 2, 4])
+        #expect(after.savedLayout().windows.map(\.window).sorted() == [1, 2, 4])
     }
 
     /// A garbled place would break the tree, so its window goes where it would at any launch.
@@ -270,8 +270,8 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         before.place("h[1 2]", on: "b")
         _ = before.perform(.workspace(.named("b")))
         var layout = before.savedLayout()
-        layout.windows[0].place![0].index = 5
-        layout.windows[1].place![0].slots[0].weight = .nan
+        layout.windows[0].levels![0].index = 5
+        layout.windows[1].levels![0].slots[0].weight = .nan
         var garbled = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
         garbled.restore(layout)
         #expect(garbled.focusedWorkspace == "b" && garbled.workspaces["b"]!.pending.isEmpty)
@@ -281,7 +281,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
 
         // A focus stamp is only an order.
         layout = before.savedLayout()
-        layout.windows[0].focus = .max
+        layout.windows[0].stamp = .max
         var stamped = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
         stamped.restore(layout)
         _ = stamped.add(1)
@@ -294,6 +294,6 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var s = Session(names: ["a"], monitors: [Desk.main])
         s.place("h[1 2]", on: "a")
         _ = s.park([2], because: .closedByApp)
-        #expect(s.savedLayout().windows.map(\.id) == [1])
+        #expect(s.savedLayout().windows.map(\.window) == [1])
     }
 }

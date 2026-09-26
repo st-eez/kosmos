@@ -11,19 +11,19 @@ public struct SavedLayout: Codable, Equatable, Sendable {
     }
 
     public struct Window: Codable, Equatable, Sendable {
-        public var id: WindowID
+        public var window: WindowID
         public var workspace: String
         public var floating: Bool
         /// It waits out of the tree, as minimized or hidden with its app, and holds no tile.
         public var parked: Bool
         /// It covers its workspace's display rectangle (`fullscreen`).
         public var fullscreen: Bool
-        /// Its latest focus on its workspace's clock.
-        public var focus: UInt64?
+        /// Its latest focus on its workspace's clock, an order only.
+        public var stamp: UInt64?
         /// Its restore hint's levels: where it stands in the tree, or stood before it floated
         /// or parked. A floating window that never tiled has none.
-        var place: [RestoreHint.Level]?
-        /// The tree changed after it left.
+        var levels: [RestoreHint.Level]?
+        /// The tree changed after it left, so its hint is stale.
         public var stale: Bool
     }
 
@@ -43,8 +43,8 @@ extension Session {
             let workspace = workspaces[name]!
             func saved(_ window: WindowID, floating: Bool, parked: Bool = false, fullscreen: Bool = false, stamp: UInt64?,
                        hint: RestoreHint?) -> SavedLayout.Window {
-                SavedLayout.Window(id: window, workspace: name, floating: floating, parked: parked, fullscreen: fullscreen,
-                                   focus: stamp, place: hint?.levels,
+                SavedLayout.Window(window: window, workspace: name, floating: floating, parked: parked, fullscreen: fullscreen,
+                                   stamp: stamp, levels: hint?.levels,
                                    stale: hint.map { $0.edits != workspace.edits } ?? false)
             }
             func hint(_ window: WindowID) -> RestoreHint? { workspace.hints.first { $0.window == window } }
@@ -71,7 +71,7 @@ extension Session {
         defer { check() }
         precondition(home.isEmpty, "a layout is restored before any window joins")
         for entry in layout.windows where workspaces[entry.workspace] != nil {
-            guard savedWorkspace(of: entry.id) == nil, let pending = entry.pending(edits: workspaces[entry.workspace]!.edits)
+            guard savedWorkspace(of: entry.window) == nil, let pending = entry.pending(edits: workspaces[entry.workspace]!.edits)
             else { continue }
             workspaces[entry.workspace]!.pending.append(pending)
         }
@@ -144,10 +144,10 @@ extension RestoreHint.Level {
 }
 
 extension SavedLayout.Window {
-    /// Nil for a tiled window with no sound place. `edits` is its workspace's.
+    /// Nil for a tiled window with no sound hint. `edits` is its workspace's.
     func pending(edits: Int) -> Pending? {
-        guard place?.allSatisfy(\.isSound) != false, floating || place != nil else { return nil }
-        let hint = place.map { RestoreHint(window: id, levels: $0, edits: stale ? edits - 1 : edits) }
-        return Pending(window: id, floating: floating, parked: parked, fullscreen: fullscreen, stamp: focus, hint: hint)
+        guard levels?.allSatisfy(\.isSound) != false, floating || levels != nil else { return nil }
+        let hint = levels.map { RestoreHint(window: window, levels: $0, edits: stale ? edits - 1 : edits) }
+        return Pending(window: window, floating: floating, parked: parked, fullscreen: fullscreen, stamp: stamp, hint: hint)
     }
 }

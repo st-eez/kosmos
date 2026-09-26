@@ -35,17 +35,14 @@ struct Parked: Sendable {
     let floating: Bool
 }
 
-/// A window of a saved layout, until Kosmos admits it (docs/tree.md).
+/// A window of a saved layout until Kosmos admits it, as `SavedLayout.Window` gives it, with
+/// its hint counted on this workspace's edits and its stamp on its clock (docs/tree.md).
 struct Pending: Sendable {
     let window: WindowID
     let floating: Bool
-    /// It waits out of the tree, as minimized or hidden with its app, and holds no tile.
     let parked: Bool
-    /// It covered the whole display rectangle.
     let fullscreen: Bool
-    /// Its focus stamp on the workspace's clock.
     var stamp: UInt64?
-    /// Where it stood in the tree. A floating window that never tiled has none.
     var hint: RestoreHint?
 }
 
