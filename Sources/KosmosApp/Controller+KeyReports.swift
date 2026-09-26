@@ -7,13 +7,14 @@ extension Controller {
     /// alone, as a raise says nothing about the key record (tla/README.md, change 17).
     func backgroundFocusChanged(_ id: WindowID?, report: AXReport) {
         guard !sessionLocked else { return }
-        _ = reports.consumeEcho(id.map(KeyWindow.window) ?? .noWindow, receivedAt: report.received)
+        run(intake.heardInBackground(id.map(KeyWindow.window) ?? .noWindow, from: report.pid, receivedAt: report.received,
+                                     activationRead: report.activationRead, intent: session.intent, reports: &reports))
     }
 
     func focusedWindowChanged(_ id: WindowID?, report: AXReport) {
         if id == nil, report.pid == getpid() { emptyWorkspaceKeyed = .now }
         run(intake.heard(id.map(KeyWindow.window) ?? .noWindow, from: report.pid, receivedAt: report.received,
-                         facts: reportFacts, reports: &reports, misses: &misses))
+                         activationRead: report.activationRead, facts: reportFacts, reports: &reports, misses: &misses))
     }
 
     func windowPlaced(_ id: WindowID) {
@@ -69,8 +70,8 @@ extension Controller {
         switch note {
         case .missed(let key, let miss):
             controllerLog.notice("focus request missed: \(String(describing: key), privacy: .public) again, \(String(describing: miss), privacy: .public)")
-        case .verdict(let key, let verdict):
-            controllerLog.debug("focus report \(String(describing: key), privacy: .public): \(String(describing: verdict), privacy: .public)")
+        case .verdict(let key, let verdict, let activationRead):
+            controllerLog.debug("focus report \(String(describing: key), privacy: .public)\(activationRead ? " (activation read)" : "", privacy: .public): \(String(describing: verdict), privacy: .public)")
         case .replaced(let held, let key):
             controllerLog.notice("""
                 held focus report \(String(describing: held.key), privacy: .public): replaced by \

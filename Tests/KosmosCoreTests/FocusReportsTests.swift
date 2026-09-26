@@ -222,7 +222,7 @@ import Testing
     var reports = FocusReports()
     reports.focusRequested(.window(1), app: 7, at: t0 + .milliseconds(10), publicly: true)
     #expect(reports.classify(.window(2), receivedAt: t0 + .milliseconds(11), onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(2))
-    reports.publicRequestsAnswered(by: 7, receivedAt: t0 + .milliseconds(11))
+    reports.answered(by: 7, receivedAt: t0 + .milliseconds(11))
     #expect(reports.classify(.window(1), receivedAt: t0 + .milliseconds(12), onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
 }
 
@@ -230,15 +230,15 @@ import Testing
     var reports = FocusReports()
     reports.focusRequested(.window(1), app: 7, at: t0 + .milliseconds(10))
     #expect(reports.classify(.window(2), receivedAt: t0 + .milliseconds(11), onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(2))
-    reports.publicRequestsAnswered(by: 7, receivedAt: t0 + .milliseconds(11))
+    reports.answered(by: 7, receivedAt: t0 + .milliseconds(11))
     #expect(reports.classify(.window(1), receivedAt: t0 + .milliseconds(12), onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
 }
 
 @Test func onlyTheNamedAppAnswersAPublicRequest() {
     var reports = FocusReports()
     reports.focusRequested(.window(1), app: 7, at: t0 + .milliseconds(10), publicly: true)
-    reports.publicRequestsAnswered(by: 8, receivedAt: t0 + .milliseconds(11))
-    reports.publicRequestsAnswered(by: 7, receivedAt: t0 + .milliseconds(9))
+    reports.answered(by: 8, receivedAt: t0 + .milliseconds(11))
+    reports.answered(by: 7, receivedAt: t0 + .milliseconds(9))
     #expect(reports.classify(.window(1), receivedAt: t0 + .milliseconds(12), onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .echo)
 }
 

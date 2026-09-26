@@ -71,12 +71,30 @@ private struct Replay {
             note: { log.notes.append($0) })
     }
 
-    mutating func heard(_ key: KeyWindow, from app: Int32, at milliseconds: Int) -> KeyReportIntake.Action {
-        intake.heard(key, from: app, receivedAt: ms(milliseconds), facts: facts, reports: &reports, misses: &misses)
+    /// `read`: the app's activation read.
+    mutating func heard(_ key: KeyWindow, from app: Int32, at milliseconds: Int, read: Bool = false) -> KeyReportIntake.Action {
+        taken(intake.heard(key, from: app, receivedAt: ms(milliseconds), activationRead: read, facts: facts,
+                           reports: &reports, misses: &misses))
+    }
+
+    /// A report from an app that is not the front process.
+    mutating func heardInBackground(_ key: KeyWindow, from app: Int32, at milliseconds: Int, read: Bool = false)
+        -> KeyReportIntake.Action {
+        intake.heardInBackground(key, from: app, receivedAt: ms(milliseconds), activationRead: read, intent: intent,
+                                 reports: &reports)
     }
 
     mutating func expire(_ number: Int) -> KeyReportIntake.Action {
-        intake.expire(number, facts: facts, reports: &reports)
+        taken(intake.expire(number, facts: facts, reports: &reports))
+    }
+
+    /// A window adopted or followed becomes the intent, as in the Controller.
+    private mutating func taken(_ action: KeyReportIntake.Action) -> KeyReportIntake.Action {
+        switch action {
+        case .adopt(let window, _), .follow(let window, _): intent = .window(window)
+        default: break
+        }
+        return action
     }
 
     mutating func admit(_ window: WindowID, atLaunch: Bool = false, at milliseconds: Int)
@@ -86,7 +104,7 @@ private struct Replay {
     }
 
     mutating func placed(_ window: WindowID) -> KeyReportIntake.Action {
-        intake.placed(window, facts: facts, reports: &reports, misses: &misses)
+        taken(intake.placed(window, facts: facts, reports: &reports, misses: &misses))
     }
 
     mutating func tabReplaced(_ old: WindowID, with new: WindowID, concealing: Bool) -> KeyReportIntake.Action {
@@ -94,10 +112,11 @@ private struct Replay {
         return placed(new)
     }
 
-    /// As the focus queue records a request just before its call. A key record also goes to
-    /// the kill switch's count, and `retry` follows a miss.
+    /// As the focus queue records a request just before its call. A key record, which activates
+    /// a background app, also goes to the kill switch's count, and `retry` follows a miss.
     mutating func requested(_ key: KeyWindow, app: Int32, at milliseconds: Int, keyRecord: Bool = false, retry: Bool = false) {
-        reports.focusRequested(key, app: app, at: ms(milliseconds))
+        intent = key
+        reports.focusRequested(key, app: app, at: ms(milliseconds), keyRecord: keyRecord)
         if keyRecord, case .window(let window) = key {
             _ = misses.willRequest(window, pid: app, at: ms(milliseconds), retry: retry)
         }
@@ -111,38 +130,102 @@ private struct Replay {
 
 // MARK: Live cases
 
-@Test func hoverOntoABackgroundAppsSecondWindowAdoptsTheWindowItsAppReportedFirst() {
+@Test func hoverOntoABackgroundAppsSecondWindowKeysIt() {
     // Live on 2026-09-24 at 23:56: with Activity Monitor front, the pointer entered Preview's
-    // window 100924, and Preview reported 99816, 100924 and 99816 within about 40 ms. The
-    // first is neither a repeat nor an echo, so it is adopted, with no miss logged; the rule
-    // that an activation read matches its app's key record is deferred (docs/focus.md).
+    // window 100924, and Preview reported 99816, 100924 and 99816 within about 40 ms. Its
+    // activation read found its main window before it keyed the hovered one, and Kosmos
+    // adopted the main window and keyed it. The read is the key record's echo, which then
+    // waits for the hovered window's report (docs/focus.md).
     var replay = Replay(windows: [50: ("1", activityMonitor), 99816: ("1", preview), 100924: ("1", preview)])
     #expect(replay.heard(.window(50), from: activityMonitor, at: -100) == .adopt(50, bringsPointer: false))
     replay.command(at: 0)
     replay.requested(.window(100924), app: preview, at: 2, keyRecord: true)
-    #expect(replay.heard(.window(99816), from: preview, at: 10) == .adopt(99816, bringsPointer: false))
-    replay.requested(.window(99816), app: preview, at: 12)
+    #expect(replay.heard(.window(99816), from: preview, at: 10, read: true) == .none)
     #expect(replay.heard(.window(100924), from: preview, at: 20) == .none)
-    #expect(replay.heard(.window(99816), from: preview, at: 30) == .none)
+    #expect(!replay.reports.isEcho(.window(100924), receivedAt: ms(21)))
+    #expect(replay.log.notes.contains(.verdict(.window(99816), .echo, activationRead: true)))
     #expect(replay.log.missed.isEmpty)
     #expect(replay.log.departureReads == 0)
+    // The kill switch counts no wrong window.
+    replay.requested(.window(50), app: activityMonitor, at: 30, keyRecord: true)
+    #expect(replay.misses.inARow == 0)
 }
 
-@Test func aHeldReportOfTheAppsLastKeyWindowIsDroppedOnceKosmossEchoMovesTheKeyOn() {
+@Test func aKeyRecordsAppKeyingItsLastKeyWindowFirstIsNotFollowed() {
     // Live on 2026-09-25: from workspace 6, alt-1 key-recorded Ghostty's window on workspace 1.
-    // Ghostty first keyed its last key window, concealed on workspace 5, then the requested
-    // one, and the grace used to follow the first to workspace 5 (docs/focus.md).
+    // Ghostty's activation read found its last key window, concealed on workspace 5, before
+    // Ghostty keyed the requested one, and the grace followed the read to workspace 5
+    // (docs/focus.md).
     var replay = Replay(windows: [60: ("6", helium), 11: ("1", ghostty), 15: ("5", ghostty)], shown: ["1", "6"],
                         concealed: [15])
     _ = replay.heard(.window(60), from: helium, at: -100)
     replay.command(at: 0)
     replay.requested(.window(11), app: ghostty, at: 5, keyRecord: true)
-    #expect(replay.heard(.window(15), from: ghostty, at: 10) == .hold(1))
+    #expect(replay.heard(.window(15), from: ghostty, at: 10, read: true) == .none)
     #expect(replay.heard(.window(11), from: ghostty, at: 20) == .none)
-    #expect(replay.expire(1) == .none)
-    let held = KeyReportIntake.Report(key: .window(15), received: ms(10), reporter: ghostty, previous: 60,
-                                      concealed: true, miss: .none)
-    #expect(replay.log.notes.last == .heldMovedOn(held, key: .window(11)))
+    #expect(replay.log.departureReads == 0)
+}
+
+@Test func aKeyRecordsAppNotifyingItsLastKeyWindowFirstEndsOnTheNamedOne() {
+    // As above, with Ghostty's focused window another than its last key window, so it
+    // notifies the first key. That report is held, and the named window's report ends the
+    // hold, whichever of the read and its notification comes first (docs/focus.md, Deferred).
+    for readFirst in [true, false] {
+        var replay = Replay(windows: [60: ("6", helium), 11: ("1", ghostty), 15: ("5", ghostty)], shown: ["1", "6"],
+                            concealed: [15])
+        _ = replay.heard(.window(60), from: helium, at: -100)
+        replay.command(at: 0)
+        replay.requested(.window(11), app: ghostty, at: 5, keyRecord: true)
+        #expect(replay.heard(.window(15), from: ghostty, at: 10) == .hold(1))
+        if readFirst {
+            #expect(replay.heard(.window(15), from: ghostty, at: 12, read: true) == .none)
+            #expect(replay.heard(.window(11), from: ghostty, at: 20) == .adopt(11, bringsPointer: false))
+        } else {
+            #expect(replay.heard(.window(11), from: ghostty, at: 20) == .none)
+            #expect(replay.heard(.window(11), from: ghostty, at: 22, read: true) == .adopt(11, bringsPointer: false))
+        }
+        #expect(replay.expire(1) == .none)
+    }
+}
+
+@Test func aReadOfTheAppsOwnWindowCountsAsAWrongWindowUntilTheNamedOneComes() {
+    // The kill switch (docs/focus.md).
+    var replay = Replay(windows: [1: ("1", helium), 11: ("1", ghostty), 12: ("1", ghostty)])
+    _ = replay.heard(.window(1), from: helium, at: -100)
+    replay.requested(.window(11), app: ghostty, at: 5, keyRecord: true)
+    #expect(replay.heard(.window(12), from: ghostty, at: 10, read: true) == .none)
+    replay.requested(.window(1), app: helium, at: 20, keyRecord: true)
+    #expect(replay.misses.inARow == 1)
+}
+
+@Test func aReadAfterTheUsersChangeInsideTheAppConsumesTheKeyRecord() {
+    // The user clicked another window of the app Kosmos had just key-recorded, before its
+    // activation read ran, which finds the user's window (docs/focus.md).
+    var replay = Replay(windows: [1: ("1", helium), 11: ("1", ghostty), 12: ("1", ghostty)])
+    _ = replay.heard(.window(1), from: helium, at: -100)
+    replay.command(at: 0)
+    replay.requested(.window(11), app: ghostty, at: 5, keyRecord: true)
+    #expect(replay.heard(.window(12), from: ghostty, at: 10) == .adopt(12, bringsPointer: false))
+    #expect(replay.heard(.window(12), from: ghostty, at: 12, read: true) == .none)
+    // A later click on the key record's window is the user's.
+    #expect(replay.heard(.window(11), from: ghostty, at: 20) == .adopt(11, bringsPointer: false))
+}
+
+@Test func aKeyRecordsReadThatLandsAfterANewerIntentRequestsTheIntentAgain() {
+    // Kosmos key-recorded window 11, and a command made window 1 the intent before Ghostty's
+    // read came, from the front or once another app came front (tla/Kosmos.tla, ObserveSplit).
+    for front in [true, false] {
+        var replay = Replay(windows: [1: ("1", helium), 11: ("1", ghostty)])
+        _ = replay.heard(.window(1), from: helium, at: -100)
+        replay.requested(.window(11), app: ghostty, at: 5, keyRecord: true)
+        replay.command(at: 8)
+        replay.requested(.window(1), app: helium, at: 10, keyRecord: true)
+        let action = front ? replay.heard(.window(11), from: ghostty, at: 12, read: true)
+                           : replay.heardInBackground(.window(11), from: ghostty, at: 12, read: true)
+        #expect(action == .requestFocus(retry: false))
+        #expect(!replay.reports.isEcho(.window(11), receivedAt: ms(13)))
+        #expect(replay.heard(.window(1), from: helium, at: 20, read: true) == .none)
+    }
 }
 
 @Test func aHeldReportIsDecidedByWhetherTheKeyWindowBeforeItLeft() {   // change 11
@@ -320,7 +403,7 @@ private struct Replay {
     #expect(!replay.reports.isEcho(.window(40), receivedAt: ms(11)))
     #expect(replay.heard(.window(40), from: moonlight, at: 20) == .none)
     #expect(replay.intake.key == .window(40))
-    #expect(!replay.log.notes.contains(where: { note in if case .verdict(.window(40), _) = note { true } else { false } }))
+    #expect(!replay.log.notes.contains(where: { note in if case .verdict(.window(40), _, _) = note { true } else { false } }))
 }
 
 @Test func aReportWhileLockedIsOnlyHeard() {
