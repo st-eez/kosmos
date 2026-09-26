@@ -208,7 +208,7 @@ finish() {
         if ((${#cpu_before[@]} > 0 && number > 0)); then
             echo "CPU per step (ps -o time=, 10 ms steps over the run): $(paste -d ' ' <(printf '%s\n' "${cpu_names[@]}") \
                 <(printf '%s\n' "${cpu_before[@]}") <(printf '%s\n' "${cpu_after[@]}") |
-                awk -v n="$number" '{ printf "%s%s %.2f ms", NR > 1 ? ", " : "", $1, ($3 - $2) / n }')"
+                awk -v n="$number" '{ printf "%s%s %.2f ms", (NR > 1 ? ", " : ""), $1, ($3 - $2) / n }')"
         fi
         echo
         cat "$dir/table.txt"
