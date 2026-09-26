@@ -6,8 +6,9 @@ import os
 
 private let bordersLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "borders")
 
-/// Kosmos's own border windows, each ordered directly above its target, so a window that
-/// covers the target covers its border too (docs/borders.md).
+/// Kosmos's own border windows, each ordered directly below its target, so a window that
+/// covers the target covers its border too, and the target is topmost over its frame
+/// (docs/borders.md).
 @MainActor
 final class Borders {
     struct Shown: Equatable {
@@ -97,19 +98,19 @@ final class Borders {
             let leveled = border.level.rawValue != Int(next.level)
             border.show(next)
             if fresh {
-                border.order(.above, relativeTo: Int(target))
+                border.order(.below, relativeTo: Int(target))
                 pin(border, to: target, thenShow: false)
             } else if leveled {
-                border.order(.above, relativeTo: Int(target))
+                border.order(.below, relativeTo: Int(target))
             }
         }
     }
 
-    /// A raise of the target leaves its border below it (kosmos-probe borders). A waiting
-    /// border is ordered above its target when it shows.
+    /// A raise of the target leaves its border under the windows the raise put the target
+    /// over (kosmos-probe borders). A waiting border is ordered below its target when it shows.
     func raise(_ target: WindowID) {
         guard waiting[target] == nil else { return }
-        windows[target]?.order(.above, relativeTo: Int(target))
+        windows[target]?.order(.below, relativeTo: Int(target))
     }
 
     /// A border joins its display's current Space, maybe another app's fullscreen one, so it
@@ -129,7 +130,7 @@ final class Borders {
                 // Unless the border went back to its pool meanwhile.
                 guard self.windows[target] === window, let next = self.waiting.removeValue(forKey: target) else { return }
                 window.show(next)
-                window.order(.above, relativeTo: Int(target))
+                window.order(.below, relativeTo: Int(target))
             }
         }
     }
