@@ -207,6 +207,22 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(after.workspaces["8"]!.tree == "h[10 11]" && after.workspaces["8"]!.floating == [12])
     }
 
+    /// The second Ghostty, which the user moved to hidden 3, lands on 3 though its rule names
+    /// 1, and a Ghostty the file lacks still follows the rule.
+    @Test func theSecondGhosttyLandsOnItsSavedWorkspaceNotItsRules() {
+        var before = Desk.session()
+        _ = before.add(10, to: "1")
+        _ = before.add(11, to: "1")
+        _ = before.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 11))
+        #expect(before.workspace(of: 11) == "3" && !before.isShown("3"))
+        var after = Self.restored(before.savedLayout(windowServer: Self.server))
+        _ = after.add(10, to: "1")
+        #expect(after.add(11, to: "1").hide == [11])
+        #expect(after.workspace(of: 11) == "3")
+        _ = after.add(12, to: "1")
+        #expect(after.workspace(of: 12) == "1")
+    }
+
     @Test func theSavedFocusIsAskedForWhenItsWindowComesBack() {
         var before = Session(names: ["a", "b"], monitors: [Desk.main])
         before.place("h[1 2 3]", on: "a")
