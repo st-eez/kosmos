@@ -116,14 +116,14 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     var id: UInt32 { UInt32(window.windowNumber) }
 
     /// Puts the ring around `target`, in AppKit's screen coordinates.
-    func place(around target: NSRect, radius: CGFloat, width: CGFloat = 4, color: CGColor) {
-        let outer = target.insetBy(dx: -width / 2, dy: -width / 2)
+    func place(around target: NSRect, radius: CGFloat, width: CGFloat = 2, color: CGColor) {
+        let outer = target.insetBy(dx: -width, dy: -width)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         window.setFrame(outer, display: false)
         ring.frame = CGRect(origin: .zero, size: outer.size)
-        ring.cornerRadius = radius + width / 2
-        ring.borderWidth = width / 2
+        ring.cornerRadius = radius + width
+        ring.borderWidth = width
         ring.borderColor = color
         CATransaction.commit()
     }

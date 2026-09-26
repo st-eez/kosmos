@@ -63,17 +63,13 @@ state, and during a slide the frame the slide shows the window at.
   that conceals them and the one that reveals them have both finished. The outgoing
   workspace's borders go as Kosmos plans the switch, before its batch conceals the
   windows, and the incoming ones come when the batch confirms, after the windows show.
-- The shape is what shows of JankyBorders' line (`border.c`, Steve's fork), so `width`
-  looks the same in both. JankyBorders strokes `width` points centered on the window's
-  edge, clipped 1 point inside it, in a window ordered below its target by default, so the
-  target covers the inner half: with `width = 4` Steve saw its outer 2 points. Kosmos
-  draws only that outer half, a ring from the window's edge outward by half the width:
-  with `width = 4`, 2 points. Before 2026-09-25 it drew JankyBorders' point inside the
-  edge too, over the window, and Steve found its 3 points thicker. The ring's inner
+- `width` is the ring's thickness in points, from the window's edge outward. JankyBorders'
+  `width = 4` looks like Kosmos's `width = 2`. Before 2026-09-25 Kosmos also drew 1 point
+  inside the edge, over the window, which Steve found too thick. The ring's inner
   corners are the window's: WindowServer's corner radius for the window, read with its row
   (`SLSWindowIteratorGetCornerRadii`). The caller owns the array of radii despite the Get
   name: 50,000 reads that kept it grew the probe by 3.9 MB, and as many that released it
-  by nothing (`kosmos-probe borders`). Its outer corners are that radius plus half the
+  by nothing (`kosmos-probe borders`). Its outer corners are that radius plus the
   width, concentric, as a layer's border draws its inner edge at the corner radius less
   the border's width (an offscreen render on macOS 27). Only the inventory's reads take
   the radius: it took a read of 2 windows' rows from 0.0138 and 0.0140 ms to 0.0152 and

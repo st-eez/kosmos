@@ -2,7 +2,7 @@ import CoreGraphics
 
 /// The config's `borders` (docs/borders.md).
 public struct BorderSettings: Equatable, Sendable {
-    /// In points, of which the half outside the window's edge shows (docs/borders.md).
+    /// In points, the ring's thickness outside the window's edge (docs/borders.md).
     public var width: Double
     /// Nil for the macOS accent color.
     public var active: BorderColor?
@@ -12,7 +12,7 @@ public struct BorderSettings: Equatable, Sendable {
     /// fully transparent for no flash.
     public var warning: BorderColor?
 
-    public init(width: Double = 4, active: BorderColor? = nil, inactive: BorderColor = .clear, warning: BorderColor? = nil) {
+    public init(width: Double = 2, active: BorderColor? = nil, inactive: BorderColor = .clear, warning: BorderColor? = nil) {
         self.width = width
         self.active = active
         self.inactive = inactive
@@ -77,10 +77,9 @@ public struct Border: Equatable, Sendable {
             return common.isNull ? 0 : common.width * common.height
         }
         guard let display = displays.max(by: { area($0) < area($1) }), area(display) > 0 else { return nil }
-        let half = CGFloat(width) / 2
-        ring = frame.insetBy(dx: -half, dy: -half)
-        cornerRadius = radius > 0 ? radius + half : 0
-        lineWidth = half
+        lineWidth = CGFloat(width)
+        ring = frame.insetBy(dx: -lineWidth, dy: -lineWidth)
+        cornerRadius = radius > 0 ? radius + lineWidth : 0
         self.color = color
         self.display = display.id
         displayFrame = display.frame
