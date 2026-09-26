@@ -1,0 +1,195 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts -Djavax.net.ssl.trustStoreType=JKS -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=36779 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|api.anthropic.com|api-staging.anthropic.com|api-pr-preview.anthropic.com|mcp-proxy.anthropic.com|mcp-proxy-staging.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes=
+TLC2 Version 2026.09.25.163503 (rev: 8f4bc8b)
+Running breadth-first search Model-Checking with fp 2 and seed -3072012421900773341 with 4 workers on 4 cores with 3042MB heap and 64MB offheap memory [pid: 550] (Linux 6.18.44-fc-v37 amd64, Ubuntu 21.0.10 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/user/kosmos/tla/MC.tla
+Parsing file /home/user/kosmos/tla/Kosmos.tla
+Parsing file /tmp/tlc-14009642097100944129/Integers.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-14009642097100944129/Sequences.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-14009642097100944129/FiniteSets.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-14009642097100944129/TLC.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-14009642097100944129/Naturals.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Kosmos
+Semantic processing of module MC
+Linting of module Kosmos
+Linting of module MC
+Starting... (2026-09-26 03:48:20)
+Computing initial states...
+Finished computing initial states: 2 distinct states generated at 2026-09-26 03:48:20.
+Error: Invariant NoBlankFrame is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ history = <<>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 0
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 0
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {}
+/\ goal = <<1>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 2: <Command line 1120, col 5 to line 1125, col 41 of module Kosmos>
+/\ history = <<3>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 0
+/\ mq = <<"input">>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 0
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {}
+/\ goal = <<3>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 3: <ExecMain line 679, col 5 to line 681, col 24 of module Kosmos>
+/\ history = <<3>>
+/\ active = 3
+/\ onDisplay = <<3>>
+/\ focus = "none"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<"conceal", "reveal", "barrier">>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 0
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {}
+/\ goal = <<3>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 4: <ExecBridge line 689, col 8 to line 697, col 27 of module Kosmos>
+/\ history = <<3>>
+/\ active = 3
+/\ onDisplay = <<3>>
+/\ focus = "none"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<"reveal", "barrier">>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 0
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {}
+/\ goal = <<3>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+56 states generated, 50 distinct states found, 18 states left on queue.
+The depth of the complete state graph search is 5.
+Finished in 00s at (2026-09-26 03:48:20)
