@@ -68,6 +68,9 @@ public struct Session: Sendable {
     var shownBefore: [DisplayID: String] = [:]
     /// Tiled windows dragged by the title bar, parked where they stood (docs/displays.md).
     public internal(set) var lifted: Set<WindowID> = []
+    /// The window focused when the restored layout was saved, until Kosmos admits it
+    /// (docs/tree.md).
+    public internal(set) var savedFocus: WindowID?
 
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
         precondition(!names.isEmpty, "a session needs a workspace")
@@ -143,6 +146,9 @@ public struct Session: Sendable {
         for window in Set(learned.keys).union(constrained.keys) where home[window] == nil {
             problems.append("window \(window) with a minimum belongs to no workspace")
         }
+        let pending = names.flatMap { workspaces[$0]!.pending.map(\.window) }
+        for window in pending where home[window] != nil { problems.append("pending window \(window) belongs to a workspace") }
+        if Set(pending).count != pending.count { problems.append("a window is pending on two workspaces") }
         return problems
     }
 
@@ -162,6 +168,10 @@ public struct Session: Sendable {
         return workspace.root.windows + workspace.floating + workspace.parked.map(\.window)
     }
 
+    public func isFloating(_ window: WindowID) -> Bool {
+        home[window].map { workspaces[$0]!.floating.contains(window) } ?? false
+    }
+
     public func isVisible(_ window: WindowID) -> Bool {
         home[window].map(isShown) == true && !isParked(window)
     }
@@ -175,10 +185,12 @@ public struct Session: Sendable {
         learned.merging(constrained) { CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height)) }
     }
 
+    /// The windows a restored layout still has pending hold their tiles (docs/tree.md).
     public func frames(of name: String) -> [WindowID: CGRect] {
         guard let workspace = workspaces[name] else { return [:] }
         let monitor = monitor(of: name)
-        return workspace.frames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
+        return workspace.holdingPending.frames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
+            .filter { id, _ in home[id] != nil }
     }
 
     func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
@@ -195,11 +207,16 @@ public struct Session: Sendable {
     // MARK: Windows arriving and leaving
 
     /// `point` is the window's center (docs/displays.md), and `minimum` the one WindowServer
-    /// reads for it.
+    /// reads for it. A window the restored layout has goes back to its place there, whatever
+    /// `name` and `floating` say (docs/tree.md). With a `reason`, the window waits parked.
     public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil,
-                             floating: Bool = false, minimum: CGSize = .zero) -> Plan {
+                             floating: Bool = false, minimum: CGSize = .zero, parked reason: ParkReason? = nil) -> Plan {
         defer { check() }
         guard home[window] == nil else { return Plan() }
+        if let saved = savedWorkspace(of: window) {
+            return admitSaved(window, to: saved, minimum: minimum, parked: reason)
+        }
+        forgetPending(window)
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if minimum != .zero { constrained[window] = minimum }
         if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
@@ -207,7 +224,11 @@ public struct Session: Sendable {
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan(frames: frames(of: target))
-        if !isShown(target) { plan.hide = [window] }
+        if let reason {
+            plan.frames = park([window], because: reason).frames
+        } else if !isShown(target) {
+            plan.hide = [window]
+        }
         return plan
     }
 
@@ -233,6 +254,7 @@ public struct Session: Sendable {
     public mutating func replace(_ old: WindowID, with new: WindowID, minimum: CGSize = .zero) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
+        forgetPending(new)
         let parked = isParked(old)
         var changed: Set<String> = [name]
         if let current = home.removeValue(forKey: new) {
@@ -310,14 +332,15 @@ public struct Session: Sendable {
     /// A parked window its app closed and kept, then ordered in again, opens as a new window
     /// does and keeps the minimum Kosmos learned (docs/tree.md). Nil for a window that is not
     /// parked.
-    public mutating func reopen(_ window: WindowID, to name: String?, floating: Bool, minimum: CGSize = .zero) -> Plan? {
+    public mutating func reopen(_ window: WindowID, to name: String?, floating: Bool, minimum: CGSize = .zero,
+                                parked reason: ParkReason? = nil) -> Plan? {
         defer { check() }
         guard isParked(window) else { return nil }
         let concealed = parkedConcealed.contains(window), kept = learned[window]
         _ = remove(window)
         learned[window] = kept
-        var plan = add(window, to: name, floating: floating, minimum: minimum)
-        if concealed, plan.hide.isEmpty { plan.show = [window] }
+        var plan = add(window, to: name, floating: floating, minimum: minimum, parked: reason)
+        if concealed, isShown(home[window]!) { plan.show = [window] }
         return plan
     }
 
