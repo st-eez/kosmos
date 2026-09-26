@@ -230,13 +230,14 @@ private final class HidingStore: @unchecked Sendable {
     private func send(show: [WindowID], on showDisplays: [WindowID: CGDirectDisplayID], hide: [WindowID],
                       stripping: Set<WindowID>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
         guard load() else { return nil }
-        // A window with no row, or new to the record with no owner, is left out. Ceiling: a
-        // failed row query leaves every window to hide on screen; docs/hiding.md has the upgrade.
-        let rows = Dictionary(SkyLight.rows(hide).map { ($0.id, $0) }) { first, _ in first }
+        // A window with no row, or new to the record with no owner, is left out. A failed row
+        // query leaves none out, so a window new to the record stops the batch (docs/hiding.md).
+        let read = SkyLight.readRows(hide)
+        let rows = Dictionary((read ?? []).map { ($0.id, $0) }) { first, _ in first }
         let recorded = Set(state!.windows.map(\.id))
         var owners: [WindowID: ProcessIdentity] = [:]
         for (id, row) in rows where !recorded.contains(id) { owners[id] = ProcessIdentity.of(row.pid) }
-        let hide = hide.filter { recorded.contains($0) ? rows[$0] != nil : owners[$0] != nil }
+        let hide = read == nil ? hide : hide.filter { recorded.contains($0) ? rows[$0] != nil : owners[$0] != nil }
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(Array(fresh), owners: owners) { return nil }
         let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,
@@ -276,7 +277,7 @@ private final class HidingStore: @unchecked Sendable {
     func forgetClosed(_ window: WindowID) {
         guard load() else { return }
         forget(ledger.departed([window], members: SkyLight.windows(in:),
-                               settled: { SkyLight.rows([$0]).isEmpty || SkyLight.spaces(of: $0)?.isEmpty == false }))
+                               settled: { SkyLight.readRows([$0]).map(\.isEmpty) ?? false || SkyLight.spaces(of: $0)?.isEmpty == false }))
     }
 
     func forget(_ windows: [WindowID]) {

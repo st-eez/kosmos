@@ -63,7 +63,7 @@ final class Borders {
     /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
     func show(_ shown: [WindowID: Shown], fullscreen: Set<DisplayID> = []) {
         for (target, window) in windows where shown[target]?.border.display != window.display {
-            window.orderOut(nil)
+            window.putBack()
             windows[target] = nil
             waiting[target] = nil
             spare[window.display, default: []].append(window)
@@ -158,6 +158,13 @@ private final class BorderWindow: NSWindow {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// Into its pool. macOS can move a window ordered out, as off a display that goes, so its
+    /// next show sets everything again.
+    func putBack() {
+        orderOut(nil)
+        shown = nil
+    }
 
     func show(_ next: Borders.Shown) {
         guard next != shown else { return }

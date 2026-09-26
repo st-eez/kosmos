@@ -112,7 +112,8 @@
   windows slide in, and filled with closed ones it would stop every conceal. A window
   still listed stays recorded, as one that only stopped being managed or that a failed
   read took for closed, so recovery restores it. A window the ledger does not hold leaves
-  once its row is gone or it has a Space: recovery restores one alive on no Space.
+  once its row is gone or it has a Space: recovery restores one alive on no Space. A failed
+  row query counts as neither (`SkyLight.readRows`).
 - A batch leaves out each window to hide that WindowServer no longer lists, and each
   window new to the record whose process is gone, as a closed tab whose place waits for
   the next tab ([tree.md](tree.md)) or a window of an app that quit before the inventory
@@ -120,11 +121,12 @@
   one new to the record stops the batch before it sends anything, and a recorded one fails
   its confirmation, since no Space lists a closed window. Either way recovery then shows
   every concealed window, as it did when a switch hid two windows of the bench stub that
-  had just quit (live log, September 25, 2026). A failed row query reads as every window
-  gone, as it does for the inventory, and leaves the windows to hide on screen until
-  their workspace is shown and hidden again. If that shows up, the upgrade is for
-  `SkyLight.rows` to return nil for a failed query, and for the batch to keep its whole
-  hide set then.
+  had just quit (live log, September 25, 2026). The batch reads the rows through
+  `SkyLight.readRows`, which returns nil for a failed query, where `SkyLight.rows`, as
+  the inventory reads rows, returns none. A failed query leaves no window out, so a
+  window new to the record, whose owner the query would have named, stops the batch and
+  recovery runs. Read as every window gone, it would leave the windows to hide on screen
+  until their workspace was shown and hidden again.
 - A window can also close, or its app order it out, after the batch reads its row and
   before its add lands, as at Command-W right before a switch. No Space lists it, so its
   conceal never shows and the batch fails its confirmation, and recovery would show every
