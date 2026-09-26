@@ -1,4 +1,5 @@
 import Foundation
+import KosmosRecovery
 import os
 
 private let guardianLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "guardian")
@@ -12,7 +13,7 @@ final class Guardian {
     /// The guardian keeps dying and Kosmos stops trying: nothing may stay concealed without it.
     var onUnavailable: (@MainActor () -> Void)?
     private var exitSource: DispatchSourceProcess?
-    private var recentExits: [ContinuousClock.Instant] = []
+    private var restarts = GuardianRestarts()
     /// Signaled once the guardian spawned last arms its exit watch.
     private var armed: DispatchSemaphore?
 
@@ -99,9 +100,7 @@ final class Guardian {
     private func failed() {
         isReady = false
         armed = nil
-        let now = ContinuousClock.now
-        recentExits = recentExits.filter { now - $0 < .seconds(10) } + [now]
-        guard recentExits.count <= 3 else {
+        guard restarts.failed(at: .now) else {
             guardianLog.fault("guardian exited 4 times in 10 s; hiding stays off")
             onUnavailable?()
             return
