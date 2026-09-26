@@ -74,11 +74,7 @@ final class Inventory {
         return (app?.bundleIdentifier, app?.localizedName)
     }
     private var watchPending = false
-    /// Nil while no sweep runs. A sweep skips these, as its snapshot predates their events.
-    private var touchedDuringSweep: Set<WindowID>?
-    private var sweepAgain = false
-    private var swept = false
-    private var presentAtStart: Set<WindowID> = []
+    private var sweeps = Sweeps()
     /// Read once for each process, as each read is a synchronous LaunchServices call, and
     /// dropped by its exit source (docs/inventory.md).
     ///
@@ -146,7 +142,7 @@ final class Inventory {
         return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
     }
 
-    func wasThereAtLaunch(_ id: WindowID) -> Bool { presentAtStart.contains(id) }
+    func wasThereAtLaunch(_ id: WindowID) -> Bool { sweeps.atLaunch.contains(id) }
 
     func isMinimized(_ id: WindowID) -> Bool { ax[id]?.minimized == true }
 
@@ -319,8 +315,8 @@ final class Inventory {
     /// sweep's snapshot may predate the change.
     private func enqueue(_ event: PendingEvent) {
         switch event {
-        case .read(let id, _, _), .destroyed(let id, _): touchedDuringSweep?.insert(id)
-        case .appExited(let pid): touchedDuringSweep?.formUnion(windows.filter { $0.value.pid == pid }.keys)
+        case .read(let id, _, _), .destroyed(let id, _): sweeps.touch([id])
+        case .appExited(let pid): sweeps.touch(windows.filter { $0.value.pid == pid }.keys)
         }
         if pending.isEmpty {
             // Queued after the events already on the main queue, such as the rest of
@@ -384,7 +380,7 @@ final class Inventory {
 
     /// `at`: when the change came, which order changes carry.
     private func apply(_ row: WindowRow, changedAt: ContinuousClock.Instant? = nil, at stamp: ContinuousClock.Instant = .now) {
-        touchedDuringSweep?.insert(row.id)
+        sweeps.touch([row.id])
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
             if arrivedWhileLocked.updateValue(row, forKey: row.id) == nil { scheduleWatch() }
@@ -434,7 +430,7 @@ final class Inventory {
             }
             return
         }
-        touchedDuringSweep?.insert(id)
+        sweeps.touch([id])
         let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
@@ -507,9 +503,7 @@ final class Inventory {
     /// The Space list omits windows on no Space, so tracked windows missing from it are read
     /// directly. The reads can block during a Space transition (docs/inventory.md).
     func sweep() {
-        guard !sessionLocked else { return }
-        guard touchedDuringSweep == nil else { sweepAgain = true; return }
-        touchedDuringSweep = []
+        guard !sessionLocked, sweeps.start() else { return }
         flushReads()
         let tracked = Array(windows.keys) + arrivedWhileLocked.keys
         looks.readAsked()
@@ -525,21 +519,19 @@ final class Inventory {
     /// and its window is still logged as missed: 28 of the 32 windows logged so from September
     /// 24 to 26, 2026 had a late event (docs/inventory.md).
     private func finishSweep(_ read: [WindowRow]?) {
-        let touched = touchedDuringSweep ?? []
-        touchedDuringSweep = nil
-        defer { if sweepAgain { sweepAgain = false; sweep() } }
+        let snapshot = sweeps.finish(read: sessionLocked ? nil : read?.map(\.id), tracked: windows.keys)
+        defer { if sweeps.takeAgain() { sweep() } }
         defer { readApplied() }
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         // Read as every window gone, a failed read would take every window out of the tree.
-        guard let read else { return inventoryLog.notice("sweep read failed; every window stays as it was") }
-        let rows = read.filter { !touched.contains($0.id) }
-        let seen = Set(rows.map(\.id))
+        guard let read, let snapshot else { return inventoryLog.notice("sweep read failed; every window stays as it was") }
+        let rows = read.filter { snapshot.seen.contains($0.id) }
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
             let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)
-            if swept, !reported { inventoryLog.notice("sweep found \(row.id), missed by events") }
+            if !snapshot.first, !reported { inventoryLog.notice("sweep found \(row.id), missed by events") }
             apply(row)
         }
-        for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
+        for id in snapshot.lost {
             if !removedWhileLocked.contains(id) { inventoryLog.notice("sweep lost \(id), missed by events") }
             remove(id, reason: "absent from sweep")
         }
@@ -555,14 +547,12 @@ final class Inventory {
         }
         // Accessibility lists no window on a Space that is not shown, so only the last sweep of
         // a Space change asks again, for the windows ordered in (docs/inventory.md).
-        if spacesChangedSinceSweep, !sweepAgain {
+        if spacesChangedSinceSweep, !sweeps.again {
             spacesChangedSinceSweep = false
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
         // A sweep that follows was asked for after this snapshot, and may find the late windows.
-        if !sweepAgain { foundRegularAtLaunch = [] }
-        if !swept { presentAtStart = seen }
-        swept = true
+        if !sweeps.again { foundRegularAtLaunch = [] }
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false
             arrivedWhileLocked = [:]

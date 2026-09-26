@@ -87,7 +87,9 @@
   destroyed window and an app's exit wait in the same order, a sweep reads on the same
   queue after the events already waiting, and the lock rules are checked as each event
   applies. A window an event names, and each known window of an app that exits, counts as
-  changed during a running sweep from the moment the event arrives.
+  changed during a running sweep from the moment the event arrives. `Sweeps` keeps these
+  rules, the sweep asked for during another and the windows the first sweep sees, which
+  were there at launch, and KosmosCore's tests cover them.
 - The session counts as locked from loginwindow's `com.apple.screenIsLocked` to
   `com.apple.screenIsUnlocked`, and while NSWorkspace reports it switched out by fast user
   switching. macOS 27's loginwindow still names both notifications, and alt-tab and rift
