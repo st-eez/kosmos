@@ -263,24 +263,32 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(after.savedLayout().windows.map(\.window).sorted() == [1, 2, 4])
     }
 
-    /// A garbled place would break the tree, so its window goes where it would at any launch.
-    /// A focus stamp counts only as an order, so no stamp in a file can run the clock over.
-    @Test func aPlaceKosmosCannotTrustIsLeftOut() {
+    /// A garbled hint would break the tree, as a weight far from the shares Kosmos writes
+    /// gives a sibling an infinite share, so its window goes where it would at any launch.
+    @Test(arguments: [(5, 0.5, 0.5), (1, .nan, 0.5), (1, 1e300, 0.5), (1, 1e-310, 1), (1, 0.5, 0.6)])
+    func aHintKosmosCannotTrustIsLeftOut(index: Int, first: Double, second: Double) {
         var before = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
         before.place("h[1 2]", on: "b")
         _ = before.perform(.workspace(.named("b")))
         var layout = before.savedLayout()
-        layout.windows[0].levels![0].index = 5
-        layout.windows[1].levels![0].slots[0].weight = .nan
+        layout.windows[1].levels![0].index = index
+        layout.windows[1].levels![0].slots[0].weight = first
+        layout.windows[1].levels![0].slots[1].weight = second
         var garbled = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
         garbled.restore(layout)
-        #expect(garbled.focusedWorkspace == "b" && garbled.workspaces["b"]!.pending.isEmpty)
+        #expect(garbled.focusedWorkspace == "b" && garbled.workspaces["b"]!.pending.map(\.window) == [1])
         _ = garbled.add(1)
         _ = garbled.add(2)
-        #expect(garbled.workspace(of: 1) == "b" && garbled.workspaces["b"]!.tree == "h[1 2]")
+        #expect(garbled.workspace(of: 2) == "b" && garbled.workspaces["b"]!.tree == "h[1 2]")
+        #expect(garbled.workspaces["b"]!.root.children.allSatisfy { $0.weight == 0.5 })
+    }
 
-        // A focus stamp is only an order.
-        layout = before.savedLayout()
+    /// A focus stamp counts only as an order, so no stamp in a file can run the clock over.
+    @Test func aSavedStampIsAnOrderOnly() {
+        var before = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
+        before.place("h[1 2]", on: "b")
+        _ = before.perform(.workspace(.named("b")))
+        var layout = before.savedLayout()
         layout.windows[0].stamp = .max
         var stamped = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
         stamped.restore(layout)

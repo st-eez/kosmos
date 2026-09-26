@@ -137,9 +137,11 @@ extension Session {
 }
 
 extension RestoreHint.Level {
-    /// A file could hold any numbers, and the tree's operations trust a hint's.
+    /// A file could hold any numbers, and placing a window divides by its siblings' weights,
+    /// which the tree keeps between 0 and 1, summing to 1 (`Workspace.validate`).
     var isSound: Bool {
-        slots.indices.contains(index) && slots.allSatisfy { $0.weight > 0 && $0.weight.isFinite }
+        slots.indices.contains(index) && slots.allSatisfy { (1e-6...1).contains($0.weight) }
+            && abs(slots.reduce(0) { $0 + $1.weight } - 1) < 1e-6
     }
 }
 
