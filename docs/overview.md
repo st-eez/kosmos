@@ -60,7 +60,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
 | Modifier drags | An active event tap for the left and right buttons at the annotated session location, each event decided on the tap's thread from WindowServer's hit test | `NSEvent` global monitors, which cannot keep an event from the app. A hit test of the model's frames, which knows no stacking order and would take a click on a panel over a tile |
-| Borders | A click-through window of Kosmos's own per bordered window, ordered directly above it, drawn by Core Animation from the model's frames, focus and slides | JankyBorders, a separate process drawing from WindowServer's events, which knows no workspace or slide |
+| Borders | A click-through window of Kosmos's own per bordered window, ordered directly below it, drawn by Core Animation from the model's frames, focus and slides | JankyBorders, a separate process drawing from WindowServer's events, which knows no workspace or slide |
 
 ## 4. Architecture
 
