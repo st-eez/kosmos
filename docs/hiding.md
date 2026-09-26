@@ -52,11 +52,21 @@
   window of the hidden workspace `move-node-to-workspace --focus-follows-window` enters,
   and a followed rule window. The switch now shows late and whole, and its log line gives
   the wait as `held`. The wait leaves out a window shown already and one whose app is
-  backed off, and a write no row has shown counts as landed 1 s after it was sent, the
-  Accessibility timeout. A concealed window's move posts the change event as a shown
-  window's does: in `kosmos-probe concealed-move`, off every display and on the main one,
-  each of a window's two concealed moves posted two change events 10 to 13 ms after it, and
-  the row showed the new frame without the holding Space's offset (September 25, 2026).
+  backed off. A write no row has shown counts as landed 1 s after it was sent, the
+  Accessibility timeout, and the controller checks the batch again when the first write
+  holding it reaches that second. A concealed window's move posts the change event as a
+  shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
+  one, each of a window's two concealed moves posted two change events 10 to 13 ms after
+  it, and the row showed the new frame without the holding Space's offset (September 25,
+  2026).
+- A window on screen that the revealed workspace takes in, as the one
+  `move-node-to-workspace --focus-follows-window` moves or a followed rule window, is
+  concealed at the command by a batch of its own, whose switch line shows nothing, and
+  revealed with the workspace once its write lands. Written at once, it had landed at its
+  tile over the old workspace 1 or 2 frames before the rest. Into an empty workspace
+  nothing is revealed around it, so the switch goes at once and the window slides there.
+  Moved to a workspace on another display, it leaves its own display at the command, and
+  the windows left there slide into its place.
 - A window a batch conceals is written only once the batch is done, so its write lands
   concealed. A batch the bridge queue sent late (p98 15.7 ms, 162 ms at most, in the same
   switches) had let the reflow of the workspace it hid show before the conceal. A write
@@ -70,11 +80,11 @@
   batch. A switch back to 1 waits for 1's reflow to land.
 - A plain switch's windows were laid out while hidden, so none has a write on its way and
   its batch goes in its command's main actor turn, with no read and no timer. The added
-  work is a lookup per shown window, and its log line keeps its fields. The ceiling: a
-  switch that conceals none of the windows a batch waits for, as one on another display,
-  waits behind it. Letting a batch with no window in common go first would remove that
-  wait. The spec's bridge queue can run a switch's operations any time after its command,
-  which covers the wait, and the order of reveals and conceals is unchanged
+  work is a few lookups per window it shows, and its log line keeps its fields. The
+  ceiling: a switch that conceals none of the windows a batch waits for, as one on another
+  display, waits behind it. Letting a batch with no window in common go first would remove
+  that wait. The spec's bridge queue can run a switch's operations any time after its
+  command, which covers the wait, and the order of reveals and conceals is unchanged
   ([tla/README.md](../tla/README.md)).
 - A batch's completion and the focus request after it run on the main actor, so work
   queued there delays both. Three reads had kept the main actor busy after a switch. Each

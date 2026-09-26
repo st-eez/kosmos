@@ -108,3 +108,25 @@ private func write(_ frame: CGRect) -> BatchOrder.Write { (.frame(frame), frame)
     released = order.done(third.number)
     #expect(released[1]?.target == a)
 }
+
+@Test func aWindowEnteringARevealedWorkspaceIsConcealedFirstAndRevealedWithIt() {
+    var order = BatchOrder()
+    // Window 9, moved on screen into workspace 2, is revealed with 2's window 3.
+    let conceal = order.add(show: [], hide: [9])
+    let reveal = order.add(show: [3, 9], hide: [1])
+    #expect(order.lastNumber == reveal.number)
+    let now = order.write([3: write(a), 9: write(moved), 1: write(a)])
+    #expect(now.keys.sorted() == [3])
+    var ready = order.ready { $0 == 3 }
+    #expect(ready == [conceal])
+    #expect(order.next == reveal)
+    // 9's write waits for its conceal, and the reveal for 9's write.
+    ready = order.ready { _ in false }
+    #expect(ready.isEmpty)
+    var released = order.done(conceal.number)
+    #expect(released.keys.sorted() == [9])
+    ready = order.ready { _ in false }
+    #expect(ready == [reveal])
+    released = order.done(reveal.number)
+    #expect(released[1]?.target == a)
+}

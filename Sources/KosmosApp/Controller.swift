@@ -22,12 +22,11 @@ final class Controller {
     private var emptyWorkspaces: [DisplayID: EmptyWorkspaceWindow] = [:]
     private let focusQueue = FocusQueue()
     private let bar = BarPush()
-    private var switchGeneration = 0
     /// Batches wait here for their windows' writes, and writes for their windows' conceals
     /// (docs/hiding.md).
     private var order = BatchOrder()
     private var switches: [Int: Switch] = [:]
-    private var recheckScheduled = false
+    private var recheckAt: ContinuousClock.Instant?
     var owner: [WindowID: pid_t] = [:]
     /// Newest last.
     var recent: [WindowID] = []
@@ -213,54 +212,60 @@ final class Controller {
         let windows = resyncs ? session.resyncPlan(layingOutHidden: false) : plan
         let (show, hide) = (windows.show, windows.hide)
         if resyncs { needsResync = false }
-        // Before the writes, which wait for the batch that conceals their windows.
+        let entering = session.entering(show: show, hide: hide, frames: plan.frames.keys,
+                                        concealed: hiding.isConcealedOrConcealing)
+        // Before the writes, which wait for the batches that conceal their windows.
+        var added: [Int] = []
+        func add(show: [WindowID], hide: [WindowID]) {
+            let number = order.add(show: show, hide: hide).number
+            switches[number] = Switch(received: received, fromCommand: fromCommand)
+            added.append(number)
+        }
+        if !entering.isEmpty { add(show: [], hide: entering) }
         if !(show.isEmpty && hide.isEmpty) {
             intake.forgetPlacedHidden(show)   // their workspace is shown
-            switchGeneration += 1
-            switches[order.add(show: show, hide: hide).number] = Switch(received: received, fromCommand: fromCommand,
-                                                                         generation: switchGeneration)
+            add(show: show + entering.filter { !show.contains($0) }, hide: hide)
         }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping))
+        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
         if movePointer { centerPointer() }
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(session.intent, fromCommand: fromCommand) }
             bringFloatingHome()
         }
         sendReadyBatches()
+        for number in added where switches[number] != nil { switches[number]!.held = .now }
         publishState()
     }
 
     private struct Switch {
         let received: ContinuousClock.Instant
         let fromCommand: Bool
-        let generation: Int
         /// When the batch first waited for writes; nil for one sent in its command's turn.
         var held: ContinuousClock.Instant?
     }
 
     /// A batch whose revealed windows' writes are still landing waits, with every batch after
-    /// it, until a row shows each write or `FrameLedger.landingWait` after it. A plain switch's
+    /// it, until a row shows each write or the Accessibility timeout after it. A plain switch's
     /// windows have none, so its batch goes at once (docs/hiding.md).
     func sendReadyBatches() {
         guard !sessionLocked, order.isWaiting else { return }
         let now = ContinuousClock.now
-        let ready = order.ready { id in
+        func landing(_ id: WindowID) -> Bool {
             // A backed off app's write waits for the app to answer again.
             ledger.isLanding(id, at: now) && hiding.isConcealedOrConcealing(id)
                 && owner[id].flatMap(inventory.worker)?.answers != false
         }
-        ready.forEach(send)
-        guard order.isWaiting else { return }
-        for number in switches.keys where switches[number]!.held == nil { switches[number]!.held = now }
-        if !recheckScheduled {
-            recheckScheduled = true
-            after(FrameLedger.landingWait) { controller in
-                controller.recheckScheduled = false
-                controller.sendReadyBatches()
-            }
+        order.ready(landing: landing).forEach(send)
+        // Checked again when the first write holding the batch times out.
+        guard let next = order.next, let end = next.show.filter(landing).compactMap(ledger.landingEnds).min(),
+              recheckAt.map({ end < $0 }) ?? true else { return }
+        recheckAt = end
+        after(end - now) { controller in
+            if controller.recheckAt == end { controller.recheckAt = nil }
+            controller.sendReadyBatches()
         }
     }
 
@@ -306,7 +311,7 @@ final class Controller {
                 return
             }
             // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
-            guard context.generation == self.switchGeneration else { return }
+            guard batch.number == self.order.lastNumber else { return }
             self.requestFocus(self.session.intent, fromCommand: context.fromCommand)
             // Only after the focus request. A stale switch's reveal is checked by the switch
             // that replaced it.
@@ -330,9 +335,11 @@ final class Controller {
 
     func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) {
         guard !sessionLocked else { return }
-        let writes = ledger.writes(for: targets)
-        slides?.writing(Dictionary(uniqueKeysWithValues: writes.keys.map { ($0, targets[$0]!) }), sliding: sliding)
-        sendWrites(order.write(Dictionary(uniqueKeysWithValues: writes.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) })))
+        let entries = ledger.writes(for: targets).reduce(into: [WindowID: BatchOrder.Write]()) { entries, write in
+            entries[write.key] = (write.value, targets[write.key]!)
+        }
+        slides?.writing(entries.mapValues(\.target), sliding: sliding)
+        sendWrites(order.write(entries))
     }
 
     /// A write that goes to no worker, or comes while locked, is forgotten, so its target is

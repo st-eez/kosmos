@@ -15,13 +15,17 @@ public struct BatchOrder: Sendable {
     /// Oldest first: the first `sent` went to Hiding and are not done, and the rest wait.
     private var batches: [Batch] = []
     private var sent = 0
-    private var lastNumber = 0
-    /// Each waits for the end of the batch numbered `after`.
-    private var held: [WindowID: (write: FrameWrite, target: CGRect, after: Int)] = [:]
+    /// The newest batch's, so a batch can tell whether a newer one came.
+    public private(set) var lastNumber = 0
+    /// Writes to windows a batch not yet done conceals.
+    private var held: [WindowID: Write] = [:]
 
     public init() {}
 
     public var isWaiting: Bool { sent < batches.count }
+
+    /// The first batch waiting.
+    public var next: Batch? { isWaiting ? batches[sent] : nil }
 
     /// Before the plan's writes, which wait for it.
     public mutating func add(show: [WindowID], hide: [WindowID]) -> Batch {
@@ -31,16 +35,15 @@ public struct BatchOrder: Sendable {
         return batch
     }
 
-    /// The writes to send now. One to a window a batch not done conceals waits for the first
-    /// such batch, and one to a window whose write waits joins it, so its app takes them in
-    /// order.
+    /// The writes to send now. A write waits while a batch not done conceals its window, and
+    /// a later write joins it, so its app takes them in order.
     public mutating func write(_ writes: [WindowID: Write]) -> [WindowID: Write] {
         var now: [WindowID: Write] = [:]
         for (id, entry) in writes {
             if let waiting = held[id] {
-                held[id] = (entry.write.replacing(waiting.write, target: entry.target), entry.target, waiting.after)
-            } else if let batch = batches.first(where: { $0.hide.contains(id) }) {
-                held[id] = (entry.write, entry.target, batch.number)
+                held[id] = (entry.write.replacing(waiting.write, target: entry.target), entry.target)
+            } else if conceals(batches[...], id) {
+                held[id] = entry
             } else {
                 now[id] = entry
             }
@@ -53,10 +56,10 @@ public struct BatchOrder: Sendable {
     /// batch conceals again. A write waiting for a later batch lands after its conceal.
     public mutating func ready(landing: (WindowID) -> Bool) -> [Batch] {
         var ready: [Batch] = []
-        while sent < batches.count {
-            let batch = batches[sent], later = batches[(sent + 1)...]
+        while let batch = next {
+            let earlier = batches[..<sent], later = batches[(sent + 1)...]
             guard !batch.show.contains(where: { id in
-                (landing(id) || held[id].map { $0.after < batch.number } == true) && !later.contains { $0.hide.contains(id) }
+                (landing(id) || (held[id] != nil && conceals(earlier, id))) && !conceals(later, id)
             }) else { break }
             ready.append(batch)
             sent += 1
@@ -64,20 +67,17 @@ public struct BatchOrder: Sendable {
         return ready
     }
 
-    /// The writes the batch's end sends. One whose window a later batch conceals waits for it.
+    /// The writes the batch's end sends: those whose window no batch not done conceals.
     public mutating func done(_ number: Int) -> [WindowID: Write] {
         guard let index = batches.firstIndex(where: { $0.number == number }), index < sent else { return [:] }
         batches.remove(at: index)
         sent -= 1
-        var released: [WindowID: Write] = [:]
-        for (id, entry) in held where entry.after == number {
-            if let batch = batches.first(where: { $0.hide.contains(id) }) {
-                held[id]!.after = batch.number
-            } else {
-                released[id] = (entry.write, entry.target)
-                held[id] = nil
-            }
-        }
+        let released = held.filter { !conceals(batches[...], $0.key) }
+        for id in released.keys { held[id] = nil }
         return released
+    }
+
+    private func conceals(_ batches: ArraySlice<Batch>, _ id: WindowID) -> Bool {
+        batches.contains { $0.hide.contains(id) }
     }
 }

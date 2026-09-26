@@ -41,10 +41,6 @@ public struct FrameLedger: Sendable {
     /// The newest write sent to each window's app, until a row shows its read back.
     private var landing: [WindowID: (target: CGRect, sent: ContinuousClock.Instant, readBack: CGRect?)] = [:]
 
-    /// The Accessibility timeout. A write that has not landed by then counts as landed, so a
-    /// reveal waits no longer (docs/hiding.md).
-    public static let landingWait: Duration = .seconds(1)
-
     public init() {}
 
     public mutating func writes(for targets: [WindowID: CGRect]) -> [WindowID: FrameWrite] {
@@ -127,9 +123,15 @@ public struct FrameLedger: Sendable {
         return true
     }
 
-    /// Whether the newest write sent is yet to show in a row, within `landingWait`.
+    /// Whether the newest write sent is yet to show in a row.
     public func isLanding(_ id: WindowID, at now: ContinuousClock.Instant) -> Bool {
-        landing[id].map { now < $0.sent + Self.landingWait } ?? false
+        landingEnds(id).map { now < $0 } ?? false
+    }
+
+    /// A write no row has shown counts as landed after the Accessibility timeout, so a reveal
+    /// waits no longer (docs/hiding.md).
+    public func landingEnds(_ id: WindowID) -> ContinuousClock.Instant? {
+        landing[id].map { $0.sent + AXBackoff.timeout }
     }
 
     /// Whether a change that came at `stamp` can be a write's. Ceiling: a change that came
