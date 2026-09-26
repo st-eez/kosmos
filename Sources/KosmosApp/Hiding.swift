@@ -148,12 +148,11 @@ final class Hiding {
     }
 
     /// Takes over the record the Kosmos before this one left, in place of startup recovery,
-    /// before any window is admitted (docs/hiding.md). `conceals` says whether admitting a
-    /// window conceals it.
-    func adopt(conceals: @escaping @Sendable (Adoption.Member) -> Bool) -> (Recovery.Outcome, Adoption) {
+    /// before any window is admitted (docs/hiding.md).
+    func adopt() -> (Recovery.Outcome, Adoption) {
         let store = self.store
         let (outcome, adoption, concealed) = bridge.sync {
-            let (outcome, adoption) = store.adopt(conceals: conceals)
+            let (outcome, adoption) = store.adopt()
             return (outcome, adoption, store.concealed)
         }
         self.concealed = concealed
@@ -161,12 +160,9 @@ final class Hiding {
         return (outcome, adoption)
     }
 
-    /// Leaves the record, marked, to the Kosmos that starts next, once the queued batches have
-    /// run. False when nothing is recorded, or the mark could not be published, so quit
-    /// recovery runs as at any quit.
-    func handOver() -> Bool {
-        let store = self.store
-        return bridge.sync { store.handOver() }
+    /// Lets the queued batches land and leaves the record to the Kosmos that starts next.
+    func handOver() {
+        bridge.sync {}
     }
 }
 
@@ -387,26 +383,17 @@ private final class HidingStore: @unchecked Sendable {
 
     /// The ledger comes back from the Spaces' members, as after an incomplete recovery. A failed
     /// row query keeps nothing concealed, as it could not tell a closed window.
-    func adopt(conceals: @escaping (Adoption.Member) -> Bool) -> (Recovery.Outcome, Adoption) {
+    func adopt() -> (Recovery.Outcome, Adoption) {
         var adoption = Adoption()
         let outcome = recover(keepingAnimationSpaces: false) { members, recorded in
             guard let rows = SkyLight.readRows(members) else {
                 hidingLog.error("the concealed windows' rows could not be read; restoring every one")
                 return []
             }
-            adoption = Adoption(members: rows.map { Adoption.Member(id: $0.id, pid: $0.pid, parent: $0.parent, orderedIn: $0.orderedIn) },
-                                recorded: recorded, conceals: conceals)
+            adoption = Adoption(members: rows.map { .init(id: $0.id, parent: $0.parent, orderedIn: $0.orderedIn) }, recorded: recorded)
             return adoption.windows
         }
         return (outcome, adoption)
-    }
-
-    func handOver() -> Bool {
-        guard load(), var next = state, !next.spaces.isEmpty || !next.animationSpaces.isEmpty else { return false }
-        next.handover = true
-        guard record.publish(next) else { return false }
-        state = next
-        return true
     }
 
     /// kosmos_window_spaces leaves out the holding Space. A fullscreen Space counts too: an add

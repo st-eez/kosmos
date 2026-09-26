@@ -53,20 +53,17 @@ public enum Recovery {
             kosmos_space_set_alpha(space, 1)
         }
         let recorded = record.spaces + animation
-        let (settled, gone) = settledMembers(recorded, of: record)
+        let (members, gone) = settledMembers(recorded, of: record)
         let liveSpaces = recorded.filter { !gone.contains($0) }
         let holding = Set(record.spaces)
-        let spared = sparing?(settled.filter { holding.contains($0.key) }.values.flatMap { $0 }, Set(record.windows.map(\.id))) ?? []
-        let members = settled.mapValues { $0.filter { !spared.contains($0) } }
-        let sparedSpaces = Set(settled.filter { $0.value.contains(where: spared.contains) }.keys)
+        let spared = sparing?(members.filter { holding.contains($0.key) }.values.flatMap { $0 }, Set(record.windows.map(\.id))) ?? []
         // One snapshot of the displays and one read of the rows, so a display change during
         // recovery cannot mix destinations.
         let displays = Displays.current()
-        let named = Set(members.values.joined()).union(record.windows.map(\.id)).subtracting(spared)
+        let named = Set(members.values.joined()).union(record.windows.map(\.id))
         let frames = Dictionary(SkyLight.rows(Array(named)).map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
-        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id).filter { !spared.contains($0) },
-                                     alive: Set(frames.keys),
+        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), sparing: spared, alive: Set(frames.keys),
                                      isOnAnySpace: { SkyLight.spaces(of: $0).map { !$0.isEmpty } },
                                      destination: { destination(for: frames[$0], original: original[$0], in: displays) })
 
@@ -85,7 +82,7 @@ public enum Recovery {
 
         let handled = Set(plan.adds.values.joined()).union(plan.removalsBySpace.values.joined())
         let after = SpaceMembers.read(liveSpaces, of: record)
-        let remaining = after.members.values.joined().filter { !spared.contains($0) }.count
+        let remaining = plan.remaining(after.members)
         let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))
         let onNoSpace = { (window: UInt32) in alive.contains(window) && (SkyLight.spaces(of: window) ?? []).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
@@ -96,14 +93,15 @@ public enum Recovery {
         }
         // A destroy is only sent, and one that leaves a Space holding another process's
         // windows is unconfirmed, so a barrier and a read show each Space gone or not.
-        let destroying = liveSpaces.filter { !sparedSpaces.contains($0) }
+        let destroying = liveSpaces.filter { !plan.sparedSpaces.contains($0) }
         for space in destroying { kosmos_space_destroy(space) }
         let left = destroying.filter { space in
             _ = kosmos_barrier(space)
             return SkyLight.windows(in: space) != nil
         }
         if !left.isEmpty { recoveryLog.error("\(left.count) Spaces still exist after their destroy; keeping them in the record") }
-        if let kept = record.keptAfterRestore(left: Set(left).union(sparedSpaces), keepingAnimationSpaces: keeping, sparing: spared) {
+        if let kept = record.keptAfterRestore(left: Set(left).union(plan.sparedSpaces), keepingAnimationSpaces: keeping,
+                                               sparing: spared) {
             file.publish(kept)
         } else {
             file.clear()

@@ -157,23 +157,25 @@ private let kept = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2
     #expect(after?.animationSpaces == [12, 13])
 }
 
-/// A Kosmos that takes the record over keeps the windows it spares, recorded, with the Space
-/// that holds them, and the rest goes as after any recovery.
-@Test func anAdoptionKeepsTheSparedWindowsAndTheirSpace() {
-    var handedOver = kept
-    handedOver.windows.append(.init(id: 2, owner: app, originalSpace: 5))
-    handedOver.handover = true
-    let after = handedOver.keptAfterRestore(left: [10], keepingAnimationSpaces: false, sparing: [2])
-    #expect(after?.windows.map(\.id) == [2])
+/// A Kosmos that takes the record over spares 2 and its sheet 3 in Space 10. Recovery
+/// restores 1 and 4, destroys the other Spaces, and keeps 10 with 2 recorded.
+@Test func aSparedWindowsSpaceSurvivesAndStaysRecorded() {
+    var record = kept
+    record.windows.append(.init(id: 2, owner: app, originalSpace: 5))
+    let plan = RecoveryPlan.make(members: [9: [1], 10: [2, 3, 4], 12: []], recorded: [1, 2], sparing: [2, 3],
+                                 alive: [1, 2, 3, 4], isOnAnySpace: { _ in true }, destination: { _ in 5 })
+    #expect(plan.removalsBySpace == [9: [1], 10: [4]])
+    #expect(plan.sparedSpaces == [10])
+    let after = record.keptAfterRestore(left: plan.sparedSpaces, keepingAnimationSpaces: false, sparing: plan.spared)
     #expect(after?.spaces == [10])
+    #expect(after?.windows.map(\.id) == [2])
     #expect(after?.animationSpaces == [])
-    #expect(after?.handover == false)
 }
 
-/// The handover ends at the first recovery, so a crash after it gets a crash's grace.
-@Test func anyRecoveryEndsTheHandover() {
-    var handedOver = kept
-    handedOver.handover = true
-    #expect(!handedOver.keptAfterIncomplete(gone: [], keepingAnimationSpaces: false).handover)
-    #expect(handedOver.keptAfterRestore(left: [9], keepingAnimationSpaces: false)?.handover == false)
+/// The spared windows stay in their Space, so they do not keep the recovery from completing.
+@Test func sparedMembersDoNotCountAsRemaining() {
+    let plan = RecoveryPlan.make(members: [10: [2, 4]], recorded: [2], sparing: [2], alive: [2, 4],
+                                 isOnAnySpace: { _ in true }, destination: { _ in 5 })
+    #expect(plan.remaining([10: [2]]) == 0)
+    #expect(plan.remaining([10: [2, 4]]) == 1)
 }

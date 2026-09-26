@@ -139,12 +139,7 @@ final class Controller {
     /// window, so the windows of hidden workspaces stay concealed across the restart
     /// (docs/hiding.md).
     func adopt() {
-        let session = self.session, rules = self.rules
-        let (outcome, adoption) = hiding.adopt { member in
-            let app = NSRunningApplication(processIdentifier: member.pid)
-            let rule = rules.first { $0.matches(appID: app?.bundleIdentifier, appName: app?.localizedName) }
-            return session.concealsAtAdmission(member.id, rule: rule?.workspace)
-        }
+        let (outcome, adoption) = hiding.adopt()
         self.adoption = adoption
         controllerLog.notice("startup: \(String(describing: outcome), privacy: .public)")
         if !adoption.kept.isEmpty { after(Self.admissionBound) { $0.revealUnadmitted() } }

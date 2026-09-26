@@ -1,11 +1,5 @@
 import AppKit
-import KosmosRecovery
 
-// script/install.sh hands the record over only to a build that reads it (docs/hiding.md).
-if CommandLine.arguments.dropFirst().first == "record-version" {
-    print(RecoveryRecord.version)
-    exit(0)
-}
 if CommandLine.arguments.dropFirst().first == "launch-at-login" {
     exit(LaunchAtLogin.command(Array(CommandLine.arguments.dropFirst(2))))
 }

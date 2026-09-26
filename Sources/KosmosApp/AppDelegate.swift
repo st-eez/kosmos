@@ -31,18 +31,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var displayIDs: Set<DisplayID> = []
     private var displayChange: DispatchWorkItem?
     private var screensAsleep = false
-    /// The record the last Kosmos left waits for start() to take it over (docs/hiding.md).
-    private var adoptionPending = false
-    /// `kosmos handover` asked the next quit to leave the record to the Kosmos that follows.
-    private var handingOver = false
+    /// When `kosmos handover` asked the next quit to leave the record to the Kosmos that
+    /// follows.
+    private var handoverArmed: ContinuousClock.Instant?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // First, so a SIGTERM during startup quits with exit 0 once startup is done. Killed by
         // the signal, Kosmos would count as crashed, and launch at login would restart it.
         handleTerminationSignals()
-        // Before the lock, so a guardian of the last Kosmos that finds the lock taken leaves the
-        // record to one that restores it should this Kosmos die at any point after (docs/hiding.md).
-        guardian.start()
         let trusted = AXIsProcessTrusted()
         do {
             // The lock keeps a second Kosmos out and serializes recovery with the guardian, which
@@ -65,16 +61,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let record = try RecordFile(url: KosmosFiles.record)
             self.record = record
             // Windows a previous run left concealed come back before anything else, unless this
-            // Kosmos manages windows at once and takes them over in start().
-            if trusted {
-                adoptionPending = true
-            } else {
-                log.notice("startup recovery: \(String(describing: Recovery.run(file: record)), privacy: .public)")
-            }
+            // Kosmos manages windows at once and takes them over in start(adopting:).
+            if !trusted { recoverAtStartup(record) }
         } catch {
             log.error("\(error.localizedDescription, privacy: .public)")
             exit(1)
         }
+        guardian.start()
         startServer()
 
         let statusItem = StatusItem()
@@ -86,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // WindowServer tracking needs no permission, so it starts before the Accessibility grant.
         inventory.start()
         if trusted {
-            start()
+            start(adopting: true)
         } else {
             statusItem.accessibilityMissing = true
             showSetup(Onboarding.State(accessibility: false), takingKey: true)
@@ -94,12 +87,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Only the quit the arm was for, and only with a guardian to restore the windows should
+        // no Kosmos follow (docs/hiding.md).
+        let handingOver = handoverArmed.map { .now - $0 < Self.armLife } == true && guardian.isReady
         server?.stop()
         // The last second of changes has no write yet.
         controller?.writeLayout(wait: true)
         // Slides end first, so recovery finds the pool's Spaces empty.
         controller?.endSlides("at quit")
-        if handingOver, hiding?.handOver() == true {
+        if handingOver, let hiding {
+            hiding.handOver()
             log.notice("quit: the record is left to the Kosmos that starts next")
             return
         }
@@ -165,20 +162,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `kosmos handover [record version]`, for script/install.sh: the next quit leaves the record
-    /// to a Kosmos that starts right after it, which reads that version, this build's when none
-    /// is given (docs/hiding.md).
+    /// `kosmos handover [record version]`, for script/install.sh: a quit within `armLife` leaves
+    /// the record to a Kosmos that starts right after it, which reads that version, this build's
+    /// when none is given. A refusal disarms (docs/hiding.md).
     private func armHandover(_ arguments: [String]) -> Response {
+        handoverArmed = nil
         let version = arguments.isEmpty ? RecoveryRecord.version : arguments.count == 1 ? UInt32(arguments[0]) : nil
         guard let version else { return failure("usage: handover [record version]") }
         guard version == RecoveryRecord.version else {
             return failure("the next Kosmos reads record version \(version) and this one writes \(RecoveryRecord.version), so quitting restores the hidden windows")
         }
         guard hiding != nil else { return failure("no windows are hidden before Kosmos manages them") }
-        handingOver = true
-        log.notice("handover: the next quit leaves the record to the Kosmos that follows")
+        handoverArmed = .now
+        log.notice("handover: a quit within \(Self.armLife, privacy: .public) leaves the record to the Kosmos that follows")
         return Response()
     }
+
+    /// script/install.sh sends its SIGTERM right after the arm.
+    private static let armLife: Duration = .seconds(5)
 
     private func listBindings() -> Response {
         guard let hotkeys else { return failure("no hotkeys are registered") }
@@ -331,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrusted()
         if trusted, controller == nil {
             statusItem?.accessibilityMissing = false
-            start()
+            start(adopting: false)
         }
         guard let controller, controller.wantsPointer else { return Onboarding.State(accessibility: trusted) }
         controller.renewPointerTapAfterGrant()
@@ -347,7 +348,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func start() {
+    /// Restores the windows the last Kosmos left concealed, then names this Kosmos in the lock
+    /// file, so that Kosmos's guardian leaves (docs/hiding.md).
+    private func recoverAtStartup(_ record: RecordFile) {
+        log.notice("startup recovery: \(String(describing: Recovery.run(file: record)), privacy: .public)")
+        instanceLock?.name(.current)
+    }
+
+    /// `adopting` at the launch: the startup recovery has not run.
+    private func start(adopting: Bool) {
         guard let record else { return }
         // Two tiling window managers would fight over every window.
         let otherManager = !NSRunningApplication.runningApplications(withBundleIdentifier: "bobko.aerospace").isEmpty
@@ -379,12 +388,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusProblem = controller.focusProblem
         updateProblems()
         self.controller = controller
-        if adoptionPending {
-            adoptionPending = false
-            if managing {
+        if adopting {
+            // Named in the lock file, this Kosmos has the last one's guardian leave, so it takes
+            // the record over only with a guardian of its own ready (docs/hiding.md).
+            if managing, guardian.awaitReady(.seconds(1)) {
+                instanceLock?.name(.current)
                 controller.adopt()
             } else {
-                log.notice("startup recovery: \(String(describing: Recovery.run(file: record)), privacy: .public)")
+                recoverAtStartup(record)
             }
         }
         // Hotkeys only when Kosmos manages windows; while observing they would shadow the

@@ -125,32 +125,18 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(file.read() == record)
 }
 
-/// The handover mark follows the animation Spaces as flags, with their count written even when
-/// there are none, so a reader that predates the mark stops before it and restores the windows.
-@Test func theHandoverMarkFollowsTheAnimationSpaces() throws {
-    var record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 3, start: 4),
-                                spaces: [5], windows: [.init(id: 6, owner: ProcessIdentity(pid: 7, start: 8), originalSpace: 9)])
-    let old = try #require(record.encoded())
-    record.handover = true
-    let bytes = try #require(record.encoded())
-    #expect(Array(bytes.prefix(old.count)) == old)
-    #expect(Array(bytes.dropFirst(old.count)) == [0, 0, 0, 0, 1, 0, 0, 0])
-    #expect(RecoveryRecord(decoding: bytes) == record)
-    #expect(RecoveryRecord(decoding: bytes.dropLast()) == nil)
-
-    record.animationSpaces = [10]
-    let sliding = try #require(record.encoded())
-    #expect(Array(sliding.dropFirst(old.count)) == [1, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
-    #expect(RecoveryRecord(decoding: sliding) == record)
-    record.handover = false
-    #expect(RecoveryRecord(decoding: sliding.dropLast(4)) == record)
-
+/// A guardian leaves the record only to a Kosmos that named itself in the lock file.
+@Test func theLockFileNamesItsHolder() throws {
     let url = temporaryFile()
     defer { try? FileManager.default.removeItem(at: url) }
-    let file = try RecordFile(url: url)
-    record.handover = true
-    file.publish(record)
-    #expect(RecordFile.peek(url)?.handover == true)
+    let lock = try #require(try FileLock(url))
+    #expect(FileLock.holder(url) == nil)
+    lock.name(identity)
+    #expect(FileLock.holder(url) == identity)
+    lock.name(ProcessIdentity(pid: 7, start: 9))
+    #expect(FileLock.holder(url) == ProcessIdentity(pid: 7, start: 9))
+    try Data("7".utf8).write(to: url)
+    #expect(FileLock.holder(url) == nil)
 }
 
 @Test func recordBeyondTheDecodersLimitsIsRefused() throws {

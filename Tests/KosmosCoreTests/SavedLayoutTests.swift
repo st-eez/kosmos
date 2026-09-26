@@ -367,4 +367,16 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         _ = s.park([2], because: .closedByApp)
         #expect(s.savedLayout().windows.map(\.window) == [1])
     }
+
+    /// ChatGPT (20) waits on hidden 2. A switch to 2 before it is admitted shows 2 without it,
+    /// and its admission plans no reveal, since a window admitted to a shown workspace is on
+    /// screen already. So the controller reveals a window it took over concealed that its plan
+    /// does not hide (docs/hiding.md).
+    @Test func aWindowTakenOverOnAWorkspaceShownSinceIsNotRevealedByItsPlan() {
+        var session = Self.restored(Self.desk().savedLayout())
+        #expect(session.perform(.workspace(.named("2")))?.show.contains(20) == false)
+        let plan = session.add(20)
+        #expect(session.workspace(of: 20) == "2" && session.isShown("2"))
+        #expect(plan.show.isEmpty && plan.hide.isEmpty)
+    }
 }

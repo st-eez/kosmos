@@ -63,7 +63,7 @@ wait_for_exit() {
 }
 
 # SIGTERM quits Kosmos through AppKit. A Kosmos that `kosmos handover` armed leaves its hidden
-# windows concealed, and its guardian waits 10 s for the next Kosmos to take them over; any
+# windows concealed, and its guardian waits 5 s for the next Kosmos to take them over; any
 # other restores them, and the guardian retries an incomplete recovery for about 30 s after
 # Kosmos exits (docs/hiding.md, docs/overview.md).
 was_running=false
@@ -75,8 +75,10 @@ stop_kosmos() {
     if [[ -z $pids ]]; then return; fi
     was_running=true
     if [[ $mode == rollback ]]; then next=$previous; fi
-    # A Kosmos that predates handovers, or writes another version, refuses, and quits as before.
-    if [[ $mode != uninstall && -x $cli ]] && version=$("$next/Contents/MacOS/Kosmos" record-version 2>/dev/null); then
+    # A next build that predates handovers has no version to read. A Kosmos that predates
+    # them, or writes another version, refuses, and quits with recovery.
+    if [[ $mode != uninstall && -x $cli ]] &&
+        version=$(/usr/libexec/PlistBuddy -c 'Print :KosmosRecordVersion' "$next/Contents/Info.plist" 2>/dev/null); then
         if $dry_run; then
             run "$cli" handover "$version"
         elif "$cli" handover "$version" > /dev/null 2>&1; then

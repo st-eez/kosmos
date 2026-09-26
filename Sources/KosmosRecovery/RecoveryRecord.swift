@@ -69,18 +69,14 @@ public struct RecoveryRecord: Equatable, Sendable {
     /// Spaces windows slide in. Each is recorded before any window enters it, and every
     /// window in one is Kosmos's to take out.
     public var animationSpaces: [UInt64]
-    /// The Kosmos that wrote it quit for one that starts right after it, which takes the
-    /// record over, so the guardian waits longer for it (docs/hiding.md).
-    public var handover: Bool
 
     public init(windowServer: ProcessIdentity, manager: ProcessIdentity, spaces: [UInt64] = [], windows: [Window] = [],
-                animationSpaces: [UInt64] = [], handover: Bool = false) {
+                animationSpaces: [UInt64] = []) {
         self.windowServer = windowServer
         self.manager = manager
         self.spaces = spaces
         self.windows = windows
         self.animationSpaces = animationSpaces
-        self.handover = handover
     }
 
     /// The newest recorded Space while it holds a recorded window, which shows it was never
@@ -101,8 +97,8 @@ public struct RecoveryRecord: Equatable, Sendable {
     }
 
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"
-    /// A Kosmos hands the record over only to a build that reads this version
-    /// (`kosmos handover`).
+    /// script/bundle.sh copies this line's value into Info.plist as KosmosRecordVersion. A
+    /// Kosmos hands the record over only to a build that reads this version (`kosmos handover`).
     public static let version: UInt32 = 1
 
     /// The decoder's limits. `encoded()` keeps to them, so every record written reads back;
@@ -124,11 +120,9 @@ public struct RecoveryRecord: Equatable, Sendable {
         }
         // After the windows, where a reader that predates them stops, so it still restores
         // every concealed window.
-        if !animationSpaces.isEmpty || handover {
+        if !animationSpaces.isEmpty {
             put(UInt32(animationSpaces.count)); animationSpaces.forEach { put($0) }
         }
-        // Flags, bit 0 the handover, after the animation Spaces for the same reason.
-        if handover { put(UInt32(1)) }
         return bytes
     }
 
@@ -166,13 +160,8 @@ public struct RecoveryRecord: Equatable, Sendable {
                 animationSpaces.append(space)
             }
         }
-        var flags: UInt32 = 0
-        if !bytes.isEmpty {
-            guard let read: UInt32 = take() else { return nil }
-            flags = read
-        }
         self.init(windowServer: ProcessIdentity(pid: wsPid, start: wsStart),
                   manager: ProcessIdentity(pid: mPid, start: mStart), spaces: spaces, windows: windows,
-                  animationSpaces: animationSpaces, handover: flags & 1 != 0)
+                  animationSpaces: animationSpaces)
     }
 }

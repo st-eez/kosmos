@@ -97,7 +97,7 @@ rm -f "$root/opened"
 kosmos=$("$app/Contents/MacOS/Kosmos" > /dev/null 2>&1 & echo $!)
 guardian=$("$app/Contents/Helpers/kosmos-guardian" "$kosmos" > /dev/null 2>&1 & echo $!)
 PATH=$root/fake:$PATH script/install.sh "${flags[@]}" > /dev/null || fail "an install over a Kosmos that handed over failed"
-[[ $(cat "$root/handover" 2>/dev/null) == "handover $("$app/Contents/MacOS/Kosmos" record-version)" ]] ||
+[[ $(cat "$root/handover" 2>/dev/null) == "handover $(/usr/libexec/PlistBuddy -c 'Print :KosmosRecordVersion' "$app/Contents/Info.plist")" ]] ||
     fail "the install did not arm Kosmos with the next build's record version"
 kill -0 "$guardian" 2>/dev/null || fail "the install waited for the guardian of a Kosmos that handed over"
 kill "$guardian"

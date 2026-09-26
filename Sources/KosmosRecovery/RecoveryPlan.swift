@@ -9,13 +9,20 @@ struct RecoveryPlan: Equatable {
     /// Members with no row. A closed window a Space still lists reads as on no Space, so it is
     /// added, and its add never lands.
     var withoutRow: Set<UInt32> = []
+    /// The windows a Kosmos that takes the record over keeps concealed, and the Spaces that
+    /// hold them, which stay recorded and are not destroyed (docs/hiding.md).
+    var spared: Set<UInt32> = []
+    var sparedSpaces: Set<UInt64> = []
 
     /// Each member is planned whether or not `alive`, a read of rows, found it, since removing
     /// a window that is gone does nothing, and left out, it would keep the record for good.
     /// `isOnAnySpace` counts native fullscreen Spaces, and is nil when the Spaces do not read.
-    static func make(members: [UInt64: [UInt32]], recorded: [UInt32], alive: Set<UInt32>,
+    static func make(members: [UInt64: [UInt32]], recorded: [UInt32], sparing spared: Set<UInt32> = [], alive: Set<UInt32>,
                      isOnAnySpace: (UInt32) -> Bool?, destination: (UInt32) -> UInt64?) -> RecoveryPlan {
         var plan = RecoveryPlan()
+        plan.spared = spared
+        plan.sparedSpaces = Set(members.filter { $0.value.contains(where: spared.contains) }.keys)
+        let members = members.mapValues { $0.filter { !spared.contains($0) } }
         plan.withoutRow = Set(members.values.joined()).subtracting(alive)
         // False when the window is stuck, since a removal would leave it on no Space.
         func place(_ window: UInt32) -> Bool {
@@ -39,7 +46,7 @@ struct RecoveryPlan: Equatable {
             }
         }
         let inMembers = Set(members.values.joined())
-        for window in recorded where alive.contains(window) && !inMembers.contains(window) {
+        for window in recorded where alive.contains(window) && !inMembers.contains(window) && !spared.contains(window) {
             _ = place(window)
         }
         return plan
@@ -55,16 +62,19 @@ struct RecoveryPlan: Equatable {
         return removalsBySpace.mapValues { $0.filter { !failed.contains($0) } }
     }
 
+    /// The members read after the recovery that it should have taken out.
+    func remaining(_ members: [UInt64: [UInt32]]) -> Int {
+        members.values.joined().filter { !spared.contains($0) }.count
+    }
+
     func isComplete(remainingMembers: Int, isOnNoSpace: (UInt32) -> Bool) -> Bool {
         remainingMembers == 0 && !windows.contains(where: isOnNoSpace)
     }
 }
 
-/// A handover ends at the recovery or the adoption, so a crash after it gets a crash's grace.
 extension RecoveryRecord {
     func keptAfterIncomplete(gone: Set<UInt64>, keepingAnimationSpaces keeping: Bool) -> RecoveryRecord {
         var kept = self
-        kept.handover = false
         kept.spaces.removeAll(where: gone.contains)
         if !keeping { kept.animationSpaces.removeAll(where: gone.contains) }
         return kept
@@ -74,7 +84,6 @@ extension RecoveryRecord {
     /// concealed and recorded, and `left` holds their Spaces.
     func keptAfterRestore(left: Set<UInt64>, keepingAnimationSpaces keeping: Bool, sparing: Set<UInt32> = []) -> RecoveryRecord? {
         var kept = self
-        kept.handover = false
         kept.windows.removeAll { !sparing.contains($0.id) }
         kept.spaces.removeAll { !left.contains($0) }
         if !keeping { kept.animationSpaces.removeAll { !left.contains($0) } }

@@ -10,6 +10,13 @@ cd "$(dirname "$0")/.."
 swift build -c release
 bin=$(swift build -c release --show-bin-path)
 version=$(sed -n 's/^public let kosmosVersion = "\(.*\)"$/\1/p' Sources/KosmosIPC/Version.swift)
+# Info.plist carries the recovery record version, so script/install.sh reads it without
+# running the build (docs/hiding.md).
+record_version=$(sed -n 's/^    public static let version: UInt32 = \([0-9]*\)$/\1/p' Sources/KosmosRecovery/RecoveryRecord.swift)
+if [[ -z $record_version ]]; then
+    echo "No recovery record version found in Sources/KosmosRecovery/RecoveryRecord.swift." >&2
+    exit 1
+fi
 
 identity=${KOSMOS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk '/"Apple Development/ { print $2; exit }')}
 if [[ -z $identity ]]; then
@@ -21,7 +28,7 @@ dist=.build/dist
 app=$dist/Kosmos.app
 rm -rf "$dist"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Library/LaunchAgents" "$app/Contents/Resources" "$dist/bin"
-sed "s/VERSION/$version/g" Resources/Info.plist > "$app/Contents/Info.plist"
+sed -e "s/RECORD_VERSION/$record_version/" -e "s/VERSION/$version/g" Resources/Info.plist > "$app/Contents/Info.plist"
 # The app icon; script/icon.swift regenerates it when the design changes.
 cp Resources/Kosmos.icns "$app/Contents/Resources/"
 # The launch at login agent, registered through SMAppService.
