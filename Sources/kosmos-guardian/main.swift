@@ -66,8 +66,7 @@ func recover(printing: Bool, after exited: Int32?) -> Never {
         let line = outcome.map { String(describing: $0) } ?? "the lock is held by a process it does not name"
         log.notice("recovery: \(line, privacy: .public)")
         if printing { print(line) }
-        if outcome?.isFinal == true { exit(0) }
-        if ContinuousClock.now >= deadline { exit(1) }
+        if let status = Recovery.guardianExit(after: outcome, at: .now, retryingUntil: deadline) { exit(status) }
         sleep(2)
     }
 }
