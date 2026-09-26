@@ -4,6 +4,12 @@
 //                                   child app: how it stacks, raises, hit tests and joins
 //                                   Spaces, each target's corner radius, and what reading the
 //                                   radii costs.
+//   kosmos-probe border-space       Where a border window lands when it moves, ordered out,
+//                                   to a Space its display does not show, as Kosmos moves one
+//                                   over a native fullscreen Space, with its frame set before
+//                                   or after the move, and whether it was ordered in before.
+//                                   Only the probe's windows, on the built-in display or the
+//                                   leftmost one, which needs a second ordinary Space.
 //   kosmos-probe borders-cpu [relayouts]
 //                                   The CPU of the probe, the child, WindowServer and
 //                                   JankyBorders, if it runs, over 12 relayouts of four windows
@@ -85,8 +91,8 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     let window: NSWindow
     let ring = CALayer()
 
-    init() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless],
+    init(at origin: NSPoint = .zero) {
+        window = NSWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 10, height: 10)), styleMask: [.borderless],
                           backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -263,33 +269,6 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
         SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [b] as CFArray, spaces(t).first ?? 0)
         wait(0.1)
         print("moved back to T's Space: \(spaces(b))")
-
-        // Whether a border moved while ordered out, as Kosmos moves one before it shows it, is
-        // in that Space once ordered in, how soon a direct read shows the move, and the same
-        // for a new border never ordered in.
-        func moveOrderedOut(_ window: NSWindow, _ label: String) {
-            let id = UInt32(window.windowNumber)
-            print("\(label), ordered out: \(spaces(id))")
-            SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [id] as CFArray, other)
-            let moved = ContinuousClock.now
-            var reads = 1
-            while !spaces(id).contains(other), elapsed(moved) < 10 { reads += 1 }
-            print(String(format: "  moved to \(other): \(spaces(id)) after %.3f ms and \(reads) reads", elapsed(moved)))
-            window.order(.above, relativeTo: Int(t))
-            print("  then ordered above T, read at once: \(spaces(id))")
-            wait(0.1)
-            print("  0.1 s later: \(spaces(id))")
-            window.orderOut(nil)
-        }
-        border.window.orderOut(nil)
-        wait(0.1)
-        moveOrderedOut(border.window, "B")
-        let fresh = ProbeBorder()
-        fresh.place(around: frame, radius: radius, color: color)
-        moveOrderedOut(fresh.window, "a new border never ordered in")
-        SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [b] as CFArray, spaces(t).first ?? 0)
-        border.window.order(.above, relativeTo: Int(t))
-        wait(0.1)
     } else {
         print("no other display's Space to move B to")
     }
@@ -474,6 +453,100 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
         updateTime += CACurrentMediaTime() - began
         updates += 1
     }
+}
+
+/// T, a window of the probe's, sits in S, an ordinary Space its display does not show. Each
+/// case makes a border at the display's bottom left corner, runs its steps, orders the border
+/// above T as Kosmos does, and reads the border's Spaces at once and 0.1 s later.
+@MainActor func borderSpace() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    func wait(_ seconds: Double) { pumpEvents(seconds) }
+    func spaces(_ window: NSWindow) -> [UInt64] { SkyLight.spaces(of: UInt32(window.windowNumber)) ?? [] }
+    func move(_ window: NSWindow, to space: UInt64) {
+        SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [UInt32(window.windowNumber)] as CFArray, space)
+    }
+
+    let displays = Displays.current()
+    let leftmost = NSScreen.screens.min { $0.frame.minX < $1.frame.minX }
+    let candidates = [builtInScreen()] + (leftmost.map { [$0] } ?? [])
+    var chosen: (screen: NSScreen, current: UInt64, other: UInt64)?
+    for screen in candidates {
+        let bounds = CGDisplayBounds(screen.displayID)
+        let current = displays.currentSpace(at: CGPoint(x: bounds.midX, y: bounds.midY))
+        let ordinary = displays.ordinarySpaces(on: screen.displayID)
+        print("display \(screen.displayID) '\(screen.localizedName)': ordinary Spaces \(ordinary), current \(current.map(String.init) ?? "not ordinary")")
+        if chosen == nil, let current, let other = ordinary.first(where: { $0 != current }) { chosen = (screen, current, other) }
+    }
+    guard let (screen, current, other) = chosen else {
+        print("neither the built-in display nor the leftmost one has an ordinary Space it does not show")
+        exit(0)
+    }
+    print("S is \(other); the display shows \(current)")
+
+    let area = screen.visibleFrame
+    let t = NSWindow(contentRect: NSRect(x: area.minX + 16, y: area.minY + 16, width: 200, height: 130), styleMask: [.titled],
+                     backing: .buffered, defer: false)
+    t.title = "kosmos-probe border-space T"
+    t.isReleasedWhenClosed = false
+    t.orderFrontRegardless()
+    wait(0.1)
+    move(t, to: other)
+    wait(0.1)
+    print("T in \(spaces(t))")
+
+    enum Step { case prime, frame, move, pause }
+    let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
+    func run(_ steps: [Step], then after: [Step] = []) {
+        let border = ProbeBorder(at: screen.frame.origin)
+        var offset: CGFloat = 0
+        func perform(_ step: Step) {
+            switch step {
+            // As Kosmos makes a border window: ordered in and out back to back.
+            case .prime:
+                border.window.orderFrontRegardless()
+                border.window.orderOut(nil)
+            case .frame:
+                border.place(around: t.frame.offsetBy(dx: offset, dy: 0), radius: 16, color: color)
+                offset += 10
+            case .move: move(border.window, to: other)
+            case .pause: wait(0.1)
+            }
+        }
+        steps.forEach(perform)
+        border.window.order(.above, relativeTo: t.windowNumber)
+        let atOnce = spaces(border.window)
+        wait(0.1)
+        let later = spaces(border.window)
+        after.forEach(perform)
+        if !after.isEmpty { wait(0.1) }
+        let names: (Step) -> String = { step in
+            switch step {
+            case .prime: "ordered in and out"
+            case .frame: "framed"
+            case .move: "moved to S"
+            case .pause: "0.1 s"
+            }
+        }
+        let label = steps.map(names).joined(separator: ", ") + ", ordered above T"
+            + (after.isEmpty ? "" : ", then " + after.map(names).joined(separator: ", "))
+        func verdict(_ read: [UInt64]) -> String { read == [other] ? "in S" : read == [current] ? "in the Space shown" : "\(read)" }
+        print("\(label): at once \(verdict(atOnce)), 0.1 s later \(verdict(later))"
+              + (after.isEmpty ? "" : ", after \(verdict(spaces(border.window)))"))
+        border.window.orderOut(nil)
+        border.window.close()
+    }
+    run([.prime, .frame, .move])
+    run([.prime, .frame, .pause, .move])
+    run([.prime, .move, .frame])
+    run([.prime, .move, .pause, .frame])
+    run([.prime, .move])
+    run([.frame, .move])
+    run([.move, .frame])
+    run([.move])
+    run([.prime, .move], then: [.frame])
+    t.orderOut(nil)
+    exit(0)
 }
 
 @MainActor func bordersCPU(relayouts: Int) -> Never {
