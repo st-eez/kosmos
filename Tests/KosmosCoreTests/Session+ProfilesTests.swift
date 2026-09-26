@@ -47,6 +47,18 @@ import Testing
         #expect(s.shownWorkspaces == ["b", "a"])
     }
 
+    @Test func aWindowAProfileCarriesGetsItsMinimumWhereItFits() {
+        var s = Session(names: ["a", "b"], monitors: [Desk.main])
+        _ = s.add(1)
+        _ = s.add(2, to: "b", minimum: CGSize(width: 1200, height: 0))
+        s.reconfigure(names: ["a"], monitors: [Desk.main], assigned: [:], merge: ["b": "a"])
+        #expect(s.workspaces["a"]!.tree == "h[1 2]")
+        // 2 takes 1200 of the 1900 points between the gaps, where an even split gave it 950.
+        let frames = s.frames(of: "a")
+        #expect(frames[1] == CGRect(x: 10, y: 10, width: 700, height: 1060))
+        #expect(frames[2] == CGRect(x: 710, y: 10, width: 1200, height: 1060))
+    }
+
     @Test func theLaptopProfileMergesTheWorkspacesItLeavesOut() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(60, to: "6"); _ = s.add(61, to: "6")

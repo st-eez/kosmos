@@ -79,7 +79,9 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 30:
             workspace.balanceSizes()
             workspace.fit(nil, in: screen, gaps: gaps, minimums: minimums)
-            let least = leastSize(of: workspace.root, minimums, gap: gaps.inner)
+            let floor = CGSize(width: (Workspace.leastShare * area.width).rounded(.up),
+                               height: (Workspace.leastShare * area.height).rounded(.up))
+            let least = leastSize(of: workspace.root, minimums, floor: floor, gap: gaps.inner)
             if least.width <= area.width, least.height <= area.height {
                 let tiles = workspace.tileFrames(in: screen, gaps: gaps)
                 for (id, minimum) in minimums {
@@ -215,16 +217,16 @@ func tiles(_ frames: [WindowID: CGRect]) -> Bool {
     }
 }
 
-/// The least size that gives each window in the container its minimum, and a point to each
-/// window without one.
-func leastSize(of container: Container, _ minimums: [WindowID: CGSize], gap: CGFloat) -> CGSize {
+/// The least size that gives each window in the container its minimum, and at least `floor`,
+/// which no container's floor for a child exceeds.
+func leastSize(of container: Container, _ minimums: [WindowID: CGSize], floor: CGSize, gap: CGFloat) -> CGSize {
     let sizes = container.children.map { child in
         switch child.kind {
         case .window(let id):
             let minimum = minimums[id] ?? .zero
-            return CGSize(width: max(1, minimum.width.rounded(.up)), height: max(1, minimum.height.rounded(.up)))
+            return CGSize(width: max(floor.width, minimum.width.rounded(.up)), height: max(floor.height, minimum.height.rounded(.up)))
         case .container(let nested):
-            return leastSize(of: nested, minimums, gap: gap)
+            return leastSize(of: nested, minimums, floor: floor, gap: gap)
         }
     }
     let gaps = gap.rounded(.down) * CGFloat(max(0, sizes.count - 1))

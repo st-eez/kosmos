@@ -270,6 +270,28 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.spilling(plan.frames) { before[$0] }.isEmpty)
 }
 
+/// Steve's decision of September 25, 2026: the split the user chose wins over a minimum, so
+/// Kosmos grows only the window it places.
+@Test func aSplitTheUserSqueezedStaysWhenKosmosPlacesAnotherWindow() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, minimum: CGSize(width: 600, height: 0))
+    #expect(s.workspaces["1"]!.shares == [0.4, 0.6])
+    s.adopt(1)
+    _ = s.perform(.resize(.width, by: 300))
+    #expect(s.workspaces["1"]!.shares == [0.7, 0.3])
+    // A new window beside 1 takes its share from both, and 2 keeps its part of the rest.
+    _ = s.add(3)
+    #expect(s.workspaces["1"]!.shares == [0.467, 0.333, 0.2])
+    s.adopt(3)
+    _ = s.perform(.move(.left))
+    #expect(s.workspaces["1"]!.shares == [0.333, 0.467, 0.2])
+    // A window held to 300 takes its room from 3 and 1, as 2 is already under its minimum.
+    _ = s.add(4, minimum: CGSize(width: 300, height: 0))
+    let tiles = s.workspaces["1"]!.tileFrames(in: display, gaps: Gaps())
+    #expect([3, 4, 1, 2].map { tiles[$0]!.width } == [229, 300, 321, 150])
+}
+
 /// Steve's Helium beside Outlook on the 1920 by 1080 main panel with his gaps, Helium held to
 /// 785 points wide and Outlook to 1145 (live log, September 25, 2026).
 @Test func aNewWindowGetsItsMinimumWhereTheMinimumsFitAndSpillsWhereTheyDoNot() {

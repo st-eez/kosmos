@@ -191,3 +191,17 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
     #expect(bottom[2] == CGRect(x: 0, y: 785, width: 1920, height: 588))
     #expect([right[2]!, left[2]!, bottom[2]!].allSatisfy { display.contains(CGPoint(x: $0.midX, y: $0.midY)) })
 }
+
+/// rift keeps each side of a split at 5% or more, and so does a fit.
+@Test func fittingLeavesEachWindowFivePercent() {
+    let minimums = [WindowID(2): CGSize(width: 600, height: 0), 3: CGSize(width: 380, height: 0)]
+    var workspace = Workspace("h[1 2 3]")
+    // 600 and 380 would leave 1 20 points of the 1000, under its 50, so the shares stay.
+    workspace.fit(nil, in: screen, gaps: Gaps(), minimums: minimums)
+    #expect(workspace.shares == [0.333, 0.333, 0.333])
+    #expect(workspace.resize(2, .width, by: 50, in: screen, gaps: Gaps()) == true)
+    var tight = Workspace("h[1 2 3]")
+    tight.fit(nil, in: screen, gaps: Gaps(), minimums: [3: CGSize(width: 900, height: 0)])
+    let frames = tight.frames(in: screen, gaps: Gaps())
+    #expect([1, 2, 3].map { frames[$0]!.width } == [50, 50, 900])
+}

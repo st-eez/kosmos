@@ -56,32 +56,42 @@ extension Workspace {
         return frames
     }
 
-    /// When the minimums of the children of the container holding `window`, or of every
-    /// container when `window` is nil, fit, each child gets at least its minimum and the rest
-    /// by weight, in whole points, as rift's `solve_axis_lengths` does, and the weights take
-    /// those lengths (docs/tree.md).
+    /// In the container holding `window` only `window` grows to its minimum, so the split the
+    /// user chose between the others stays. With `window` nil, every child of every container
+    /// grows to its own, parents first (docs/tree.md).
     mutating func fit(_ window: WindowID?, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) {
         guard !minimums.isEmpty else { return }
-        var only: Int?
-        if let window {
-            guard let path = root.path(to: window) else { return }
-            only = root[path.dropLast()].id
+        guard let window else {
+            for path in containerPaths(root) { fit(path[...], growing: nil, in: rect, gaps: gaps, minimums: minimums) }
+            return
         }
-        // Top down, as a container's length comes from its parent's split.
-        for path in containerPaths(root) where only == nil || root[path[...]].id == only {
-            let container = root[path[...]]
-            let least = container.children.map { minimumLength(of: $0, along: container.orientation, minimums, gap: gaps.inner) }
-            guard let lengths = fitted(container.children.map(\.weight), least, usableLength(of: path[...], in: rect, gaps: gaps))
-            else { continue }
-            // Whole points, so the split's rounding puts each edge where the lengths do.
-            var total: CGFloat = 0, edge: CGFloat = 0
-            for (index, length) in lengths.enumerated() {
-                total += length
-                root[path[...]].children[index].weight = total.rounded() - edge
-                edge = total.rounded()
-            }
-            root[path[...]].normalize()
+        guard let path = root.path(to: window) else { return }
+        fit(path.dropLast(), growing: path.last!, in: rect, gaps: gaps, minimums: minimums)
+    }
+
+    /// Where the minimums fit, the child at `growing`, or each child when nil, gets at least its
+    /// minimum, and the others keep their lengths down to theirs. The rest goes by weight, in
+    /// whole points, as rift's `solve_axis_lengths` does, and the weights take those lengths.
+    /// Each child keeps `leastShare` of the container, or the share it has when that is less,
+    /// the floor a resize keeps.
+    private mutating func fit(_ path: ArraySlice<Int>, growing: Int?, in rect: CGRect, gaps: Gaps,
+                              minimums: [WindowID: CGSize]) {
+        let container = root[path], usable = usableLength(of: path, in: rect, gaps: gaps)
+        let floor = (Self.leastShare * usable).rounded(.up)
+        let least: [CGFloat] = container.children.enumerated().map { index, child in
+            let minimum = minimumLength(of: child, along: container.orientation, minimums, floor: floor, gap: gaps.inner)
+            let length = child.weight * usable
+            return max(min(floor, length), growing == nil || growing == index ? minimum : min(minimum, length))
         }
+        guard let lengths = fitted(container.children.map(\.weight), least, usable) else { return }
+        // Whole points, so the split's rounding puts each edge where the lengths do.
+        var total: CGFloat = 0, edge: CGFloat = 0
+        for (index, length) in lengths.enumerated() {
+            total += length
+            root[path].children[index].weight = total.rounded() - edge
+            edge = total.rounded()
+        }
+        root[path].normalize()
     }
 
     /// The length of a container along its orientation as `frames` lays it out, less the
@@ -199,16 +209,18 @@ private func fitted(_ weights: [Double], _ minimums: [CGFloat], _ usable: CGFloa
     }
 }
 
-/// A point at least, so a window with no minimum keeps one where the others' fit.
-private func minimumLength(of node: Node, along orientation: Orientation, _ minimums: [WindowID: CGSize], gap: CGFloat) -> CGFloat {
+/// A container along the orientation counts `floor` for each child, at least the floor that
+/// child keeps in it.
+private func minimumLength(of node: Node, along orientation: Orientation, _ minimums: [WindowID: CGSize], floor: CGFloat,
+                           gap: CGFloat) -> CGFloat {
     switch node.kind {
     case .window(let id):
         let size = minimums[id] ?? .zero
-        return max(1, (orientation == .horizontal ? size.width : size.height).rounded(.up))
+        return max(0, (orientation == .horizontal ? size.width : size.height).rounded(.up))
     case .container(let container):
-        let lengths = container.children.map { minimumLength(of: $0, along: orientation, minimums, gap: gap) }
+        let lengths = container.children.map { minimumLength(of: $0, along: orientation, minimums, floor: floor, gap: gap) }
         guard container.orientation == orientation else { return lengths.max() ?? 0 }
         // Gaps are whole points and only ever shrink from the configured one.
-        return lengths.reduce(0, +) + max(0, gap).rounded(.down) * CGFloat(lengths.count - 1)
+        return lengths.reduce(0) { $0 + max($1, floor) } + max(0, gap).rounded(.down) * CGFloat(lengths.count - 1)
     }
 }
