@@ -18,8 +18,9 @@ final class Controller {
     var misses = FocusMisses()
     let inventory: Inventory
     let hiding: Hiding
-    private let emptyWorkspace: EmptyWorkspaceWindow
-    private let focusQueue: FocusQueue
+    /// One for each display, made again when it is off its display's corner (docs/focus.md).
+    private var emptyWorkspaces: [DisplayID: EmptyWorkspaceWindow] = [:]
+    private let focusQueue = FocusQueue()
     private let bar = BarPush()
     private var switchGeneration = 0
     /// Batches wait here for their windows' writes, and writes for their windows' conceals
@@ -88,10 +89,6 @@ final class Controller {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
-        let emptyWorkspace = EmptyWorkspaceWindow()
-        emptyWorkspace.onKey = { [weak inventory] stamp in inventory?.ownWindowKeyed(at: stamp) }
-        self.emptyWorkspace = emptyWorkspace
-        focusQueue = FocusQueue(emptyWorkspace: emptyWorkspace.target)
         session = Session(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays)
         rules = setup.rules
         profile = setup.profile
@@ -99,6 +96,7 @@ final class Controller {
         inventory.onEvent = { [weak self] event in self?.handle(event) }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         watchLeftButton()
+        for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
     }
 
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
@@ -111,6 +109,7 @@ final class Controller {
                             merge: setup.mergeWorkspaces)
         pointer?.setMonitors(session.monitors)
         dragTap?.setMonitors(session.monitors)
+        for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
         controllerLog.notice("""
             profile \(setup.profile ?? "base", privacy: .public), workspace on each display \
@@ -379,9 +378,10 @@ final class Controller {
     }
 
     /// A Space of the pool shows whatever Space its display shows, so a slide to or from there
-    /// would draw over the fullscreen app. Ceiling: such a display other than the key window's
-    /// slides nothing while it shows its desktop Space; reading each display's current Space
-    /// would tell them apart (docs/geometry.md).
+    /// would draw over the fullscreen app, as would a border ordered in before its Space move.
+    /// Ceiling: such a display other than the key window's slides nothing while it shows its
+    /// desktop Space; reading each display's current Space would tell them apart
+    /// (docs/geometry.md, docs/borders.md).
     private var fullscreenDisplays: Set<DisplayID> {
         func display(of id: WindowID) -> DisplayID? { inventory.windows[id].flatMap { self.display(under: $0.frame) } }
         let displays = Set(session.parked(because: .fullscreen).compactMap(display))
@@ -405,6 +405,7 @@ final class Controller {
         if case .window(let id) = target, inventory.leftScreen(id) { return }
         let pid: pid_t?
         let privately: Bool
+        var emptyWorkspace: EmptyWorkspaceWindow.Target?
         switch target {
         case .window(let id):
             pid = owner[id]
@@ -415,11 +416,12 @@ final class Controller {
             // the path from this window (docs/focus.md).
             pid = getpid()
             privately = focusQueue.killSwitch.offReason != .crashed
-            emptyWorkspace.place(on: session.monitor(of: session.focusedWorkspace).frame)
+            emptyWorkspace = self.emptyWorkspace(on: session.monitor(of: session.focusedWorkspace))?.target
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately, concealed: concealed,
+                           emptyWorkspace: emptyWorkspace,
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
@@ -427,6 +429,17 @@ final class Controller {
                                self?.reports.requestDropped(target, at: stamp)
                                self?.misses.requestDropped(at: stamp)
                            })
+    }
+
+    /// A window whose display moved is made again at its corner, never moved (docs/focus.md).
+    private func emptyWorkspace(on monitor: Monitor) -> EmptyWorkspaceWindow? {
+        guard !NSScreen.screens.isEmpty else { return nil }
+        if let window = emptyWorkspaces[monitor.id], window.isPlaced(on: monitor.frame) { return window }
+        emptyWorkspaces[monitor.id]?.close()
+        let window = EmptyWorkspaceWindow(display: monitor.frame)
+        window.onKey = { [weak inventory] stamp in inventory?.ownWindowKeyed(at: stamp) }
+        emptyWorkspaces[monitor.id] = window
+        return window
     }
 
     /// Runs just before a call that changes the key window, so the echo is recorded before
@@ -474,7 +487,7 @@ final class Controller {
             let slide = sliding[entry.key]
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
-        })
+        }, fullscreen: fullscreenDisplays)
     }
 
     func appName(_ window: WindowID) -> String? {

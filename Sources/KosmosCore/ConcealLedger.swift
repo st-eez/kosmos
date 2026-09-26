@@ -18,13 +18,33 @@ public struct ConcealLedger: Equatable, Sendable {
 
         public var touched: Set<SpaceID> { Set(mustBeIn.values).union(removals.keys) }
 
-        public func isDone(members: [SpaceID: Set<WindowID>]) -> Bool {
-            let hidden = mustBeIn.allSatisfy { members[$0.value]?.contains($0.key) == true }
-            let shown = removals.allSatisfy { space, windows in
-                guard let held = members[space] else { return false }
-                return windows.allSatisfy { !held.contains($0) }
+        public func isDone(members: [SpaceID: Set<WindowID>]) -> Bool { failed(members: members).isEmpty }
+
+        /// A concealed window its Space does not list, or a revealed one it still lists. A Space
+        /// missing from `members`, whose read failed, fails each of its windows.
+        public func failed(members: [SpaceID: Set<WindowID>]) -> Set<WindowID> {
+            var failed = Set(mustBeIn.filter { members[$0.value]?.contains($0.key) != true }.keys)
+            for (space, windows) in removals {
+                failed.formUnion(windows.filter { members[space]?.contains($0) != false })
             }
-            return hidden && shown
+            return failed
+        }
+
+        /// The batch less the windows it failed when none is ordered in: each closed or was
+        /// ordered out after its row read, as at Command-W right before a switch. Nil when one
+        /// is still ordered in (docs/hiding.md).
+        public func confirmed(members: [SpaceID: Set<WindowID>],
+                              orderedIn: (Set<WindowID>) -> Set<WindowID>) -> (batch: Batch, left: Set<WindowID>)? {
+            let left = failed(members: members)
+            guard !left.isEmpty else { return (self, []) }
+            guard orderedIn(left).isEmpty else { return nil }
+            var batch = self
+            batch.removals = removals.mapValues { $0.filter { !left.contains($0) } }
+            batch.adds.removeAll(where: left.contains)
+            batch.fresh.removeAll(where: left.contains)
+            batch.strip.removeAll(where: left.contains)
+            batch.mustBeIn = mustBeIn.filter { !left.contains($0.key) }
+            return (batch, left)
         }
 
         /// An added window leaves the concealing Space only once its add landed: removed from

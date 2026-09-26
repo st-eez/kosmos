@@ -13,17 +13,13 @@ final class FocusQueue: Sendable {
     private let queue = DispatchQueue(label: "kosmos.focus", qos: .userInteractive)
     private let current = Atomic<UInt64>(0)
     let killSwitch = FocusKillSwitch(url: KosmosFiles.support.appending(path: "private-focus"))
-    private let emptyWorkspace: EmptyWorkspaceWindow.Target
-
-    init(emptyWorkspace: EmptyWorkspaceWindow.Target) {
-        self.emptyWorkspace = emptyWorkspace
-    }
 
     /// The private path for a window runs the split model's `FocusStart`, `FocusDecide` and
     /// `WorkerPost` (tla/Kosmos.tla; KosmosCore's KeyRequest). Each side records the echo
     /// through `performing` right before its own call that changes the key window; recording
-    /// at the request failed TLC (docs/focus.md).
+    /// at the request failed TLC (docs/focus.md). `emptyWorkspace` is the window `.noWindow` keys.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
+                 emptyWorkspace: EmptyWorkspaceWindow.Target?,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
                  forgetRecord: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         let generation = current.add(1, ordering: .relaxed).newValue
@@ -34,25 +30,31 @@ final class FocusQueue: Sendable {
             let forgettingRecord: @Sendable (ContinuousClock.Instant) -> Void = { stamp in onMain { forgetRecord(stamp) } }
             let front = kosmos_front_pid() == pid
             if privately {
-                let stamp: ContinuousClock.Instant
+                let keyed: WindowID
                 switch key {
                 case .window(let id):
                     let request = KeyRequest(appWasFront: front)
                     Self.wait(for: worker, id, isCurrent, request, performing: raising, forgetRecord: forgettingRecord)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
-                    stamp = ContinuousClock.now
+                    keyed = id
                 case .noWindow:
                     // `FocusStart` for Kosmos's own window.
-                    if front, emptyWorkspace.isKey.load(ordering: .relaxed) { return }
-                    stamp = ContinuousClock.now
-                }
-                onMain { performing(stamp, .keyRecord) }
-                let performed = killSwitch.guarded {
-                    switch key {
-                    case .window(let id): kosmos_make_key(pid, id)
-                    case .noWindow: kosmos_make_key(pid, emptyWorkspace.window)
+                    guard let emptyWorkspace else { return }
+                    if front {
+                        // Inside the front app the key record keys nothing (docs/overview.md,
+                        // section 2), so AppKit keys it, as when another display's window is key.
+                        onMain {
+                            guard isCurrent(), !emptyWorkspace.isKey.load(ordering: .relaxed) else { return }
+                            performing(.now, .raise)
+                            emptyWorkspace.makeKey()
+                        }
+                        return
                     }
+                    keyed = emptyWorkspace.window
                 }
+                let stamp = ContinuousClock.now
+                onMain { performing(stamp, .keyRecord) }
+                let performed = killSwitch.guarded { kosmos_make_key(pid, keyed) }
                 if performed {
                     // `WorkerPost`: the key record leaves the window where it sits in its app's
                     // stacking order.
@@ -95,7 +97,7 @@ final class FocusQueue: Sendable {
 enum FocusPath: Sendable {
     /// Activates a background app with the named window. Only these count toward the kill switch.
     case keyRecord
-    /// AXRaise inside the front app, where it keys the window.
+    /// Inside the front app, where it keys the window: AXRaise, or AppKit for Kosmos's own.
     case raise
     /// The public activation, which lets the app choose its key window.
     case activation
