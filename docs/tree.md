@@ -46,8 +46,10 @@
   proportion, and Steve asked for them only where they fit. A minimum Kosmos learns or
   WindowServer changes later, a window returning to its place, a profile's merge, a `move`
   within the window's container, which swaps places with the weights, `layout`, `swap` and
-  `resize` leave the split as it is. So a split comes back from two `move`s or `layout`
-  toggles, and a merge's windows leave again by a proportional normalize, so a display
+  `resize` leave the split as it is. So a split comes back from two `move`s within a
+  container, and from two `layout` toggles of a window whose container is the root; a
+  toggle of a nested container splices it into its parent, as h[v[1 3] 2] becomes
+  h[1 3 2]. A merge's windows leave again by a proportional normalize, so a display
   unplugged and plugged back in comes back to the split it had.
   - On Steve's main panel, 1900 pt between the outer gaps, Helium is held to 785 pt and
     Outlook to 1145. With the 10 pt gap between them that is 1940 pt, so Outlook opening
