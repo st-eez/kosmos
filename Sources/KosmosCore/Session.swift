@@ -419,7 +419,7 @@ public struct Session: Sendable {
         case .move(let direction, let boundaries):
             guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }
         case .swap(let direction):
-            guard workspace.swap(window, direction) else { return nil }
+            guard workspace.swap(window, direction, in: display, gaps: gaps, minimums: minimums) else { return nil }
         case .joinWith(let direction):
             guard workspace.joinWith(window, direction) else { return nil }
         case .layout(.orientation(let orientation)):

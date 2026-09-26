@@ -172,13 +172,18 @@ import Testing
     #expect(workspace.shares == [0.25, 0.75])
 }
 
-@Test func swapReachesFocusedWindowOfContainer() {
+@Test func swapTakesTheWindowFocusReaches() {
     var workspace = Workspace("h[1 v[2 3]]")
     workspace.focus(2)
     #expect(workspace.swap(1, .right) == true)
     #expect(workspace.tree == "h[2 v[1 3]]")
     #expect(workspace.swap(3, .left) == true)
     #expect(workspace.tree == "h[3 v[1 2]]")
+    // From the top half, the window over there, though 3 was focused last.
+    var stacked = Workspace("h[v[1 4] v[2 3]]")
+    stacked.focus(3)
+    #expect(stacked.swap(1, .right) == true)
+    #expect(stacked.tree == "h[v[2 4] v[1 3]]")
 }
 
 @Test func swapStopsAtWorkspaceEdge() {

@@ -31,6 +31,10 @@
 - `join-with` is AeroSpace's: the window joins its neighbour in the direction in a new
   container across the neighbour's parent. A neighbour that is a container already runs
   across its parent, so the window joins it.
+- `swap` exchanges the window with the tile `focus` reaches in the direction, below, and
+  each takes the other's place and share. AeroSpace's `swap` takes the window its `focus`
+  reaches too (SwapCommand.swift in aerospace-steez at 40b2b44d). Floating windows do not
+  count, since a swap exchanges places in the tree.
 - `resize` takes the space from the window's siblings in proportion to their shares. For
   a dimension across the window's container, the nearest ancestor in a container along
   the dimension resizes. It stops where it would take a window below its minimum, or

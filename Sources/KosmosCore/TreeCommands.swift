@@ -103,12 +103,14 @@ extension Workspace {
         return seen
     }
 
-    /// With the most recently focused window of the neighbor `focus` finds in the direction,
-    /// each taking the other's place and share.
+    /// With the tile `focus` reaches in the direction, each taking the other's place and share
+    /// (docs/tree.md).
     @discardableResult
-    mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
+    mutating func swap(_ window: WindowID, _ direction: Direction, in rect: CGRect, gaps: Gaps,
+                       minimums: [WindowID: CGSize]) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
-        let other = mostRecentWindow(in: root.node(at: neighbor))
+        let frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        let other = nearest(in: root.node(at: neighbor), direction, to: frames[window], frames: frames)
         let path = root.path(to: window)!, otherPath = root.path(to: other)!
         root[path.dropLast()].children[path.last!].kind = .window(other)
         root[otherPath.dropLast()].children[otherPath.last!].kind = .window(window)
