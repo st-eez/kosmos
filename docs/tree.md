@@ -50,10 +50,6 @@
     Outlook to 1145. With the 10 pt gap between them that is 1940 pt, so Outlook opening
     beside Helium splits the panel equally and goes 200 pt past its right edge. A window
     held to 1000 pt would get its 1000 beside Helium, and Helium the other 890.
-  - Before September 25, 2026 the layout itself gave each window its minimum where a
-    container's minimums fit, and grew each window over its neighbours inside the tiling
-    rectangle where they did not, so no resize moved a split past a minimum. Steve chose
-    full control of the split, with the minimums respected only where Kosmos picks it.
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
   A workspace with tiled or floating windows always has a focused one, as in i3.
@@ -79,9 +75,6 @@
   5% of the 1890 pt between the gaps on Steve's main panel is about 95 pt, near sway's
   100 pt sane width. Stopping there does as much as the key press can, so repeated
   presses reach the floor exactly.
-  - Before September 25, 2026 a resize stopped at a window's minimum, as i3 refuses one.
-    That day Outlook, held to 1145 pt, stood beside Helium, held to 785, on the main
-    panel, and each resize moved only Helium's edge, with nothing to say why (live log).
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, as i3's `get_tree_next` does, then to the window over there.
   The sibling's windows at its edge facing the focused window are the first or last child

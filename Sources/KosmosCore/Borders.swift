@@ -119,26 +119,23 @@ extension Session {
 }
 
 extension Session {
-    /// Of the frames `written`, those of tiles on shown workspaces whose minimum is longer
-    /// than the tile on an axis along which the frame moves from `now`, where WindowServer has
-    /// the window: the app refuses its tile, and the border flashes (docs/borders.md).
+    /// Of the frames `written`, those of tiles on shown workspaces longer than the tile on an
+    /// axis along which the frame moves from `now`, where WindowServer has the window: the app
+    /// refuses its tile, and the border flashes (docs/borders.md).
     public func spilling(_ written: [WindowID: CGRect], now: (WindowID) -> CGRect?) -> Set<WindowID> {
-        let minimums = minimums
         var tiles: [String: [WindowID: CGRect]] = [:]
         return Set(written.compactMap { window, target in
-            guard let minimum = minimums[window], let name = home[window], isShown(name),
-                  workspaces[name]!.fullscreenWindow == nil else { return nil }
+            guard let name = home[window], isShown(name), workspaces[name]!.fullscreenWindow == nil else { return nil }
             if tiles[name] == nil {
                 let monitor = monitor(of: name)
                 tiles[name] = workspaces[name]!.tileFrames(in: monitor.area, gaps: monitor.gaps)
             }
             guard let tile = tiles[name]![window] else { return nil }
             let was = now(window)
-            func refused(_ least: CGFloat, _ length: CGFloat, _ span: (CGRect) -> (CGFloat, CGFloat)) -> Bool {
-                least.rounded(.up) > length && was.map { span($0) != span(target) } != false
+            func refused(_ span: (CGRect) -> (CGFloat, CGFloat)) -> Bool {
+                span(target).1 > span(tile).1 && was.map { span($0) != span(target) } != false
             }
-            return refused(minimum.width, tile.width, { ($0.minX, $0.width) })
-                || refused(minimum.height, tile.height, { ($0.minY, $0.height) }) ? window : nil
+            return refused({ ($0.minX, $0.width) }) || refused({ ($0.minY, $0.height) }) ? window : nil
         })
     }
 }
