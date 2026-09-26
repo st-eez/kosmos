@@ -194,7 +194,55 @@ expected (changes 17 to 26):
 | `split-user-helddrop` | a held report whose window is no longer the key window Kosmos last heard of when the grace ends is dropped (`HeldDrop`), as the implementation had | fails last activation wins, expected | 135,218 | 13 | 8 s |
 
 `RecoveryPath` holds by construction here, because the holding Space is recorded before
-the first hide. The recovery protocol needs its own spec.
+the first hide. [Handover.tla](Handover.tla) specifies recovery across Kosmos's restarts.
+
+## Restarts
+
+[Handover.tla](Handover.tla) specifies what happens to the hidden windows when Kosmos quits,
+hands its record over or crashes, and when the next Kosmos starts
+([docs/hiding.md](../docs/hiding.md)). [MCHandover.tla](MCHandover.tla) has one display and
+three workspaces with one window each, and each config bounds the user to three switches,
+quits and crashes. `run.sh` checks a `handover-` config against it.
+
+A running Kosmos admits each window, queues a conceal or reveal for it, and the bridge
+queue applies them one window at a time. A batch records each window before its first
+conceal. The saved layout's write can trail a switch, so a crash can lose it. A plain quit
+lands the queued operations and restores every window. A handover lands them, writes the
+layout, marks the record and leaves the windows concealed, only for a build that reads the
+record under `Gate`. A crash drops the operations still queued. After each exit a start is
+on its way within the grace, after it, as launchd's throttle makes one, or never. Each
+Kosmos's guardian runs from before its Kosmos takes the lock, leaves the record to a Kosmos
+that took the lock, and restores every recorded window when none did within the grace;
+without `Grace` it restores them at once. A starting Kosmos keeps concealed each recorded
+window the saved layout puts on a hidden workspace (`Adopt`), reveals a concealed window
+on admission when its workspace is shown (`AdmitReveal`), and reveals a window whose app
+never answers once every other window is admitted (`Backstop`).
+
+The model assumes the backstop's 5 s outlasts every admission of an app that answers, as
+the 68 ms of the launch in the live log did. It leaves out the rows recovery reads, the
+windows standing on a kept window, and the Spaces windows slide in, which KosmosCore's and
+KosmosRecovery's tests cover.
+
+| Config | Inputs | Checks | Expected |
+| --- | --- | --- | --- |
+| `handover` | switches, quits, handovers and crashes, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash | `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass |
+| `handover-settles` | as `handover` | every run settles, or ends with no Kosmos and nothing concealed (liveness) | pass |
+| `handover-recover` | as `handover`, with startup recovery in place of the adoption, as before | `KeepsHidden` | fails |
+| `handover-nograce` | as `handover`, with the guardian recovering at once, as before | `KeepsHidden` | fails |
+| `handover-ungated` | as `handover`, handing over to a build that reads another record version | `RecordedBeforeHide`, `NeverStranded` | fails |
+| `handover-noreveal` | as `handover`, with no reveal at admission | `ConvergesWhenSettled` | fails |
+| `handover-nobackstop` | as `handover`, with no reveal of a window never admitted | `ConvergesWhenSettled` | fails |
+
+None has been run yet.
+
+- `RecordedBeforeHide`: the record names every concealed window.
+- `NeverStranded`: with no Kosmos running, none on its way and every guardian done, no
+  window is concealed.
+- `KeepsHidden`: after a handover or a crash whose next Kosmos comes within the grace, each
+  window concealed at the exit stays concealed while the saved layout keeps its workspace
+  hidden, until the user's next input, unless its app never answers.
+- `ConvergesWhenSettled`: once Kosmos has admitted every window whose app answers and its
+  operations have landed, exactly the admitted windows of hidden workspaces are concealed.
 
 ## Design changes found by the model
 
