@@ -38,7 +38,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aWindowARuleFloatsKeepsTheFrameItsAppGaveIt() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     let tiles = s.frames(of: "1")
     let plan = s.add(3, floating: true)
     #expect(plan.frames == tiles)
@@ -48,7 +48,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func switchShowsAndHidesAndFocusesTheWorkspaceMRU() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     _ = s.add(3, to: "2")
     let plan = s.perform(.workspace(.named("2")))!
     #expect(Set(plan.hide) == [1, 2])
@@ -82,7 +82,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func moveNodeToWorkspaceConcealsTheWindowAndFocusesTheNextOne() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(1); s.adopt(2)
+    _ = s.adopt(1); _ = s.adopt(2)
     let plan = s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false))!
     #expect(plan.hide == [2])
     #expect(plan.focus == .window(1))
@@ -93,7 +93,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func moveNodeWithFocusFollowingSwitchesWithTheWindow() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     let plan = s.perform(.moveNodeToWorkspace(.next, focusFollowsWindow: true))!
     #expect(s.focusedWorkspace == "2")
     #expect(plan.hide == [1])
@@ -114,7 +114,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func removingTheFocusedWindowFocusesTheNext() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(1); s.adopt(2)
+    _ = s.adopt(1); _ = s.adopt(2)
     let plan = s.remove(2)
     #expect(plan.focus == .window(1))
     #expect(plan.frames == [1: display])
@@ -124,7 +124,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func treeCommandsActOnTheFocusedWindow() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     #expect(s.perform(.focus(.left))?.focus == .window(1))
     #expect(s.perform(.focus(.left)) == nil)   // at the edge
     let toggled = s.perform(.layout(.toggleOrientation))!
@@ -135,7 +135,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func moveAtTheEdgeOfTheWorkspaceWrapsTheRootOnlyWithinIt() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     // With one display, wrapping comes back to it, and the window stays.
     #expect(s.perform(.move(.up, boundaries: .allMonitorsWrapping)) == nil)
     #expect(s.workspaces["1"]!.tree == "h[1 2]")
@@ -152,7 +152,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func moveNodeByWindowIdFromTheShownWorkspace() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     let plan = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 1))!
     #expect(plan.hide == [1])
     #expect(plan.focus == nil)   // the focused window stayed
@@ -193,7 +193,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func movedFloatingWindowKeepsFloating() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     _ = s.perform(.layout(.toggleFloating))
     _ = s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false))
     #expect(s.workspaces["2"]!.floating == [2])
@@ -238,7 +238,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aResizePastAMinimumMovesTheSplitAndTheWindowSpills() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(1)
+    _ = s.adopt(1)
     _ = s.constrain(2, to: CGSize(width: 400, height: 0))
     // 2 keeps its left edge on its 250 point tile and goes 150 points past the right edge.
     var plan = s.perform(.resize(.width, by: 250))
@@ -246,7 +246,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan?.frames[2] == CGRect(x: 750, y: 0, width: 400, height: 800))
     // At the left edge, 1 keeps its right edge and goes past the left edge.
     _ = s.constrain(1, to: CGSize(width: 400, height: 0))
-    s.adopt(2)
+    _ = s.adopt(2)
     plan = s.perform(.resize(.width, by: 500))
     #expect(plan?.frames[1] == CGRect(x: -150, y: 0, width: 400, height: 800))
     #expect(plan?.frames[2] == CGRect(x: 250, y: 0, width: 750, height: 800))
@@ -262,7 +262,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var tiles: [WindowID: CGRect] = [:]
     let before = s.perform(.layout(.orientation(.vertical)))!.frames
     #expect(s.spilling(before, written: [1, 2], tiles: &tiles) { _ in nil } == [1])
-    s.adopt(2)
+    _ = s.adopt(2)
     let plan = s.perform(.resize(.height, by: 200))!
     #expect(plan.frames[2] == CGRect(x: 10, y: 358, width: 1900, height: 712))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 1900, height: 588))
@@ -280,13 +280,13 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(2, minimum: CGSize(width: 600, height: 0))
     #expect(s.workspaces["1"]!.shares == [0.4, 0.6])
-    s.adopt(1)
+    _ = s.adopt(1)
     _ = s.perform(.resize(.width, by: 300))
     #expect(s.workspaces["1"]!.shares == [0.7, 0.3])
     // A new window beside 1 takes its share from both, and 2 keeps its part of the rest.
     _ = s.add(3)
     #expect(s.workspaces["1"]!.shares == [0.467, 0.333, 0.2])
-    s.adopt(3)
+    _ = s.adopt(3)
     _ = s.perform(.move(.left))
     #expect(s.workspaces["1"]!.shares == [0.333, 0.467, 0.2])
     // A window held to 300 takes its room from 3 and 1, as 2 is already under its minimum.
@@ -301,9 +301,9 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     _ = s.add(1)
     _ = s.add(2, minimum: CGSize(width: 600, height: 600))
-    s.adopt(1)
+    _ = s.adopt(1)
     _ = s.perform(.resize(.width, by: 300))
-    s.adopt(2)
+    _ = s.adopt(2)
     _ = s.perform(.move(.left))
     #expect(s.workspaces["1"]!.tree == "h[2 1]" && s.workspaces["1"]!.shares == [0.3, 0.7])
     _ = s.perform(.layout(.toggleOrientation))
@@ -314,10 +314,10 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     // Moved into the container of 3 and 2, 1 grows to its 600 of the 800 points.
     s = session()
     for window: WindowID in [1, 2, 3] { _ = s.add(window) }
-    s.adopt(2)
+    _ = s.adopt(2)
     _ = s.perform(.joinWith(.left))
     _ = s.constrain(1, to: CGSize(width: 0, height: 600))
-    s.adopt(1)
+    _ = s.adopt(1)
     _ = s.perform(.move(.right))
     #expect(s.workspaces["1"]!.tree == "v[3 2 1]" && s.workspaces["1"]!.shares == [0.125, 0.125, 0.75])
 }
@@ -328,7 +328,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
     var s = Session(names: ["3"], display: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
     _ = s.add(1, minimum: CGSize(width: 785, height: 588))
-    s.adopt(1)
+    _ = s.adopt(1)
     // A window held to 1000 fits beside Helium in the 1890 points between the gaps.
     var plan = s.add(2, minimum: CGSize(width: 1000, height: 0))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 890, height: 1035))
@@ -348,7 +348,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = session()
     for window: WindowID in [1, 2, 3] {
         _ = s.add(window)
-        s.adopt(window)
+        _ = s.adopt(window)
     }
     _ = s.constrain(3, to: CGSize(width: 500, height: 0))
     var frames = s.perform(.balanceSizes)!.frames
@@ -399,7 +399,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func followingAWindowOfTheShownWorkspaceSwitchesNothing() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(1)
+    _ = s.adopt(1)
     _ = s.park([2], because: .minimized)
     let plan = s.unpark([2], follow: 2)
     #expect(plan.show.isEmpty && plan.hide.isEmpty && plan.focus == nil)
@@ -457,7 +457,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aReturnNotFollowedKeepsTheShownWorkspacesFocus() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     _ = s.park([2], because: .minimized)
     let plan = s.unpark([2], follow: nil)
     #expect(s.focused == 1)   // though 2 was focused more recently
@@ -556,7 +556,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
 @Test func aSelectedTabTakesThePlaceOfTheTabItReplaces() {
     var s = session()
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
-    s.adopt(2)
+    _ = s.adopt(2)
     let before = s.frames(of: "1"), order = s.windows(of: "1")
     let plan = s.replace(2, with: 7)!
     #expect(s.workspace(of: 7) == "1" && s.workspace(of: 2) == nil)

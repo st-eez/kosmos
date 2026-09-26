@@ -67,7 +67,8 @@ pointer gets none of the drag's events.
   drops it first. Kosmos writes the lifted window's position at each movement, keeping
   the point the press grabbed under the pointer, where Hyprland centers a lifted tile on
   the pointer. A floating window moves freely, and one whose center crosses onto a
-  display showing another workspace joins that workspace, as in a title-bar drag.
+  display showing another workspace joins that workspace, as in a title-bar drag. A
+  floating window in fullscreen leaves fullscreen past the 10 pt ([tree.md](tree.md)).
 - The right button on a tiled window moves the tile's edges on the sides of the window's
   center the press was on, left or right and top or bottom, as Hyprland's DragController
   picks the grabbed corner. A tile with no neighbour on that side moves its edge on the

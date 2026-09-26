@@ -16,11 +16,18 @@ public enum TitleBarDrag {
 
 extension Session {
     /// A floating window whose center lands on a display showing another workspace joins it
-    /// (docs/displays.md). The plan asks for no focus: the window is key.
-    public mutating func dragged(_ window: WindowID, to frame: CGRect) -> Plan? {
+    /// (docs/displays.md). A fullscreen one the drag moves or resizes past `dragThreshold` from
+    /// `start`, its frame at the press, leaves fullscreen where the drag puts it (docs/tree.md).
+    /// The plan asks for no focus: the window is key.
+    public mutating func dragged(_ window: WindowID, to frame: CGRect, from start: CGRect) -> Plan? {
         defer { check() }
-        guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window),
-              let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return nil }
+        guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window) else { return nil }
+        let reach = TitleBarDrag.dragThreshold
+        let left = workspaces[source]!.fullscreenWindow == window
+            && (hypot(frame.minX - start.minX, frame.minY - start.minY) > reach
+                || abs(frame.width - start.width) > reach || abs(frame.height - start.height) > reach)
+        if left { workspaces[source]!.toggleFullscreen(window) }
+        guard let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return left ? Plan() : nil }
         var plan = move(window, from: source, to: name, follow: focused == window)
         plan.focus = nil
         return plan
@@ -38,6 +45,7 @@ extension Session {
 
     public mutating func drop(at point: CGPoint) -> Plan {
         defer { check() }
+        let before = framesBeforeFullscreen
         var plan = Plan()
         var changed: Set<String> = []
         let name = workspace(at: point)
@@ -49,7 +57,8 @@ extension Session {
                 if !isShown(source) { plan.hide.append(window) }
                 continue
             }
-            let tiles = frames(of: name).sorted { $0.key < $1.key }
+            let tiled = Set(workspaces[name]!.root.windows)
+            let tiles = frames(of: name).filter { tiled.contains($0.key) }.sorted { $0.key < $1.key }
             func distance(_ frame: CGRect) -> CGFloat { hypot(frame.midX - point.x, frame.midY - point.y) }
             let target = tiles.first { $0.value.contains(point) } ?? tiles.min { distance($0.value) < distance($1.value) }
             _ = workspaces[source]!.remove(window)
@@ -69,7 +78,7 @@ extension Session {
             changed.insert(name)
         }
         lifted = []
-        plan.frames = frames(of: changed)
+        plan.frames = frames(of: changed).merging(backFromFullscreen(since: before)) { $1 }
         return plan
     }
 

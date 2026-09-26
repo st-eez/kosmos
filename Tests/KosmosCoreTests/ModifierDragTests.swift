@@ -161,7 +161,7 @@ extension DragGate {
     private func row() -> Session {
         var s = Session(names: ["1", "2"], display: display)
         _ = s.add(10); _ = s.add(11)
-        s.adopt(11)
+        _ = s.adopt(11)
         _ = s.add(12)
         #expect(s.workspaces["1"]!.tree == "h[10 11 12]")
         return s
@@ -216,7 +216,7 @@ extension DragGate {
 
     @Test func aTileInAColumnResizesOnBothAxes() throws {
         var s = row()
-        s.adopt(12)
+        _ = s.adopt(12)
         _ = s.perform(.joinWith(.left))
         #expect(s.workspaces["1"]!.tree == "h[10 v[11 12]]")
         let before = s.frames(of: "1")

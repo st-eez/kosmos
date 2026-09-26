@@ -179,11 +179,14 @@ func validateReportsBrokenTrees(tree: String, problem: String) {
 @Test func validateReportsStaleState() {
     var workspace = Workspace("h[1]")
     workspace.fullscreenWindow = 2
+    workspace.frameBeforeFullscreen = screen
     workspace.stamps[3] = 1
-    workspace.parked.append(Parked(window: 4, floating: false))
+    workspace.parked.append(Parked(window: 4, floating: false, frameBeforeFullscreen: screen))
     #expect(Set(workspace.validate()) == [
-        "fullscreen window 2 is not tiled",
+        "fullscreen window 2 is neither tiled nor floating",
+        "the frame before fullscreen does not match fullscreen window 2",
         "unknown window 3 has a focus stamp",
         "parked window 4 has no restore hint",
+        "parked tiled window 4 has a frame before fullscreen",
     ])
 }

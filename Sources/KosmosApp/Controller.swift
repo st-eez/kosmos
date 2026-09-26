@@ -41,6 +41,9 @@ final class Controller {
     /// Tiled windows the left button moved or resized without lifting them, which go back
     /// to their tiles at its mouse up. A resize by the edges never lifts (docs/geometry.md).
     var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
+    /// Each floating window's frame at the left button's press, as its first change in the press
+    /// found it, which a drag out of fullscreen counts from (docs/tree.md).
+    var floatingAtPress: [WindowID: CGRect] = [:]
     var leftButton = LeftButton()
     var clickedWindow = 0
     /// False while another tiling window manager runs: Kosmos then only observes.
@@ -231,8 +234,9 @@ final class Controller {
         }
         reports.commandExecuted(receivedAt: received)
         // Floating windows' frames as the inventory last heard them, so nothing waits on
-        // WindowServer.
-        if let plan = session.perform(command, frame: { [inventory] in inventory.windows[$0]?.frame }) {
+        // WindowServer, or where a write in flight puts them, which the inventory has yet to hear.
+        let frame = { [inventory, ledger] (id: WindowID) in ledger.target(of: id) ?? inventory.windows[id]?.frame }
+        if let plan = session.perform(command, frame: frame) {
             execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: .command(command, from: source)))
         }
         return nil
@@ -392,11 +396,14 @@ final class Controller {
     /// The read waits on WindowServer, so it runs only with a floating window shown, and
     /// never before a switch's focus request. A concealed window's row gives its own frame,
     /// so it goes home as a revealed one would (docs/displays.md). A window the modifier drags
-    /// goes where the drag puts it, as WindowServer can lag its last write.
+    /// goes where the drag puts it, and one a plan writes where the plan puts it, as
+    /// WindowServer can lag the last write.
     private func bringFloatingHome() {
-        let windows = session.shownFloatingWindows.filter { $0 != modifierDrag?.grab.window }
-        guard !windows.isEmpty else { return }
         let start = ContinuousClock.now
+        let windows = session.shownFloatingWindows.filter {
+            $0 != modifierDrag?.grab.window && !ledger.isWriting($0) && !ledger.isLanding($0, at: start)
+        }
+        guard !windows.isEmpty else { return }
         let frames = Dictionary(SkyLight.rows(windows).map { ($0.id, $0.frame) }) { first, _ in first }
         let targets = session.floatingFrames(at: frames)
         controllerLog.info("floating check: \(windows.count) windows read in \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms, \(targets.count) moved")

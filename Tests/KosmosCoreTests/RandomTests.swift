@@ -75,7 +75,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
             let dimension = [ResizeDimension.width, .height, .smart].randomElement(using: &random)!
             let amount = CGFloat(Int.random(in: -300...300, using: &random))
             attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps) }
-        case 29: attempt { $0.toggleFullscreen(window) }
+        case 29: attempt { $0.toggleFullscreen(window, frame: CGRect(x: 100, y: 80, width: 300, height: 200)) }
         case 30:
             workspace.balanceSizes()
             workspace.fit(nil, in: screen, gaps: gaps, minimums: minimums)
@@ -120,7 +120,7 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
 
         #expect(workspace.validate().isEmpty, "seed \(seed)")
         let frames = workspace.frames(in: screen, gaps: gaps, minimums: minimums)
-        #expect(Set(frames.keys) == Set(workspace.root.windows), "seed \(seed)")
+        #expect(Set(frames.keys) == Set(workspace.root.windows + [workspace.fullscreenWindow].compactMap { $0 }), "seed \(seed)")
         guard workspace.fullscreenWindow == nil else { continue }
         let tileFrames = workspace.tileFrames(in: screen, gaps: gaps)
         #expect(tileFrames.values.allSatisfy { $0.width >= 0 && $0.height >= 0 && area.contains($0) }, "seed \(seed)")

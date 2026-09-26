@@ -19,7 +19,7 @@ import Testing
 @Test func theListsMarkTheFocusedWorkspaceAndWindow() {
     var s = Session(names: ["1", "2", "3"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(10); _ = s.add(11)
-    s.adopt(11)
+    _ = s.adopt(11)
     _ = s.add(12, to: "3")
     #expect(s.workspaceList == "1 *\n2\n3")
     #expect(s.windowList { $0 == 12 ? nil : "App \($0)" } == "10 1 App 10\n11 1 App 11 *\n12 3 ?")

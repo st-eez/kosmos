@@ -301,6 +301,7 @@ public struct Session: Sendable {
     /// Kosmos follows `follow` to its workspace, as it follows a Command-Tab (docs/tree.md).
     public mutating func unpark(_ windows: [WindowID], follow: WindowID?) -> Plan {
         defer { check() }
+        let before = framesBeforeFullscreen
         let returning = windows.filter { isParked($0) && !lifted.contains($0) }
         let focused = self.focused
         let changed = Set(returning.map { home[$0]! })
@@ -319,7 +320,7 @@ public struct Session: Sendable {
             workspaces[focusedWorkspace]!.focus(window)
             plan.focus = .window(window)
         }
-        plan.frames = frames(of: changed)
+        plan.frames = frames(of: changed).merging(backFromFullscreen(since: before)) { $1 }
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
@@ -393,24 +394,36 @@ public struct Session: Sendable {
 
     // MARK: Focus reports
 
-    public mutating func adopt(_ window: WindowID) {
+    /// The plan has frames only when the focus ended a fullscreen.
+    public mutating func adopt(_ window: WindowID) -> Plan {
         defer { check() }
-        guard let name = home[window] else { return }
-        workspaces[name]!.focus(window)
+        guard let name = home[window] else { return Plan() }
+        let frames = focusEndingFullscreen(window, on: name)
         if isShown(name) { focusShown(name) }
+        return Plan(frames: frames)
     }
 
     public mutating func follow(_ window: WindowID) -> Plan {
         defer { check() }
         guard let name = home[window] else { return Plan() }
+        let frames = focusEndingFullscreen(window, on: name)
+        var plan = reach(name)
+        plan.frames.merge(frames) { $1 }
+        return plan
+    }
+
+    private mutating func focusEndingFullscreen(_ window: WindowID, on name: String) -> [WindowID: CGRect] {
+        let before = framesBeforeFullscreen, fullscreen = workspaces[name]!.fullscreenWindow
         workspaces[name]!.focus(window)
-        return reach(name)
+        guard workspaces[name]!.fullscreenWindow != fullscreen else { return [:] }
+        return frames(of: name).merging(backFromFullscreen(since: before)) { $1 }
     }
 
     // MARK: Commands
 
     /// Nil when the command does not apply, such as a focus at the edge. `frame` gives where
-    /// a window is now, for a focus in a direction (docs/tree.md).
+    /// a window is now, for a focus in a direction and a floating window's fullscreen
+    /// (docs/tree.md).
     public mutating func perform(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         defer { check() }
         switch command {
@@ -454,6 +467,7 @@ public struct Session: Sendable {
 
     private mutating func performOnFocused(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         guard let window = focused else { return nil }
+        let before = framesBeforeFullscreen
         var workspace = workspaces[focusedWorkspace]!
         let monitor = monitor(of: focusedWorkspace), minimums = minimums
         let (display, gaps) = (monitor.area, monitor.gaps)
@@ -484,7 +498,7 @@ public struct Session: Sendable {
             let floating = workspace.floating.contains(window)
             guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
         case .fullscreen:
-            guard workspace.toggleFullscreen(window) else { return nil }
+            guard workspace.toggleFullscreen(window, frame: frame(window)) else { return nil }
         case .resize(let dimension, let amount):
             guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
         case .balanceSizes:
@@ -498,7 +512,7 @@ public struct Session: Sendable {
             return nil
         }
         workspaces[focusedWorkspace] = workspace
-        plan.frames = frames(of: focusedWorkspace)
+        plan.frames = frames(of: focusedWorkspace).merging(backFromFullscreen(since: before)) { $1 }
         return plan
     }
 
@@ -572,6 +586,7 @@ public struct Session: Sendable {
     /// edge it enters by.
     mutating func move(_ window: WindowID, from source: String, to name: String, follow: Bool,
                        entering: Direction? = nil) -> Plan {
+        let before = framesBeforeFullscreen
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
         let floating = workspaces[source]!.floating.contains(window)
@@ -597,7 +612,7 @@ public struct Session: Sendable {
         if !following, wasFocused || name == focusedWorkspace {
             plan.focus = intent
         }
-        plan.frames = frames(of: [source, name])
+        plan.frames = frames(of: [source, name]).merging(backFromFullscreen(since: before)) { $1 }
         return plan
     }
 
@@ -645,6 +660,29 @@ public struct Session: Sendable {
             }
         }
         return targets
+    }
+
+    var framesBeforeFullscreen: [WindowID: CGRect] {
+        var frames: [WindowID: CGRect] = [:]
+        for workspace in workspaces.values {
+            if let window = workspace.fullscreenWindow, let frame = workspace.frameBeforeFullscreen { frames[window] = frame }
+            for entry in workspace.parked { frames[entry.window] = entry.frameBeforeFullscreen }
+        }
+        return frames
+    }
+
+    /// The windows of `before` that float out of fullscreen now, at their frames from before
+    /// (docs/tree.md).
+    func backFromFullscreen(since before: [WindowID: CGRect]) -> [WindowID: CGRect] {
+        var frames: [WindowID: CGRect] = [:]
+        for (window, frame) in before {
+            guard let name = home[window], workspaces[name]!.floating.contains(window),
+                  workspaces[name]!.fullscreenWindow != window else { continue }
+            let own = monitor(of: name), center = CGPoint(x: frame.midX, y: frame.midY)
+            let under = monitors.first { $0.frame.contains(center) }
+            frames[window] = under?.id == own.id ? frame : floatingFrame(frame, from: (under ?? own).area, movingTo: own.area)
+        }
+        return frames
     }
 }
 

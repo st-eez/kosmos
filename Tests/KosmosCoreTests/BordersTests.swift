@@ -55,7 +55,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     var s = Session(names: ["1", "2"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2); _ = s.add(3, floating: true)
     _ = s.add(4, to: "2")
-    s.adopt(2)
+    _ = s.adopt(2)
     #expect(s.bordered == [1: false, 2: true, 3: false])
     // Minimized, hidden or in native fullscreen: parked, with no border.
     _ = s.park([1], because: .minimized)
@@ -72,7 +72,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
 @Test func aLiftedWindowKeepsTheActiveBorder() {
     var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     _ = s.lift(2)
     #expect(s.bordered[2] == true && s.isParked(2))
 }
@@ -80,7 +80,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
 @Test func bordersDrawOnlyVisibleColorsOfWindowsOnScreen() {
     var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2); _ = s.add(3)
-    s.adopt(2)
+    _ = s.adopt(2)
     let frames: [WindowID: CGRect] = [1: CGRect(x: 10, y: 10, width: 300, height: 700), 2: CGRect(x: 320, y: 10, width: 300, height: 700)]
     // Window 3 is concealed or ordered out, so `shown` finds it nowhere.
     let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
@@ -95,7 +95,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
 @Test func aWindowWhoseAppRefusesItsTileFlashesTheWarningColor() {
     var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2)
-    s.adopt(2)
+    _ = s.adopt(2)
     let frames: [WindowID: CGRect] = [1: CGRect(x: 0, y: 0, width: 500, height: 800), 2: CGRect(x: 500, y: 0, width: 500, height: 800)]
     let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
     // The inactive window, transparent otherwise, flashes the system red, and so does the focused one.
@@ -115,7 +115,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     for window: WindowID in [1, 2, 3] {
         _ = s.add(window)
-        s.adopt(window)
+        _ = s.adopt(window)
     }
     let before = s.perform(.move(.up))!.frames
     #expect(before[2] == CGRect(x: 500, y: 400, width: 500, height: 400))
@@ -129,7 +129,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     // Where it already shows, it has nothing new to refuse.
     #expect(s.spilling(spilled, written: [2], tiles: &tiles) { spilled[$0] }.isEmpty)
     // A width resize moves it across, the axis its minimum leaves free.
-    s.adopt(1)
+    _ = s.adopt(1)
     let resized = s.perform(.resize(.width, by: 100))!.frames
     #expect(resized[2] == CGRect(x: 600, y: 400, width: 400, height: 500))
     #expect(s.spilling(resized, written: [1, 2], tiles: &tiles) { spilled[$0] }.isEmpty)

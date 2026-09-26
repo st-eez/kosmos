@@ -121,8 +121,9 @@
   display shows again the workspace it showed before it left, or before its workspace was
   left out. Displays that wake late, as the AeroSpace profile watcher logged, would
   otherwise merge the windows for good.
-- A floating window has no frame from the layout. After every change, and after each
-  switch reveals its windows, a floating window of a shown workspace whose center is on a
+- A floating window has no frame from the layout, except while it covers its display in
+  fullscreen and as it leaves fullscreen ([tree.md](tree.md)). After every change, and after
+  each switch reveals its windows, a floating window of a shown workspace whose center is on a
   display showing another workspace goes to its workspace's display, at the same place
   relative to the display areas and inside the area, as AeroSpace's
   `layoutFloatingWindow` moves it. That covers a move to another display, a rule that
@@ -133,7 +134,10 @@
   switch waits for its writes, goes home as a revealed one would. The read waits on
   WindowServer, which is busy committing right after a switch, so it runs only while a
   shown workspace has a floating window, and never between a keypress and its batch or its
-  focus request. The log gives each read's time, to measure at the desk.
+  focus request. The log gives each read's time, to measure at the desk. A window with a
+  write of Kosmos's in flight, or sent and not yet shown in a row, as one leaving
+  fullscreen onto another display, is left to the write: WindowServer can still have it
+  where it was, and the check would move it from there.
 - A floating window the user drags onto a display showing another workspace joins that
   workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
   check above leaves it there. Kosmos takes a move of a floating window of a shown

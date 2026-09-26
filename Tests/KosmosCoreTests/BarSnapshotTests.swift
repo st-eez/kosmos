@@ -10,7 +10,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
     var s = Session(names: ["1", "2", "3"], display: display)
     _ = s.add(10); _ = s.add(11)
     _ = s.add(20, to: "2")
-    s.adopt(11)
+    _ = s.adopt(11)
     let apps: [WindowID: String] = [10: "Ghostty", 11: "Helium", 20: "Spotify"]
     let snapshot = s.barSnapshot(profile: "laptop", displays: [1: builtIn], app: { apps[$0] }, frame: { _ in nil })
 
@@ -28,7 +28,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
 @Test func floatingWindowsUseTheirOwnFrame() {
     var s = Session(names: ["1"], display: display)
     _ = s.add(10); _ = s.add(11)
-    s.adopt(11)
+    _ = s.adopt(11)
     _ = s.perform(.layout(.toggleFloating))
     let snapshot = s.barSnapshot(profile: nil, displays: [1: builtIn], app: { _ in "App" },
                                  frame: { $0 == 11 ? CGRect(x: 5, y: 600, width: 100, height: 100) : nil })
@@ -77,7 +77,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
     @Test func everyDisplayAndEveryWorkspaceWithItsDisplay() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5")
-        s.adopt(50)
+        _ = s.adopt(50)
         let bar: [DisplayID: BarSnapshot.Display] = [1: .init(id: 2, name: "VG279QE5A (2)"), 2: .init(id: 1, name: "VG279QE5A (1)"),
                                                      3: .init(id: 3, name: "Built-in")]
         let snapshot = s.barSnapshot(profile: "home", displays: bar, app: { _ in "App" }, frame: { _ in nil })

@@ -66,11 +66,11 @@ extension Controller {
         reports.commandExecuted(receivedAt: stamp)
         // A native fullscreen window stays parked, and the session's focus stays where it
         // was, as when the user clicks the window.
-        if !fullscreen { session.adopt(window) }
+        let plan = fullscreen ? Session.Plan() : session.adopt(window)
         // The window is on screen under the pointer, so keying it takes no display out of a
         // native fullscreen Space.
         requestFocus(.window(window), fromCommand: true)
-        publishState()
+        execute(plan)
     }
 
     /// Only when the pointer is outside, as AeroSpace's `window-lazy-center`. The frame is the
