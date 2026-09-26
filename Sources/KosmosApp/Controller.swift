@@ -1,5 +1,6 @@
 import AppKit
 import KosmosCore
+import KosmosRecovery
 import KosmosSkyLight
 import os
 
@@ -91,7 +92,7 @@ final class Controller {
     private var tiles: [WindowID: CGRect] = [:]
     /// Nil while observing only, as the layout is another window manager's, or when the
     /// WindowServer is unread (docs/tree.md).
-    private let windowServer: SavedLayout.Process?
+    private let windowServer: ProcessIdentity?
     private var layoutWritePending = false
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
@@ -99,7 +100,7 @@ final class Controller {
         self.hiding = hiding
         self.managing = managing
         session = Session(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays)
-        windowServer = managing ? LayoutFile.windowServer() : nil
+        windowServer = managing ? ProcessIdentity.windowServer() : nil
         rules = setup.rules
         profile = setup.profile
         self.barDisplays = barDisplays
@@ -112,7 +113,7 @@ final class Controller {
 
     /// Before the inventory admits any window (docs/tree.md).
     private func restoreLayout() {
-        guard let windowServer, var saved = LayoutFile.load() else { return }
+        guard let windowServer, var saved = LayoutFile.load(under: windowServer) else { return }
         let count = saved.windows.count
         // A closed window would hold its tile until the next write, and one ordered out, as
         // minimized since, until the tree changes. A failed read keeps every window.
@@ -124,11 +125,10 @@ final class Controller {
         } else {
             controllerLog.error("saved windows not read from WindowServer; each waits for its admission")
         }
-        let applied = session.restore(saved, windowServer: windowServer)
+        session.restore(saved)
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
         controllerLog.notice("""
-            saved layout \(applied ? "restored" : "left out, from another WindowServer or version", privacy: .public): \
-            \(saved.windows.count) of its \(count) windows open, workspace on each display \
+            saved layout restored: \(saved.windows.count) of its \(count) windows open, workspace on each display \
             \(shown.joined(separator: ", "), privacy: .public), focused \(self.session.focusedWorkspace, privacy: .public)
             """)
     }
@@ -553,7 +553,7 @@ final class Controller {
     func writeLayout(wait: Bool = false) {
         layoutWritePending = false
         guard let windowServer else { return }
-        LayoutFile.write(session.savedLayout(windowServer: windowServer), wait: wait)
+        LayoutFile.write(session.savedLayout(), under: windowServer, wait: wait)
     }
 
     /// A locked session keeps its borders until the resync after the unlock (docs/borders.md).

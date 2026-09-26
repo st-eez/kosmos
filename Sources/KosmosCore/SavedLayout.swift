@@ -3,22 +3,8 @@ import CoreGraphics
 /// The layout Kosmos writes as it changes and puts back when it starts again: each window's
 /// workspace and place in the tree, the workspace each display shows, and the focus
 /// (docs/tree.md). WindowServer numbers the windows, so the ids hold across a restart of
-/// Kosmos and name other windows under another WindowServer.
+/// Kosmos.
 public struct SavedLayout: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
-
-    /// A process, whose start time tells it from a later one with its pid.
-    public struct Process: Codable, Equatable, Sendable {
-        public var pid: Int32
-        /// Microseconds since 1970.
-        public var start: UInt64
-
-        public init(pid: Int32, start: UInt64) {
-            self.pid = pid
-            self.start = start
-        }
-    }
-
     public struct Shown: Codable, Equatable, Sendable {
         public var display: DisplayID
         public var workspace: String
@@ -55,9 +41,6 @@ public struct SavedLayout: Codable, Equatable, Sendable {
         public var weight: Double
     }
 
-    public var version = SavedLayout.currentVersion
-    /// The WindowServer that numbered the windows.
-    public var windowServer: Process
     public var shown: [Shown]
     public var focusedWorkspace: String
     /// Nil when the focused workspace had no window.
@@ -68,7 +51,7 @@ public struct SavedLayout: Codable, Equatable, Sendable {
 
 extension Session {
     /// What `restore` puts back after a restart.
-    public func savedLayout(windowServer: SavedLayout.Process) -> SavedLayout {
+    public func savedLayout() -> SavedLayout {
         var windows: [SavedLayout.Window] = []
         for name in names {
             let workspace = workspaces[name]!
@@ -90,21 +73,17 @@ extension Session {
                 saved($0.window, floating: $0.floating, parked: true, stamp: workspace.stamps[$0.window], hint: hint($0.window))
             }
         }
-        return SavedLayout(windowServer: windowServer,
-                           shown: monitors.compactMap { monitor in shown[monitor.id].map { SavedLayout.Shown(display: monitor.id, workspace: $0) } },
+        return SavedLayout(shown: monitors.compactMap { monitor in shown[monitor.id].map { SavedLayout.Shown(display: monitor.id, workspace: $0) } },
                            focusedWorkspace: focusedWorkspace, focusedWindow: focused, windows: windows)
     }
 
     /// Takes `layout` back at launch, before any window joins, so each window the layout has
     /// goes back to its place as Kosmos admits it (`add`), and each display shows its
-    /// workspace again. A layout of another version or WindowServer changes nothing, and
-    /// returns false. Where the profile differs, its workspaces and their displays win
+    /// workspace again. Where the profile differs, its workspaces and their displays win
     /// (docs/tree.md).
-    @discardableResult
-    public mutating func restore(_ layout: SavedLayout, windowServer: SavedLayout.Process) -> Bool {
+    public mutating func restore(_ layout: SavedLayout) {
         defer { check() }
         precondition(home.isEmpty, "a layout is restored before any window joins")
-        guard layout.version == SavedLayout.currentVersion, layout.windowServer == windowServer else { return false }
         for entry in layout.windows where workspaces[entry.workspace] != nil {
             guard savedWorkspace(of: entry.id) == nil, let pending = entry.pending(edits: workspaces[entry.workspace]!.edits)
             else { continue }
@@ -126,7 +105,6 @@ extension Session {
         let focus = workspaces[layout.focusedWorkspace] != nil ? layout.focusedWorkspace : focusedWorkspace
         arrange(focusing: focus, near: nil)
         savedFocus = focus == layout.focusedWorkspace ? layout.focusedWindow : nil
-        return true
     }
 
     /// The windows the restored layout has that Kosmos has not admitted.

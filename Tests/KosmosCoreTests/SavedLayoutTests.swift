@@ -25,8 +25,6 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
 }
 
 @Suite struct SavedLayoutTests {
-    static let server = SavedLayout.Process(pid: 400, start: 1_790_000_000_000_000)
-
     /// Steve's windows at his desk: the main panel shows 1 and has the focus, the left panel
     /// shows 6 and the built-in display 8. ChatGPT and Claude (20, 21) are on hidden 2, with
     /// 21 minimized, Chrome floats on 4, and 81 floated from its tile on 8.
@@ -54,14 +52,14 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
     static func restored(_ layout: SavedLayout, monitors: [Monitor] = [Desk.builtIn, Desk.main, Desk.left],
                          assigned: [String: DisplayID] = Desk.home, names: [String] = Desk.names) -> Session {
         var s = Session(names: names, monitors: monitors, assigned: assigned)
-        s.restore(layout, windowServer: server)
+        s.restore(layout)
         return s
     }
 
     @Test(arguments: 0..<24 as Range<UInt64>)
     func aRestartPutsEveryWindowBackInAnyOrder(seed: UInt64) throws {
         let before = Self.desk()
-        var after = Self.restored(try Self.roundTrip(before.savedLayout(windowServer: Self.server)))
+        var after = Self.restored(try Self.roundTrip(before.savedLayout()))
         #expect(after.shownWorkspaces == ["6", "1", "8"] && after.focusedWorkspace == "1")
         var random = SplitMix64(state: seed)
         for window in before.placed.shuffled(using: &random) {
@@ -83,7 +81,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         before.place("h[1:3 v[2 3] 4]", on: "a")
         before.workspaces["a"]!.float(2)
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(try Self.roundTrip(before.savedLayout(windowServer: Self.server)), windowServer: Self.server)
+        after.restore(try Self.roundTrip(before.savedLayout()))
         for window in [3, 2, 4, 1] as [WindowID] { _ = after.add(window) }
         #expect(after.workspaces["a"]!.floating == [2] && after.workspaces["a"]!.sameTree(as: before.workspaces["a"]!))
         after.workspaces["a"]!.tile(2)
@@ -95,7 +93,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var before = Session(names: ["a"], monitors: [Desk.main])
         before.place("h[1:2 v[2 h[3 4:3]]:3 5:1]", on: "a")
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(try Self.roundTrip(before.savedLayout(windowServer: Self.server)), windowServer: Self.server)
+        after.restore(try Self.roundTrip(before.savedLayout()))
         for window in order { _ = after.add(window) }
         #expect(after.workspaces["a"]!.sameTree(as: before.workspaces["a"]!), "\(after.workspaces["a"]!.detailed)")
     }
@@ -110,7 +108,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         _ = before.park([5], because: .minimized)
         let tiles = before.frames(of: "a")
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(before.savedLayout(windowServer: Self.server), windowServer: Self.server)
+        after.restore(before.savedLayout())
         for window in order.dropLast() {
             #expect(after.add(window).frames == tiles.filter { after.workspace(of: $0.key) != nil })
         }
@@ -126,7 +124,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var before = Session(names: ["a"], monitors: [Desk.main])
         before.place("h[1 2 3]", on: "a")
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(before.savedLayout(windowServer: Self.server), windowServer: Self.server)
+        after.restore(before.savedLayout())
         _ = after.add(1)
         #expect(after.frames(of: "a")[1]!.width < 700)
         #expect(after.add(9).frames.keys.sorted() == [1, 9])
@@ -140,7 +138,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var before = Session(names: ["a"], monitors: [Desk.main])
         before.place("h[1 v[2 3]:2 4]", on: "a")
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(before.savedLayout(windowServer: Self.server), windowServer: Self.server)
+        after.restore(before.savedLayout())
         for window in order { _ = after.add(window) }
         _ = before.remove(2)
         #expect(after.workspaces["a"]!.sameTree(as: before.workspaces["a"]!), "\(after.workspaces["a"]!.detailed)")
@@ -152,7 +150,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var before = Session(names: ["a"], monitors: [Desk.main])
         before.place("h[1 v[2 3]]", on: "a")
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(before.savedLayout(windowServer: Self.server), windowServer: Self.server)
+        after.restore(before.savedLayout())
         _ = after.add(1)
         _ = after.add(9)
         _ = after.add(3)
@@ -163,7 +161,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
     /// The built-in display is gone at the restart. Its workspace keeps its windows, hidden,
     /// and the display shows it again when it comes back.
     @Test func aDisplayGoneAtTheRestartGetsItsWorkspaceBackWhenItReturns() {
-        let layout = Self.desk().savedLayout(windowServer: Self.server)
+        let layout = Self.desk().savedLayout()
         var assigned = Desk.home
         for name in ["8", "9", "0"] { assigned[name] = nil }
         var after = Self.restored(layout, monitors: [Desk.main, Desk.left], assigned: assigned)
@@ -182,8 +180,8 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         _ = before.add(1, to: "c")
         _ = before.perform(.workspace(.named("c")))
         #expect(before.monitor(of: "c").id == Desk.main.id)
-        let layout = before.savedLayout(windowServer: Self.server)
-        var after = Self.restored(layout, monitors: [Desk.main, Desk.left], assigned: ["c": Desk.left.id],
+        let layout = before.savedLayout()
+        let after = Self.restored(layout, monitors: [Desk.main, Desk.left], assigned: ["c": Desk.left.id],
                                   names: ["a", "b", "c"])
         #expect(after.workspace(shownOn: Desk.main.id) != "c")
         #expect(after.focusedWorkspace == "c" && after.monitor(of: "c").id == Desk.left.id)
@@ -200,7 +198,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         _ = before.add(10, to: "8")
         _ = before.add(11, to: "8")
         _ = before.add(12, to: "8", floating: true)
-        var after = Self.restored(before.savedLayout(windowServer: Self.server))
+        var after = Self.restored(before.savedLayout())
         _ = after.add(10, to: "1")
         _ = after.add(11, floating: true)
         _ = after.add(12)
@@ -215,7 +213,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         _ = before.add(11, to: "1")
         _ = before.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 11))
         #expect(before.workspace(of: 11) == "3" && !before.isShown("3"))
-        var after = Self.restored(before.savedLayout(windowServer: Self.server))
+        var after = Self.restored(before.savedLayout())
         _ = after.add(10, to: "1")
         #expect(after.add(11, to: "1").hide == [11])
         #expect(after.workspace(of: 11) == "3")
@@ -228,7 +226,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         before.place("h[1 2 3]", on: "a")
         before.workspaces["a"]!.focus(2)
         var after = Session(names: ["a", "b"], monitors: [Desk.main])
-        after.restore(before.savedLayout(windowServer: Self.server), windowServer: Self.server)
+        after.restore(before.savedLayout())
         #expect(after.savedFocus == 2)
         #expect(after.add(3).focus == nil)
         #expect(after.add(2).focus == .window(2))
@@ -242,7 +240,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var before = Session(names: ["a"], monitors: [Desk.main])
         before.place("h[1 2]", on: "a")
         var after = Session(names: ["a"], monitors: [Desk.main])
-        after.restore(before.savedLayout(windowServer: Self.server), windowServer: Self.server)
+        after.restore(before.savedLayout())
         _ = after.add(1)
         after.adopt(1)
         #expect(after.add(2).focus == nil)
@@ -253,46 +251,39 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var before = Session(names: ["a", "b"], monitors: [Desk.main])
         before.place("h[1 2]", on: "a")
         before.place("h[3 4]", on: "b")
-        let layout = before.savedLayout(windowServer: Self.server)
+        let layout = before.savedLayout()
         var after = Session(names: ["a", "b"], monitors: [Desk.main])
-        after.restore(layout, windowServer: Self.server)
+        after.restore(layout)
         _ = after.add(1)
         func byID(_ layout: SavedLayout) -> [WindowID: SavedLayout.Window] {
             Dictionary(uniqueKeysWithValues: layout.windows.map { ($0.id, $0) })
         }
-        #expect(byID(after.savedLayout(windowServer: Self.server)) == byID(layout))
+        #expect(byID(after.savedLayout()) == byID(layout))
         _ = after.forgetPending { $0 == 3 }
-        #expect(after.savedLayout(windowServer: Self.server).windows.map(\.id).sorted() == [1, 2, 4])
+        #expect(after.savedLayout().windows.map(\.id).sorted() == [1, 2, 4])
     }
 
-    /// Window ids from another WindowServer name other windows, and a garbled place would
-    /// break the tree, so each goes where it would at any launch. A focus stamp counts only
-    /// as an order, so no stamp in a file can run the clock over.
-    @Test func aLayoutKosmosCannotTrustChangesNothing() {
+    /// A garbled place would break the tree, so its window goes where it would at any launch.
+    /// A focus stamp counts only as an order, so no stamp in a file can run the clock over.
+    @Test func aPlaceKosmosCannotTrustIsLeftOut() {
         var before = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
         before.place("h[1 2]", on: "b")
         _ = before.perform(.workspace(.named("b")))
-        var layout = before.savedLayout(windowServer: Self.server)
-        var other = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
-        other.restore(layout, windowServer: SavedLayout.Process(pid: Self.server.pid, start: Self.server.start + 1))
-        #expect(other.focusedWorkspace == "a")
-        _ = other.add(1)
-        #expect(other.workspace(of: 1) == "a")
-
+        var layout = before.savedLayout()
         layout.windows[0].place![0].index = 5
         layout.windows[1].place![0].slots[0].weight = .nan
         var garbled = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
-        garbled.restore(layout, windowServer: Self.server)
+        garbled.restore(layout)
         #expect(garbled.focusedWorkspace == "b" && garbled.workspaces["b"]!.pending.isEmpty)
         _ = garbled.add(1)
         _ = garbled.add(2)
         #expect(garbled.workspace(of: 1) == "b" && garbled.workspaces["b"]!.tree == "h[1 2]")
 
         // A focus stamp is only an order.
-        layout = before.savedLayout(windowServer: Self.server)
+        layout = before.savedLayout()
         layout.windows[0].focus = .max
         var stamped = Session(names: ["a", "b"], monitors: [Desk.main, Desk.left])
-        stamped.restore(layout, windowServer: Self.server)
+        stamped.restore(layout)
         _ = stamped.add(1)
         _ = stamped.add(2)
         stamped.adopt(2)
@@ -303,6 +294,6 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var s = Session(names: ["a"], monitors: [Desk.main])
         s.place("h[1 2]", on: "a")
         _ = s.park([2], because: .closedByApp)
-        #expect(s.savedLayout(windowServer: Self.server).windows.map(\.id) == [1])
+        #expect(s.savedLayout().windows.map(\.id) == [1])
     }
 }
