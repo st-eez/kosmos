@@ -63,8 +63,8 @@ fi
     fail "the running Kosmos was not quit"
 [[ $(cat "$root/opened" 2>/dev/null) == "$app" ]] || fail "the failed install did not start Kosmos again"
 
-# The guardian retries an incomplete recovery for about 30 s after Kosmos quits, and install.sh
-# waits for it. A stub guardian outlives the stub Kosmos by 12 s, past the 10 s Kosmos gets.
+# The guardian waits 5 s for a Kosmos, then retries an incomplete recovery for about 30 s, and
+# install.sh waits for it. A stub guardian outlives the stub Kosmos by 12 s, past the 10 s Kosmos gets.
 cc -x c -o "$root/guardian" - <<'STUB'
 #include <signal.h>
 #include <stdlib.h>

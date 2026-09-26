@@ -64,8 +64,9 @@ wait_for_exit() {
 
 # SIGTERM quits Kosmos through AppKit. A Kosmos that `kosmos handover` armed leaves its hidden
 # windows concealed, and its guardian waits 5 s for the next Kosmos to take them over; any
-# other restores them, and the guardian retries an incomplete recovery for about 30 s after
-# Kosmos exits (docs/hiding.md, docs/overview.md).
+# other restores them. When windows are left, the guardian waits the same 5 s, then retries
+# its recovery for about 30 s, so it exits up to about 37 s after Kosmos (docs/hiding.md,
+# docs/overview.md).
 was_running=false
 handed_over=false
 stop_kosmos() {
@@ -93,8 +94,8 @@ stop_kosmos() {
         exit 1
     fi
     # The guardian of a Kosmos that handed over waits for the one started below.
-    if ! $handed_over && ! wait_for_exit 350 $guardians; then
-        echo "kosmos-guardian was still restoring hidden windows 35 s after Kosmos quit; nothing was changed." >&2
+    if ! $handed_over && ! wait_for_exit 400 $guardians; then
+        echo "kosmos-guardian was still restoring hidden windows 40 s after Kosmos quit; nothing was changed." >&2
         exit 1
     fi
 }

@@ -48,22 +48,13 @@ func awaitSuccessor(of exited: Int32) {
     guard let record = RecordFile.peek(KosmosFiles.record), record.windowServer == ProcessIdentity.windowServer() else { return }
     let deadline = ContinuousClock.now + .seconds(5)
     while ContinuousClock.now < deadline {
-        if let kosmos = successor(of: exited) {
-            log.notice("Kosmos \(kosmos) took the record over; leaving it")
+        if let kosmos = FileLock.successor(at: KosmosFiles.lock, excluding: exited) {
+            log.notice("Kosmos \(kosmos.pid) took the record over; leaving it")
             exit(0)
         }
         usleep(50_000)
     }
     log.notice("no Kosmos took the record over within 5 s; recovering")
-}
-
-/// A live Kosmos named in the lock file holds the lock. The Kosmos that exited can still read
-/// as alive until it is reaped.
-func successor(of exited: Int32?) -> Int32? {
-    guard let holder = FileLock.holder(KosmosFiles.lock), holder.pid != exited, ProcessIdentity.of(holder.pid) == holder else {
-        return nil
-    }
-    return holder.pid
 }
 
 /// Retries for about 30 s, freeing the lock a starting Kosmos waits 3 s for (docs/overview.md).
@@ -85,8 +76,8 @@ func recover(printing: Bool, after exited: Int32?) -> Never {
 func attempt(after exited: Int32?) -> Recovery.Outcome? {
     do {
         guard let lock = try FileLock(KosmosFiles.lock) else {
-            guard let kosmos = successor(of: exited) else { return nil }
-            log.notice("lock held by Kosmos \(kosmos); leaving recovery to it")
+            guard let kosmos = FileLock.successor(at: KosmosFiles.lock, excluding: exited) else { return nil }
+            log.notice("lock held by Kosmos \(kosmos.pid); leaving recovery to it")
             exit(0)
         }
         return try withExtendedLifetime(lock) { try Recovery.run(file: RecordFile(url: KosmosFiles.record)) }
