@@ -60,6 +60,7 @@ extension Session {
             } else {
                 workspaces[name]!.insert(window, first: false)
             }
+            fit(window, in: name)
             home[window] = name
             if name != source { mergedFrom[window] = nil }
             workspaces[name]!.focus(window)
@@ -118,7 +119,7 @@ extension Session {
             case .down: tile.maxY + delta.height - now.maxY
             }
             if amount != 0,
-               workspaces[name]!.moveEdge(window, edge, by: amount, in: monitor.area, gaps: monitor.gaps, minimums: minimums) {
+               workspaces[name]!.moveEdge(window, edge, by: amount, in: monitor.area, gaps: monitor.gaps) {
                 changed = true
             }
         }

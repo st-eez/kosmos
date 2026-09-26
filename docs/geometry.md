@@ -20,6 +20,27 @@
   edge another display adjoins. So a window left more than 2 pt taller than a frame write
   asked is written again through a height 40 pt shorter, then the target's, and only a
   window still taller refused the height.
+- Each window's minimum size comes first from WindowServer. The inventory's reads of
+  window rows take the size WindowServer holds each window to
+  (`SLSWindowIteratorGetConstraints`), and for a row at level 0 with no parent that holds
+  no constraint at all, the one its package keeps (`SLSPackagesGetWindowConstraints`), as
+  rift reads them (`constraints()` in src/sys/window_server.rs). `kosmos-probe
+  constraints` on 2026-09-25 read a probe window's AppKit `minSize` exactly, and its
+  `contentMinSize` as the frame size it makes. Of the 19 regular windows at the desk, 18
+  held a constraint in the row, among them Helium's 785 by 588 pt, the width Kosmos had
+  learned from its refusals, Activity Monitor's 740 by 384 and Discord's 800 by 500.
+  - The minimums added nothing measurable to a read of 2 windows, 0.0132 and 0.0138 ms at
+    the median with or without them in two runs, and 0.008 and 0.010 ms to a read of all
+    50 windows, a sweep's, at 0.098 ms. A package read takes 0.0074 ms, so only a row
+    Kosmos could manage takes one. Only the inventory's reads, off the main thread, take
+    the minimums; a switch's batch reads rows without them ([hiding.md](hiding.md)).
+  - Kosmos gives a window its minimum as it places it, from the row the inventory read,
+    and again whenever a read shows another. A selected tab takes its own. A minimum
+    WindowServer changes with no event for the window is seen at its next change.
+  - On each axis a window's minimum is the larger of WindowServer's and one learned from
+    refusals (below), which stay the fallback for an app that holds its size in its own
+    code, where WindowServer reads 0. Where the minimums take effect is in
+    [tree.md](tree.md).
 - A window whose frame reads back more than 2 pt larger than a write's target on an axis
   refused the size. After its first refusal the target is written again whole 100 ms
   later, and only a second refusal of the target records the size kept as the window's
@@ -67,8 +88,8 @@
   presses and the windows they moved, and the resync lays those windows out, so a press
   that spans a resync loses its snap-back: its later changes count as made with the button
   up, and the window keeps what the rest of the press gives it. That is rare, and accepted.
-  The resize command sizes
-  tiles, and a floating window keeps the size the user gives it.
+  The resize command and the right button's modifier drag size tiles, past their
+  minimums ([tree.md](tree.md)), and a floating window keeps the size the user gives it.
 - The inventory applies a change event after reading the window's row off the main thread
   ([inventory.md](inventory.md)), by which time Kosmos's write may be confirmed and the button up. So
   Kosmos judges the change as of its arrival. It is a write's when it came before the

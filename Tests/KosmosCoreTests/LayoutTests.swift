@@ -96,17 +96,19 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
 // MARK: Minimums
 
 /// Activity Monitor refuses widths under about 740 points.
-@Test func minimumKeepsAWindowWholeAndOnScreen() {
+@Test func aMinimumLongerThanItsTileSpillsOffTheScreenAtItsEdge() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let minimums = [WindowID(2): CGSize(width: 740, height: 400)]
     let workspace = Workspace("h[1:7 2:3]")
     let frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect(frames[1] == CGRect(x: 0, y: 0, width: 988, height: 1000))
-    #expect(frames[2] == CGRect(x: 988, y: 0, width: 740, height: 1000))
+    // It keeps the edge it shares with 1, and the rest goes past the right edge.
+    #expect(frames[1] == CGRect(x: 0, y: 0, width: 1210, height: 1000))
+    #expect(frames[2] == CGRect(x: 1210, y: 0, width: 740, height: 1000))
     #expect(workspace.shares == [0.7, 0.3])
-    // With room again, the weights apply as the user set them.
-    let wide = workspace.frames(in: CGRect(x: 0, y: 0, width: 3000, height: 1000), gaps: Gaps(), minimums: minimums)
-    #expect([1, 2].map { wide[$0]!.width } == [2100, 900])
+    // At the left edge, the rest goes past that edge.
+    let left = Workspace("h[2:3 1:7]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(left[2] == CGRect(x: -222, y: 0, width: 740, height: 1000))
+    #expect(left[1] == CGRect(x: 518, y: 0, width: 1210, height: 1000))
 }
 
 @Test func minimumsThatDoNotBindChangeNothing() {
@@ -114,13 +116,17 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
     let minimums = Dictionary(uniqueKeysWithValues: (1...5).map { (WindowID($0), CGSize(width: 20, height: 20)) })
     let gaps = Gaps(inner: 8, outer: Insets(top: 30, left: 8, bottom: 8, right: 8))
     #expect(workspace.frames(in: screen, gaps: gaps, minimums: minimums) == workspace.frames(in: screen, gaps: gaps))
+    var fitted = workspace
+    fitted.fit(nil, in: screen, gaps: gaps, minimums: minimums)
+    #expect(fitted.sameTree(as: workspace))
 }
 
-@Test func nestedMinimumsWidenTheirContainers() {
+@Test func fittingGivesNestedMinimumsTheirContainersLength() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let minimums = [WindowID(3): CGSize(width: 600, height: 0), 4: CGSize(width: 600, height: 0)]
-    let frames = Workspace("h[1 v[2 h[3 4]]]").frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect(frames == [
+    var workspace = Workspace("h[1 v[2 h[3 4]]]")
+    workspace.fit(nil, in: display, gaps: Gaps(), minimums: minimums)
+    #expect(workspace.frames(in: display, gaps: Gaps(), minimums: minimums) == [
         1: CGRect(x: 0, y: 0, width: 528, height: 1000),
         2: CGRect(x: 528, y: 0, width: 1200, height: 500),
         3: CGRect(x: 528, y: 500, width: 600, height: 500),
@@ -128,25 +134,74 @@ func degenerateRectanglesGiveNoNegativeSizes(rect: CGRect) {
     ])
 }
 
-@Test func minimumsCountTheGapsBetweenWindows() {
+@Test func fittingCountsTheGapsBetweenWindows() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let gaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
-    let frames = Workspace("h[1 2]").frames(in: display, gaps: gaps, minimums: [2: CGSize(width: 900, height: 0)])
+    var workspace = Workspace("h[1 2]")
+    workspace.fit(2, in: display, gaps: gaps, minimums: [2: CGSize(width: 900, height: 0)])
+    let frames = workspace.frames(in: display, gaps: gaps)
     #expect(frames[1] == CGRect(x: 10, y: 10, width: 798, height: 980))
     #expect(frames[2] == CGRect(x: 818, y: 10, width: 900, height: 980))
 }
 
-@Test func minimumsThatDoNotFitStayOnScreen() {
+@Test func minimumsThatDoNotFitSpillOffTheEdgesAndOverTheNextWindow() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let minimums = Dictionary(uniqueKeysWithValues: (1...3).map { (WindowID($0), CGSize(width: 700, height: 0)) })
-    let frames = Workspace("h[1 2 3]").frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect([1, 2, 3].map { frames[$0]!.minX } == [0, 576, 1028])
-    #expect(frames.values.allSatisfy { $0.width == 700 && display.contains($0) })
+    var workspace = Workspace("h[1 2 3]")
+    workspace.fit(nil, in: display, gaps: Gaps(), minimums: minimums)
+    #expect(workspace.shares == [0.333, 0.333, 0.333])
+    let frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
+    // 1 keeps its right edge, 2 its left edge over 3, and 3 its left edge.
+    #expect([1, 2, 3].map { frames[$0]!.minX } == [-124, 576, 1152])
+    #expect(frames.values.allSatisfy { $0.width == 700 && $0.height == 1000 })
 }
 
-@Test func minimumLargerThanTheScreenIsCutToIt() {
+/// Its top stays on screen before its center does.
+@Test func aMinimumTallerThanTheScreenGoesPastItsFarEdgesFromItsTop() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     let frames = Workspace("v[1 2]").frames(in: display, gaps: Gaps(), minimums: [2: CGSize(width: 2000, height: 2000)])
-    #expect(frames[2] == display)
+    #expect(frames[2] == CGRect(x: 0, y: 0, width: 2000, height: 2000))
     #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 500))
+}
+
+/// macOS keeps a titled window's top on its display, so Kosmos never writes it above.
+@Test func aWindowKeepsItsTopEdgeAndSpillsDown() {
+    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
+    let minimums = [WindowID(1): CGSize(width: 0, height: 588), 2: CGSize(width: 0, height: 400)]
+    let frames = Workspace("v[1:3 2:4 3:3]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(frames[1] == CGRect(x: 0, y: 0, width: 1728, height: 588))
+    #expect(frames[2] == CGRect(x: 0, y: 300, width: 1728, height: 400))
+    let bottom = Workspace("v[3:7 2:3]").frames(in: display, gaps: Gaps(), minimums: minimums)
+    #expect(bottom[2] == CGRect(x: 0, y: 700, width: 1728, height: 400))
+}
+
+/// With separate Spaces, macOS shows a window only on the display with most of it. Helium,
+/// held to 785 points, at the 5% floor of Steve's 1920 by 1080 main panel.
+@Test func aSpillKeepsTheWindowsCenterOnItsDisplay() {
+    let display = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    let helium = [WindowID(2): CGSize(width: 785, height: 588)]
+    // Its 96 point tile starts at 1824, which would put its center at 2216.5, and it overlaps
+    // 1 until its center is half a point inside.
+    let right = Workspace("h[1:95 2:5]").frames(in: display, gaps: Gaps(), minimums: helium)
+    #expect(right[2] == CGRect(x: 1527, y: 0, width: 785, height: 1080))
+    let left = Workspace("h[2:5 1:95]").frames(in: display, gaps: Gaps(), minimums: helium)
+    #expect(left[2] == CGRect(x: -392, y: 0, width: 785, height: 1080))
+    // At the bottom, over the built-in display below the panel at Steve's desk.
+    let bottom = Workspace("v[1:9 2:1]").frames(in: display, gaps: Gaps(), minimums: helium)
+    #expect(bottom[2] == CGRect(x: 0, y: 785, width: 1920, height: 588))
+    #expect([right[2]!, left[2]!, bottom[2]!].allSatisfy { display.contains(CGPoint(x: $0.midX, y: $0.midY)) })
+}
+
+/// rift keeps each side of a split at 5% or more, and so does a fit.
+@Test func fittingLeavesEachWindowFivePercent() {
+    let minimums = [WindowID(2): CGSize(width: 600, height: 0), 3: CGSize(width: 380, height: 0)]
+    var workspace = Workspace("h[1 2 3]")
+    // 600 and 380 would leave 1 20 points of the 1000, under its 50, so the shares stay.
+    workspace.fit(nil, in: screen, gaps: Gaps(), minimums: minimums)
+    #expect(workspace.shares == [0.333, 0.333, 0.333])
+    #expect(workspace.resize(2, .width, by: 50, in: screen, gaps: Gaps()) == true)
+    var tight = Workspace("h[1 2 3]")
+    tight.fit(nil, in: screen, gaps: Gaps(), minimums: [3: CGSize(width: 900, height: 0)])
+    let frames = tight.frames(in: screen, gaps: Gaps())
+    #expect([1, 2, 3].map { frames[$0]!.width } == [50, 50, 900])
 }

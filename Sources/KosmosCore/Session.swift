@@ -55,7 +55,9 @@ public struct Session: Sendable {
     /// Every parked window has one, except a lifted one.
     var parkReasons: [WindowID: ParkReason] = [:]
     /// The smallest size each window took, as read backs show, until it is seen smaller.
-    var minimums: [WindowID: CGSize] = [:]
+    var learned: [WindowID: CGSize] = [:]
+    /// The smallest size WindowServer holds each window to, as its row reads (docs/geometry.md).
+    var constrained: [WindowID: CGSize] = [:]
     /// Workspaces a profile left out, as they were, for a later profile that lists them.
     var mergedAway: [String: Workspace] = [:]
     /// The workspace a profile merged each window out of. A window the user moves or closes
@@ -138,7 +140,9 @@ public struct Session: Sendable {
             if home[window] == nil { problems.append("merged window \(window) belongs to no workspace") }
             if mergedAway[origin]?.contains(window) != true { problems.append("merged window \(window) is not in \(origin)") }
         }
-        for window in minimums.keys where home[window] == nil { problems.append("window \(window) with a minimum belongs to no workspace") }
+        for window in Set(learned.keys).union(constrained.keys) where home[window] == nil {
+            problems.append("window \(window) with a minimum belongs to no workspace")
+        }
         return problems
     }
 
@@ -166,6 +170,11 @@ public struct Session: Sendable {
         !monitor(of: focusedWorkspace).frame.contains(point)
     }
 
+    /// Each window's minimum: on each axis the larger of WindowServer's and the one learned.
+    var minimums: [WindowID: CGSize] {
+        learned.merging(constrained) { CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height)) }
+    }
+
     public func frames(of name: String) -> [WindowID: CGRect] {
         guard let workspace = workspaces[name] else { return [:] }
         let monitor = monitor(of: name)
@@ -185,13 +194,16 @@ public struct Session: Sendable {
 
     // MARK: Windows arriving and leaving
 
-    /// `point` is the window's center (docs/displays.md).
+    /// `point` is the window's center (docs/displays.md), and `minimum` the one WindowServer
+    /// reads for it.
     public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil,
-                             floating: Bool = false) -> Plan {
+                             floating: Bool = false, minimum: CGSize = .zero) -> Plan {
         defer { check() }
         guard home[window] == nil else { return Plan() }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
+        if minimum != .zero { constrained[window] = minimum }
         if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
+        fit(window, in: target)
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan(frames: frames(of: target))
@@ -202,7 +214,8 @@ public struct Session: Sendable {
     public mutating func remove(_ window: WindowID) -> Plan {
         defer { check() }
         guard let name = home.removeValue(forKey: window) else { return Plan() }
-        minimums[window] = nil
+        learned[window] = nil
+        constrained[window] = nil
         mergedFrom[window] = nil
         parkedConcealed.remove(window)
         parkReasons[window] = nil
@@ -214,9 +227,10 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// `new`, the tab just selected, takes `old`'s place with its park reason, and a tiled
-    /// `old`'s minimum (docs/tree.md). Nil when `old` holds no place.
-    public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
+    /// `new`, the tab just selected, takes `old`'s place with its park reason, and the minimum
+    /// Kosmos learned for a tiled `old` (docs/tree.md). `minimum` is WindowServer's for `new`.
+    /// Nil when `old` holds no place.
+    public mutating func replace(_ old: WindowID, with new: WindowID, minimum: CGSize = .zero) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
         let parked = isParked(old)
@@ -232,7 +246,9 @@ public struct Session: Sendable {
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
         home[new] = name
-        if let minimum = minimums.removeValue(forKey: old), !parked { minimums[new] = minimum }
+        if let minimum = learned.removeValue(forKey: old), !parked { learned[new] = minimum }
+        constrained[old] = nil
+        constrained[new] = minimum == .zero ? nil : minimum
         mergedFrom[new] = mergedFrom.removeValue(forKey: old)
         if let origin = mergedFrom[new] {
             mergedAway[origin]?.remove(new)
@@ -292,14 +308,15 @@ public struct Session: Sendable {
     }
 
     /// A parked window its app closed and kept, then ordered in again, opens as a new window
-    /// does and keeps its minimum (docs/tree.md). Nil for a window that is not parked.
-    public mutating func reopen(_ window: WindowID, to name: String?, floating: Bool) -> Plan? {
+    /// does and keeps the minimum Kosmos learned (docs/tree.md). Nil for a window that is not
+    /// parked.
+    public mutating func reopen(_ window: WindowID, to name: String?, floating: Bool, minimum: CGSize = .zero) -> Plan? {
         defer { check() }
         guard isParked(window) else { return nil }
-        let concealed = parkedConcealed.contains(window), minimum = minimums[window]
+        let concealed = parkedConcealed.contains(window), kept = learned[window]
         _ = remove(window)
-        minimums[window] = minimum
-        var plan = add(window, to: name, floating: floating)
+        learned[window] = kept
+        var plan = add(window, to: name, floating: floating, minimum: minimum)
         if concealed, plan.hide.isEmpty { plan.show = [window] }
         return plan
     }
@@ -325,10 +342,19 @@ public struct Session: Sendable {
     public mutating func setMinimum(_ window: WindowID, _ size: CGSize) -> Plan {
         defer { check() }
         guard let name = home[window] else { return Plan() }
-        let old = minimums[window] ?? .zero
+        let old = learned[window] ?? .zero
         let new = CGSize(width: max(old.width, size.width), height: max(old.height, size.height))
         guard new != old else { return Plan() }
-        minimums[window] = new
+        learned[window] = new
+        return Plan(frames: frames(of: name))
+    }
+
+    /// WindowServer's minimum for the window changed. The split stays, and the window spills
+    /// where its tile is too small (docs/tree.md).
+    public mutating func constrain(_ window: WindowID, to minimum: CGSize) -> Plan {
+        defer { check() }
+        guard let name = home[window], constrained[window] ?? .zero != minimum else { return Plan() }
+        constrained[window] = minimum == .zero ? nil : minimum
         return Plan(frames: frames(of: name))
     }
 
@@ -336,11 +362,11 @@ public struct Session: Sendable {
     /// slack, it shows the refusals that recorded it were no limit of the app's (docs/geometry.md).
     public mutating func sizeObserved(_ window: WindowID, _ size: CGSize) -> Plan {
         defer { check() }
-        guard let name = home[window], let old = minimums[window] else { return Plan() }
+        guard let name = home[window], let old = learned[window] else { return Plan() }
         let new = CGSize(width: size.width + FrameLedger.slack < old.width ? 0 : old.width,
                          height: size.height + FrameLedger.slack < old.height ? 0 : old.height)
         guard new != old else { return Plan() }
-        minimums[window] = new == .zero ? nil : new
+        learned[window] = new == .zero ? nil : new
         return Plan(frames: frames(of: name))
     }
 
@@ -408,8 +434,10 @@ public struct Session: Sendable {
     private mutating func performOnFocused(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         guard let window = focused else { return nil }
         var workspace = workspaces[focusedWorkspace]!
-        let monitor = monitor(of: focusedWorkspace)
+        let monitor = monitor(of: focusedWorkspace), minimums = minimums
         let (display, gaps) = (monitor.area, monitor.gaps)
+        // Where Kosmos chooses a split, minimums that fit bind (docs/tree.md).
+        func fitMinimums(_ window: WindowID?) { workspace.fit(window, in: display, gaps: gaps, minimums: minimums) }
         var plan = Plan()
         switch command {
         case .focus(let direction, _):
@@ -417,11 +445,16 @@ public struct Session: Sendable {
                                                minimums: minimums) else { return nil }
             plan.focus = .window(target)
         case .move(let direction, let boundaries):
+            let container = { (workspace: Workspace) in workspace.root.path(to: window).map { workspace.root[$0.dropLast()].id } }
+            let from = container(workspace)
             guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }
+            // Within its container a move swaps places and keeps the weights (docs/tree.md).
+            if container(workspace) != from { fitMinimums(window) }
         case .swap(let direction):
             guard workspace.swap(window, direction, in: display, gaps: gaps, minimums: minimums) else { return nil }
         case .joinWith(let direction):
             guard workspace.joinWith(window, direction) else { return nil }
+            fitMinimums(window)
         case .layout(.orientation(let orientation)):
             guard workspace.layout(window, orientation) else { return nil }
         case .layout(.toggleOrientation):
@@ -432,11 +465,13 @@ public struct Session: Sendable {
         case .fullscreen:
             guard workspace.toggleFullscreen(window) else { return nil }
         case .resize(let dimension, let amount):
-            guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps, minimums: minimums) else { return nil }
+            guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
         case .balanceSizes:
             workspace.balanceSizes()
+            fitMinimums(nil)
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
+            fitMinimums(nil)
         case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusMonitor,
              .moveNodeToMonitor, .profile, .focusFollowsMouse:
             return nil
@@ -475,6 +510,13 @@ public struct Session: Sendable {
         guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrapAround),
               let name = shown[monitor.id], name != focusedWorkspace else { return nil }
         return name
+    }
+
+    /// Kosmos chose the split of the container the window joined, so the minimums there bind
+    /// where they fit (docs/tree.md).
+    mutating func fit(_ window: WindowID, in name: String) {
+        let monitor = monitor(of: name)
+        workspaces[name]!.fit(window, in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
     mutating func reach(_ name: String) -> Plan {
@@ -521,6 +563,7 @@ public struct Session: Sendable {
             workspaces[name]!.insert(window)
         }
         if floating { _ = workspaces[name]!.float(window) }
+        fit(window, in: name)
         workspaces[name]!.focus(window)
         home[window] = name
         let following = follow && name != focusedWorkspace

@@ -52,6 +52,9 @@ public struct WindowRow: Sendable, Equatable {
     public let frame: CGRect
     /// 0 for square corners, or when the read left the radii out.
     public let cornerRadius: CGFloat
+    /// The smallest size WindowServer holds the window to, zero on an axis the app leaves
+    /// free and when the read left it out (docs/geometry.md).
+    public let minimum: CGSize
 }
 
 public enum SkyLight {
@@ -116,15 +119,15 @@ public enum SkyLight {
     }
 
     /// Windows that no longer exist are left out, and a failed query reads as every window
-    /// gone. The radii add about 1 µs to a read of 2 windows, so only the inventory reads them
-    /// (docs/borders.md).
-    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false) -> [WindowRow] {
-        readRows(ids, cornerRadii: cornerRadii) ?? []
+    /// gone. The radii add about 1 µs to a read of 2 windows, and the minimums add 8 to 10 µs to
+    /// a read of 50, so only the inventory reads them (docs/borders.md, docs/geometry.md).
+    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow] {
+        readRows(ids, cornerRadii: cornerRadii, minimums: minimums) ?? []
     }
 
     /// Nil when the query fails, for a caller that must not take that for every window gone
     /// (docs/hiding.md).
-    public static func readRows(_ ids: [UInt32], cornerRadii: Bool = false) -> [WindowRow]? {
+    public static func readRows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow]? {
         guard !ids.isEmpty else { return [] }
         guard let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return nil }
         defer { query.release() }
@@ -135,12 +138,25 @@ public enum SkyLight {
         while SLSWindowIteratorAdvance(it) {
             // The array is the caller's (CKosmos.h).
             let radii = cornerRadii ? SLSWindowIteratorGetCornerRadii(it)?.takeRetainedValue() as? [NSNumber] : nil
+            let parent = SLSWindowIteratorGetParentID(it), level = SLSWindowIteratorGetLevel(it)
             rows.append(WindowRow(id: SLSWindowIteratorGetWindowID(it), pid: SLSWindowIteratorGetPID(it),
-                                  parent: SLSWindowIteratorGetParentID(it), level: SLSWindowIteratorGetLevel(it),
-                                  orderedIn: SLSWindowIteratorGetAttributes(it) & 0x2 != 0,
-                                  frame: SLSWindowIteratorGetBounds(it), cornerRadius: CGFloat(radii?.first?.doubleValue ?? 0)))
+                                  parent: parent, level: level, orderedIn: SLSWindowIteratorGetAttributes(it) & 0x2 != 0,
+                                  frame: SLSWindowIteratorGetBounds(it), cornerRadius: CGFloat(radii?.first?.doubleValue ?? 0),
+                                  minimum: minimums && parent == 0 && level == 0 ? minimum(it) : .zero))
         }
         return rows
+    }
+
+    /// With no constraint in the row at all, the one the window's package keeps, as rift reads
+    /// it (`constraints()` in src/sys/window_server.rs). A package read takes 7 µs, so only a
+    /// window Kosmos can manage, at level 0 with no parent, gets one.
+    private static func minimum(_ iterator: CFTypeRef) -> CGSize {
+        var minimum = CGSize.zero, maximum = CGSize.zero, current = CGSize.zero
+        _ = SLSWindowIteratorGetConstraints(iterator, &minimum, &maximum, &current)
+        if minimum == .zero, maximum == .zero {
+            _ = SLSPackagesGetWindowConstraints(connection, SLSWindowIteratorGetWindowID(iterator), &minimum, &maximum, &current)
+        }
+        return minimum
     }
 }
 

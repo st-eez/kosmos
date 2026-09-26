@@ -47,6 +47,22 @@ import Testing
         #expect(s.shownWorkspaces == ["b", "a"])
     }
 
+    /// A merge fits nothing, so a display unplugged and plugged back in leaves the split as it
+    /// was, where fitting each carried window moved it further each time.
+    @Test func aMergeAndItsReturnLeaveTheSplitWithMinimumsAsItWas() {
+        var s = Session(names: ["a", "b"], monitors: [Desk.main])
+        _ = s.add(1)
+        _ = s.add(2, minimum: CGSize(width: 800, height: 0))
+        _ = s.add(3, to: "b", minimum: CGSize(width: 1000, height: 0))
+        let before = s.workspaces["a"]!
+        for _ in 0..<3 {
+            s.reconfigure(names: ["a"], monitors: [Desk.main], assigned: [:], merge: ["b": "a"])
+            #expect(s.workspaces["a"]!.tree == "h[1 2 3]")
+            s.reconfigure(names: ["a", "b"], monitors: [Desk.main], assigned: [:], merge: [:])
+            #expect(s.workspaces["a"]!.detailed == before.detailed)
+        }
+    }
+
     @Test func theLaptopProfileMergesTheWorkspacesItLeavesOut() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
@@ -115,8 +131,7 @@ import Testing
             var s = Session(names: ["a", "b"], monitors: [display])
             _ = s.perform(.workspace(.named("b")))
             for window in [w1, w2, w3, w4] { _ = s.add(window) }
-            s.adopt(w3)
-            _ = s.perform(.resize(.width, by: -1000))
+            s.workspaces["b"]!.squeeze(w3, to: 1, in: display.area, gaps: display.gaps)
             #expect(s.frames(of: "b")[w3]?.width == 1)
             _ = s.park([w3, w2], because: .minimized)
             s.reconfigure(names: ["a"], monitors: [display], assigned: [:], merge: ["b": "a"])
@@ -138,8 +153,7 @@ import Testing
         _ = s.add(1)
         if floated { _ = s.perform(.layout(.toggleFloating)) } else { _ = s.park([1], because: .minimized) }
         _ = s.add(2); _ = s.add(3)
-        s.adopt(2)
-        _ = s.perform(.resize(.width, by: 2000))
+        s.workspaces["b"]!.squeeze(3, to: 1, in: display.area, gaps: display.gaps)
         s.adopt(3)
         #expect(s.frames(of: "b")[3]?.width == 1)
         s.reconfigure(names: ["a"], monitors: [display], assigned: [:], merge: ["b": "a"])

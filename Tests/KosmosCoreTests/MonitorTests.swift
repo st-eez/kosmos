@@ -523,8 +523,9 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
             let display = s.monitor(of: name).id
             #expect(assigned[name] == nil || assigned[name] == display, "seed \(seed) step \(step): \(name) on \(display)")
             let area = s.monitor(of: name).area
+            // A window with a minimum longer than its tile spills past the area's edge.
             for window in s.workspaces[name]!.root.windows {
-                #expect(written[window].map(area.contains) == true,
+                #expect(written[window].map { area.contains($0) || s.minimums[window] != nil && area.intersects($0) } == true,
                         "seed \(seed) step \(step) operation \(operation): \(window) of \(name) off its display")
             }
         }
