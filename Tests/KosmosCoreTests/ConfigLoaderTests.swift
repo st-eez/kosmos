@@ -59,6 +59,8 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(try #require(load("borders = false").config).borders == nil)
         let table = try #require(load("[borders]\nwidth = 2\ninactive = '#414868'").config)
         #expect(table.borders == BorderSettings(width: 2, active: nil, inactive: BorderColor(hex: "#414868")!))
+        let warning = try #require(load("[borders]\nwarning = '#f7768e'").config)
+        #expect(warning.borders == BorderSettings(warning: BorderColor(hex: "#f7768e")!))
     }
 
     @Test func borderMistakes() {

@@ -78,6 +78,9 @@ final class Controller {
         didSet { if borders != oldValue { updateBorders() } }
     }
     let borderWindows = Borders()
+    /// Windows whose minimum blocked what Kosmos asked for, with the flashes of each under
+    /// way (docs/borders.md).
+    private var flashes: [WindowID: Int] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -164,6 +167,7 @@ final class Controller {
         // Floating windows' frames as the inventory last heard them, so nothing waits on
         // WindowServer.
         if let plan = session.perform(command, frame: { [inventory] in inventory.windows[$0]?.frame }) {
+            flash(plan.blocked)
             execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: .command(command, from: source)))
         }
         return nil
@@ -293,6 +297,7 @@ final class Controller {
             }
             worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) }))
         }
+        flash(session.overlapping(in: writes.keys.compactMap(session.workspace(of:))))
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
@@ -406,7 +411,8 @@ final class Controller {
         guard managing, let borders else { return borderWindows.show([:]) }
         // One read of each slide, so a border's frame and alpha come from the same display frame.
         var sliding: [WindowID: (frame: CGRect, alpha: Double)] = [:]
-        let shown = session.borders(borders, accent: borderWindows.accent) { id in
+        let shown = session.borders(borders, accent: borderWindows.accent, red: borderWindows.red,
+                                    flashing: Set(flashes.keys)) { id in
             guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
             sliding[id] = slides?.shown(id)
             return (sliding[id]?.frame ?? row.frame, row.cornerRadius)
@@ -416,6 +422,17 @@ final class Controller {
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
         })
+    }
+
+    /// Each border takes the warning color for 0.3 s, until the window's latest flash ends.
+    func flash(_ windows: Set<WindowID>) {
+        guard !windows.isEmpty, borders != nil else { return }
+        for id in windows { flashes[id, default: 0] += 1 }
+        updateBorders()
+        after(.milliseconds(300)) { controller in
+            for id in windows { controller.flashes[id] = controller.flashes[id].flatMap { $0 > 1 ? $0 - 1 : nil } }
+            controller.updateBorders()
+        }
     }
 
     func appName(_ window: WindowID) -> String? {

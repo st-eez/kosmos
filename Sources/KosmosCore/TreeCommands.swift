@@ -136,7 +136,8 @@ extension Workspace {
     /// Takes the space from the siblings in proportion to their shares, and stops at the
     /// limits `change` keeps (docs/tree.md).
     @discardableResult
-    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Bool {
+    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps,
+                         minimums: [WindowID: CGSize], stopped: (Set<WindowID>) -> Void = { _ in }) -> Bool {
         guard let path = root.path(to: window) else { return false }
         let orientation = switch dimension {
             case .width: Orientation.horizontal
@@ -148,7 +149,7 @@ extension Workspace {
         let children = root[parent].children
         let usable = usableLength(of: parent, in: rect, gaps: gaps)
         guard children.count > 1, usable > 0 else { return false }
-        return change(by: amount, along: orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
+        return change(by: amount, along: orientation, in: rect, gaps: gaps, minimums: minimums, stopped: stopped) { workspace, points in
             let old = children[index].weight
             let new = old + points / usable
             let scale = (1 - new) / (1 - old)
@@ -197,33 +198,40 @@ extension Workspace {
     }
 
     /// The change for `amount` points, else the most whole points toward it that keep the
-    /// limits of docs/tree.md. `apply` returns false for a share at or below zero.
+    /// limits of docs/tree.md. `apply` returns false for a share at or below zero. `stopped`
+    /// gets the windows whose minimum one more point would break, when the change falls short.
     private mutating func change(by amount: CGFloat, along orientation: Orientation, in rect: CGRect, gaps: Gaps,
-                                 minimums: [WindowID: CGSize], _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
+                                 minimums: [WindowID: CGSize], stopped: (Set<WindowID>) -> Void = { _ in },
+                                 _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
         let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height
         func limit(_ id: WindowID) -> CGFloat {
             let minimum = minimums[id].map { orientation == .horizontal ? $0.width : $0.height } ?? 0
             return max(1, minimum.rounded(.up))
         }
         let before = tileFrames(in: rect, gaps: gaps)
-        func changed(by points: CGFloat) -> Workspace? {
+        /// With the windows it takes below their limits, or nil when `apply` refuses it.
+        func changed(by points: CGFloat) -> (workspace: Workspace, short: [WindowID])? {
             var changed = self
             guard apply(&changed, points) else { return nil }
             changed.normalize()
-            let kept = changed.tileFrames(in: rect, gaps: gaps).allSatisfy { id, frame in
-                length(frame) >= min(limit(id), length(before[id]!))
+            let short = changed.tileFrames(in: rect, gaps: gaps).filter { id, frame in
+                length(frame) < min(limit(id), length(before[id]!))
             }
-            return kept ? changed : nil
+            return (changed, Array(short.keys))
         }
-        var result = changed(by: amount)
+        func kept(by points: CGFloat) -> Workspace? {
+            changed(by: points).flatMap { $0.short.isEmpty ? $0.workspace : nil }
+        }
+        var result = kept(by: amount)
         if result == nil {
             let sign: CGFloat = amount < 0 ? -1 : 1
             var fits: CGFloat = 0, fails = abs(amount).rounded(.up)
             while fails - fits > 1 {
                 let middle = ((fits + fails) / 2).rounded(.down)
-                if changed(by: middle * sign) != nil { fits = middle } else { fails = middle }
+                if kept(by: middle * sign) != nil { fits = middle } else { fails = middle }
             }
-            result = fits > 0 ? changed(by: fits * sign) : nil
+            stopped(Set(changed(by: fails * sign)?.short.filter { limit($0) > 1 } ?? []))
+            result = fits > 0 ? kept(by: fits * sign) : nil
         }
         guard let result else { return false }
         self = result

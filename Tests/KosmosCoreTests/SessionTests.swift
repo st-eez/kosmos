@@ -239,8 +239,45 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1); _ = s.add(2)
     s.adopt(1)
     _ = s.setMinimum(2, CGSize(width: 400, height: 0))
-    #expect(s.perform(.resize(.width, by: 300))?.frames[2]!.width == 400)
-    #expect(s.perform(.resize(.width, by: 50)) == nil)
+    let clamped = s.perform(.resize(.width, by: 300))
+    #expect(clamped?.frames[2]!.width == 400 && clamped?.blocked == [2])
+    // Refused, it changes nothing and flashes the window whose minimum refused it.
+    let refused = s.perform(.resize(.width, by: 50))
+    #expect(refused?.isEmpty == true && refused?.blocked == [2])
+    #expect(s.perform(.resize(.width, by: -50))?.blocked == [])
+}
+
+/// Steve's Outlook beside Helium on workspace 3, on the 1920 by 1080 main panel with his
+/// gaps, after `resize smart -100` on Outlook (live log, September 25, 2026).
+@Test func minimumsThatDoNotFitLeaveAResizeOnlyTheNeighbour() {
+    let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
+    var s = Session(names: ["3"], display: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    #expect(s.perform(.resize(.smart, by: -100))?.frames[2] == CGRect(x: 1065, y: 35, width: 845, height: 1035))
+    // Outlook kept 1145, then Helium kept 785: 1145, 10 and 785 make 1940 of the 1900 points.
+    #expect(s.setMinimum(2, CGSize(width: 1145, height: 1035)).frames[1] == CGRect(x: 10, y: 35, width: 745, height: 1035))
+    #expect(s.overlapping(in: ["3"]).isEmpty)
+    let frames = s.setMinimum(1, CGSize(width: 785, height: 1035)).frames
+    #expect(frames[1] == CGRect(x: 10, y: 35, width: 1045, height: 1035))
+    #expect(frames[2] == CGRect(x: 765, y: 35, width: 1145, height: 1035))
+    #expect(s.overlapping(in: ["3"]) == [2])
+    // Each press moves only Helium's edge, until Helium's minimum stops it.
+    for width: CGFloat in [945, 845, 785] {
+        let plan = s.perform(.resize(.smart, by: 100))
+        #expect(plan?.frames[1]?.width == width && plan?.frames[2] == frames[2])
+        #expect(plan?.blocked == (width == 785 ? [1, 2] : [2]))
+    }
+    #expect(s.perform(.resize(.smart, by: 100))?.blocked == [1])
+}
+
+@Test func aBalanceFlashesTheWindowsItsMinimumsKeepFromEqualSizes() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(3)
+    _ = s.setMinimum(3, CGSize(width: 500, height: 0))
+    #expect(s.perform(.balanceSizes)?.blocked == [3])
+    _ = s.sizeObserved(3, CGSize(width: 300, height: 800))
+    #expect(s.perform(.balanceSizes)?.blocked == [])
 }
 
 @Test func removingAWindowForgetsItsMinimum() {

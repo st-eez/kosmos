@@ -46,8 +46,10 @@
   `borders = false` turns them off, as `animations = false` turns off slides. A
   `[borders]` table sets `width`, in points, 4 by default, of which the half outside the
   window's edge shows, as with JankyBorders' `width`; `active`, the focused window's
-  color, the accent color when left out; and `inactive`, every other window's,
-  transparent by default. Colors are `#rrggbb`, or `#rrggbbaa` with the alpha last. The
+  color, the accent color when left out; `inactive`, every other window's, transparent
+  by default; and `warning`, the color a window flashes for 0.3 s when its minimum blocks
+  what Kosmos asked for, macOS's system red when left out. A transparent `warning` turns
+  the flash off. Colors are `#rrggbb`, or `#rrggbbaa` with the alpha last. The
   width may be a float, as JankyBorders writes it, `4.0`, so Kosmos's TOML reads floats.
 - Kosmos reads TOML with a reader of its own, as it has no external runtime dependencies
   ([overview.md](overview.md)), written against TOML 1.1 and kept to what the schema uses.

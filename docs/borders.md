@@ -29,6 +29,29 @@ state, and during a slide the frame the slide shows the window at.
   a hover or a key window report Kosmos adopts, before macOS's key change lands. A fully transparent color
   draws no border and makes no window, so with Steve's transparent `inactive` only the
   focused window has one.
+- A window whose minimum ([geometry.md](geometry.md)) blocks what Kosmos asked for takes
+  `warning` for 0.3 s, focused or not, so with a transparent `inactive` the flash still
+  shows. `warning` defaults to macOS's system red, `NSColor.systemRed` in sRGB under
+  Kosmos's appearance, read again when the accent is. The window flashes:
+  - at a `resize` that a minimum stops short, or refuses: the windows whose minimum one
+    more point would break;
+  - at a `resize` that changes a window's share and leaves it below its minimum, so its
+    frame stays, as when the resize grows a window held at its minimum: that window;
+  - at `balance-sizes`: the windows whose equal share is below their minimum;
+  - at the refusal that records a minimum, the second of a written size. A first refusal
+    can pass, as when an app applies a queued live resize step after the mouse up, and
+    does not flash;
+  - at each layout that writes a frame on a workspace where a window takes its minimum
+    over its neighbours, because the minimums do not fit ([tree.md](tree.md)): that
+    window.
+
+  On September 25, 2026, Outlook kept 1145 points and Helium beside it 785, which with
+  the 10 point gap between them is 40 more than the 1900 points between the main panel's
+  outer gaps. Outlook covered 290 points of Helium, and each `resize` moved only Helium's
+  edge (live log). The flash uses the border window any color uses: an inactive window's
+  comes from its display's pool, and goes back when the flash ends. A window that flashes
+  again keeps `warning` until 0.3 s after the last flash. A modifier drag stopped at a
+  minimum does not flash, as the drag's edge already stops there.
 - A bordered window gets its border only while it is on screen: not concealed, as a
   switch's incoming windows are until the batch that reveals them confirms, and ordered
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks

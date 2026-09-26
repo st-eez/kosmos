@@ -8,15 +8,20 @@ public struct BorderSettings: Equatable, Sendable {
     public var active: BorderColor?
     /// Fully transparent draws no border.
     public var inactive: BorderColor
+    /// A window flashes it when its minimum blocks what Kosmos asked for. Nil for the macOS
+    /// system red.
+    public var warning: BorderColor?
 
-    public init(width: Double = 4, active: BorderColor? = nil, inactive: BorderColor = .clear) {
+    public init(width: Double = 4, active: BorderColor? = nil, inactive: BorderColor = .clear,
+                warning: BorderColor? = nil) {
         self.width = width
         self.active = active
         self.inactive = inactive
+        self.warning = warning
     }
 
-    public func color(focused: Bool, accent: BorderColor) -> BorderColor? {
-        let color = focused ? active ?? accent : inactive
+    public func color(focused: Bool, flashing: Bool, accent: BorderColor, red: BorderColor) -> BorderColor? {
+        let color = flashing ? warning ?? red : focused ? active ?? accent : inactive
         return color.alpha > 0 ? color : nil
     }
 }
@@ -97,12 +102,14 @@ extension Session {
     }
 
     /// `shown` gives where a window shows and its corner radius, or nil for one concealed or
-    /// ordered out.
-    public func borders(_ settings: BorderSettings, accent: BorderColor,
+    /// ordered out. `flashing` names the windows whose minimum just blocked what Kosmos asked
+    /// for, inactive ones too.
+    public func borders(_ settings: BorderSettings, accent: BorderColor, red: BorderColor, flashing: Set<WindowID>,
                         shown: (WindowID) -> (frame: CGRect, radius: CGFloat)?) -> [WindowID: Border] {
         var borders: [WindowID: Border] = [:]
         for (window, focused) in bordered {
-            guard let color = settings.color(focused: focused, accent: accent), let target = shown(window),
+            guard let color = settings.color(focused: focused, flashing: flashing.contains(window), accent: accent, red: red),
+                  let target = shown(window),
                   let border = Border(around: target.frame, radius: target.radius, width: settings.width, color: color,
                                       displays: monitors) else { continue }
             borders[window] = border

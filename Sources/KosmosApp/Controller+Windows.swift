@@ -276,6 +276,7 @@ extension Controller {
                     after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
                 case .minimum(let size):
                     controllerLog.notice("minimum for \(result.id): \(asked, privacy: .public)")
+                    flash([result.id])
                     execute(session.setMinimum(result.id, size))
                 }
             }

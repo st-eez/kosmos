@@ -45,6 +45,24 @@ extension Workspace {
         splitFrames(in: rect, gaps: gaps, minimums: [:])
     }
 
+    /// The windows that take their minimum over their neighbours, as the minimums do not fit.
+    func overlapping(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Set<WindowID> {
+        guard !minimums.isEmpty else { return [] }
+        let split = splitFrames(in: rect, gaps: gaps, minimums: minimums), area = tilingRect(rect, gaps.outer)
+        return Set(minimums.compactMap { id, minimum in
+            split[id].flatMap { grow($0, to: minimum, within: area) != $0 ? id : nil }
+        })
+    }
+
+    /// The windows whose share is below their minimum, which `frames` gives them anyway.
+    func bound(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Set<WindowID> {
+        guard !minimums.isEmpty else { return [] }
+        let shares = tileFrames(in: rect, gaps: gaps)
+        return Set(minimums.compactMap { id, minimum in
+            shares[id].flatMap { $0.width < minimum.width.rounded(.up) || $0.height < minimum.height.rounded(.up) ? id : nil }
+        })
+    }
+
     private func splitFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         func place(_ container: Container, in rect: CGRect) {

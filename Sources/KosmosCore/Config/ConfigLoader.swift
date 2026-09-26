@@ -271,7 +271,7 @@ private struct ConfigDecoder {
             fail("expected true, false or a table, found \(kindName(value))", at: value.position, path)
             return BorderSettings()
         }
-        guard let table = table(value, path, allowed: ["width", "active", "inactive"]) else { return nil }
+        guard let table = table(value, path, allowed: ["width", "active", "inactive", "warning"]) else { return nil }
         var settings = BorderSettings()
         if let entry = table["width"], let width = number(entry.value, path.key(entry.key)) {
             if width > 0 {
@@ -285,6 +285,9 @@ private struct ConfigDecoder {
         }
         if let entry = table["inactive"] {
             settings.inactive = color(entry.value, path.key(entry.key)) ?? .clear
+        }
+        if let entry = table["warning"] {
+            settings.warning = color(entry.value, path.key(entry.key))
         }
         return settings
     }

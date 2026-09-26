@@ -27,6 +27,9 @@ public struct Session: Sendable {
         public var frames: [WindowID: CGRect] = [:]
         /// Nil leaves focus alone.
         public var focus: KeyWindow?
+        /// Windows whose minimum blocked a resize or balance, whose borders flash
+        /// (docs/borders.md). A plan with nothing else changes nothing, and is empty.
+        public var blocked: Set<WindowID> = []
 
         public init() {}
 
@@ -174,6 +177,16 @@ public struct Session: Sendable {
 
     func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {
         names.reduce(into: [:]) { frames, name in frames.merge(self.frames(of: name)) { current, _ in current } }
+    }
+
+    /// The windows of `names` that take their minimum over their neighbours (docs/tree.md).
+    public func overlapping(in names: some Sequence<String>) -> Set<WindowID> {
+        guard !minimums.isEmpty else { return [] }
+        return Set(names).reduce(into: []) { windows, name in
+            guard let workspace = workspaces[name] else { return }
+            let monitor = monitor(of: name)
+            windows.formUnion(workspace.overlapping(in: monitor.area, gaps: monitor.gaps, minimums: minimums))
+        }
     }
 
     public func resyncPlan(layingOutHidden: Bool) -> Plan {
@@ -427,9 +440,17 @@ public struct Session: Sendable {
         case .fullscreen:
             guard workspace.toggleFullscreen(window) else { return nil }
         case .resize(let dimension, let amount):
-            guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps, minimums: minimums) else { return nil }
+            let shares = workspace.tileFrames(in: display, gaps: gaps)
+            let resized = workspace.resize(window, dimension, by: amount, in: display, gaps: gaps, minimums: minimums) {
+                plan.blocked = $0
+            }
+            guard resized else { return plan.blocked.isEmpty ? nil : plan }
+            // A window whose share changed and is still below its minimum keeps its frame.
+            let changed = workspace.tileFrames(in: display, gaps: gaps).filter { shares[$0.key]?.size != $0.value.size }
+            plan.blocked.formUnion(workspace.bound(in: display, gaps: gaps, minimums: minimums).filter { changed[$0] != nil })
         case .balanceSizes:
             workspace.balanceSizes()
+            plan.blocked = workspace.bound(in: display, gaps: gaps, minimums: minimums)
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
         case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusMonitor,
