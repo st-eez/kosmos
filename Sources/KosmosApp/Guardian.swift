@@ -101,7 +101,8 @@ final class Guardian {
         isReady = false
         armed = nil
         guard restarts.failed(at: .now) else {
-            guardianLog.fault("guardian exited 4 times in 10 s; hiding stays off")
+            let seconds = GuardianRestarts.window.components.seconds
+            guardianLog.fault("guardian exited \(GuardianRestarts.limit + 1) times in \(seconds) s; hiding stays off")
             onUnavailable?()
             return
         }

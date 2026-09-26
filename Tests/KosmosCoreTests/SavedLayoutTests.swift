@@ -375,10 +375,10 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
     }
 
     @Test func aLayoutFileHoldsOnlyAtItsVersionUnderTheWindowServerThatWroteIt() {
-        #expect(SavedLayout.leftOut(version: SavedLayout.fileVersion, writtenUnder: 7, current: 7) == nil)
-        #expect(SavedLayout.leftOut(version: SavedLayout.fileVersion, writtenUnder: 7, current: 8) == "from another WindowServer")
-        #expect(SavedLayout.leftOut(version: 2, writtenUnder: 7, current: 7) == "of version 2")
-        #expect(SavedLayout.leftOut(version: 0, writtenUnder: 7, current: 8) == "of version 0")
+        #expect(SavedLayout.leftOut(version: SavedLayout.fileVersion, sameWindowServer: true) == nil)
+        #expect(SavedLayout.leftOut(version: SavedLayout.fileVersion, sameWindowServer: false) == "from another WindowServer")
+        #expect(SavedLayout.leftOut(version: 2, sameWindowServer: true) == "of version 2")
+        #expect(SavedLayout.leftOut(version: 0, sameWindowServer: false) == "of version 0")
     }
 
     @Test func aWindowClosedAndKeptIsLeftOut() {

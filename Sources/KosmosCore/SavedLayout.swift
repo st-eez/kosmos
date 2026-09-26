@@ -40,13 +40,12 @@ public struct SavedLayout: Codable, Equatable, Sendable {
     /// The layout file's format.
     public static let fileVersion = 1
 
-    /// Nil when a layout file of `version`, written under the WindowServer `writer`, holds
-    /// under `current`, or else why it is left out. WindowServer numbers the windows, so
-    /// under another one the ids name other windows (docs/tree.md).
-    public static func leftOut<WindowServer: Equatable>(version: Int, writtenUnder writer: WindowServer,
-                                                        current: WindowServer) -> String? {
+    /// Nil when a layout file of `version` holds, or else why it is left out.
+    /// `sameWindowServer`: the WindowServer that wrote it runs now. WindowServer numbers the
+    /// windows, so under another one the ids name other windows (docs/tree.md).
+    public static func leftOut(version: Int, sameWindowServer: Bool) -> String? {
         guard version == fileVersion else { return "of version \(version)" }
-        return writer == current ? nil : "from another WindowServer"
+        return sameWindowServer ? nil : "from another WindowServer"
     }
 
     /// Before the restore: a window closed since the save would hold its tile until the next

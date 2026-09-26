@@ -163,7 +163,7 @@
     whose size changed during the press, or with the pointer on a resize border at its
     first change event (`TitleBarDrag.onResizeBorder`), is being resized and never lifts,
     since WindowServer can apply a resize by the left or top edge as a move first
-    (`TitleBarDrag.change`, with its tests in KosmosCore). Kosmos
+    (`TitleBarDrag.change`). Kosmos
     writes the lifted window no frame while macOS moves it, and a switch the CLI asks for
     meanwhile leaves it in the user's hand.
   - A hotkey pressed during the drag first drops the window where the pointer is, as the

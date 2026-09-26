@@ -25,7 +25,7 @@ public struct BatchOrder: Sendable {
     public var isWaiting: Bool { sent < batches.count }
 
     /// The first batch waiting.
-    public var next: Batch? { isWaiting ? batches[sent] : nil }
+    var next: Batch? { isWaiting ? batches[sent] : nil }
 
     /// Whether a batch not yet done, sent or waiting, conceals the window.
     public func conceals(_ id: WindowID) -> Bool { conceals(batches[...], id) }

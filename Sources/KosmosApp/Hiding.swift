@@ -253,7 +253,7 @@ private final class HidingStore: @unchecked Sendable {
         let recorded = Set(state!.windows.map(\.id))
         var owners: [WindowID: ProcessIdentity] = [:]
         for (id, row) in rows where !recorded.contains(id) { owners[id] = ProcessIdentity.of(row.pid) }
-        let hide = ConcealLedger.concealing(hide, rows: read.map { _ in Set(rows.keys) }, recorded: recorded, owned: Set(owners.keys))
+        let hide = ConcealLedger.concealing(hide, rows: read == nil ? nil : Set(rows.keys), recorded: recorded, owned: Set(owners.keys))
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
         if !fresh.isEmpty, !prepare(Array(fresh), owners: owners) { return nil }
         let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,

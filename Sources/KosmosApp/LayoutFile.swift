@@ -29,7 +29,7 @@ enum LayoutFile {
             layoutLog.error("\(KosmosFiles.layout.path, privacy: .public) not read: \(String(describing: error), privacy: .public)")
             return nil
         }
-        if let why = SavedLayout.leftOut(version: contents.version, writtenUnder: contents.windowServer, current: windowServer) {
+        if let why = SavedLayout.leftOut(version: contents.version, sameWindowServer: contents.windowServer == windowServer) {
             layoutLog.notice("saved layout left out: \(why, privacy: .public)")
             return nil
         }

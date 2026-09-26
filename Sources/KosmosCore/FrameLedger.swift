@@ -179,7 +179,8 @@ extension FrameLedger {
     /// AppKit holds a window that grows onto another display to the old display's edge until
     /// its app takes the move, 10 to 30 ms after the position write. So after a write that
     /// moves a window there, the worker writes the size again every 2 ms while the window
-    /// reads back smaller, until this long after its first read back (docs/geometry.md).
+    /// reads back smaller, for up to this long from when it starts, after the drain's other
+    /// writes and any earlier window's own writes again (docs/geometry.md).
     public static let displayMoveBound: Duration = .milliseconds(50)
 
     public static func writesSizeAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {

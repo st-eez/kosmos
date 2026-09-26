@@ -68,9 +68,8 @@
   as `Session.movesDisplay` judges from where WindowServer last had the window and the
   target, and reads back more than 2 pt smaller than the target on an axis, writes the
   size again every 2 ms while it reads back smaller, for up to 50 ms
-  (`FrameLedger.writesSizeAgain`). KosmosCore's tests cover both. The worker does so after the
-  app's other writes of the same drain, so none of them waits, and the app has longer to
-  take the move. It logs how many more sizes it wrote, the read back and the time, and a
+  (`FrameLedger.writesSizeAgain`). The worker does so after the app's other writes of the
+  same drain, so none of them waits, and the app has longer to take the move. It logs how many more sizes it wrote, the read back and the time, and a
   notice with the same when the window still reads back smaller at 50 ms. The ceiling:
   the app's worker blocks up to 50 ms for each such window, one after another, as when a
   display change moves several of the app's windows. The app's writes that come
@@ -193,7 +192,7 @@
   the frame confirmed: the row applies after the confirm and can hold the app's next step,
   as of a live resize, whose own event then finds no difference. The pointer for the
   resize border check is read as the change applies. `FrameLedger.change` tells a write's
-  change from the user's, and KosmosCore's tests cover it.
+  change from the user's.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes, which do not take their app element's timeout (as paneru
   found), are covered too. Reads use the same 1 s. Each app's calls run

@@ -410,8 +410,7 @@
     drops none, as read for every window closed it would lose the file at the next write
     (`SkyLight.rows` returns nil for it, [inventory.md](inventory.md)). A window parked at the save holds no
     tile, nor does one ordered out at the launch, as one minimized since
-    (`SavedLayout.prune`). KosmosCore's tests cover this pruning at the launch and the
-    file's gate.
+    (`SavedLayout.prune`).
   - During the hold, a focus in a direction and `swap` go by the tiles on screen, the held
     ones (`Workspace.shownFrames`), and a floating window whose center is on a tile a
     pending window holds stands first in the root. A `resize` ends the hold, as any change

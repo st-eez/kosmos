@@ -73,12 +73,11 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
   within 5 s a Kosmos names itself in the lock file to take the concealed windows over
   ([hiding.md](hiding.md)). An incomplete recovery runs again every
   2 s for about 30 s, since without launch at login no other recovery comes until Kosmos
-  starts again; `Recovery.guardianExit` decides each retry, and KosmosRecovery's tests cover
-  it. The guardian releases the instance lock between attempts, because a
-  starting Kosmos waits only 3 s for it, and leaves recovery to a Kosmos named in the lock
-  file. Kosmos watches the guardian and respawns it a second after it exits, and hides
+  starts again; `Recovery.guardianExit` decides each retry. The guardian releases the
+  instance lock between attempts, because a starting Kosmos waits only 3 s for it, and
+  leaves recovery to a Kosmos named in the lock file. Kosmos watches the guardian and respawns it a second after it exits, and hides
   windows only while it is alive. A fourth exit within 10 s turns hiding off
-  (`GuardianRestarts`, with its tests in KosmosRecovery).
+  (`GuardianRestarts`).
 - **kosmos**, the CLI, a client without AppKit for scripts and status bar clicks.
 
 ### 4.2 Threads and queues
