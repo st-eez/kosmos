@@ -119,23 +119,30 @@ extension Session {
 }
 
 extension Session {
-    /// Of the frames `written`, those of tiles on shown workspaces longer than the tile on an
-    /// axis along which the frame moves from `now`, where WindowServer has the window: the app
-    /// refuses its tile, and the border flashes (docs/borders.md).
-    public func spilling(_ written: [WindowID: CGRect], now: (WindowID) -> CGRect?) -> Set<WindowID> {
-        var tiles: [String: [WindowID: CGRect]] = [:]
-        return Set(written.compactMap { window, target in
-            guard let name = home[window], isShown(name), workspaces[name]!.fullscreenWindow == nil else { return nil }
-            if tiles[name] == nil {
+    /// Of a plan's `targets`, the tiles on shown workspaces whose target is longer than the
+    /// tile on an axis along which a target `written` moves from `now`, where WindowServer has
+    /// the window, or along which the tile moved from `tiles`, where the last plan had it: the
+    /// app refuses its tile, and the border flashes (docs/borders.md). `tiles` takes the new
+    /// tiles and forgets windows that left.
+    public func spilling(_ targets: [WindowID: CGRect], written: Set<WindowID>, tiles: inout [WindowID: CGRect],
+                         now: (WindowID) -> CGRect?) -> Set<WindowID> {
+        var shown: [String: [WindowID: CGRect]] = [:]
+        var spilling: Set<WindowID> = []
+        for (window, target) in targets {
+            guard let name = home[window], isShown(name), workspaces[name]!.fullscreenWindow == nil else { continue }
+            if shown[name] == nil {
                 let monitor = monitor(of: name)
-                tiles[name] = workspaces[name]!.tileFrames(in: monitor.area, gaps: monitor.gaps)
+                shown[name] = workspaces[name]!.tileFrames(in: monitor.area, gaps: monitor.gaps)
             }
-            guard let tile = tiles[name]![window] else { return nil }
-            let was = now(window)
+            guard let tile = shown[name]![window] else { continue }
+            let last = tiles.updateValue(tile, forKey: window), was = written.contains(window) ? now(window) : target
             func refused(_ span: (CGRect) -> (CGFloat, CGFloat)) -> Bool {
-                span(target).1 > span(tile).1 && was.map { span($0) != span(target) } != false
+                span(target).1 > span(tile).1
+                    && (was.map { span($0) != span(target) } != false || last.map { span($0) != span(tile) } == true)
             }
-            return refused({ ($0.minX, $0.width) }) || refused({ ($0.minY, $0.height) }) ? window : nil
-        })
+            if refused({ ($0.minX, $0.width) }) || refused({ ($0.minY, $0.height) }) { spilling.insert(window) }
+        }
+        tiles = tiles.filter { home[$0.key] != nil }
+        return spilling
     }
 }

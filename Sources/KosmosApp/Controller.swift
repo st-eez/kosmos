@@ -86,6 +86,9 @@ final class Controller {
     /// Windows whose app refused their tile, with the flashes of each under way
     /// (docs/borders.md).
     private var flashes: [WindowID: Int] = [:]
+    /// Each tile where the last plan left it, so a window whose tile moves under a frame it
+    /// keeps flashes too (docs/borders.md).
+    private var tiles: [WindowID: CGRect] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -234,9 +237,7 @@ final class Controller {
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
         let written = writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
-        // Only here and never during a drag, so a drag's writes and the 100 ms retry never
-        // flash (docs/borders.md).
-        if !dragging { flash(session.spilling(written) { [inventory] in inventory.windows[$0]?.frame }) }
+        flashSpills(plan.frames, written: written)
         if movePointer { centerPointer() }
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(session.intent, fromCommand: fromCommand) }
@@ -506,6 +507,15 @@ final class Controller {
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
         }, fullscreen: fullscreenDisplays)
+    }
+
+    /// Only plans come here, so the 100 ms retry never flashes, and a drag's plans record their
+    /// tiles and flash nothing (docs/borders.md).
+    func flashSpills(_ targets: [WindowID: CGRect], written: [WindowID: CGRect]) {
+        let spilling = session.spilling(targets, written: Set(written.keys), tiles: &tiles) { [inventory] in
+            inventory.windows[$0]?.frame
+        }
+        if !dragging { flash(spilling) }
     }
 
     /// Each border takes the warning color for 0.3 s, until the window's latest flash ends.

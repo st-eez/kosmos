@@ -259,15 +259,18 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
     _ = s.add(1, minimum: CGSize(width: 0, height: 588))
     _ = s.add(2)
-    _ = s.perform(.layout(.orientation(.vertical)))
+    var tiles: [WindowID: CGRect] = [:]
+    let before = s.perform(.layout(.orientation(.vertical)))!.frames
+    #expect(s.spilling(before, written: [1, 2], tiles: &tiles) { _ in nil } == [1])
     s.adopt(2)
-    let before = s.frames(of: "1")
     let plan = s.perform(.resize(.height, by: 200))!
     #expect(plan.frames[2] == CGRect(x: 10, y: 358, width: 1900, height: 712))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 1900, height: 588))
-    // It stays where it was, so the plan moves it nowhere and it does not flash.
+    // It stays where it was, over 2, and flashes as its tile shrinks under it; a plan that
+    // leaves its tile flashes nothing.
     #expect(plan.frames[1] == before[1])
-    #expect(s.spilling(plan.frames) { before[$0] }.isEmpty)
+    #expect(s.spilling(plan.frames, written: [2], tiles: &tiles) { before[$0] } == [1])
+    #expect(s.spilling(plan.frames, written: [], tiles: &tiles) { plan.frames[$0] }.isEmpty)
 }
 
 /// Steve's decision of September 25, 2026: the split the user chose wins over a minimum, so
@@ -330,14 +333,15 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var plan = s.add(2, minimum: CGSize(width: 1000, height: 0))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 890, height: 1035))
     #expect(plan.frames[2] == CGRect(x: 910, y: 35, width: 1000, height: 1035))
-    #expect(s.spilling(plan.frames) { _ in nil }.isEmpty)
+    var tiles: [WindowID: CGRect] = [:]
+    #expect(s.spilling(plan.frames, written: Set(plan.frames.keys), tiles: &tiles) { _ in nil }.isEmpty)
     // 785, 10 and 1145 make 1940: the split stays equal, and Outlook goes 200 points past the
     // right edge.
     _ = s.remove(2)
     plan = s.add(2, minimum: CGSize(width: 1145, height: 0))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 945, height: 1035))
     #expect(plan.frames[2] == CGRect(x: 965, y: 35, width: 1145, height: 1035))
-    #expect(s.spilling(plan.frames) { _ in nil } == [2])
+    #expect(s.spilling(plan.frames, written: Set(plan.frames.keys), tiles: &tiles) { _ in nil } == [2])
 }
 
 @Test func aBalanceGivesEachWindowItsMinimumWhereTheyFit() {

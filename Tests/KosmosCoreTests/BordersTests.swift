@@ -117,23 +117,28 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
         _ = s.add(window)
         s.adopt(window)
     }
-    _ = s.perform(.move(.up))
-    let before = s.frames(of: "1")
+    let before = s.perform(.move(.up))!.frames
     #expect(before[2] == CGRect(x: 500, y: 400, width: 500, height: 400))
+    var tiles: [WindowID: CGRect] = [:]
+    #expect(s.spilling(before, written: [], tiles: &tiles) { _ in nil }.isEmpty)
     _ = s.constrain(2, to: CGSize(width: 0, height: 500))
     let spilled = s.frames(of: "1")
     #expect(spilled[2] == CGRect(x: 500, y: 400, width: 500, height: 500))
     // Written where it showed at its tile, it refuses the tile and flashes.
-    #expect(s.spilling([2: spilled[2]!]) { before[$0] } == [2])
+    #expect(s.spilling(spilled, written: [2], tiles: &tiles) { before[$0] } == [2])
     // Where it already shows, it has nothing new to refuse.
-    #expect(s.spilling([2: spilled[2]!]) { spilled[$0] }.isEmpty)
+    #expect(s.spilling(spilled, written: [2], tiles: &tiles) { spilled[$0] }.isEmpty)
     // A width resize moves it across, the axis its minimum leaves free.
     s.adopt(1)
     let resized = s.perform(.resize(.width, by: 100))!.frames
     #expect(resized[2] == CGRect(x: 600, y: 400, width: 400, height: 500))
-    #expect(s.spilling([2: resized[2]!]) { spilled[$0] }.isEmpty)
+    #expect(s.spilling(resized, written: [1, 2], tiles: &tiles) { spilled[$0] }.isEmpty)
     // A height resize moves the edge it refuses.
     let shorter = s.perform(.resize(.height, by: -100))!.frames
     #expect(shorter[2] == CGRect(x: 600, y: 500, width: 400, height: 500))
-    #expect(s.spilling([2: shorter[2]!]) { resized[$0] } == [2])
+    #expect(s.spilling(shorter, written: [1, 2, 3], tiles: &tiles) { resized[$0] } == [2])
+    // A window that leaves is forgotten.
+    _ = s.remove(2)
+    _ = s.spilling(s.frames(of: "1"), written: [], tiles: &tiles) { _ in nil }
+    #expect(tiles[2] == nil)
 }
