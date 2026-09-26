@@ -57,7 +57,8 @@ final class Borders {
         return accent
     }
 
-    func show(_ shown: [WindowID: Shown]) {
+    /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
+    func show(_ shown: [WindowID: Shown], fullscreen: Set<DisplayID> = []) {
         for (target, window) in windows where shown[target]?.border.display != window.display {
             window.orderOut(nil)
             windows[target] = nil
@@ -72,24 +73,26 @@ final class Borders {
             let leveled = border.level.rawValue != Int(next.level)
             border.show(next)
             if fresh {
-                pin(border, to: target)
+                // Ordered in there before its move, it would draw on the fullscreen app.
+                let waits = fullscreen.contains(display)
+                if !waits { border.order(.above, relativeTo: Int(target)) }
+                pin(border, to: target, orderingIn: waits)
             } else if leveled, border.isVisible {
                 border.order(.above, relativeTo: Int(target))
             }
         }
     }
 
-    /// A raise of the target leaves its border below it (kosmos-probe borders). A border still
-    /// ordered out is ordered in above its target once pinned.
+    /// A raise of the target leaves its border below it (kosmos-probe borders). A border waiting
+    /// for its Space move is ordered in above its target after it.
     func raise(_ target: WindowID) {
         guard let border = windows[target], border.isVisible else { return }
         border.order(.above, relativeTo: Int(target))
     }
 
-    /// A border joins its display's current Space, maybe another app's fullscreen one, so
-    /// while ordered out it moves to its target's ordinary Space on its own display, or stays,
-    /// and is ordered in after (docs/borders.md).
-    private func pin(_ window: BorderWindow, to target: WindowID) {
+    /// A border joins its display's current Space, maybe another app's fullscreen one, so it
+    /// moves to its target's ordinary Space on its own display, or stays (docs/borders.md).
+    private func pin(_ window: BorderWindow, to target: WindowID, orderingIn: Bool) {
         let border = WindowID(window.windowNumber), display = window.display
         spaces.async {
             let ordinary = Displays.current().ordinarySpaces(on: display)
@@ -99,6 +102,7 @@ final class Borders {
                 SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
                 bordersLog.info("border \(border) of \(target) moved from Spaces \(borderSpaces, privacy: .public) to \(space)")
             }
+            guard orderingIn else { return }
             onMain {
                 // Unless the border went back to its pool meanwhile.
                 guard self.windows[target] === window else { return }

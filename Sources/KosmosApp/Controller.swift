@@ -323,9 +323,10 @@ final class Controller {
     }
 
     /// A Space of the pool shows whatever Space its display shows, so a slide to or from there
-    /// would draw over the fullscreen app. Ceiling: such a display other than the key window's
-    /// slides nothing while it shows its desktop Space; reading each display's current Space
-    /// would tell them apart (docs/geometry.md).
+    /// would draw over the fullscreen app, as would a border ordered in before its Space move.
+    /// Ceiling: such a display other than the key window's slides nothing while it shows its
+    /// desktop Space; reading each display's current Space would tell them apart
+    /// (docs/geometry.md, docs/borders.md).
     private var fullscreenDisplays: Set<DisplayID> {
         func display(of id: WindowID) -> DisplayID? { inventory.windows[id].flatMap { self.display(under: $0.frame) } }
         let displays = Set(session.parked(because: .fullscreen).compactMap(display))
@@ -431,7 +432,7 @@ final class Controller {
             let slide = sliding[entry.key]
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
-        })
+        }, fullscreen: fullscreenDisplays)
     }
 
     func appName(_ window: WindowID) -> String? {

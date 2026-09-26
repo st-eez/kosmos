@@ -92,10 +92,17 @@ state, and during a slide the frame the slide shows the window at.
   native fullscreen Space, so whenever a border window is shown for another window,
   Kosmos reads its Spaces and its target's off the main thread, since a read can wait out
   a Space transition, and moves the border to its target's ordinary Space with
-  `SLSMoveWindowsToManagedSpace` when it is in none of them. The border is still ordered
-  out then, and Kosmos orders it in above its target only once the move is sent. Before
-  2026-09-25 it ordered the border in first, so over a fullscreen Space the border drew on
-  the app until the move landed. In the probe on 2026-09-25, a border ordered in before,
+  `SLSMoveWindowsToManagedSpace` when it is in none of them. Ordered in first, a border
+  over a fullscreen Space drew on the app until the move landed. Ordered in only after the
+  reads and the move, which take a hop to their queue and one back, every border blinked
+  as the focus moved, since each focus move takes the border window from its display's pool
+  for the newly focused window. So Kosmos orders a border in at once, and holds it ordered
+  out until its move is sent only on a display that may show a native fullscreen Space, as
+  slides judge it ([geometry.md](geometry.md)): a display that holds a window parked in
+  native fullscreen, unless it holds the key window while no fullscreen Space shows. The
+  ceiling: a fullscreen Space of an app Kosmos does not manage goes unseen, and a border
+  shown on its display draws on the app until the move lands. Reading each display's
+  current Space would tell. In the probe on 2026-09-25, a border ordered in before,
   then ordered out, moved to another display's Space and ordered above its target, was in
   the Space it was moved to, and the first direct read after the move showed it there. A
   window never ordered in read as moved too, but its first order-in put it in its
