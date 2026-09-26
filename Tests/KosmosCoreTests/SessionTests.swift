@@ -252,7 +252,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(plan?.frames[2] == CGRect(x: 250, y: 0, width: 750, height: 800))
 }
 
-/// Steve's main panel with his gaps, where 1 was written to y = -165 before (review of
+/// Steve's main panel with his gaps, where 1 was written above the display before (review of
 /// September 25, 2026).
 @Test func aWindowHeldTallerThanItsTileAtTheTopSpillsDown() {
     let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
@@ -263,7 +263,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     s.adopt(2)
     let before = s.frames(of: "1")
     let plan = s.perform(.resize(.height, by: 200))!
-    #expect(plan.frames[2] == CGRect(x: 10, y: 433, width: 1900, height: 637))
+    #expect(plan.frames[2] == CGRect(x: 10, y: 358, width: 1900, height: 712))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 1900, height: 588))
     // It stays where it was, so the plan moves it nowhere and it does not flash.
     #expect(plan.frames[1] == before[1])
@@ -290,6 +290,33 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(4, minimum: CGSize(width: 300, height: 0))
     let tiles = s.workspaces["1"]!.tileFrames(in: display, gaps: Gaps())
     #expect([3, 4, 1, 2].map { tiles[$0]!.width } == [229, 300, 321, 150])
+}
+
+/// A move within its container and a layout keep the weights, so they give no window its
+/// minimum; a move into another container does.
+@Test func aSqueezedSplitSurvivesMovesAndLayoutsWithinItsContainer() {
+    var s = session()
+    _ = s.add(1)
+    _ = s.add(2, minimum: CGSize(width: 600, height: 600))
+    s.adopt(1)
+    _ = s.perform(.resize(.width, by: 300))
+    s.adopt(2)
+    _ = s.perform(.move(.left))
+    #expect(s.workspaces["1"]!.tree == "h[2 1]" && s.workspaces["1"]!.shares == [0.3, 0.7])
+    _ = s.perform(.layout(.toggleOrientation))
+    _ = s.perform(.layout(.toggleOrientation))
+    #expect(s.workspaces["1"]!.shares == [0.3, 0.7])
+    _ = s.perform(.layout(.orientation(.vertical)))
+    #expect(s.workspaces["1"]!.shares == [0.3, 0.7])
+    // Moved into the container of 3 and 2, 1 grows to its 600 of the 800 points.
+    s = session()
+    for window: WindowID in [1, 2, 3] { _ = s.add(window) }
+    s.adopt(2)
+    _ = s.perform(.joinWith(.left))
+    _ = s.constrain(1, to: CGSize(width: 0, height: 600))
+    s.adopt(1)
+    _ = s.perform(.move(.right))
+    #expect(s.workspaces["1"]!.tree == "v[3 2 1]" && s.workspaces["1"]!.shares == [0.125, 0.125, 0.75])
 }
 
 /// Steve's Helium beside Outlook on the 1920 by 1080 main panel with his gaps, Helium held to

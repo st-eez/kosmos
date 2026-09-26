@@ -445,8 +445,11 @@ public struct Session: Sendable {
                                                minimums: minimums) else { return nil }
             plan.focus = .window(target)
         case .move(let direction, let boundaries):
+            let container = { (workspace: Workspace) in workspace.root.path(to: window).map { workspace.root[$0.dropLast()].id } }
+            let from = container(workspace)
             guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }
-            fitMinimums(window)
+            // Within its container a move swaps places and keeps the weights (docs/tree.md).
+            if container(workspace) != from { fitMinimums(window) }
         case .swap(let direction):
             guard workspace.swap(window, direction, in: display, gaps: gaps, minimums: minimums) else { return nil }
         case .joinWith(let direction):
@@ -454,10 +457,8 @@ public struct Session: Sendable {
             fitMinimums(window)
         case .layout(.orientation(let orientation)):
             guard workspace.layout(window, orientation) else { return nil }
-            fitMinimums(window)
         case .layout(.toggleOrientation):
             guard workspace.toggleLayout(window) else { return nil }
-            fitMinimums(window)
         case .layout(.toggleFloating):
             let floating = workspace.floating.contains(window)
             guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
