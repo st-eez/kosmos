@@ -14,8 +14,12 @@ script/install.sh             # build, install and link
 
 1. Builds `.build/dist/Kosmos.app` with `script/bundle.sh` and copies it beside the app
    before anything stops.
-2. Quits a Kosmos running from `/Applications/Kosmos.app` with SIGTERM, which restores its
-   hidden windows, and waits for it and its guardian to exit. A Kosmos running from
+2. Quits a Kosmos running from `/Applications/Kosmos.app` with SIGTERM, and waits for it to
+   exit. First it runs `kosmos handover` with the recovery record version the new build
+   reads, so the running Kosmos leaves its hidden windows concealed for the new build to
+   take over, and its guardian waits 10 s for that ([hiding.md](hiding.md)). A Kosmos that
+   refuses, as one that writes another version or predates the command, restores its hidden
+   windows, and the script waits for its guardian to exit too. A Kosmos running from
    anywhere else, such as a development build, keeps running.
 3. Renames the copy it replaces to `/Applications/Kosmos-previous` and puts the new build
    in `/Applications/Kosmos.app`. Without the `.app` extension, LaunchServices never
@@ -68,10 +72,11 @@ Launch at Login in the Kosmos menu registers the LaunchAgent inside the app,
   leaves it stopped after Quit.
 - A crash after 30 s or more of running restarts Kosmos at once. Crashes closer together
   restart it once every 30 s, so a crash loop cannot run hot.
-- After a crash, the guardian restores hidden windows while it holds the instance lock,
-  and tries again for about 30 s when windows are left. The restarted Kosmos waits up to
-  3 s for the lock. If the lock is still held, it exits with an error, and launchd tries
-  again within 30 s.
+- After a crash, the guardian waits 2 s for the restarted Kosmos, which takes the hidden
+  windows over. Otherwise it restores them while it holds the instance lock, and tries
+  again for about 30 s when windows are left. A restarted Kosmos waits up to 3 s for the
+  lock. If the lock is still held, it exits with an error, and launchd tries again within
+  30 s.
 - Registering starts the agent at once. While the Kosmos you opened is running, the
   agent's copy finds it and exits, and launchd starts Kosmos at the next login. Until then
   the Kosmos you opened has no crash restart.
@@ -144,9 +149,10 @@ them.
    succeed, and launchd should start the new build.
 4. Login: after logging out and in, launchd starts Kosmos, and the menu item says
    "Turning it off quits Kosmos".
-5. Crash restart: after `kill -9` of a Kosmos that ran 30 s or more, the guardian restores
-   hidden windows and launchd starts Kosmos at once. A second kill within 30 s restarts it
-   about 30 s later.
+5. Crash restart: after `kill -9` of a Kosmos that ran 30 s or more, launchd starts Kosmos
+   at once, and it takes the hidden windows over, which never show. A second kill within
+   30 s restarts it about 30 s later, and the guardian restores the hidden windows 2 s
+   after the kill.
 6. The guardian after an unregister: turning Launch at Login off in a Kosmos that launchd
    started quits Kosmos with its hidden windows back. If launchd kills Kosmos before it
    quits, the guardian, in its own process group, has to restore them.
@@ -157,3 +163,7 @@ them.
    copy the user turned off, so the script leaves that registration as it is.
 8. `script/install.sh --uninstall` unregisters launch at login and removes everything it
    installed.
+9. Handover: with windows on hidden workspaces, `script/install.sh` logs "handover" and
+   "quit: the record is left to the Kosmos that starts next" from the old Kosmos, "a Kosmos
+   took the lock" from its guardian, and "startup: adopted" from the new one, and no hidden
+   window shows. `kosmos-probe handover` checks the private behavior this relies on.

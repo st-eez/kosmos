@@ -349,8 +349,9 @@
   - The window focused at the save is asked for again when it comes back, if it is then
     the focused workspace's most recently focused window. A window keyed and adopted since
     the launch is more recent, so it keeps the focus.
-  - The windows of hidden workspaces show from the quit until Kosmos admits them again,
-    about a second at an install ([hiding.md](hiding.md)).
+  - The windows of hidden workspaces stay concealed across an install, which hands the
+    record over, and across a crash that launchd follows within 2 s. After any other quit
+    they show until Kosmos admits them again ([hiding.md](hiding.md)).
   - Left out: the workspaces a profile merged away with the windows that came from them,
     the minimums Kosmos learned ([geometry.md](geometry.md)), and the workspace
     `workspace-back-and-forth` returns to. So after a restart under a profile that leaves a

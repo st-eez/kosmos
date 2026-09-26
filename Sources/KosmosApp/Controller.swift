@@ -94,6 +94,8 @@ final class Controller {
     /// WindowServer is unread (docs/tree.md).
     private let windowServer: ProcessIdentity?
     private var layoutWritePending = false
+    /// The windows taken over concealed at launch until their admission (docs/hiding.md).
+    var adoption = Adoption()
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -131,6 +133,40 @@ final class Controller {
             saved layout restored: \(saved.windows.count) of its \(count) windows open, workspace on each display \
             \(shown.joined(separator: ", "), privacy: .public), focused \(self.session.focusedWorkspace, privacy: .public)
             """)
+    }
+
+    /// Takes over the record the Kosmos before this one left, before the inventory admits any
+    /// window, so the windows of hidden workspaces stay concealed across the restart
+    /// (docs/hiding.md).
+    func adopt() {
+        let session = self.session, rules = self.rules
+        let (outcome, adoption) = hiding.adopt { member in
+            let app = NSRunningApplication(processIdentifier: member.pid)
+            let rule = rules.first { $0.matches(appID: app?.bundleIdentifier, appName: app?.localizedName) }
+            return session.concealsAtAdmission(member.id, rule: rule?.workspace)
+        }
+        self.adoption = adoption
+        controllerLog.notice("startup: \(String(describing: outcome), privacy: .public)")
+        if !adoption.kept.isEmpty { after(Self.admissionBound) { $0.revealUnadmitted() } }
+    }
+
+    /// Every window was back 68 ms after the start at the launch of September 26, 2026, 02:08:38
+    /// (live log), and an Accessibility call to an app that does not answer times out in 1 s.
+    private static let admissionBound: Duration = .seconds(5)
+
+    /// A window taken over that no admission placed, as one whose app never answered, would stay
+    /// concealed with no workspace to show it, so it shows where it is.
+    private func revealUnadmitted() {
+        let windows = adoption.unadmitted.filter(hiding.isConcealed)
+        adoption = Adoption()
+        guard !windows.isEmpty else { return }
+        controllerLog.notice("taken over and never admitted, so revealed: \(windows, privacy: .public)")
+        let displays = Dictionary(uniqueKeysWithValues: windows.compactMap { id in
+            inventory.windows[id].flatMap { display(under: $0.frame) }.map { (id, $0) }
+        })
+        hiding.apply(show: windows, on: displays, hide: [], stripping: []) { outcome, _ in
+            if case .failed = outcome { controllerLog.error("the reveal of the windows never admitted failed; recovery ran") }
+        }
     }
 
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {

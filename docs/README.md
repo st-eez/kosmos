@@ -27,13 +27,14 @@ prefix.
   `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`,
   `kosmos-probe/Constraints.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
-  confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
-  Control.
+  confirmation, which concealed windows keep their ordinary Space, recovery, the handover
+  across a restart, and Mission Control.
   Code: `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`,
   `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosCore/BatchOrder.swift`,
-  `KosmosCore/FrameLedger.swift`, `KosmosApp/Controller.swift`, `KosmosRecovery/`,
-  `KosmosSkyLight/Displays.swift`, `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`,
-  `kosmos-probe/MissionControl.swift`.
+  `KosmosCore/FrameLedger.swift`, `KosmosCore/Adoption.swift`, `KosmosApp/Controller.swift`,
+  `KosmosApp/AppDelegate.swift`, `KosmosRecovery/`, `KosmosSkyLight/Displays.swift`,
+  `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`, `kosmos-probe/Handover.swift`,
+  `kosmos-probe/MissionControl.swift`, `script/install.sh`, `tla/Handover.tla`.
 - [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, the
   private focus path with its kill switch and public fallback, departures, and the empty
   workspace's window.
