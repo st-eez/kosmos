@@ -193,7 +193,9 @@
     (`handover-anyholder`), and after the grace the guardian retries its recovery every 2 s
     for about 30 s while such a holder has the lock. A Kosmos that dies before it names
     itself leaves the record to the guardians still waiting, and one that dies after has a
-    ready guardian of its own.
+    ready guardian of its own. The ceiling: a guardian killed during its grace after a quit
+    that handed over, with no Kosmos following, leaves the windows concealed until the next
+    Kosmos starts.
   - launchd spawned Kosmos 25 ms after the `kill -9` of 02:08:37.751 on September 26, 2026,
     and 20 launches on September 25 and 26 were past the lock 85 to 269 ms after their
     spawn (live logs). The wait for the guardian's ready report comes on top, 1 s at most.

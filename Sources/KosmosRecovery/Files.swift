@@ -38,10 +38,18 @@ public final class FileLock {
     }
 
     /// The process last named in the lock file at `url`, which may have exited since.
-    public static func holder(_ url: URL) -> ProcessIdentity? {
+    static func holder(_ url: URL) -> ProcessIdentity? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let fields = text.split(whereSeparator: \.isWhitespace)
         guard fields.count == 2, let pid = Int32(fields[0]), let start = UInt64(fields[1]) else { return nil }
         return ProcessIdentity(pid: pid, start: start)
+    }
+
+    /// The live Kosmos named in the lock file at `url`, which holds the lock and has taken the
+    /// record over, for a guardian to leave the record to. `exited`, the Kosmos the guardian
+    /// watched, still reads as alive until it is reaped.
+    public static func successor(at url: URL, excluding exited: Int32?) -> ProcessIdentity? {
+        guard let holder = holder(url), holder.pid != exited, ProcessIdentity.of(holder.pid) == holder else { return nil }
+        return holder
     }
 }

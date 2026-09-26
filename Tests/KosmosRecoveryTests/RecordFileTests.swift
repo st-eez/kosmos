@@ -139,6 +139,22 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(FileLock.holder(url) == nil)
 }
 
+/// A guardian's successor is a live process named in the lock file, other than the Kosmos it
+/// watched, which reads as alive until it is reaped.
+@Test func theSuccessorIsALiveProcessNamedOtherThanTheOneThatExited() throws {
+    let url = temporaryFile()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let lock = try #require(try FileLock(url))
+    let live = ProcessIdentity.current
+    lock.name(live)
+    #expect(FileLock.successor(at: url, excluding: nil) == live)
+    #expect(FileLock.successor(at: url, excluding: live.pid + 1) == live)
+    #expect(FileLock.successor(at: url, excluding: live.pid) == nil)
+    // The same pid with another start time names a process that had the pid before or since.
+    lock.name(ProcessIdentity(pid: live.pid, start: live.start + 1))
+    #expect(FileLock.successor(at: url, excluding: nil) == nil)
+}
+
 @Test func recordBeyondTheDecodersLimitsIsRefused() throws {
     let url = temporaryFile()
     defer { try? FileManager.default.removeItem(at: url) }

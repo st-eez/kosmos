@@ -232,28 +232,38 @@ The model assumes:
 - While an arm is fresh, the build that starts after its quit is the one it named.
 - A Kosmos does not crash in the second its dead guardian takes to respawn. That ceiling
   predates the handover: a crash then leaves the windows concealed since with no guardian.
+- A waiting guardian never dies. In the code, a guardian killed during its grace after a
+  quit that handed over, with no Kosmos following, leaves the windows concealed until the
+  next Kosmos starts. That exposure is new: before the handover, the quit restored them in
+  process.
+- A guardian leaves only while its successor is named or running. In the code it leaves for
+  any live process the lock file names, and a Kosmos that named itself and then crashed
+  reads as alive until it is reaped. That is safe because a Kosmos names itself only after
+  its guardian's "R" or after its startup recovery, so its own guardian or a finished
+  recovery covers the windows. The model has that order in Name's guard, so no config
+  would notice the name moving ahead of the wait for the guardian.
 - While its guardian is not ready, Kosmos admits nothing and takes no switch. The code
   reveals then, skips the conceals, and resyncs once the guardian is back.
-- A probe holds the lock for less than the guardian's 30 s of retries.
+- A process that holds the lock without its name in the lock file, as a probe or a Kosmos
+  between its lock and its name, holds it for less than the guardian's 30 s of retries
+  after the grace. Past them the guardian gives up.
 
 It leaves out the rows recovery reads, the windows standing on a kept window, and the
 Spaces windows slide in, which KosmosRecovery's tests cover. The take-over's restores and
 its publish are one step, since the windows it restores are not concealed in the model.
 
-None has been run yet, so the Expected column is a prediction.
-
-| Config | Inputs | Checks | Expected |
-| --- | --- | --- | --- |
-| `handover` | switches, quits, arms, handovers and crashes at any step of a start, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash, a guardian that fails to start or dies, a probe holding the lock | `TypeOK`, `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass |
-| `handover-settles` | as `handover` | every run settles, or ends with no Kosmos and nothing concealed (liveness) | pass |
-| `handover-recover` | as `handover`, with startup recovery in place of the take-over, as before | `KeepsHidden` | fails |
-| `handover-nograce` | as `handover`, with the guardian recovering at once, as before | `KeepsHidden` | fails |
-| `handover-ungated` | as `handover`, with an arm for a build that reads another record version standing | `RecordedBeforeHide`, `NeverStranded` | fails |
-| `handover-noexpiry` | as `handover`, with an arm outliving its moment, so a later quit hands over to any build | `RecordedBeforeHide`, `NeverStranded` | fails |
-| `handover-anyholder` | as `handover`, with the guardian leaving for any holder of the lock, as a probe or a Kosmos not yet named | `NeverStranded` | fails |
-| `handover-unready` | as `handover`, with a take-over and a handover without a ready guardian | `NeverStranded` | fails |
-| `handover-noreveal` | as `handover`, with no reveal at admission | `ConvergesWhenSettled` | fails |
-| `handover-nobackstop` | as `handover`, with no reveal of a window never admitted | `ConvergesWhenSettled` | fails |
+| Config | Inputs | Checks | Expected | Result |
+| --- | --- | --- | --- | --- |
+| `handover` | switches, quits, arms, handovers and crashes at any step of a start, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash, a guardian that fails to start or dies, a probe holding the lock | `TypeOK`, `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass | not run |
+| `handover-settles` | as `handover` | every run settles, or ends with no Kosmos and nothing concealed (liveness) | pass | not run |
+| `handover-recover` | as `handover`, with startup recovery in place of the take-over, as before | `KeepsHidden` | fails | not run |
+| `handover-nograce` | as `handover`, with the guardian recovering at once, as before | `KeepsHidden` | fails | not run |
+| `handover-ungated` | as `handover`, with an arm for a build that reads another record version standing | `RecordedBeforeHide`, `NeverStranded` | fails | not run |
+| `handover-noexpiry` | as `handover`, with an arm outliving its moment, so a later quit hands over to any build | `RecordedBeforeHide`, `NeverStranded` | fails | not run |
+| `handover-anyholder` | as `handover`, with the guardian leaving for any holder of the lock, as a probe or a Kosmos not yet named | `NeverStranded` | fails | not run |
+| `handover-unready` | as `handover`, with a take-over and a handover without a ready guardian | `NeverStranded` | fails | not run |
+| `handover-noreveal` | as `handover`, with no reveal at admission | `ConvergesWhenSettled` | fails | not run |
+| `handover-nobackstop` | as `handover`, with no reveal of a window never admitted | `ConvergesWhenSettled` | fails | not run |
 
 - `RecordedBeforeHide`: the record names every concealed window.
 - `NeverStranded`: with no Kosmos running, none on its way, no other holder of the lock and
