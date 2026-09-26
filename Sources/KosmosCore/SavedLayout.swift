@@ -20,25 +20,11 @@ public struct SavedLayout: Codable, Equatable, Sendable {
         public var fullscreen: Bool
         /// Its latest focus on its workspace's clock.
         public var focus: UInt64?
-        /// Its restore hint: where it stands in the tree, or stood before it floated or
-        /// parked, from its container up to the root. A floating window that never tiled has
-        /// none.
-        public var place: [Level]?
+        /// Its restore hint's levels: where it stands in the tree, or stood before it floated
+        /// or parked. A floating window that never tiled has none.
+        var place: [RestoreHint.Level]?
         /// The tree changed after it left.
         public var stale: Bool
-    }
-
-    public struct Level: Codable, Equatable, Sendable {
-        public var orientation: Orientation
-        /// The windows under each child of the container, with the child's share.
-        public var slots: [Slot]
-        /// The slot that holds the window.
-        public var index: Int
-    }
-
-    public struct Slot: Codable, Equatable, Sendable {
-        public var windows: [WindowID]
-        public var weight: Double
     }
 
     public var shown: [Shown]
@@ -58,7 +44,7 @@ extension Session {
             func saved(_ window: WindowID, floating: Bool, parked: Bool = false, fullscreen: Bool = false, stamp: UInt64?,
                        hint: RestoreHint?) -> SavedLayout.Window {
                 SavedLayout.Window(id: window, workspace: name, floating: floating, parked: parked, fullscreen: fullscreen,
-                                   focus: stamp, place: hint?.levels.map(SavedLayout.Level.init),
+                                   focus: stamp, place: hint?.levels,
                                    stale: hint.map { $0.edits != workspace.edits } ?? false)
             }
             func hint(_ window: WindowID) -> RestoreHint? { workspace.hints.first { $0.window == window } }
@@ -150,13 +136,7 @@ extension Session {
     }
 }
 
-extension SavedLayout.Level {
-    init(_ level: RestoreHint.Level) {
-        self.init(orientation: level.orientation,
-                  slots: level.slots.map { SavedLayout.Slot(windows: $0.windows.sorted(), weight: $0.weight) },
-                  index: level.index)
-    }
-
+extension RestoreHint.Level {
     /// A file could hold any numbers, and the tree's operations trust a hint's.
     var isSound: Bool {
         slots.indices.contains(index) && slots.allSatisfy { $0.weight > 0 && $0.weight.isFinite }
@@ -167,12 +147,7 @@ extension SavedLayout.Window {
     /// Nil for a tiled window with no sound place. `edits` is its workspace's.
     func pending(edits: Int) -> Pending? {
         guard place?.allSatisfy(\.isSound) != false, floating || place != nil else { return nil }
-        let hint = place.map { levels in
-            RestoreHint(window: id, levels: levels.map { level in
-                RestoreHint.Level(orientation: level.orientation, slots: level.slots.map { (Set($0.windows), $0.weight) },
-                                  index: level.index)
-            }, edits: stale ? edits - 1 : edits)
-        }
+        let hint = place.map { RestoreHint(window: id, levels: $0, edits: stale ? edits - 1 : edits) }
         return Pending(window: id, floating: floating, parked: parked, fullscreen: fullscreen, stamp: focus, hint: hint)
     }
 }

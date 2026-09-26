@@ -52,12 +52,18 @@ struct Pending: Sendable {
 /// Where a window stood when it left the tree, as the windows it stood among, which outlive
 /// the containers around them (docs/tree.md).
 struct RestoreHint: Sendable {
-    struct Level: Sendable {
-        let orientation: Orientation
+    /// Saved as it is (`SavedLayout`).
+    struct Level: Codable, Equatable, Sendable {
+        var orientation: Orientation
         /// The windows under each child of the container, with the child's share.
-        let slots: [(windows: Set<WindowID>, weight: Double)]
+        var slots: [Slot]
         /// The child that holds the window.
-        let index: Int
+        var index: Int
+    }
+
+    struct Slot: Codable, Equatable, Sendable {
+        var windows: Set<WindowID>
+        var weight: Double
     }
 
     let window: WindowID
@@ -72,7 +78,8 @@ extension RestoreHint {
     func renaming(_ old: WindowID, to new: WindowID) -> RestoreHint {
         RestoreHint(window: window == old ? new : window, levels: levels.map { level in
             Level(orientation: level.orientation, slots: level.slots.map { slot in
-                (slot.windows.contains(old) ? slot.windows.subtracting([old]).union([new]) : slot.windows, slot.weight)
+                Slot(windows: slot.windows.contains(old) ? slot.windows.subtracting([old]).union([new]) : slot.windows,
+                     weight: slot.weight)
             }, index: level.index)
         }, edits: edits)
     }
@@ -466,7 +473,7 @@ extension Workspace {
         var levels: [RestoreHint.Level] = []
         while let index = path.popLast() {
             let container = whole.root[path[...]]
-            let slots = container.children.map { (windows: Set($0.windows), weight: $0.weight) }
+            let slots = container.children.map { RestoreHint.Slot(windows: Set($0.windows), weight: $0.weight) }
             levels.append(RestoreHint.Level(orientation: container.orientation, slots: slots, index: index))
         }
         return RestoreHint(window: window, levels: levels, edits: edits)
