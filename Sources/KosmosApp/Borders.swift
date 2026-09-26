@@ -66,32 +66,45 @@ final class Borders {
         for (target, next) in shown {
             let display = next.border.display
             let window = windows[target], fresh = window == nil
-            let border = window ?? spare[display]?.popLast() ?? BorderWindow(display: display)
+            let border = window ?? spare[display]?.popLast() ?? BorderWindow(display: display, frame: next.border.displayFrame)
             windows[target] = border
             // Setting another level can move the border within the stacking order.
             let leveled = border.level.rawValue != Int(next.level)
             border.show(next)
-            if fresh || leveled { border.order(.above, relativeTo: Int(target)) }
-            if fresh { pin(border, to: target) }
+            if fresh {
+                pin(border, to: target)
+            } else if leveled, border.isVisible {
+                border.order(.above, relativeTo: Int(target))
+            }
         }
     }
 
-    /// A raise of the target leaves its border below it (kosmos-probe borders).
+    /// A raise of the target leaves its border below it (kosmos-probe borders). A border still
+    /// ordered out is ordered in above its target once pinned.
     func raise(_ target: WindowID) {
-        windows[target]?.order(.above, relativeTo: Int(target))
+        guard let border = windows[target], border.isVisible else { return }
+        border.order(.above, relativeTo: Int(target))
     }
 
-    /// A border joins its display's current Space, maybe another app's fullscreen one, so it
-    /// moves to its target's ordinary Space on its own display, or stays (docs/borders.md).
+    /// A border ordered in draws in whichever Space it is in, and one ordered in fresh joined
+    /// its display's current Space, maybe another app's fullscreen one. So while ordered out
+    /// it moves to its target's ordinary Space on its own display, or stays, and only then is
+    /// ordered in (docs/borders.md).
     private func pin(_ window: BorderWindow, to target: WindowID) {
         let border = WindowID(window.windowNumber), display = window.display
         spaces.async {
             let ordinary = Displays.current().ordinarySpaces(on: display)
             let targetSpaces = (SkyLight.spaces(of: target) ?? []).filter(ordinary.contains)
             let borderSpaces = SkyLight.spaces(of: border) ?? []
-            guard let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) else { return }
-            SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
-            bordersLog.info("border \(border) of \(target) moved from Spaces \(borderSpaces, privacy: .public) to \(space)")
+            if let space = targetSpaces.first, Set(targetSpaces).isDisjoint(with: borderSpaces) {
+                SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
+                bordersLog.info("border \(border) of \(target) moved from Spaces \(borderSpaces, privacy: .public) to \(space)")
+            }
+            onMain {
+                // Unless the border went back to its pool meanwhile.
+                guard self.windows[target] === window else { return }
+                window.order(.above, relativeTo: Int(target))
+            }
         }
     }
 }
@@ -103,10 +116,11 @@ private final class BorderWindow: NSWindow {
     private let ring = CALayer()
     private var shown: Borders.Shown?
 
-    init(display: DisplayID) {
+    /// `frame` is its display's, in Accessibility's coordinates.
+    init(display: DisplayID, frame: CGRect) {
         self.display = display
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: [.borderless], backing: .buffered,
-                   defer: false)
+        super.init(contentRect: NSRect(origin: NSScreen.flipped(frame).origin, size: NSSize(width: 1, height: 1)),
+                   styleMask: [.borderless], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
@@ -119,6 +133,10 @@ private final class BorderWindow: NSWindow {
         view.wantsLayer = true
         contentView = view
         view.layer?.addSublayer(ring)
+        // A window moved before its first order-in joined its display's current Space at that
+        // order-in (kosmos-probe borders), so a border is ordered in once while it draws nothing.
+        orderFrontRegardless()
+        orderOut(nil)
     }
 
     override var canBecomeKey: Bool { false }

@@ -263,6 +263,33 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
         SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [b] as CFArray, spaces(t).first ?? 0)
         wait(0.1)
         print("moved back to T's Space: \(spaces(b))")
+
+        // Whether a border moved while ordered out, as Kosmos moves one before it shows it, is
+        // in that Space once ordered in, how soon a direct read shows the move, and the same
+        // for a new border never ordered in.
+        func moveOrderedOut(_ window: NSWindow, _ label: String) {
+            let id = UInt32(window.windowNumber)
+            print("\(label), ordered out: \(spaces(id))")
+            SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [id] as CFArray, other)
+            let moved = ContinuousClock.now
+            var reads = 1
+            while !spaces(id).contains(other), elapsed(moved) < 10 { reads += 1 }
+            print(String(format: "  moved to \(other): \(spaces(id)) after %.3f ms and \(reads) reads", elapsed(moved)))
+            window.order(.above, relativeTo: Int(t))
+            print("  then ordered above T, read at once: \(spaces(id))")
+            wait(0.1)
+            print("  0.1 s later: \(spaces(id))")
+            window.orderOut(nil)
+        }
+        border.window.orderOut(nil)
+        wait(0.1)
+        moveOrderedOut(border.window, "B")
+        let fresh = ProbeBorder()
+        fresh.place(around: frame, radius: radius, color: color)
+        moveOrderedOut(fresh.window, "a new border never ordered in")
+        SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [b] as CFArray, spaces(t).first ?? 0)
+        border.window.order(.above, relativeTo: Int(t))
+        wait(0.1)
     } else {
         print("no other display's Space to move B to")
     }

@@ -92,7 +92,15 @@ state, and during a slide the frame the slide shows the window at.
   native fullscreen Space, so whenever a border window is shown for another window,
   Kosmos reads its Spaces and its target's off the main thread, since a read can wait out
   a Space transition, and moves the border to its target's ordinary Space with
-  `SLSMoveWindowsToManagedSpace` when it is in none of them. A border moved to
+  `SLSMoveWindowsToManagedSpace` when it is in none of them. The border is still ordered
+  out then, and Kosmos orders it in above its target only once the move is sent. Before
+  2026-09-25 it ordered the border in first, so over a fullscreen Space the border drew on
+  the app until the move landed. In the probe on 2026-09-25, a border ordered in before,
+  then ordered out, moved to another display's Space and ordered above its target, was in
+  the Space it was moved to, and the first direct read after the move showed it there. A
+  window never ordered in read as moved too, but its first order-in put it in its
+  display's current Space. So each border window is ordered in and out once as it is made,
+  1 by 1 point at its display's bottom left corner, while it draws nothing. A border moved to
   another display's Space was there when read back. The target's Spaces can include the
   holding Space or a slide's animation Space, whose transform would draw the border too,
   so Kosmos chooses from the ordinary Spaces of the border's own display alone, and leaves
@@ -174,8 +182,8 @@ state, and during a slide the frame the slide shows the window at.
   - whether a border stays hidden in Mission Control and out of Command-backtick, and out
     of launchers' and window switchers' window lists, and leaves with its Space when a
     native fullscreen Space or another desktop shows;
-  - whether a border created or moved while a native fullscreen Space is on its display
-    lands in the fullscreen Space before Kosmos moves it, and for how long;
+  - whether a border shown for a window while a native fullscreen Space is on its display
+    stays off the fullscreen app, now that Kosmos moves it before ordering it in;
   - whether keying the empty workspace's window, which fronts Kosmos, raises its border
     windows over other apps' windows;
   - whether Hide Others in another app leaves the borders on screen;
