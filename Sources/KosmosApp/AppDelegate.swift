@@ -32,9 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var displayChange: DispatchWorkItem?
     private var lastScreenChange: ContinuousClock.Instant?
     private var screensAsleep = false
-    /// When `kosmos handover` asked the next quit to leave the record to the Kosmos that
-    /// follows.
-    private var handoverArmed: ContinuousClock.Instant?
+    private var handover = Handover()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // First, so a SIGTERM during startup quits with exit 0 once startup is done. Killed by
@@ -88,9 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Only the quit the arm was for, and only with a guardian to restore the windows should
-        // no Kosmos follow (docs/hiding.md).
-        let handingOver = handoverArmed.map { .now - $0 < Self.armLife } == true && guardian.isReady
+        let handingOver = handover.handsOver(at: .now, guardianReady: guardian.isReady)
         server?.stop()
         // The last second of changes has no write yet.
         controller?.writeLayout(wait: true)
@@ -163,25 +159,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `kosmos handover [record version]`, for script/install.sh: a quit within `armLife` leaves
-    /// the record to a Kosmos that starts right after it, which reads that version, this build's
-    /// when none is given. A refusal disarms (docs/hiding.md).
     private func armHandover(_ arguments: [String]) -> Response {
-        handoverArmed = nil
-        let version = arguments.isEmpty ? RecoveryRecord.version : arguments.count == 1 ? UInt32(arguments[0]) : nil
-        guard let version else { return failure("usage: handover [record version]") }
-        guard version == RecoveryRecord.version else {
-            return failure("the next Kosmos reads record version \(version) and this one writes \(RecoveryRecord.version), so quitting restores the hidden windows")
-        }
-        guard hiding != nil else { return failure("no windows are hidden before Kosmos manages them") }
-        handoverArmed = .now
-        log.notice("handover: a quit within \(Self.armLife, privacy: .public) leaves the record to the Kosmos that follows")
+        if let refusal = handover.arm(arguments, hiding: hiding != nil, at: .now) { return failure(refusal) }
+        log.notice("handover: a quit within \(Handover.life, privacy: .public) leaves the record to the Kosmos that follows")
         return Response()
     }
-
-    /// script/install.sh sends its SIGTERM right after the arm, 2 to 7 ms after it at three
-    /// installs (docs/hiding.md).
-    private static let armLife: Duration = .seconds(5)
 
     private func listBindings() -> Response {
         guard let hotkeys else { return failure("no hotkeys are registered") }

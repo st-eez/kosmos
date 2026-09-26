@@ -109,11 +109,14 @@ private func write(_ frame: CGRect) -> BatchOrder.Write { (.frame(frame), frame)
     #expect(released[1]?.target == a)
 }
 
-@Test func aWindowEnteringARevealedWorkspaceIsConcealedFirstAndRevealedWithIt() {
+@Test func aWindowEnteringARevealedWorkspaceIsConcealedFirstAndRevealedWithIt() throws {
     var order = BatchOrder()
     // Window 9, moved on screen into workspace 2, is revealed with 2's window 3.
-    let conceal = order.add(show: [], hide: [9])
-    let reveal = order.add(show: [3, 9], hide: [1])
+    let batches = order.add(show: [3], hide: [1], entering: [9])
+    try #require(batches.count == 2)
+    let (conceal, reveal) = (batches[0], batches[1])
+    #expect(conceal.show.isEmpty && conceal.hide == [9])
+    #expect(reveal.show == [3, 9] && reveal.hide == [1])
     #expect(order.lastNumber == reveal.number)
     let now = order.write([3: write(a), 9: write(moved), 1: write(a)])
     #expect(now.keys.sorted() == [3])
@@ -142,4 +145,40 @@ private func write(_ frame: CGRect) -> BatchOrder.Write { (.frame(frame), frame)
     #expect(order.conceals(2))
     _ = order.done(waiting.number)
     #expect(!order.conceals(2))
+}
+
+@Test func aSwitchWithNoWindowEnteringIsOneBatchAndAnEnteringWindowShownAlreadyIsNotShownTwice() {
+    var order = BatchOrder()
+    #expect(order.add(show: [3], hide: [1], entering: []).map(\.show) == [[3]])
+    #expect(order.add(show: [], hide: [], entering: []).isEmpty)
+    let batches = order.add(show: [3, 9], hide: [], entering: [9])
+    #expect(batches.map(\.show) == [[], [3, 9]])
+    #expect(batches.map(\.hide) == [[9], []])
+}
+
+@Test func theFirstBatchWaitingIsCheckedAgainWhenItsFirstWriteStillLandingEnds() {
+    var order = BatchOrder()
+    let ends: [WindowID: ContinuousClock.Instant] = [1: t0 + .seconds(1), 2: t0 + .milliseconds(500), 3: t0 + .milliseconds(200)]
+    #expect(order.recheck(landing: { _ in true }, ends: { ends[$0] }) == nil)
+    _ = order.add(show: [1, 2], hide: [3])
+    _ = order.add(show: [3], hide: [])
+    // Window 3's write holds only the second batch, which waits behind the first.
+    let landing: (WindowID) -> Bool = { _ in true }
+    #expect(order.ready(landing: landing).isEmpty)
+    #expect(order.recheck(landing: landing, ends: { ends[$0] }) == t0 + .milliseconds(500))
+    #expect(order.recheck(landing: { $0 == 1 }, ends: { ends[$0] }) == t0 + .seconds(1))
+    let first = order.ready { $0 == 3 }
+    #expect(first.count == 1)
+    #expect(order.recheck(landing: { $0 == 3 }, ends: { ends[$0] }) == t0 + .milliseconds(200))
+}
+
+@Test func aBatchHeldOnlyByAWriteWaitingForAnEarlierBatchHasNoRecheck() {
+    var order = BatchOrder()
+    let first = order.add(show: [], hide: [1])
+    _ = order.write([1: write(a)])
+    #expect(order.ready { _ in false } == [first])
+    _ = order.add(show: [1], hide: [])
+    #expect(order.ready { _ in false }.isEmpty)
+    // The first batch's end releases the write, and the reveal is checked again then.
+    #expect(order.recheck(landing: { _ in false }, ends: { _ in t0 }) == nil)
 }

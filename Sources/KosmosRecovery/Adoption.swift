@@ -39,4 +39,12 @@ public struct Adoption: Equatable, Sendable {
     /// The windows still waiting for their admission, with those standing on them, which a
     /// switch would never reveal.
     public var unadmitted: [UInt32] { kept.keys.sorted().flatMap { [$0] + kept[$0]!.sorted() } }
+
+    /// What the admission bound reveals where it is: each window of `unadmitted` still
+    /// `concealed`, with the display `display` finds under it, if any.
+    public func reveal(concealed: (UInt32) -> Bool, display: (UInt32) -> UInt32?)
+        -> (windows: [UInt32], displays: [UInt32: UInt32]) {
+        let windows = unadmitted.filter(concealed)
+        return (windows, Dictionary(uniqueKeysWithValues: windows.compactMap { id in display(id).map { (id, $0) } }))
+    }
 }

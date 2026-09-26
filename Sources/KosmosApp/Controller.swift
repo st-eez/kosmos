@@ -122,13 +122,9 @@ final class Controller {
     private func restoreLayout() {
         guard let windowServer, var saved = LayoutFile.load(under: windowServer) else { return }
         let count = saved.windows.count
-        // A closed window would hold its tile until the next write, and one ordered out, as
-        // minimized since, until the tree changes. A failed read keeps every window.
+        // A failed read keeps every window.
         if let open = Self.openRows(saved.windows.map(\.window)) {
-            saved.windows.removeAll { open[$0.window] == nil }
-            for index in saved.windows.indices where open[saved.windows[index].window]?.orderedIn == false {
-                saved.windows[index].parked = true
-            }
+            saved.prune(open: open.mapValues(\.orderedIn))
         } else {
             controllerLog.error("saved windows not read from WindowServer; each waits for its admission")
         }
@@ -157,13 +153,12 @@ final class Controller {
     /// A window taken over that no admission placed, as one whose app never answered, would stay
     /// concealed with no workspace to show it, so it shows where it is.
     private func revealUnadmitted() {
-        let windows = adoption.unadmitted.filter(hiding.isConcealed)
+        let (windows, displays) = adoption.reveal(concealed: hiding.isConcealed) { id in
+            inventory.windows[id].flatMap { session.display(under: $0.frame) }
+        }
         adoption = Adoption()
         guard !windows.isEmpty else { return }
         controllerLog.notice("taken over and never admitted, so revealed: \(windows, privacy: .public)")
-        let displays = Dictionary(uniqueKeysWithValues: windows.compactMap { id in
-            inventory.windows[id].flatMap { display(under: $0.frame) }.map { (id, $0) }
-        })
         hiding.apply(show: windows, on: displays, hide: [], stripping: []) { outcome, _ in
             if case .failed = outcome { controllerLog.error("the reveal of the windows never admitted failed; recovery ran") }
         }
@@ -286,19 +281,11 @@ final class Controller {
         if resyncs { needsResync = false }
         let entering = session.entering(show: show, hide: hide, frames: plan.frames.keys,
                                         concealed: hiding.isConcealedOrConcealing,
-                                        display: { inventory.windows[$0].flatMap { display(under: $0.frame) } })
+                                        display: { inventory.windows[$0].flatMap { session.display(under: $0.frame) } })
         // Before the writes, which wait for the batches that conceal their windows.
-        var added: [Int] = []
-        func add(show: [WindowID], hide: [WindowID]) {
-            let number = order.add(show: show, hide: hide).number
-            switches[number] = Switch(received: received, fromCommand: fromCommand)
-            added.append(number)
-        }
-        if !entering.isEmpty { add(show: [], hide: entering) }
-        if !(show.isEmpty && hide.isEmpty) {
-            intake.forgetPlacedHidden(show)   // their workspace is shown
-            add(show: show + entering.filter { !show.contains($0) }, hide: hide)
-        }
+        let added = order.add(show: show, hide: hide, entering: entering).map(\.number)
+        for number in added { switches[number] = Switch(received: received, fromCommand: fromCommand) }
+        if !(show.isEmpty && hide.isEmpty) { intake.forgetPlacedHidden(show) }   // their workspace is shown
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
@@ -334,8 +321,8 @@ final class Controller {
         }
         order.ready(landing: landing).forEach(send)
         // Checked again when the first write holding the batch times out.
-        guard let next = order.next, let end = next.show.filter(landing).compactMap(ledger.landingEnds).min(),
-              recheckAt.map({ end < $0 }) ?? true else { return }
+        guard let end = order.recheck(landing: landing, ends: ledger.landingEnds), recheckAt.map({ end < $0 }) ?? true
+        else { return }
         recheckAt = end
         after(end - now) { controller in
             if controller.recheckAt == end { controller.recheckAt = nil }
@@ -438,16 +425,10 @@ final class Controller {
             }
             for (id, entry) in group { ledger.sent(id, target: entry.target, at: now) }
             worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { id, entry in
-                (id, (entry.write, entry.target, movesDisplay(id, to: entry.target)))
+                // From where WindowServer last had the window (docs/geometry.md).
+                (id, (entry.write, entry.target, session.movesDisplay(from: inventory.windows[id]?.frame, to: entry.target)))
             }))
         }
-    }
-
-    /// From where WindowServer last had the window: AppKit holds a window that grows onto
-    /// another display to the old display's edge for a while (docs/geometry.md).
-    private func movesDisplay(_ id: WindowID, to target: CGRect) -> Bool {
-        guard let frame = inventory.windows[id]?.frame else { return false }
-        return display(under: frame) != display(under: target)
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
@@ -469,14 +450,10 @@ final class Controller {
             // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the
             // read shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
             if id == popping, let row = SkyLight.rows([id])?.first { (from, pop) = (row.frame, !row.orderedIn) }
-            if let from, let shownOn = self.display(under: from), fullscreen.contains(shownOn) { continue }
+            if let from, let shownOn = session.display(under: from), fullscreen.contains(shownOn) { continue }
             motions[id] = Slides.Motion(from: from, display: display, pop: pop)
         }
         return motions
-    }
-
-    private func display(under frame: CGRect) -> DisplayID? {
-        session.monitors.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?.id
     }
 
     /// A Space of the pool shows whatever Space its display shows, so a slide to or from there
@@ -485,7 +462,7 @@ final class Controller {
     /// desktop Space; reading each display's current Space would tell them apart
     /// (docs/geometry.md, docs/borders.md).
     private var fullscreenDisplays: Set<DisplayID> {
-        func display(of id: WindowID) -> DisplayID? { inventory.windows[id].flatMap { self.display(under: $0.frame) } }
+        func display(of id: WindowID) -> DisplayID? { inventory.windows[id].flatMap { session.display(under: $0.frame) } }
         let displays = Set(session.parked(because: .fullscreen).compactMap(display))
         guard !displays.isEmpty, case .window(let id)? = key, !inFullscreenSpace, let desktop = display(of: id)
         else { return displays }

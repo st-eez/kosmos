@@ -25,6 +25,13 @@ public enum Fit: Equatable, Sendable {
     case minimum(CGSize)
 }
 
+extension CGRect {
+    /// More than the ledger's slack smaller than `target` on an axis.
+    public func isSmaller(than target: CGRect) -> Bool {
+        width < target.width - FrameLedger.slack || height < target.height - FrameLedger.slack
+    }
+}
+
 /// Decides which windows need a frame write (docs/geometry.md).
 public struct FrameLedger: Sendable {
     /// Apps round their size, so a window may read back this much larger than its target on
@@ -143,11 +150,40 @@ public struct FrameLedger: Sendable {
         isWriting(id) || confirmedAt[id].map { stamp < $0 } == true
     }
 
+    /// Whose a frame change of the window is (docs/geometry.md).
+    public enum Change: Equatable, Sendable {
+        /// A write is in flight, whose read back comes next.
+        case writing
+        /// Kosmos's own write: the change shows the newest write's read back (`landed`), or
+        /// came before the last confirm, at `changedAt`, nil for a frame read with no event.
+        case written
+        /// The user's move or resize, or the app's.
+        case other
+    }
+
+    public func change(of id: WindowID, changedAt: ContinuousClock.Instant?, landed: Bool) -> Change {
+        if isWriting(id) { return .writing }
+        return landed || changedAt.map { isWriting(id, at: $0) } == true ? .written : .other
+    }
+
     public mutating func forget(_ id: WindowID) {
         confirmed[id] = nil
         pending[id] = nil
         landing[id] = nil
         refused[id] = nil
         refusedLarger[id] = nil
+    }
+}
+
+extension FrameLedger {
+    /// AppKit holds a window that grows onto another display to the old display's edge until
+    /// its app takes the move, 10 to 30 ms after the position write. So after a write that
+    /// moves a window there, the worker writes the size again every 2 ms while the window
+    /// reads back smaller, for up to this long from when it starts, after the drain's other
+    /// writes and any earlier window's own writes again (docs/geometry.md).
+    public static let displayMoveBound: Duration = .milliseconds(50)
+
+    public static func writesSizeAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {
+        readBack.isSmaller(than: target) && elapsed < displayMoveBound
     }
 }

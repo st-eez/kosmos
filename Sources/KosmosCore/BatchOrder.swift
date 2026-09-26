@@ -25,7 +25,7 @@ public struct BatchOrder: Sendable {
     public var isWaiting: Bool { sent < batches.count }
 
     /// The first batch waiting.
-    public var next: Batch? { isWaiting ? batches[sent] : nil }
+    var next: Batch? { isWaiting ? batches[sent] : nil }
 
     /// Whether a batch not yet done, sent or waiting, conceals the window.
     public func conceals(_ id: WindowID) -> Bool { conceals(batches[...], id) }
@@ -36,6 +36,16 @@ public struct BatchOrder: Sendable {
         let batch = Batch(number: lastNumber, show: show, hide: hide)
         batches.append(batch)
         return batch
+    }
+
+    /// A switch's batches, before its plan's writes. `entering`, windows on screen that the
+    /// reveal takes in (Session.entering), get a batch of their own that conceals them first,
+    /// and the reveal shows them with the rest.
+    public mutating func add(show: [WindowID], hide: [WindowID], entering: [WindowID]) -> [Batch] {
+        var added: [Batch] = []
+        if !entering.isEmpty { added.append(add(show: [], hide: entering)) }
+        if !(show.isEmpty && hide.isEmpty) { added.append(add(show: show + entering.filter { !show.contains($0) }, hide: hide)) }
+        return added
     }
 
     /// The writes to send now. A write waits while a batch not done conceals its window, and
@@ -68,6 +78,13 @@ public struct BatchOrder: Sendable {
             sent += 1
         }
         return ready
+    }
+
+    /// When to check the first batch waiting again: when the first of its revealed windows'
+    /// writes still `landing` reaches its end, when it counts as landed. Nil when no such
+    /// write holds it.
+    public func recheck(landing: (WindowID) -> Bool, ends: (WindowID) -> ContinuousClock.Instant?) -> ContinuousClock.Instant? {
+        next?.show.filter(landing).compactMap(ends).min()
     }
 
     /// The writes the batch's end sends: those whose window no batch not done conceals.

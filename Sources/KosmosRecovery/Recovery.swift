@@ -24,12 +24,22 @@ public enum Recovery {
         case incomplete(remaining: Int)
 
         /// False when another attempt could restore more.
-        public var isFinal: Bool {
+        var isFinal: Bool {
             switch self {
             case .incomplete, .windowServerUnknown: false
             case .nothingRecorded, .staleSession, .restored, .adopted: true
             }
         }
+    }
+
+    /// kosmos-guardian's exit status after an attempt, or nil to attempt again, as it does
+    /// while another attempt could restore more, until `deadline`. `outcome` is nil while a
+    /// process the lock file does not name holds the lock, as a probe or a Kosmos that has not
+    /// taken the record over yet.
+    public static func guardianExit(after outcome: Outcome?, at now: ContinuousClock.Instant,
+                                    retryingUntil deadline: ContinuousClock.Instant) -> Int32? {
+        if outcome?.isFinal == true { return 0 }
+        return now < deadline ? nil : 1
     }
 
     /// `keeping`: the running Kosmos keeps the Spaces windows slide in, recorded; after it

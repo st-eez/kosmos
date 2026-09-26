@@ -136,6 +136,20 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.isWriting(1, at: t0 + .milliseconds(1)))
 }
 
+@Test func aChangeIsKosmossWriteWhileItIsInFlightOnceItLandsOrBeforeItsConfirm() {
+    var ledger = FrameLedger()
+    #expect(ledger.change(of: 1, changedAt: t0, landed: false) == .other)
+    _ = ledger.writes(for: [1: a])
+    #expect(ledger.change(of: 1, changedAt: t0, landed: false) == .writing)
+    #expect(ledger.change(of: 1, changedAt: nil, landed: true) == .writing)
+    ledger.confirm(1, target: a, readBack: a, at: t0 + .milliseconds(2))
+    #expect(ledger.change(of: 1, changedAt: t0 + .milliseconds(1), landed: false) == .written)
+    #expect(ledger.change(of: 1, changedAt: t0 + .milliseconds(3), landed: true) == .written)
+    // The user's, after the confirm, or read with no event, as at a sweep.
+    #expect(ledger.change(of: 1, changedAt: t0 + .milliseconds(3), landed: false) == .other)
+    #expect(ledger.change(of: 1, changedAt: nil, landed: false) == .other)
+}
+
 @Test func theWritesChangeAppliedAfterTheConfirmRecordsALaterFrame() {
     var ledger = FrameLedger()
     _ = ledger.writes(for: [1: a])
@@ -189,4 +203,17 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     ledger.sent(1, target: a, at: t0)
     ledger.forget(1)
     #expect(!ledger.isLanding(1, at: t0))
+}
+
+/// The panel's tile held to the built-in display's width, 1718 of 1900 pt (docs/geometry.md).
+@Test func aWindowMovedToAnotherDisplayIsWrittenAgainWhileItReadsBackSmallerForUpTo50Ms() {
+    let target = CGRect(x: 10, y: 35, width: 1900, height: 1035)
+    let held = CGRect(x: 10, y: 35, width: 1718, height: 1035)
+    #expect(FrameLedger.writesSizeAgain(held, target: target, after: .zero))
+    #expect(FrameLedger.writesSizeAgain(held, target: target, after: .milliseconds(49)))
+    #expect(!FrameLedger.writesSizeAgain(held, target: target, after: FrameLedger.displayMoveBound))
+    // Within the slack it took the target, as larger it did.
+    #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1898, height: 1033), target: target, after: .zero))
+    #expect(FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1900, height: 1032), target: target, after: .zero))
+    #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1910, height: 1100), target: target, after: .zero))
 }

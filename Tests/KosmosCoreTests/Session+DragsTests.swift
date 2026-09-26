@@ -42,6 +42,19 @@ import Testing
         #expect(!TitleBarDrag.onResizeBorder(CGPoint(x: 90, y: 400), of: frame))
     }
 
+    @Test func aPressLiftsATiledWindowOnlyOnceItMovedWholePastTheThreshold() {
+        let before = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let jitter = TitleBarDrag.change(from: before, to: before.offsetBy(dx: 6, dy: 8), resizing: false)
+        #expect(!jitter.resized && !jitter.lifts)
+        let drag = TitleBarDrag.change(from: before, to: before.offsetBy(dx: 8, dy: 7), resizing: false)
+        #expect(!drag.resized && drag.lifts)
+        // A resize by the left edge, and a move once the press resized or began on a border.
+        let resize = TitleBarDrag.change(from: before, to: CGRect(x: 60, y: 100, width: 840, height: 600), resizing: false)
+        #expect(resize.resized && !resize.lifts)
+        let moveAfter = TitleBarDrag.change(from: before, to: before.offsetBy(dx: 40, dy: 0), resizing: true)
+        #expect(moveAfter.resized && !moveAfter.lifts)
+    }
+
     @Test func aWindowDroppedOverItsOwnPlaceGoesBackBesideItsNeighbour() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(11)

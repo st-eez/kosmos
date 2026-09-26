@@ -54,18 +54,18 @@
   the wait as `held`. The wait leaves out a window shown already and one whose app is
   backed off. A write no row has shown counts as landed 1 s after it was sent, the
   Accessibility timeout, and the controller checks the batch again when the first write
-  holding it reaches that second. Of 1,835 slide landings from September 24 to 26, 2026,
-  the median was 32.8 ms, p90 80.8 ms, p99 250.7 ms and the longest 673.7 ms, and 7 never
-  landed (live log). A concealed window's move posts the change event as a
-  shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
+  holding it reaches that second (`BatchOrder.recheck`). Of 1,835 slide landings from
+  September 24 to 26, 2026, the median was 32.8 ms, p90 80.8 ms, p99 250.7 ms and the
+  longest 673.7 ms, and 7 never landed (live log). A concealed window's move posts the
+  change event as a shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
   one, each of a window's two concealed moves posted two change events 10 to 13 ms after
   it, and the row showed the new frame without the holding Space's offset (September 25,
   2026).
 - A window on screen that the revealed workspace takes in on the display it shows on, as
   the one `move-node-to-workspace --focus-follows-window` moves or a followed rule window,
   is concealed at the command by a batch of its own, whose switch line shows nothing, and
-  revealed with the workspace once its write lands. Written at once, it had landed at its
-  tile over the old workspace 1 or 2 frames before the rest. Into an empty workspace
+  revealed with the workspace once its write lands (`BatchOrder.add`, `entering`). Written
+  at once, it had landed at its tile over the old workspace 1 or 2 frames before the rest. Into an empty workspace
   nothing is revealed around it, so the switch goes at once and the window slides there.
   One whose workspace is on another display is left out and lands there as before, 1 or
   2 frames before the rest: concealed without being stripped, it would keep the ordinary
@@ -189,8 +189,10 @@
     quit never came, as after a `launchctl kickstart` that failed or an install that
     stopped, cannot hand a later quit to another build (`handover-noexpiry`). The armed
     quit hands over only while the guardian is ready, as no other process would restore
-    the windows should no Kosmos follow (`handover-unready`). The ceiling: a build swapped in without
-    `script/install.sh` and then a crash leave the record to a build that may not read it.
+    the windows should no Kosmos follow (`handover-unready`). `Handover` holds the version
+    gate, a refusal clearing the arm, the 5 s life and the guardian gate. The ceiling: a
+    build swapped in without `script/install.sh` and then a crash leave the record to a
+    build that may not read it.
   - A Kosmos names itself in the lock file, by its pid and start time, once it takes the
     record over: after its guardian reports ready, or after its startup recovery. Once its
     Kosmos exits and leaves a record, the guardian gives the next Kosmos a grace of 5 s. It
@@ -243,8 +245,9 @@
     a second time, which `add` leaves as it is, stays as it is. The Controller's check that
     this replaced had revealed it, even on a hidden workspace. A kept window that no admission
     places within 5 s of the adoption, as one whose app never answers, is revealed where it
-    is (`handover-nobackstop`); every window of the launch of 02:08:38 was admitted within
-    68 ms of its start. A window whose app answers after the 5 s shows over the shown
+    is (`handover-nobackstop`), with the windows that stand on it. `Adoption.reveal` chooses
+    them and the display under each. Every window of the launch of 02:08:38 was admitted
+    within 68 ms of its start. A window whose app answers after the 5 s shows over the shown
     workspace until its admission conceals it again.
   - A conceal after the adoption goes into the kept holding Space, by the rule above.
     `kosmos-probe handover` on September 26, 2026 (macOS 27) made a holding Space in a
@@ -277,7 +280,8 @@
   query, and a failed query leaves no window out, so a
   window new to the record, whose owner the query would have named, stops the batch and
   recovery runs. Read as every window gone, it would leave the windows to hide on screen
-  until their workspace was shown and hidden again.
+  until their workspace was shown and hidden again. `ConcealLedger.concealing` makes this
+  choice.
 - A window can also close, or its app order it out, after the batch reads its row and
   before its add lands, as at Command-W right before a switch. No Space lists it, so its
   conceal never shows and the batch fails its confirmation, and recovery would show every

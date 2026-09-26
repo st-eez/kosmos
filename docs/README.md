@@ -8,21 +8,22 @@ prefix.
   the primitive decisions, the processes, threads and queues, a workspace switch,
   verification, milestones and what the first version leaves out. Read it first.
   Code: `KosmosApp/Controller.swift`, `KosmosApp/RunLoopExecutor.swift`,
-  `KosmosApp/Guardian.swift`, `kosmos-guardian/main.swift`,
-  `KosmosApp/LaunchAtLogin.swift`, `kosmos-probe/main.swift`, `kosmos-probe/Support.swift`.
+  `KosmosApp/Guardian.swift`, `kosmos-guardian/main.swift`, `KosmosRecovery/Recovery.swift`,
+  `KosmosRecovery/GuardianRestarts.swift`, `KosmosApp/LaunchAtLogin.swift`,
+  `kosmos-probe/main.swift`, `kosmos-probe/Support.swift`.
 - [inventory.md](inventory.md): how Kosmos tracks windows from WindowServer, Accessibility
   and NSWorkspace events, the sweeps, the screen lock and wake, and which new windows it
   manages.
   Code: `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
-  `KosmosCore/LockState.swift`, `KosmosCore/Tabs.swift`, `KosmosSkyLight/SkyLight.swift`,
-  `kosmos-probe/Events.swift`.
+  `KosmosCore/LockState.swift`, `KosmosCore/Sweeps.swift`, `KosmosCore/Tabs.swift`,
+  `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Events.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.
   Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
-  `KosmosCore/LeftButton.swift`, `KosmosCore/Slide.swift`, `KosmosApp/AppWorker.swift`,
-  `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
+  `KosmosCore/LeftButton.swift`, `KosmosCore/Session.swift`, `KosmosCore/Slide.swift`,
+  `KosmosApp/AppWorker.swift`, `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
   `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`,
   `kosmos-probe/Constraints.swift`, `kosmos-probe/DisplayClamp.swift`,

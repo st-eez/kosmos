@@ -73,6 +73,16 @@ public struct ConcealLedger: Equatable, Sendable {
         return ConcealLedger(entries: entries)
     }
 
+    /// The windows of `hide` a batch conceals. One with no row among `rows`, or new to the
+    /// record and not `owned`, as its owner was not identified, is left out. With the rows
+    /// unread, nil, none is left out, so a window new to the record stops the batch
+    /// (docs/hiding.md).
+    public static func concealing(_ hide: [WindowID], rows: Set<WindowID>?, recorded: Set<WindowID>,
+                                  owned: Set<WindowID>) -> [WindowID] {
+        guard let rows else { return hide }
+        return hide.filter { recorded.contains($0) ? rows.contains($0) : owned.contains($0) }
+    }
+
     /// A revealed window on no other Space, as `isOnAnySpace` reads it now, is added to an
     /// ordinary one first: removing it would leave it on none.
     public func batch(show: [WindowID], hide: [WindowID], stripping: Set<WindowID> = [], into space: SpaceID,
