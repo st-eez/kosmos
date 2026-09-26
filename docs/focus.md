@@ -311,12 +311,16 @@
   after the key record, which leaves another app's window where it sits in its app's
   stacking order ([overview.md, section 2](overview.md#2-what-the-fork-measured)). yabai and alt-tab raise after the record too. A hung app
   holds only its own worker.
-- The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
-  waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
-  a newer command, and Kosmos followed it there (tla/README.md, change 19,
-  `split-user-timeout`). A raise that outlasts the 5 s counts as made, so its echo is
-  still recognized, and its app is backed off ([geometry.md](geometry.md)). Only a raise
-  the app refuses or fails at once is dropped. No measurement chose the 5 s.
+- The worker waits for the app to perform the raise, for up to the 1 s timeout of every
+  Accessibility call. A raise it stopped waiting for still lands when the app gets to it:
+  in TLC it keyed a concealed window after a newer command, and Kosmos followed it there
+  (tla/README.md, change 19, `split-user-timeout`). A raise that waits out the timeout
+  counts as made, so its echo is still recognized, and its app is backed off
+  ([geometry.md](geometry.md)). Only a raise the app refuses or fails at once is dropped.
+  AXRaise took 0.30 to 1.02 ms at the median and 3.70 ms at most, in runs of 120 raises
+  ([overview.md, section 2](overview.md#2-what-the-fork-measured)), and the live log of
+  September 24 to 26, 2026 has no raise that waited out the 5 s the worker allowed before,
+  which held a hung app's worker, with its frame writes and reads, five times as long.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the
   public path on the app's worker: make the window the app's main window, raise it, then
   activate the app. Each step can wait out the timeout on a slow app, so each first checks
