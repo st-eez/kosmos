@@ -229,10 +229,10 @@ extension Workspace {
     /// Puts a pending window back as its saved layout had it: at its place in the tree,
     /// floating, or parked with its hint and frame from before fullscreen kept for its return
     /// (docs/tree.md).
-    /// `rect` and `gaps` are as for `unpark`. False when no window of that id is pending here.
-    @discardableResult
-    mutating func admit(_ window: WindowID, parked: Bool, in rect: CGRect, gaps: Gaps) -> Bool {
-        guard let index = pending.firstIndex(where: { $0.window == window }) else { return false }
+    /// `rect` and `gaps` are as for `unpark`. Does nothing when no window of that id is pending
+    /// here.
+    mutating func admit(_ window: WindowID, parked: Bool, in rect: CGRect, gaps: Gaps) {
+        guard let index = pending.firstIndex(where: { $0.window == window }) else { return }
         let entry = pending.remove(at: index)
         if let hint = entry.hint { hints.append(hint) }
         if parked {
@@ -249,7 +249,6 @@ extension Workspace {
         // so the saved focus wins once its window is back.
         stamps[window] = entry.stamp ?? (!parked && focusedWindow == nil ? 0 : nil)
         check()
-        return true
     }
 
     /// `rect` and `gaps` are as for `unpark`.

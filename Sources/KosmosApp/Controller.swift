@@ -490,10 +490,6 @@ final class Controller {
         return displays.subtracting([desktop])
     }
 
-    func endSlides(_ why: String) {
-        slides?.endAll(why)
-    }
-
     /// `retry`: it follows a miss, which the kill switch then counts once.
     func requestFocus(_ target: KeyWindow, fromCommand: Bool = false, retry: Bool = false) {
         guard managing, !sessionLocked else { return }

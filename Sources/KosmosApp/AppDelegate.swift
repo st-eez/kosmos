@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The last second of changes has no write yet.
         controller?.writeLayout(wait: true)
         // Slides end first, so recovery finds the pool's Spaces empty.
-        controller?.endSlides("at quit")
+        controller?.slides?.endAll("at quit")
         if handingOver, let hiding {
             hiding.handOver()
             log.notice("quit: the record is left to the Kosmos that starts next")
@@ -112,18 +112,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server = try IPCServer(socketPath: kosmosSocketPath(), log: { message in
                 log.notice("ipc: \(message, privacy: .public)")
             }) { [weak self] arguments in
-                self?.respond(to: arguments, received: .now, from: .cli) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
+                self?.respond(to: arguments) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
             }
         } catch {
             log.error("socket not started: \(String(describing: error), privacy: .public)")
         }
     }
 
-    private func respond(to arguments: [String], received: ContinuousClock.Instant, from source: CommandSource) -> Response {
+    private func respond(to arguments: [String]) -> Response {
+        let received = ContinuousClock.now
         if let query = Query(arguments) { return answer(query) }
         if arguments.first == "handover" { return armHandover(Array(arguments.dropFirst())) }
         switch Command.parse(arguments) {
-        case .success(let command): return run(command, received: received, from: source)
+        case .success(let command): return run(command, received: received, from: .cli)
         case .failure(let error): return failure(error.message)
         }
     }
@@ -231,7 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log.notice("screen parameters changed: \(NSScreen.screens.count) displays\(gap, privacy: .public)")
         // A gone display's link stops firing, so its slides would hold their windows displaced
         // until the change applies (docs/geometry.md).
-        controller?.endSlides("at a display change")
+        controller?.slides?.endAll("at a display change")
         displayChange?.cancel()
         let apply = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {

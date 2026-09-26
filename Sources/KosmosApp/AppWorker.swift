@@ -30,7 +30,6 @@ struct AXReport: Sendable {
 }
 
 struct AXWindowInfo: Sendable {
-    let role: String?
     let subrole: String?
     var minimized: Bool
 }
@@ -142,8 +141,7 @@ actor AppWorker {
     private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
-            return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
-                                subrole: try copy(element, kAXSubroleAttribute) as? String,
+            return AXWindowInfo(subrole: try copy(element, kAXSubroleAttribute) as? String,
                                 minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false)
         } catch {
             return nil

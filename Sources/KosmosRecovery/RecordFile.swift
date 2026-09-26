@@ -9,11 +9,9 @@ public final class RecordFile {
     static let headerSize = 16
     public static var capacity: Int { slotSize - headerSize }
 
-    public let url: URL
     private let memory: UnsafeMutableRawPointer
 
     public init(url: URL) throws {
-        self.url = url
         let fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }

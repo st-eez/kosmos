@@ -287,7 +287,7 @@ final class Inventory {
             inventoryLog.info("""
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
-                role \(info.role ?? "-", privacy: .public) subrole \(info.subrole ?? "-", privacy: .public)
+                subrole \(info.subrole ?? "-", privacy: .public)
                 """)
         }
     }
@@ -320,8 +320,6 @@ final class Inventory {
             spacesChangedSinceSweep = true
             spacesChangedAt = .now
             sweep()
-        case .frontAppChanged:
-            break
         }
     }
 

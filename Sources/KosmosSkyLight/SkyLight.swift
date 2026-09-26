@@ -14,9 +14,8 @@ public enum WindowServerEvent: Sendable {
     case reordered(UInt32)
     case spaceMembership(UInt32)
     case spacesChanged     // a Space was created or destroyed, or the active Space changed
-    case frontAppChanged
 
-    public static let ids: [UInt32] = [804, 806, 807, 808, 811, 815, 816, 1325, 1326, 1327, 1328, 1401, 1508]
+    public static let ids: [UInt32] = [804, 806, 807, 808, 811, 815, 816, 1325, 1326, 1327, 1328, 1401]
 
     public init?(id: UInt32, payload: UnsafeRawBufferPointer) {
         func u32(at offset: Int) -> UInt32? {
@@ -30,7 +29,6 @@ public enum WindowServerEvent: Sendable {
         // A 64 bit Space id, then the window id.
         case 1325, 1326: guard let w = u32(at: 8) else { return nil }; self = .spaceMembership(w)
         case 1327, 1328, 1401: self = .spacesChanged
-        case 1508: self = .frontAppChanged
         default: return nil
         }
     }
@@ -38,7 +36,7 @@ public enum WindowServerEvent: Sendable {
     public var window: UInt32? {
         switch self {
         case .created(let id), .destroyed(let id), .changed(let id), .reordered(let id), .spaceMembership(let id): id
-        case .spacesChanged, .frontAppChanged: nil
+        case .spacesChanged: nil
         }
     }
 }
