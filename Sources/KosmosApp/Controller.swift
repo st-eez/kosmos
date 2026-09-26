@@ -93,7 +93,6 @@ final class Controller {
     /// WindowServer is unread (docs/tree.md).
     private let windowServer: SavedLayout.Process?
     private var layoutWritePending = false
-    private var layoutWritten: SavedLayout?
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -551,14 +550,10 @@ final class Controller {
         return Dictionary(open.map { ($0.id, $0) }) { first, _ in first }
     }
 
-    /// `wait`: returns once the file is written, as at quit.
     func writeLayout(wait: Bool = false) {
         layoutWritePending = false
         guard let windowServer else { return }
-        let layout = session.savedLayout(windowServer: windowServer)
-        guard layout != layoutWritten else { return }
-        layoutWritten = layout
-        LayoutFile.write(layout, wait: wait)
+        LayoutFile.write(session.savedLayout(windowServer: windowServer), wait: wait)
     }
 
     /// A locked session keeps its borders until the resync after the unlock (docs/borders.md).

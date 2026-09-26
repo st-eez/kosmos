@@ -12,6 +12,8 @@ enum LayoutFile {
 
     /// Writes stay in order, off the main thread.
     private static let writes = DispatchQueue(label: "kosmos.layout", qos: .utility)
+    /// The layout the file holds, touched only on `writes`, so a failed write is tried again.
+    nonisolated(unsafe) private static var written: SavedLayout?
 
     /// The WindowServer running now, which numbers the windows.
     static func windowServer() -> SavedLayout.Process? {
@@ -28,11 +30,14 @@ enum LayoutFile {
         }
     }
 
-    /// `wait`: returns once the file is written, as at quit.
+    /// Skips a layout the file holds already. `wait`: returns once the file holds `layout`, as
+    /// at quit.
     static func write(_ layout: SavedLayout, wait: Bool = false) {
         let work: @Sendable () -> Void = {
+            guard layout != written else { return }
             do {
                 try JSONEncoder().encode(layout).write(to: url, options: .atomic)
+                written = layout
             } catch {
                 layoutLog.error("\(url.path, privacy: .public) not written: \(error.localizedDescription, privacy: .public)")
             }
