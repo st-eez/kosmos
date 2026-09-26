@@ -309,21 +309,22 @@ final class Controller {
             // Where WindowServer has the window, read before the ledger takes the write as sent,
             // and unknown while a write of Kosmos's still moves it.
             let from = ledger.isWriting(id) ? nil : inventory.windows[id]?.frame
+            if let from, let shownOn = self.display(under: from), fullscreen.contains(shownOn) { continue }
             motions[id] = Slides.Motion(from: from, display: display, pop: id == popping)
         }
         return motions
     }
 
-    /// A Space of the pool shows whatever Space its display shows, so a slide there would draw
-    /// over the fullscreen app. Ceiling: such a display other than the key window's slides
-    /// nothing while it shows its desktop Space; reading each display's current Space would
-    /// tell them apart (docs/geometry.md).
+    private func display(under frame: CGRect) -> DisplayID? {
+        session.monitors.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?.id
+    }
+
+    /// A Space of the pool shows whatever Space its display shows, so a slide to or from there
+    /// would draw over the fullscreen app. Ceiling: such a display other than the key window's
+    /// slides nothing while it shows its desktop Space; reading each display's current Space
+    /// would tell them apart (docs/geometry.md).
     private var fullscreenDisplays: Set<DisplayID> {
-        func display(of id: WindowID) -> DisplayID? {
-            inventory.windows[id].flatMap { row in
-                session.monitors.first { $0.frame.contains(CGPoint(x: row.frame.midX, y: row.frame.midY)) }?.id
-            }
-        }
+        func display(of id: WindowID) -> DisplayID? { inventory.windows[id].flatMap { self.display(under: $0.frame) } }
         let displays = Set(session.parked(because: .fullscreen).compactMap(display))
         guard !displays.isEmpty, case .window(let id)? = key, !inFullscreenSpace, let desktop = display(of: id)
         else { return displays }
