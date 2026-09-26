@@ -348,7 +348,6 @@
   - A window in native fullscreen moves to a Space of its own, and Accessibility has no
     notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
     later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
-  - A `summon` command brings a window to the current workspace on purpose.
 - Kosmos keeps its layout across its own restarts: an install, a crash or a relaunch.
   Before this, quit recovery showed every concealed window and each window at launch joined
   the workspace its display showed, so ChatGPT and Claude on workspace 2, Spotify on 6 and a

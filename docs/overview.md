@@ -173,11 +173,6 @@ files each one covers.
     macOS re-keys after the key window is concealed, and the receipt order of hotkeys and
     activation reports;
   - discovery notifications, minimum sizes, and Secure Input.
-- **Work counts.** Each command counts its AX calls, SkyLight calls, main-actor jobs and
-  status item writes, and tests assert them. Counts are deterministic where milliseconds
-  are noisy. Instructions retired per switch, from the CPU counters, are the lab metric;
-  they are checked against wall-clock time once, as the claude.ai team did when it made
-  its app faster (https://claude.dev/blog/how-we-made-claude-ai-faster/).
 - **Budget.** Kosmos's own work in a switch fits in one frame at 120 Hz, 8.3 ms.
 - **Hardware trials** cover timing, CPU and multi-monitor, because a virtual machine's
   graphics timing is not representative. Signposts mark each phase of a switch, and each
@@ -208,4 +203,12 @@ files each one covers.
 Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles by their edges
 ([geometry.md](geometry.md); a modifier drag resizes them, [modifier-drags.md](modifier-drags.md)), an embedded scripting language,
 window title matchers, marks, persistence across restarts of any state but the layout
-([tree.md](tree.md)), and one macOS Space per workspace.
+([tree.md](tree.md)), and one macOS Space per workspace. Also left out:
+
+- a `summon` command, to bring a window to the current workspace on purpose;
+- hooks that launch programs at a reload or a profile change;
+- work counts: each command counting its AX calls, SkyLight calls, main actor jobs and
+  status item writes for tests to assert, as counts are deterministic where milliseconds
+  are noisy, with instructions retired per switch, from the CPU counters, as the lab
+  metric, checked against wall clock time once, as the claude.ai team did when it made
+  its app faster (https://claude.dev/blog/how-we-made-claude-ai-faster/).

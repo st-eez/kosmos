@@ -15,10 +15,10 @@
   Kosmos that starts next ([hiding.md](hiding.md)). Any other request is a command
   (`Command.parse`).
 - A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
-  SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar applies
-  snapshots by sequence number and never queries Kosmos. A bar reads the snapshot's
-  `version` first: a new version may rename or remove fields, and new fields can appear in
-  any version.
+  SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar asks Kosmos
+  for a snapshot only when it starts, with `kosmos state` ([integrations.md](integrations.md)).
+  A bar reads the snapshot's `version` first: a new version may rename or remove fields,
+  and new fields can appear in any version.
 - A send that fails is tried once more 250 ms later, with the newest snapshot: the zero
   timeout fails while the bar's message queue is full, and a restarting bar has no port
   yet. No failure has been seen, as failures logged at debug level, which the live log
@@ -27,4 +27,3 @@
 - The message has the format SketchyBar's own CLI sends, which SketchyBar documents
   nowhere: the arguments joined by NUL, with one more NUL at the end, in one out of line
   descriptor.
-- Hooks that launch programs exist only for rare events such as reload and profile change.
