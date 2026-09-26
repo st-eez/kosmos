@@ -122,6 +122,20 @@ public struct SlidingWindow: Sendable {
 
     public func isWrite(_ frame: CGRect) -> Bool { frame == target || frame == readBack }
 
+    /// WindowServer reported the window moved, or resized, before the composite that shows it.
+    /// While the write lands, the window is taken to have the write's origin or size, as its
+    /// read back has them once it came, and the next read corrects that. A size write lands
+    /// before its origin (docs/geometry.md). True when the Space's transform must change.
+    public mutating func notified(moved: Bool, at now: Double) -> Bool {
+        guard isAwaiting(at: now) else { return false }
+        let written = readBack ?? target
+        var frame = actual
+        if moved { frame.origin = written.origin } else { frame.size = written.size }
+        guard frame != actual else { return false }
+        (actual, changedAt) = (frame, now)
+        return true
+    }
+
     /// True when the frame is new, so the Space's transform must change.
     public mutating func observed(_ frame: CGRect, at now: Double) -> Bool {
         if frame == readBack, landed == nil { landed = now }

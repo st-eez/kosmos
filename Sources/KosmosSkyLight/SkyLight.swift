@@ -10,6 +10,10 @@ public enum WindowServerEvent: Sendable {
     case created(UInt32)
     case destroyed(UInt32)
     case changed(UInt32)
+    /// Posted as WindowServer takes the window's new frame, before the composite that shows it
+    /// (`kosmos-probe slide-landing`).
+    case moved(UInt32)
+    case resized(UInt32)
     /// As when its app raises it.
     case reordered(UInt32)
     case spaceMembership(UInt32)
@@ -24,7 +28,9 @@ public enum WindowServerEvent: Sendable {
         switch id {
         case 811: guard let w = u32(at: 0) else { return nil }; self = .created(w)
         case 804: guard let w = u32(at: 0) else { return nil }; self = .destroyed(w)
-        case 806, 807, 815, 816: guard let w = u32(at: 0) else { return nil }; self = .changed(w)
+        case 806: guard let w = u32(at: 0) else { return nil }; self = .moved(w)
+        case 807: guard let w = u32(at: 0) else { return nil }; self = .resized(w)
+        case 815, 816: guard let w = u32(at: 0) else { return nil }; self = .changed(w)
         case 808: guard let w = u32(at: 0) else { return nil }; self = .reordered(w)
         // A 64 bit Space id, then the window id.
         case 1325, 1326: guard let w = u32(at: 8) else { return nil }; self = .spaceMembership(w)
@@ -35,7 +41,8 @@ public enum WindowServerEvent: Sendable {
 
     public var window: UInt32? {
         switch self {
-        case .created(let id), .destroyed(let id), .changed(let id), .reordered(let id), .spaceMembership(let id): id
+        case .created(let id), .destroyed(let id), .changed(let id), .moved(let id), .resized(let id), .reordered(let id),
+             .spaceMembership(let id): id
         case .spacesChanged: nil
         }
     }

@@ -39,6 +39,9 @@ final class Inventory {
         /// `changedAt` is nil for a frame read for a creation, a sweep, or a Space change such
         /// as a reveal.
         case frameChange(window: WindowID, old: CGRect, new: CGRect, changedAt: ContinuousClock.Instant?)
+        /// WindowServer's move or resize event, before the read, for a sliding window's
+        /// transform to follow (docs/geometry.md).
+        case frameNotified(window: WindowID, moved: Bool)
         /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
         case reordered(window: WindowID)
         /// WindowServer holds a managed window to another minimum size (docs/geometry.md).
@@ -296,6 +299,12 @@ final class Inventory {
         case .created(let id):
             enqueue(.read(id, .none, at: stamp))
         case .changed(let id):
+            enqueue(.read(id, .changed, at: stamp))
+        case .moved(let id):
+            onEvent?(.frameNotified(window: id, moved: true))
+            enqueue(.read(id, .changed, at: stamp))
+        case .resized(let id):
+            onEvent?(.frameNotified(window: id, moved: false))
             enqueue(.read(id, .changed, at: stamp))
         case .reordered(let id):
             enqueue(.read(id, .changed, at: stamp))

@@ -266,7 +266,10 @@ nonisolated(unsafe) var concealedMoveLines: [(at: Double, text: String)] = []
     let window = child.readWindows()[0]
     var events = 0
     SkyLight.subscribe { event, _ in
-        guard case .changed(let id) = event, id == window else { return }
+        switch event {
+        case .changed(window), .moved(window), .resized(window): break
+        default: return
+        }
         events += 1
         let row = SkyLight.rows([window])?.first.map { "x \(Int($0.frame.minX)) y \(Int($0.frame.minY)) width \(Int($0.frame.width))" }
         note("change event, row \(row ?? "none")")

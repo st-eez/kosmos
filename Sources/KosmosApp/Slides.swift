@@ -81,6 +81,22 @@ final class Slides {
         }
     }
 
+    /// WindowServer reports a move or resize before the composite that shows it, so the
+    /// transform follows at once, where a read comes a WindowServer round trip later
+    /// (docs/geometry.md).
+    func notified(_ id: WindowID, moved: Bool) {
+        let now = CACurrentMediaTime()
+        let frame = onscreen.state.withLock { state -> CGRect? in
+            guard var window = state.windows[id], window.notified(moved: moved, at: now) else { return nil }
+            window.show()
+            state.windows[id] = window
+            return window.actual
+        }
+        if let frame {
+            slideLog.debug("\(id) \(moved ? "moved" : "resized", privacy: .public), taken at \(String(describing: frame), privacy: .public), its transform sent")
+        }
+    }
+
     func confirmed(_ id: WindowID, target: CGRect, readBack: CGRect) {
         let now = CACurrentMediaTime()
         onscreen.state.withLock { $0.windows[id]?.confirmed(target: target, readBack: readBack, at: now) }

@@ -88,6 +88,36 @@ private func move() -> SlidingWindow {
     #expect(readFirst.landed == 0.012)
 }
 
+/// Each notification takes its part of the write, so a size that lands before its origin shows
+/// in place, and the reads then confirm the frame with no transform sent again.
+@Test func aNotificationTakesTheWritesOriginOrSize() {
+    var window = SlidingWindow(space: 7, display: 1, from: left, to: narrow, pop: false, at: 0)
+    let resized = window.notified(moved: false, at: 0.004)
+    #expect(resized && window.actual == CGRect(origin: left.origin, size: narrow.size))
+    let moved = window.notified(moved: true, at: 0.006)
+    let movedAgain = window.notified(moved: true, at: 0.007)
+    let read = window.observed(narrow, at: 0.008)
+    #expect(moved && window.actual == narrow && !movedAgain && !read && window.isAwaiting(at: 0.008))
+    window.confirmed(target: narrow, readBack: narrow, at: 0.009)
+    let afterLanding = window.notified(moved: true, at: 0.010)
+    #expect(window.landed == 0.009 && !afterLanding)
+}
+
+/// A read back the app rounded is the frame WindowServer takes, and a read that finds another
+/// frame than the one taken sends the transform again.
+@Test func aNotificationTakesTheReadBackAndAReadCorrectsIt() {
+    var window = move()
+    let rounded = CGRect(x: 968, y: 35, width: 940, height: 1035)
+    window.confirmed(target: right, readBack: rounded, at: 0.003)
+    let moved = window.notified(moved: true, at: 0.004)
+    let resized = window.notified(moved: false, at: 0.004)
+    #expect(moved && resized && window.actual == rounded)
+    let read = window.observed(right, at: 0.005)
+    #expect(read && window.actual == right && window.landed == nil)
+    let late = window.notified(moved: true, at: SlidingWindow.landingWait)
+    #expect(!late)
+}
+
 @Test func aSlideOverHoldsItsEndUntilTheWriteLands() {
     var window = move()
     var done = window.step(at: 0.1)
