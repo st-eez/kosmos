@@ -62,9 +62,9 @@
     AeroSpace's monitor patterns by name.
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
     display in the direction at the edge of the workspace. `focus` is at the edge when no
-    window, floating or tiled, stands in the direction ([tree.md](tree.md)), and then enters
-    that display's workspace at the edge it crosses, as tree.md says; `move` moves a tiled
-    window there and follows it. A move is
+    window, floating or tiled, stands in the direction ([tree.md](tree.md)), and then focuses
+    the window of that display's workspace at the edge it crosses that overlaps the focused
+    window most, as tree.md says; `move` moves a tiled window there and follows it. A move is
     at the edge when the window has no sibling in the direction and no container above its
     own runs along the direction, where AeroSpace's `moveOut` reaches the workspace and a
     plain `move` wraps the root in a new root along the direction, as AeroSpace and i3 do.

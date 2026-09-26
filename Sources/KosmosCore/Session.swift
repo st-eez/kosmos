@@ -380,8 +380,11 @@ public struct Session: Sendable {
         case .focus(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command, frame: frame) { return plan }
             guard let name = workspace(on: .direction(direction), wrapAround: boundaries == .allMonitorsWrapping) else { return nil }
-            let monitor = monitor(of: name)
-            workspaces[name]!.enter(direction, frame: frame, in: monitor.area, gaps: monitor.gaps, minimums: minimums)
+            let here = monitor(of: focusedWorkspace), there = monitor(of: name)
+            let source = focused.flatMap {
+                workspaces[focusedWorkspace]!.onScreen(frame, in: here.area, gaps: here.gaps, minimums: minimums)[$0]
+            }
+            workspaces[name]!.enter(direction, from: source, frame: frame, in: there.area, gaps: there.gaps, minimums: minimums)
             return focusShown(name)
         case .move(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command) { return plan }

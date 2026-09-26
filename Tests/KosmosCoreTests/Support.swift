@@ -58,10 +58,10 @@ extension Workspace {
         focus(direction, from: window, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
     }
 
-    /// `enter` on `screen` with `deskGaps`, with the floating windows at `frames`, and the
-    /// window it focuses.
-    mutating func enter(_ direction: Direction, frames: [WindowID: CGRect] = [:]) -> WindowID? {
-        enter(direction, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
+    /// `enter` from `source` on `screen` with `deskGaps`, with the floating windows at `frames`,
+    /// and the window it focuses.
+    mutating func enter(_ direction: Direction, from source: CGRect? = nil, frames: [WindowID: CGRect] = [:]) -> WindowID? {
+        enter(direction, from: source, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
         return focusedWindow
     }
 

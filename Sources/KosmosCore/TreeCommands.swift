@@ -16,18 +16,59 @@ extension Workspace {
                         in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
         let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
         guard let path = seen.neighbor(of: window, direction) else { return nil }
-        let target = seen.mostRecentWindow(in: seen.root.node(at: path))
+        let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
+        let target = seen.nearest(in: seen.root.node(at: path), direction, to: frames[window], frames: frames)
         focus(target)
         return target
     }
 
-    /// Focuses the window at the edge a focus in the direction enters by from another display
-    /// (docs/tree.md). A fullscreen window covers every edge, so its workspace keeps its focus.
-    mutating func enter(_ direction: Direction, frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
-                        minimums: [WindowID: CGSize]) {
+    /// Focuses the window a focus in the direction reaches as it enters from `source`, the
+    /// frame it leaves on another display (docs/tree.md). A fullscreen window covers every
+    /// edge, so its workspace keeps its focus.
+    mutating func enter(_ direction: Direction, from source: CGRect?, frame: (WindowID) -> CGRect?, in rect: CGRect,
+                        gaps: Gaps, minimums: [WindowID: CGSize]) {
         let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
         guard fullscreenWindow == nil, !seen.root.children.isEmpty else { return }
-        focus(seen.edgeWindow(of: seen.root, direction))
+        focus(seen.nearest(in: Node(kind: .container(seen.root), weight: 1), direction, to: source,
+                           frames: onScreen(frame, in: rect, gaps: gaps, minimums: minimums)))
+    }
+
+    /// Tiles where the layout puts them, and floating windows where `frame` does.
+    func onScreen(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
+                  minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
+        var frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        for window in floating { frames[window] = frame(window) }
+        return frames
+    }
+
+    /// Of the windows at the edge of `node` that a focus in the direction enters by, the one
+    /// whose span across the direction overlaps `source` most, else the most recently focused
+    /// of those within a point of it, since frames have whole point edges (docs/tree.md).
+    private func nearest(in node: Node, _ direction: Direction, to source: CGRect?, frames: [WindowID: CGRect]) -> WindowID {
+        let span: (CGRect) -> (CGFloat, CGFloat) = direction.orientation == .horizontal ? { ($0.minY, $0.maxY) } : { ($0.minX, $0.maxX) }
+        func overlap(_ window: WindowID) -> CGFloat {
+            guard let source, let frame = frames[window] else { return 0 }
+            let (a, b) = (span(source), span(frame))
+            return max(0, min(a.1, b.1) - max(a.0, b.0))
+        }
+        let edge = edgeWindows(of: node, direction)
+        let most = edge.map(overlap).max()!
+        let near = edge.filter { overlap($0) >= most - 1 }
+        let latest = near.map { stamps[$0] ?? 0 }.max()!
+        return near.last { stamps[$0] ?? 0 == latest }!
+    }
+
+    /// Along the direction a container gives its first or last child, and across it every
+    /// child.
+    private func edgeWindows(of node: Node, _ direction: Direction) -> [WindowID] {
+        switch node.kind {
+        case .window(let id):
+            [id]
+        case .container(let container) where container.orientation == direction.orientation:
+            edgeWindows(of: direction.isForward ? container.children.first! : container.children.last!, direction)
+        case .container(let container):
+            container.children.flatMap { edgeWindows(of: $0, direction) }
+        }
     }
 
     /// The workspace with each floating window that `frame` places tiled, for a focus in a
@@ -62,8 +103,8 @@ extension Workspace {
         return seen
     }
 
-    /// With the window `focus` reaches in the direction, each taking the other's place and
-    /// share.
+    /// With the most recently focused window of the neighbor `focus` finds in the direction,
+    /// each taking the other's place and share.
     @discardableResult
     mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
@@ -302,8 +343,7 @@ extension Workspace {
         return true
     }
 
-    /// The window a move lands beside, or a focus from another display reaches, when it enters
-    /// `container`.
+    /// The window a move lands beside when it enters `container`.
     private func edgeWindow(of container: Container, _ direction: Direction) -> WindowID {
         let child: Node
         if container.orientation == direction.orientation {

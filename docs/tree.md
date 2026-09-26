@@ -39,12 +39,18 @@
   Stopping there does as much as the key press can, so repeated presses reach the limit
   exactly, and the weights never ask for less than a window takes.
 - `focus` in a direction goes up the tree to the nearest container along the direction
-  with a sibling on that side, then into that sibling by focus order, as i3's
-  `get_tree_next` does. Focus order takes the child holding the most recently focused
-  window, the last one on a tie, as AeroSpace's `mostRecentChild` does. The
-  workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
-  (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard
-  reaches a floating window a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).
+  with a sibling on that side, as i3's `get_tree_next` does, then to the window over there.
+  The sibling's windows at its edge facing the focused window are the first or last child
+  of each container along the direction and every child of each container across it. Of
+  those, the one whose span across the direction overlaps the focused window's most takes
+  the focus. Overlaps within a point tie, since frames have whole point edges and the two
+  halves of an odd length differ by one, and a tie goes to the most recently focused
+  window, or the last one when none of them was focused. So from Ghostty left of Chrome
+  over Finder, with Finder used last, `focus right` reaches Finder from a Ghostty at full
+  height, and Chrome from a Ghostty in the top half. The workspace's floating windows count
+  as tiles, as AeroSpace's `focus` counts them (FocusCommand.swift,
+  `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard reaches a floating window
+  a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).
   - Each floating window stands in the container of the tile under its center, just
     before that tile, or just after it when its center is at or past the tile's center
     along the container. The tile under a center is the one whose share of the tiling
@@ -61,9 +67,10 @@
     pointer's center uses too ([focus-follows-mouse.md](focus-follows-mouse.md)), so the command waits on no read. Only the
     focused workspace's floating windows count, and parked windows never do: minimized,
     hidden with their app or in native fullscreen.
-  - Into a container, Kosmos goes by each window's own focus order. AeroSpace's temporary
-    placement marks each floating window most recently focused, which its source calls a
-    bug ("floating windows break mru").
+  - A floating window's place in the tree decides only whether it stands at the edge; its
+    overlap is its own frame's. A tie goes by each window's own focus order. AeroSpace's
+    temporary placement marks each floating window most recently focused, which its source
+    calls a bug ("floating windows break mru").
   - Focusing a floating window raises it and centers the pointer on it as any focus does
     ([focus.md](focus.md) and [focus-follows-mouse.md](focus-follows-mouse.md)).
   - Hyprland's `movefocus` looks among windows of the focused window's kind first: from a
@@ -75,28 +82,35 @@
     here, where [overview.md, section 1](overview.md#1-goal-and-constraints) would follow Omarchy, because only AeroSpace's rule reaches that
     window. Steve chose it.
   - A focus that crosses to another display ([displays.md](displays.md)) enters the
-    workspace there at the edge it crosses. Down the tree it takes the first or last child
-    of each container along the direction, and the child holding the most recently focused
-    window of each container across it, as `move` enters a sibling container. That
+    workspace there the same way, with that whole workspace as the sibling and the frame
+    the focused window has on its own display, so it lands at the edge it crosses. That
     workspace's floating windows count as tiles, as above. A workspace with a fullscreen
     window keeps its focus, since that window covers every edge, and an empty workspace
-    takes the focus with no window.
-  - Before this, the focus entered by focus order alone. On September 25, 2026 the left
-    panel showed Discord and the main panel Helium left of Outlook. From Outlook, Command-Tab
-    to Discord and then `focus right` reached Outlook, the most recently focused, where
-    Helium stood at the edge (live). Hyprland, which Steve uses on Omarchy, reaches Helium
-    there. Its `movefocus` looks at the windows of the workspaces other displays show too,
-    and takes one whose edge meets the focused window's (`CWindowQuery::inDirection` at
-    e368c13). AeroSpace enters at the edge only when `wrap-around-all-monitors` wraps to
-    the display at the other end (`hitAllMonitorsOuterFrameBoundaries` marks
-    `findLeafWindowRecursive(snappedTo: direction.opposite)` most recent). Crossing to the
-    next display it focuses the workspace's most recently focused window through
-    `focusWorkspace`, so it too reached Outlook (FocusCommand.swift and focus.swift in
-    aerospace-steez at 40b2b44d, which upstream 39e51904 matches). Kosmos enters at the
-    edge in both cases.
-  - Within a workspace AeroSpace enters the sibling at its near edge the same way
-    (`findLeafWindowRecursive(snappedTo: direction.opposite)` in `FocusCommand.run`), where
-    Kosmos keeps i3's focus order.
+    takes the focus with no window. From an empty workspace no window overlaps, and the
+    windows at the edge tie.
+  - Before this, the focus went into the sibling by focus order, the child holding the
+    most recently focused window at each level, and into another display's workspace by
+    its most recently focused window. On September 25, 2026 the left panel showed Discord
+    and the main panel Helium left of Outlook. From Outlook, Command-Tab to Discord and then
+    `focus right` reached Outlook, where Helium stood at the edge (live). Steve asked for the
+    window over there, within a workspace too.
+  - Hyprland's `movefocus` looks at the windows of the workspaces every display shows, and
+    takes one whose edge meets the focused window's (within 2 px, or overlapping it by at
+    most half the smaller size), with a span across the direction that overlaps it. By default it takes the most recently focused of those, and
+    with `binds:focus_preferred_method` 1 the one that overlaps most, the first found on a
+    tie (`CWindowQuery::inDirection` at e368c13). Kosmos takes the one that overlaps most,
+    and the most recently focused on a tie.
+  - AeroSpace goes into the sibling by `findLeafWindowRecursive(snappedTo:
+    direction.opposite)` (FocusCommand.swift in aerospace-steez at 40b2b44d, which upstream
+    39e51904 matches). It takes the first or last child along the direction, and across it
+    the child holding the most recently focused window, whatever its overlap. From a Ghostty
+    in the top half it reaches Finder, where Kosmos reaches Chrome. Its most recent child is
+    the one holding the most recently focused window anywhere below, where Kosmos compares
+    the edge windows' own focus. It enters another display's workspace that way only when
+    `wrap-around-all-monitors` wraps to the display at the other end
+    (`hitAllMonitorsOuterFrameBoundaries`). Crossing to the next display it focuses the
+    workspace's most recently focused window through `focusWorkspace` (focus.swift), so it
+    too reached Outlook.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
   workspace at their saved position, and Kosmos follows them to that workspace, as it does
   for Command-Tab. For an app that unhides, it follows the window the app keys if that

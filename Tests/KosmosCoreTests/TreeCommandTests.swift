@@ -25,15 +25,33 @@ import Testing
     #expect(workspace.focus(.down, from: 4) == nil)
 }
 
-@Test func focusDescendsByFocusOrder() {
+/// From 1, 2 and 3 face it and overlap it equally, so the more recently focused wins. 4 is
+/// not at the edge, though focused last (docs/tree.md).
+@Test func focusTakesTheLargestOverlapAtTheEdgeThenFocusOrder() {
     var workspace = Workspace("h[1 v[2 h[3 4]]]")
-    #expect(workspace.focus(.right, from: 1) == 4)
     workspace.focus(2)
     workspace.focus(1)
     #expect(workspace.focus(.right, from: 1) == 2)
     workspace.focus(3)
+    workspace.focus(4)
     workspace.focus(1)
     #expect(workspace.focus(.right, from: 1) == 3)
+}
+
+/// Steve's example: Ghostty 1 left of Chrome 2 over Finder 3, with Finder used last.
+@Test func focusReachesTheWindowOverThere() {
+    var workspace = Workspace("h[1 v[2 3]]")
+    workspace.focus(3)
+    workspace.focus(1)
+    #expect(workspace.focus(.right, from: 1) == 3)
+    // Where the halves differ by a point they still tie.
+    #expect(workspace.focus(.right, from: 1, frame: { _ in nil }, in: CGRect(x: 0, y: 0, width: 1000, height: 601),
+                             gaps: deskGaps, minimums: [:]) == 3)
+    // Ghostty in the top half faces Chrome alone.
+    var stacked = Workspace("h[v[1 4] v[2 3]]")
+    stacked.focus(3)
+    stacked.focus(1)
+    #expect(stacked.focus(.right, from: 1) == 2)
 }
 
 @Test func focusIgnoresWindowsOutsideTheTree() {
@@ -91,29 +109,39 @@ import Testing
     }
 }
 
-/// 9 counts by its own focus, older than 3's (docs/tree.md).
-@Test func focusDescendsByEachWindowsOwnFocusOrder() {
+/// 9 overlaps 1 as much as 2 and 3 do, and counts by its own focus, older than 3's
+/// (docs/tree.md).
+@Test func focusTiesGoByEachWindowsOwnFocusOrder() {
     var workspace = Workspace("h[1 v[2 3]]")
     workspace.floating = [9]
     workspace.focus(9)
     workspace.focus(3)
-    let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 150, width: 200, height: 200)]
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 10, width: 200, height: 285)]
     #expect(workspace.focus(.right, from: 1, frames: frames) == 3)
 }
 
 // MARK: Focus entering from another display
 
-/// Entered from the left, v[1 h[2 3]] gives 1 when it was focused last, else 2 at the near
-/// edge, though 3 was focused last (docs/tree.md).
-@Test func enteringTakesTheNearEdgeAlongAndFocusOrderAcross() {
+/// Entered from the left, v[1 h[2 3]] offers 1 and 2 at its edge, and never 3, though
+/// focused last (docs/tree.md).
+@Test func enteringTakesTheLargestOverlapAtTheEdge() {
     var workspace = Workspace("v[1 h[2 3]]")
+    let top = CGRect(x: -500, y: 0, width: 400, height: 250), bottom = CGRect(x: -500, y: 350, width: 400, height: 250)
+    let whole = CGRect(x: -500, y: 0, width: 400, height: 600)
     workspace.focus(3)
+    #expect(workspace.enter(.right, from: top) == 1)
+    workspace.focus(3)
+    #expect(workspace.enter(.right, from: bottom) == 2)
+    // Overlapping both equally, or with no window to leave, the more recently focused.
+    #expect(workspace.enter(.right, from: whole) == 2)
     workspace.focus(1)
     #expect(workspace.enter(.right) == 1)
-    workspace.focus(3)
-    #expect(workspace.enter(.right) == 2)
-    #expect(workspace.enter(.down) == 1)
-    #expect(workspace.enter(.up) == 2)
+    // Along the root, the first or last child alone.
+    #expect(workspace.enter(.up, from: CGRect(x: 0, y: 700, width: 1000, height: 100)) == 2)
+    // Chrome 2 beside Finder 3, entered from the left: Chrome, though Finder was used last.
+    var beside = Workspace("h[2 3]")
+    beside.focus(3)
+    #expect(beside.enter(.right, from: whole) == 2)
 }
 
 @Test func enteringCountsFloatingWindowsAsTiles() {
