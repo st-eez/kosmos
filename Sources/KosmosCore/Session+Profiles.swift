@@ -10,7 +10,6 @@ extension Session {
         for window in lifted { putBack(window) }
         lifted = []
         let focusedBefore = focusedDisplay
-        var carried: [WindowID] = []
         for name in newNames where workspaces[name] == nil {
             let monitor = newMonitors.first { $0.id == newAssigned[name] } ?? newMonitors[0]
             workspaces[name] = mergedAway.removeValue(forKey: name).map { restored($0, as: name, on: monitor) } ?? Workspace()
@@ -20,7 +19,6 @@ extension Session {
             mergedAway[name] = workspaces[name]
             for window in allWindows(of: name) {
                 carry(window, to: target)
-                carried.append(window)
                 if mergedFrom[window] == nil { mergedFrom[window] = name }
             }
             workspaces[name] = nil
@@ -31,8 +29,6 @@ extension Session {
         monitors = Monitor.arranged(newMonitors)
         assigned = connected(newAssigned)
         arrange(focusing: focusedWorkspace, near: focusedBefore)
-        // After `arrange`, which settles the display each workspace lays out on.
-        for window in carried { fit(window, in: home[window]!) }
     }
 
     /// The windows return in the saved order, since a return to a changed tree depends on the

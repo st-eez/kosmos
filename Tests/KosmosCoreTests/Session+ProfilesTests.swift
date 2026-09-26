@@ -47,16 +47,20 @@ import Testing
         #expect(s.shownWorkspaces == ["b", "a"])
     }
 
-    @Test func aWindowAProfileCarriesGetsItsMinimumWhereItFits() {
+    /// A merge fits nothing, so a display unplugged and plugged back in leaves the split as it
+    /// was, where fitting each carried window moved it further each time.
+    @Test func aMergeAndItsReturnLeaveTheSplitWithMinimumsAsItWas() {
         var s = Session(names: ["a", "b"], monitors: [Desk.main])
         _ = s.add(1)
-        _ = s.add(2, to: "b", minimum: CGSize(width: 1200, height: 0))
-        s.reconfigure(names: ["a"], monitors: [Desk.main], assigned: [:], merge: ["b": "a"])
-        #expect(s.workspaces["a"]!.tree == "h[1 2]")
-        // 2 takes 1200 of the 1900 points between the gaps, where an even split gave it 950.
-        let frames = s.frames(of: "a")
-        #expect(frames[1] == CGRect(x: 10, y: 10, width: 700, height: 1060))
-        #expect(frames[2] == CGRect(x: 710, y: 10, width: 1200, height: 1060))
+        _ = s.add(2, minimum: CGSize(width: 800, height: 0))
+        _ = s.add(3, to: "b", minimum: CGSize(width: 1000, height: 0))
+        let before = s.workspaces["a"]!
+        for _ in 0..<3 {
+            s.reconfigure(names: ["a"], monitors: [Desk.main], assigned: [:], merge: ["b": "a"])
+            #expect(s.workspaces["a"]!.tree == "h[1 2 3]")
+            s.reconfigure(names: ["a", "b"], monitors: [Desk.main], assigned: [:], merge: [:])
+            #expect(s.workspaces["a"]!.detailed == before.detailed)
+        }
     }
 
     @Test func theLaptopProfileMergesTheWorkspacesItLeavesOut() {

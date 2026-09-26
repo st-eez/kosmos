@@ -33,8 +33,8 @@
     at or below the tiling rectangle's, which wins for a window more than about twice as
     tall as the room below that top.
 - Kosmos gives a window its minimum where it chooses a split itself: a new window's
-  placement, a window moved to another workspace or display, carried there by a profile's
-  merge or dropped after a drag, `move`, `join-with` and `layout`. Where it fits, the
+  placement, a window moved to another workspace or display or dropped after a drag,
+  `move`, `join-with` and `layout`. Where it fits, the
   window grows to its minimum in its container, and the others give the room by weight,
   each keeping the larger of its own minimum and 5% of the container, the floor `resize`
   keeps (below), or what it has when that is less. So a split the user squeezed past a
@@ -44,8 +44,9 @@
   (layout_engine/systems/constraints.rs), and the weights take them. Where the minimums
   do not fit, the weights stay and the windows spill; rift scales such minimums down in
   proportion, and Steve asked for them only where they fit. A minimum Kosmos learns or
-  WindowServer changes later, a window returning to its place, `swap` and `resize` leave
-  the split as it is.
+  WindowServer changes later, a window returning to its place, a profile's merge, `swap`
+  and `resize` leave the split as it is. A merge's windows leave again by a proportional
+  normalize, so a display unplugged and plugged back in comes back to the split it had.
   - On Steve's main panel, 1900 pt between the outer gaps, Helium is held to 785 pt and
     Outlook to 1145. With the 10 pt gap between them that is 1940 pt, so Outlook opening
     beside Helium splits the panel equally and goes 200 pt past its right edge. A window
