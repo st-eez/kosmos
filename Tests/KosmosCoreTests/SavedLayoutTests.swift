@@ -221,6 +221,22 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(after.workspace(of: 12) == "1")
     }
 
+    /// A profile that leaves a workspace out before its saved windows are back sends them where
+    /// they would go at any launch, and listing it again brings none back.
+    @Test func pendingWindowsOfAWorkspaceMergedAwayGoAsAtAnyLaunch() {
+        var after = Self.restored(Self.desk().savedLayout())
+        var assigned = Desk.home
+        for name in ["8", "9", "0"] { assigned[name] = nil }
+        let fewer = Desk.names.filter { $0 != "8" }
+        after.reconfigure(names: fewer, monitors: [Desk.main, Desk.left], assigned: assigned, merge: ["8": "3"])
+        #expect(after.savedWorkspace(of: 80) == nil)
+        _ = after.add(80, at: CGPoint(x: 500, y: 500))
+        #expect(after.workspace(of: 80) == "1")
+        after.reconfigure(names: Desk.names, monitors: [Desk.builtIn, Desk.main, Desk.left], assigned: Desk.home, merge: [:])
+        #expect(after.workspaces["8"]!.pending.isEmpty && after.workspace(of: 80) == "1")
+        #expect(after.validate().isEmpty)
+    }
+
     @Test func theSavedFocusIsAskedForWhenItsWindowComesBack() {
         var before = Session(names: ["a", "b"], monitors: [Desk.main])
         before.place("h[1 2 3]", on: "a")

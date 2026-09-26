@@ -112,17 +112,11 @@ extension Session {
         return Plan(frames: frames(of: changed))
     }
 
-    mutating func forgetPending(_ window: WindowID) {
-        for name in names { workspaces[name]!.pending.removeAll { $0.window == window } }
-        for name in mergedAway.keys { mergedAway[name]!.pending.removeAll { $0.window == window } }
-    }
-
     /// Admits a window the restored layout has on `name`. It returns to its place with no fit,
     /// as a returning window does, and Kosmos asks to focus it again when it was focused.
     mutating func admitSaved(_ window: WindowID, to name: String, minimum: CGSize, parked reason: ParkReason?) -> Plan {
         let monitor = monitor(of: name)
         workspaces[name]!.admit(window, parked: reason != nil, in: monitor.area, gaps: monitor.gaps)
-        forgetPending(window)
         home[window] = name
         if minimum != .zero { constrained[window] = minimum }
         if let reason { parkReasons[window] = reason }

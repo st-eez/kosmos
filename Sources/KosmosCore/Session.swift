@@ -216,7 +216,6 @@ public struct Session: Sendable {
         if let saved = savedWorkspace(of: window) {
             return admitSaved(window, to: saved, minimum: minimum, parked: reason)
         }
-        forgetPending(window)
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if minimum != .zero { constrained[window] = minimum }
         if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
@@ -254,7 +253,7 @@ public struct Session: Sendable {
     public mutating func replace(_ old: WindowID, with new: WindowID, minimum: CGSize = .zero) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
-        forgetPending(new)
+        if let saved = savedWorkspace(of: new) { workspaces[saved]!.pending.removeAll { $0.window == new } }
         let parked = isParked(old)
         var changed: Set<String> = [name]
         if let current = home.removeValue(forKey: new) {

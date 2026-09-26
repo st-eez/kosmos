@@ -347,9 +347,9 @@
   - Left out: the workspaces a profile merged away with the windows that came from them,
     the minimums Kosmos learned ([geometry.md](geometry.md)), and the workspace
     `workspace-back-and-forth` returns to. So after a restart under a profile that leaves a
-    saved workspace out, its windows go where they would at any launch, and a later profile
-    that lists the workspace does not bring them back. Saving `mergedAway` and `mergedFrom`
-    would.
+    saved workspace out, or a profile change that leaves it out before its windows are back,
+    its windows go where they would at any launch, and a later profile that lists the
+    workspace does not bring them back. Saving `mergedAway` and `mergedFrom` would.
 - Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
   id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
   window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325
