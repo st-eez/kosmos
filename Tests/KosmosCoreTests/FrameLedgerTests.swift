@@ -146,3 +146,47 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     ledger.observeAfterConfirm(1, frame: resized)
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
 }
+
+@Test func aWriteLandsOnceItsReadBackAndARowShowIt() {
+    var ledger = FrameLedger()
+    let rounded = CGRect(x: 100, y: 0, width: 801, height: 600)
+    _ = ledger.writes(for: [1: moved])
+    #expect(!ledger.isLanding(1, at: t0))
+    ledger.sent(1, target: moved, at: t0)
+    #expect(ledger.isLanding(1, at: t0))
+    // The row before the write lands, then the read back, which the app rounded.
+    var landed = ledger.seen(1, frame: a)
+    #expect(!landed)
+    ledger.confirm(1, target: moved, readBack: rounded, at: t0)
+    landed = ledger.seen(1, frame: moved)
+    #expect(!landed)
+    #expect(ledger.isLanding(1, at: t0))
+    landed = ledger.seen(1, frame: rounded)
+    #expect(landed)
+    #expect(!ledger.isLanding(1, at: t0))
+}
+
+@Test func onlyTheNewestWriteSentCanLand() {
+    var ledger = FrameLedger()
+    _ = ledger.writes(for: [1: a])
+    ledger.sent(1, target: a, at: t0)
+    _ = ledger.writes(for: [1: moved])
+    ledger.sent(1, target: moved, at: t0)
+    ledger.confirm(1, target: a, readBack: a, at: t0)
+    var landed = ledger.seen(1, frame: a)
+    #expect(!landed)
+    ledger.confirm(1, target: moved, readBack: moved, at: t0)
+    landed = ledger.seen(1, frame: moved)
+    #expect(landed)
+}
+
+@Test func aWriteNoRowShowsCountsAsLandedAfterTheAccessibilityTimeout() {
+    var ledger = FrameLedger()
+    _ = ledger.writes(for: [1: a])
+    ledger.sent(1, target: a, at: t0)
+    #expect(ledger.isLanding(1, at: t0 + FrameLedger.landingWait - .milliseconds(1)))
+    #expect(!ledger.isLanding(1, at: t0 + FrameLedger.landingWait))
+    ledger.sent(1, target: a, at: t0)
+    ledger.forget(1)
+    #expect(!ledger.isLanding(1, at: t0))
+}
