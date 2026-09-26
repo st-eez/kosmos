@@ -1,0 +1,1968 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts -Djavax.net.ssl.trustStoreType=JKS -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=40981 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|api.anthropic.com|api-staging.anthropic.com|api-pr-preview.anthropic.com|mcp-proxy.anthropic.com|mcp-proxy-staging.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes=
+TLC2 Version 2026.09.25.163503 (rev: 8f4bc8b)
+Running breadth-first search Model-Checking with fp 26 and seed -510111931167146633 with 4 workers on 4 cores with 3042MB heap and 64MB offheap memory [pid: 948] (Linux 6.18.44-fc-v37 amd64, Ubuntu 21.0.10 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/user/kosmos/tla/MC.tla
+Parsing file /home/user/kosmos/tla/Kosmos.tla
+Parsing file /tmp/tlc-3701346594993227966/Integers.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-3701346594993227966/Sequences.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-3701346594993227966/FiniteSets.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-3701346594993227966/TLC.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-3701346594993227966/Naturals.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Kosmos
+Semantic processing of module MC
+Linting of module Kosmos
+Linting of module MC
+Starting... (2026-09-26 03:55:48)
+Computing initial states...
+Finished computing initial states: 2 distinct states generated at 2026-09-26 03:55:48.
+Progress(12) at 2026-09-26 03:55:51: 154,283 states generated (154,283 s/min), 90,540 distinct states found (90,540 ds/min), 34,023 states left on queue.
+Progress(25) at 2026-09-26 03:56:51: 7,187,797 states generated (7,033,514 s/min), 3,053,838 distinct states found (2,963,298 ds/min), 547,751 states left on queue.
+Progress(28) at 2026-09-26 03:57:52: 14,279,929 states generated (7,092,132 s/min), 5,801,595 distinct states found (2,747,757 ds/min), 906,441 states left on queue.
+Progress(30) at 2026-09-26 03:58:52: 21,396,538 states generated (7,116,609 s/min), 8,446,004 distinct states found (2,644,409 ds/min), 1,247,635 states left on queue.
+Progress(32) at 2026-09-26 03:59:52: 28,513,994 states generated (7,117,456 s/min), 11,076,058 distinct states found (2,630,054 ds/min), 1,559,195 states left on queue.
+Progress(34) at 2026-09-26 04:00:52: 35,719,337 states generated (7,205,343 s/min), 13,689,968 distinct states found (2,613,910 ds/min), 1,850,539 states left on queue.
+Progress(35) at 2026-09-26 04:01:52: 43,010,808 states generated (7,291,471 s/min), 16,299,359 distinct states found (2,609,391 ds/min), 2,096,746 states left on queue.
+Error: Invariant HonorsLastActivation is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ history = <<>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w2"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 0
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w2"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 0
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {}
+/\ goal = <<1>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 2: <Click line 1136, col 5 to line 1143, col 42 of module Kosmos>
+/\ history = <<-1>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w2"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 0
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w2"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |->
+      << [ w |-> "w1",
+           t |-> 1,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 0,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >>,
+  B |-> <<>> ]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 1
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w1"}
+/\ goal = <<1>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 3: <WorkerAct("A") line 968, col 8 to line 980, col 27 of module Kosmos>
+/\ history = <<-1>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w2"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 0
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = << [ w |-> "w1",
+     t |-> 1,
+     ts |-> 0,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> TRUE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ] >>
+/\ seenKey = "w2"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 1
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w1"}
+/\ goal = <<1>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 4: <PostReports line 1030, col 5 to line 1032, col 24 of module Kosmos>
+/\ history = <<-1>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w2"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 0
+/\ mq = <<"report">>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w2"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 1
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w1"}
+/\ goal = <<1>>
+/\ lastRep = -1
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 5: <ExecMain line 679, col 5 to line 681, col 24 of module Kosmos>
+/\ history = <<-1>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<[w |-> "w1", g |-> 1, c |-> FALSE]>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 1
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w1"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 6: <CmdTab line 1146, col 5 to line 1154, col 42 of module Kosmos>
+/\ history = <<-1, -2>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<[w |-> "w1", g |-> 1, c |-> FALSE]>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<>>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 2
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 7: <FocusStart line 731, col 8 to line 739, col 27 of module Kosmos>
+/\ history = <<-1, -2>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [w |-> "w1", r |-> 1, g |-> 1, st |-> "wait", front |-> FALSE]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "start", front |-> FALSE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 2
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 8: <WorkerStart("A") line 829, col 8 to line 836, col 27 of module Kosmos>
+/\ history = <<-1, -2>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [w |-> "w1", r |-> 1, g |-> 1, st |-> "wait", front |-> FALSE]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "read", front |-> FALSE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 2
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 9: <WorkerRead("A") line 849, col 8 to line 860, col 27 of module Kosmos>
+/\ history = <<-1, -2>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [w |-> "w1", r |-> 1, g |-> 1, st |-> "wait", front |-> FALSE]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "raise", front |-> FALSE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 2
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 10: <WorkerRaise("A") line 875, col 8 to line 891, col 27 of module Kosmos>
+/\ history = <<-1, -2>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [w |-> "w1", r |-> 1, g |-> 1, st |-> "wait", front |-> FALSE]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 2
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 11: <UserBackground line 1243, col 5 to line 1249, col 42 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w2"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w3", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [w |-> "w1", r |-> 1, g |-> 1, st |-> "wait", front |-> FALSE]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [ A |->
+      << [ w |-> "w3",
+           t |-> 3,
+           o |-> [bg |-> TRUE, user |-> FALSE, lone |-> FALSE],
+           ehid |-> TRUE,
+           lost |-> FALSE ] >>,
+  B |-> <<>> ]
+/\ an = <<>>
+/\ clk = 2
+/\ kact = -1
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 12: <FocusDecide line 801, col 8 to line 812, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "act", ts |-> 2, i |-> 4]>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |->
+      << [ w |-> "w1",
+           t |-> 3,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 3,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ],
+         [w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE] >>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [ A |->
+      << [ w |-> "w3",
+           t |-> 3,
+           o |-> [bg |-> TRUE, user |-> FALSE, lone |-> FALSE],
+           ehid |-> TRUE,
+           lost |-> FALSE ],
+         [ w |-> "w1",
+           t |-> 3,
+           o |-> [bg |-> FALSE, user |-> FALSE, lone |-> FALSE],
+           ehid |-> FALSE,
+           lost |-> FALSE ] >>,
+  B |-> <<>> ]
+/\ an = <<>>
+/\ clk = 4
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 13: <ObserverPost("A") line 1001, col 8 to line 1012, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "act", ts |-> 2, i |-> 4]>>
+/\ evs = << [ w |-> "w3",
+     t |-> 3,
+     ts |-> 4,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> TRUE,
+     prev |-> "none" ] >>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |->
+      << [ w |-> "w1",
+           t |-> 3,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 3,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ],
+         [w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE] >>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [ A |->
+      << [ w |-> "w1",
+           t |-> 3,
+           o |-> [bg |-> FALSE, user |-> FALSE, lone |-> FALSE],
+           ehid |-> FALSE,
+           lost |-> FALSE ] >>,
+  B |-> <<>> ]
+/\ an = <<>>
+/\ clk = 5
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 14: <ObserverPost("A") line 1001, col 8 to line 1012, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "act", ts |-> 2, i |-> 4]>>
+/\ evs = << [ w |-> "w3",
+     t |-> 3,
+     ts |-> 4,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> TRUE,
+     prev |-> "none" ],
+   [ w |-> "w1",
+     t |-> 3,
+     ts |-> 5,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ] >>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |->
+      << [ w |-> "w1",
+           t |-> 3,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 3,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ],
+         [w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE] >>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 6
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 15: <WorkerAct("A") line 968, col 8 to line 980, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "act", ts |-> 2, i |-> 4]>>
+/\ evs = << [ w |-> "w3",
+     t |-> 3,
+     ts |-> 4,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> TRUE,
+     prev |-> "none" ],
+   [ w |-> "w1",
+     t |-> 3,
+     ts |-> 5,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ],
+   [ w |-> "w1",
+     t |-> 3,
+     ts |-> 3,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> TRUE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ] >>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 6
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 16: <PostReports line 1030, col 5 to line 1032, col 24 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<"report">>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "act", ts |-> 2, i |-> 4]>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 6
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 17: <ExecMain line 679, col 5 to line 681, col 24 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 1
+/\ onDisplay = <<1>>
+/\ focus = "w1"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = << [ w |-> "w3",
+     t |-> 3,
+     ts |-> 4,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> TRUE,
+     prev |-> "w1" ] >>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 0
+/\ gen = 1
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 6
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 0
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 18: <Expire line 1051, col 5 to line 1055, col 24 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<"reveal", "conceal", "barrier">>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "post", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 6
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 19: <WorkerPost("A") line 903, col 8 to line 909, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<"reveal", "conceal", "barrier">>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "land", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 20: <ExecBridge line 689, col 8 to line 697, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2", "w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<"conceal", "barrier">>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "land", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 21: <WorkerLand("A") line 921, col 8 to line 927, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w1", "w2", "w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<"conceal", "barrier">>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "posted", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> FALSE, w2 |-> FALSE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 22: <ExecBridge line 689, col 8 to line 697, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<"barrier">>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w1", r |-> 1, g |-> 1, st |-> "posted", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 23: <WorkerPosted("A") line 935, col 8 to line 940, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<"barrier">>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 24: <ExecBridge line 689, col 8 to line 697, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<"resume">>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 25: <ExecMain line 679, col 5 to line 681, col 24 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<[w |-> "w3", g |-> 2, c |-> FALSE]>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 26: <FocusStart line 731, col 8 to line 739, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [w |-> "w3", r |-> 2, g |-> 2, st |-> "wait", front |-> TRUE]
+/\ wq = [ A |-> <<[w |-> "w3", r |-> 2, g |-> 2, st |-> "start", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent", "pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 27: <FocusDecide line 801, col 8 to line 812, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w3", r |-> 2, g |-> 2, st |-> "start", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent", "pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 28: <WorkerStart("A") line 829, col 8 to line 836, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w3", r |-> 2, g |-> 2, st |-> "read", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent", "pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 29: <WorkerRead("A") line 849, col 8 to line 860, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<[w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5]>>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w3", r |-> 2, g |-> 2, st |-> "raise", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent", "pending">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 7
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 30: <WorkerRaise("A") line 875, col 8 to line 891, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w1"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = << [w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5],
+   [w |-> "w3", r |-> 2, kind |-> "note", ts |-> 7, i |-> 5] >>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w1", B |-> "w2"]
+/\ atop = [A |-> "w1", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<[w |-> "w3", r |-> 2, g |-> 2, st |-> "land", front |-> TRUE]>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent", "raising">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 8
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 31: <WorkerLand("A") line 921, col 8 to line 927, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w3"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = << [w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5],
+   [w |-> "w3", r |-> 2, kind |-> "note", ts |-> 7, i |-> 5] >>
+/\ evs = <<[raised |-> 1]>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w3", B |-> "w2"]
+/\ atop = [A |-> "w3", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [ A |-> <<>>,
+  B |->
+      << [ w |-> "w2",
+           t |-> 2,
+           r |-> 0,
+           g |-> 0,
+           st |-> "act",
+           ts |-> 1,
+           front |-> FALSE,
+           bg |-> FALSE,
+           hs |-> [w1 |-> FALSE, w2 |-> FALSE, w3 |-> TRUE],
+           ko |-> FALSE ] >> ]
+/\ kr = <<"sent", "raising">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [ A |->
+      << [ w |-> "w3",
+           t |-> 3,
+           o |-> [bg |-> FALSE, user |-> FALSE, lone |-> TRUE],
+           ehid |-> FALSE,
+           lost |-> FALSE ] >>,
+  B |-> <<>> ]
+/\ an = <<>>
+/\ clk = 8
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 32: <WorkerAct("B") line 968, col 8 to line 980, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w3"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = << [w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5],
+   [w |-> "w3", r |-> 2, kind |-> "note", ts |-> 7, i |-> 5] >>
+/\ evs = << [raised |-> 1],
+   [ w |-> "w2",
+     t |-> 2,
+     ts |-> 1,
+     bg |-> TRUE,
+     ko |-> FALSE,
+     act |-> TRUE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ] >>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w3", B |-> "w2"]
+/\ atop = [A |-> "w3", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<"sent", "raising">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [ A |->
+      << [ w |-> "w3",
+           t |-> 3,
+           o |-> [bg |-> FALSE, user |-> FALSE, lone |-> TRUE],
+           ehid |-> FALSE,
+           lost |-> FALSE ] >>,
+  B |-> <<>> ]
+/\ an = <<>>
+/\ clk = 8
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 33: <ObserverPost("A") line 1001, col 8 to line 1012, col 27 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w3"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = << [w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5],
+   [w |-> "w3", r |-> 2, kind |-> "note", ts |-> 7, i |-> 5] >>
+/\ evs = << [raised |-> 1],
+   [ w |-> "w2",
+     t |-> 2,
+     ts |-> 1,
+     bg |-> TRUE,
+     ko |-> FALSE,
+     act |-> TRUE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ],
+   [ w |-> "w3",
+     t |-> 3,
+     ts |-> 8,
+     bg |-> FALSE,
+     ko |-> FALSE,
+     act |-> FALSE,
+     i |-> 0,
+     hid |-> FALSE,
+     prev |-> "none" ] >>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w3", B |-> "w2"]
+/\ atop = [A |-> "w3", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<"sent", "raising">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 9
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 34: <PostReports line 1030, col 5 to line 1032, col 24 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w3"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<"report">>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = << [w |-> "w1", r |-> 1, kind |-> "note", ts |-> 6, i |-> 5],
+   [w |-> "w3", r |-> 2, kind |-> "note", ts |-> 7, i |-> 5] >>
+/\ evs = <<>>
+/\ seenKey = "w1"
+/\ afocus = [A |-> "w3", B |-> "w2"]
+/\ atop = [A |-> "w3", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<"sent", "raising">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 9
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+State 35: <ExecMain line 679, col 5 to line 681, col 24 of module Kosmos>
+/\ history = <<-1, -2, -7>>
+/\ active = 2
+/\ onDisplay = <<2>>
+/\ focus = "w3"
+/\ osFocus = "w3"
+/\ bare = "kosmos"
+/\ visible = {"w3"}
+/\ gone = {}
+/\ left = {}
+/\ notices = <<>>
+/\ lag = {}
+/\ held = <<>>
+/\ waiting = "none"
+/\ rekey = <<>>
+/\ sw = 1
+/\ gen = 2
+/\ mq = <<>>
+/\ bq = <<>>
+/\ fq = <<>>
+/\ expect = <<>>
+/\ evs = <<>>
+/\ seenKey = "w3"
+/\ afocus = [A |-> "w3", B |-> "w2"]
+/\ atop = [A |-> "w3", B |-> "w2"]
+/\ fcur = [r |-> 0]
+/\ wq = [A |-> <<>>, B |-> <<>>]
+/\ kr = <<"sent", "raising">>
+/\ late = [A |-> <<>>, B |-> <<>>]
+/\ nq = [A |-> <<>>, B |-> <<>>]
+/\ an = <<>>
+/\ clk = 9
+/\ kact = 2
+/\ noteHeld = [A |-> [w |-> ""], B |-> [w |-> ""]]
+/\ lastWin = {"w2"}
+/\ goal = <<1>>
+/\ lastRep = 4
+/\ hidden = [w1 |-> TRUE, w2 |-> TRUE, w3 |-> FALSE]
+/\ named = [A |-> "none", B |-> "none"]
+/\ lastKey = [A |-> "w1", B |-> "w2"]
+/\ lowTop = {}
+
+46744038 states generated, 17676474 distinct states found, 2226977 states left on queue.
+The depth of the complete state graph search is 36.
+Finished in 06min 35s at (2026-09-26 04:02:24)
