@@ -21,8 +21,9 @@ extension Controller {
         case .fullscreenChange(let id, let entered, let spaceChangeBegan):
             fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
         case .frameChange(let id, let old, let frame, let changedAt):
-            if ledger.seen(id, frame: frame) { sendReadyBatches() }
-            frameChanged(id, from: old, to: frame, changedAt: changedAt)
+            let landed = ledger.seen(id, frame: frame)
+            if landed { sendReadyBatches() }
+            frameChanged(id, from: old, to: frame, changedAt: changedAt, landed: landed)
             updateBorders()
         case .reordered(let id):
             borderWindows.raise(id)

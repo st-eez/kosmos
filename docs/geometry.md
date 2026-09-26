@@ -100,8 +100,10 @@
   ([inventory.md](inventory.md)), by which time Kosmos's write may be confirmed and the button up. So
   Kosmos judges the change as of its arrival. It is a write's when it came before the
   write's read back confirmed it, even after a mouse up made the ledger forget the window,
-  and it is the user's when it came during a press, from the left button's down to its up
-  as `NSEvent` global monitors hear them. A mouse down off every display is left out,
+  or when it shows the frame the newest write read back, as WindowServer takes that frame
+  about 9 ms after the worker reports the read back. It is the user's when it came during
+  a press, from the left button's down to its up as `NSEvent` global monitors hear them. A
+  mouse down off every display is left out,
   since the focus path's key record ([overview.md, section 3](overview.md#3-primitive-decisions)) is a mouse down far off every display with
   no mouse up, and a lock or a resync forgets the presses. A mouse up can come between a
   change and its apply, and it sends back or drops only the windows the press had moved by
