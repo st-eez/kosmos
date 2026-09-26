@@ -3,7 +3,7 @@ import Testing
 @testable import KosmosCore
 
 private let blue = BorderColor(hex: "#7aa2f7")!
-private let steve = BorderSettings(width: 4, active: blue)
+private let steve = BorderSettings(width: 2, active: blue)
 /// macOS's blue accent in the light appearance.
 private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
 /// macOS's system red in the light appearance.
@@ -22,7 +22,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
 @Test func theRingLiesOutsideTheWindowsEdge() {
     let display = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
     let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
-    let border = Border(around: frame, radius: 16, width: 4, color: blue, displays: [display])!
+    let border = Border(around: frame, radius: 16, width: 2, color: blue, displays: [display])!
     #expect(border.ring == CGRect(x: 98, y: 98, width: 404, height: 304))
     #expect(border.frame == border.ring && border.display == 1 && border.displayFrame == display.frame)
     #expect(border.cornerRadius == 18 && border.lineWidth == 2)
@@ -30,24 +30,24 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     #expect(border.ring.insetBy(dx: border.lineWidth, dy: border.lineWidth) == frame)
     #expect(border.cornerRadius - border.lineWidth == 16)
     // A square window gets square corners.
-    let square = Border(around: frame, radius: 0, width: 4, color: blue, displays: [display])!
+    let square = Border(around: frame, radius: 0, width: 2, color: blue, displays: [display])!
     #expect(square.cornerRadius == 0)
 }
 
 @Test func theBorderStaysOnTheWindowsDisplay() {
     let left = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
     let right = Monitor(id: 2, frame: CGRect(x: 1000, y: 0, width: 1000, height: 800))
-    let mostlyLeft = Border(around: CGRect(x: 600, y: 100, width: 500, height: 300), radius: 16, width: 4, color: blue,
+    let mostlyLeft = Border(around: CGRect(x: 600, y: 100, width: 500, height: 300), radius: 16, width: 2, color: blue,
                             displays: [left, right])!
     #expect(mostlyLeft.display == 1 && mostlyLeft.frame == CGRect(x: 598, y: 98, width: 402, height: 304))
-    let mostlyRight = Border(around: CGRect(x: 900, y: 100, width: 500, height: 300), radius: 16, width: 4, color: blue,
+    let mostlyRight = Border(around: CGRect(x: 900, y: 100, width: 500, height: 300), radius: 16, width: 2, color: blue,
                              displays: [left, right])!
     #expect(mostlyRight.display == 2 && mostlyRight.frame.minX == 1000 && mostlyRight.ring.minX == 898)
     // At a display's edge the ring is cut there too.
-    let edge = Border(around: CGRect(x: 0, y: 0, width: 500, height: 300), radius: 16, width: 4, color: blue, displays: [left])!
+    let edge = Border(around: CGRect(x: 0, y: 0, width: 500, height: 300), radius: 16, width: 2, color: blue, displays: [left])!
     #expect(edge.frame == CGRect(x: 0, y: 0, width: 502, height: 302))
     // A window off every display has no border.
-    #expect(Border(around: CGRect(x: 100_000, y: 100_000, width: 500, height: 300), radius: 16, width: 4, color: blue,
+    #expect(Border(around: CGRect(x: 100_000, y: 100_000, width: 500, height: 300), radius: 16, width: 2, color: blue,
                    displays: [left, right]) == nil)
 }
 
@@ -86,7 +86,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
     #expect(Array(s.borders(steve, accent: accent, red: red, flashing: [], shown: shown).keys) == [2])
     #expect(s.borders(BorderSettings(), accent: accent, red: red, flashing: [], shown: shown).mapValues(\.color) == [2: accent])
-    let both = BorderSettings(width: 4, active: blue, inactive: BorderColor(hex: "#414868")!)
+    let both = BorderSettings(width: 2, active: blue, inactive: BorderColor(hex: "#414868")!)
     let borders = s.borders(both, accent: accent, red: red, flashing: [], shown: shown)
     #expect(Set(borders.keys) == [1, 2] && borders[1]?.color == both.inactive && borders[2]?.color == blue)
     #expect(borders[2]?.ring == frames[2]!.insetBy(dx: -2, dy: -2))

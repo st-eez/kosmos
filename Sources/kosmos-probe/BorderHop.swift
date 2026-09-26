@@ -74,8 +74,8 @@ final class WindowSampler: @unchecked Sendable {
     let rows = Dictionary(SkyLight.rows([a, b], cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
     print("A \(a) on the built-in display, Spaces \(spaces(a)); B \(b) on \(other.localizedName), Spaces \(spaces(b))")
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
-    let width: CGFloat = 4
-    func ring(_ target: UInt32) -> CGRect { rows[target]!.frame.insetBy(dx: -width / 2, dy: -width / 2) }
+    let width: CGFloat = 2
+    func ring(_ target: UInt32) -> CGRect { rows[target]!.frame.insetBy(dx: -width, dy: -width) }
 
     let borders = perDisplay ? [ProbeBorder(), ProbeBorder()] : [ProbeBorder()]
     func border(for target: UInt32) -> ProbeBorder { perDisplay && target == b ? borders[1] : borders[0] }

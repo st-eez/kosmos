@@ -29,7 +29,7 @@ import Testing
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "office-va24e", "laptop"])
         #expect(config.gaps.inner == 10)
         #expect(config.animations)
-        #expect(config.borders == BorderSettings(width: 4, active: BorderColor(hex: "#7aa2f7")!, inactive: .clear))
+        #expect(config.borders == BorderSettings(width: 2, active: BorderColor(hex: "#7aa2f7")!, inactive: .clear))
     }
 
     @Test func home() throws {

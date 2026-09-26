@@ -73,7 +73,7 @@ outer-per-monitor = { builtin = { top = 5 } }
 
 # The focused window's border in Tokyo Night's blue, in place of the macOS accent color.
 [borders]
-width = 4.0
+width = 2.0
 active = '#7aa2f7'
 inactive = '#00000000'
 
