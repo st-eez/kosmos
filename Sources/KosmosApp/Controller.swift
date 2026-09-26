@@ -202,14 +202,13 @@ final class Controller {
     /// `floatingCheck` runs the floating check for an empty plan too, as a floating window
     /// admitted to a workspace with no tiles plans nothing.
     func execute(_ plan: Session.Plan, since received: ContinuousClock.Instant = .now, fromCommand: Bool = false,
-                         movePointer: Bool = false, floatingCheck: Bool = false,
-                         entering: (window: WindowID, entrance: Entrance)? = nil) {
+                         movePointer: Bool = false, floatingCheck: Bool = false, popping: WindowID? = nil) {
         slides?.keep({ self.session.isVisible($0) }, fullscreen: fullscreenDisplays)
         guard managing, !sessionLocked, !plan.isEmpty || floatingCheck else { return publishState() }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames, sliding: motions(for: plan, entering: entering))
+        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping))
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -297,8 +296,8 @@ final class Controller {
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
-    /// through here, and jump (docs/geometry.md).
-    private func motions(for plan: Session.Plan, entering: (window: WindowID, entrance: Entrance)?) -> [WindowID: Slides.Motion] {
+    /// through here, and jump. `popping` pops only while still ordered out (docs/geometry.md).
+    private func motions(for plan: Session.Plan, popping: WindowID?) -> [WindowID: Slides.Motion] {
         guard animations, slides != nil else { return [:] }
         let show = Set(plan.show), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
         var motions: [WindowID: Slides.Motion] = [:]
@@ -307,13 +306,15 @@ final class Controller {
             guard let name = session.workspace(of: id), let pid = owner[id], inventory.worker(pid)?.answers == true else { continue }
             let display = session.monitor(of: name).id
             guard !fullscreen.contains(display) else { continue }
-            let entrance = entering?.window == id ? entering?.entrance : nil
             // Where WindowServer has the window, read before the ledger takes the write as sent,
             // and unknown while a write of Kosmos's still moves it.
             var from = ledger.isWriting(id) ? nil : inventory.windows[id]?.frame
-            if case .slide(let shown)? = entrance { from = shown }
+            var pop = false
+            // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the
+            // read shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
+            if id == popping, let row = SkyLight.rows([id]).first { (from, pop) = (row.frame, !row.orderedIn) }
             if let from, let shownOn = self.display(under: from), fullscreen.contains(shownOn) { continue }
-            motions[id] = Slides.Motion(from: from, display: display, pop: entrance == .pop)
+            motions[id] = Slides.Motion(from: from, display: display, pop: pop)
         }
         return motions
     }

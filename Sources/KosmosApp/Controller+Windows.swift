@@ -1,6 +1,5 @@
 import AppKit
 import KosmosCore
-import KosmosSkyLight
 import os
 
 extension Controller {
@@ -100,10 +99,7 @@ extension Controller {
             follow.frames.merge(plan.frames) { followed, _ in followed }
             (plan, movePointer, action) = (follow, bringsPointer || followPointer, .none)
         }
-        // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the read
-        // shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
-        let entering = atLaunch ? nil : SkyLight.rows([id]).first.map { (id, Entrance(orderedIn: $0.orderedIn, frame: $0.frame)) }
-        execute(plan, movePointer: movePointer, floatingCheck: floats, entering: entering)
+        execute(plan, movePointer: movePointer, floatingCheck: floats, popping: atLaunch ? nil : id)
         run(action)
     }
 

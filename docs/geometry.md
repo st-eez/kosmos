@@ -180,18 +180,19 @@
     reopen that waits the pairing window slides after the wait, the ceiling
     [tree.md](tree.md) names.
   - Only a window still ordered out when Kosmos places it pops in, as Discord's was,
-    admitted 47 ms before its order-in (live log, September 25, 2026). Kosmos reads the
-    window's row from WindowServer as it places it, since the inventory's row can lag an
-    order-in whose read is under way. The pop's Space turns transparent before the window
-    joins it, and the window pops in where its write landed. A write that has not landed
-    after 0.25 s, as a launching app's, pops the window in at its target, and the reads
-    follow it until it lands. The ceiling: an order-in between that read and the Space
-    turning transparent, in the same main actor turn, shows the window until then, and
-    whether a window added to a Space while ordered out stays in it once ordered in is
-    unmeasured. If it leaves, the window shows where its app ordered it in, then jumps to
-    its place when its write lands. Adding each candidate window of a regular app to a
-    transparent Space of the pool at its first row, before its Accessibility facts, would
-    remove both, once a probe shows that the add outlasts the order-in.
+    admitted 47 ms before its order-in (live log, September 25, 2026). Kosmos reads from
+    WindowServer the row of a window it places that would slide or pop, since the
+    inventory's row can lag an order-in whose read is under way. The pop's Space turns
+    transparent before the window joins it, and the window pops in where its write landed.
+    A write that has not landed after 0.25 s, as a launching app's, pops the window in at
+    its target, and the reads follow it until it lands. The ceiling: an order-in between
+    that read and the Space turning transparent, in the same main actor turn, shows the
+    window until then, and whether a window added to a Space while ordered out stays in it
+    once ordered in is unmeasured. If it leaves, the window shows where its app ordered it
+    in, then jumps to its place when its write lands. Adding each candidate window of a
+    regular app to a transparent Space of the pool at its first row, before its
+    Accessibility facts, would remove both, once a probe shows that the add outlasts the
+    order-in.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while Kosmos can conceal, with the guardian ready and every
