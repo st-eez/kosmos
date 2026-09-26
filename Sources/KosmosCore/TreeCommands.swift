@@ -38,10 +38,12 @@ extension Workspace {
         focus(seen.overThere(in: Node(kind: .container(seen.root), weight: 1), direction, from: source, frames: frames))
     }
 
-    /// Tiles where the layout puts them, and floating windows where `frame` does.
+    /// Tiles where the layout puts them, and floating windows where `frame` does. While the
+    /// pending windows of a restored layout hold their tiles, the tiles are the held ones
+    /// (docs/tree.md).
     func onScreen(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
                   minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
-        var frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        var frames = shownFrames(in: rect, gaps: gaps, minimums: minimums)
         for window in floating { frames[window] = frame(window) }
         return frames
     }
@@ -84,7 +86,9 @@ extension Workspace {
     /// `onScreen` gives, for a focus in a direction (docs/tree.md).
     func withFloatingTiled(_ frames: [WindowID: CGRect], in rect: CGRect, gaps: Gaps) -> Workspace {
         let area = tilingRect(rect, gaps.outer)
-        let shares = tileFrames(in: rect, gaps: Gaps(outer: gaps.outer))
+        // A center on a tile a pending window holds finds no tile.
+        let tiled = Set(root.windows)
+        let shares = holdingPending.tileFrames(in: rect, gaps: Gaps(outer: gaps.outer)).filter { tiled.contains($0.key) }
         var places: [(window: WindowID, container: Int, index: Int, along: CGFloat)] = []
         for window in floating {
             guard let frame = frames[window] else { continue }
@@ -116,7 +120,7 @@ extension Workspace {
     mutating func swap(_ window: WindowID, _ direction: Direction, in rect: CGRect, gaps: Gaps,
                        minimums: [WindowID: CGSize]) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
-        let frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        let frames = shownFrames(in: rect, gaps: gaps, minimums: minimums)
         let other = overThere(in: root.node(at: neighbor), direction, from: frames[window], frames: frames)
         let path = root.path(to: window)!, otherPath = root.path(to: other)!
         root[path.dropLast()].children[path.last!].kind = .window(other)

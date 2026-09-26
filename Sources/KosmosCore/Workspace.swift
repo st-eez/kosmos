@@ -13,6 +13,9 @@ struct Workspace: Sendable {
     var parked: [Parked] = []
     /// For each window that left the tree to float or park, oldest first.
     var hints: [RestoreHint] = []
+    /// The windows a saved layout puts here that Kosmos has not admitted since it launched
+    /// (docs/tree.md).
+    var pending: [Pending] = []
     /// Counts changes to the tree other than windows leaving, and returning with a fresh
     /// hint. A hint is fresh when no change came after it.
     var edits = 0
@@ -32,15 +35,32 @@ struct Parked: Sendable {
     let floating: Bool
 }
 
+/// A window of a saved layout until Kosmos admits it, as `SavedLayout.Window` gives it, with
+/// its hint counted on this workspace's edits and its stamp on its clock (docs/tree.md).
+struct Pending: Sendable {
+    let window: WindowID
+    let floating: Bool
+    let parked: Bool
+    let fullscreen: Bool
+    var stamp: UInt64?
+    var hint: RestoreHint?
+}
+
 /// Where a window stood when it left the tree, as the windows it stood among, which outlive
 /// the containers around them (docs/tree.md).
 struct RestoreHint: Sendable {
-    struct Level: Sendable {
-        let orientation: Orientation
+    /// Saved as it is (`SavedLayout`).
+    struct Level: Codable, Equatable, Sendable {
+        var orientation: Orientation
         /// The windows under each child of the container, with the child's share.
-        let slots: [(windows: Set<WindowID>, weight: Double)]
+        var slots: [Slot]
         /// The child that holds the window.
-        let index: Int
+        var index: Int
+    }
+
+    struct Slot: Codable, Equatable, Sendable {
+        var windows: Set<WindowID>
+        var weight: Double
     }
 
     let window: WindowID
@@ -55,7 +75,8 @@ extension RestoreHint {
     func renaming(_ old: WindowID, to new: WindowID) -> RestoreHint {
         RestoreHint(window: window == old ? new : window, levels: levels.map { level in
             Level(orientation: level.orientation, slots: level.slots.map { slot in
-                (slot.windows.contains(old) ? slot.windows.subtracting([old]).union([new]) : slot.windows, slot.weight)
+                Slot(windows: slot.windows.contains(old) ? slot.windows.subtracting([old]).union([new]) : slot.windows,
+                     weight: slot.weight)
             }, index: level.index)
         }, edits: edits)
     }
@@ -151,6 +172,7 @@ extension Workspace {
         if let stamp = stamps.removeValue(forKey: old) { stamps[new] = stamp }
         if fullscreenWindow == old { fullscreenWindow = new }
         hints = hints.map { $0.renaming(old, to: new) }
+        for index in pending.indices { pending[index].hint = pending[index].hint?.renaming(old, to: new) }
         check()
         return true
     }
@@ -192,6 +214,30 @@ extension Workspace {
         detach(window)
         floating.append(window)
         normalize()
+        check()
+        return true
+    }
+
+    /// Puts a pending window back as its saved layout had it: at its place in the tree,
+    /// floating, or parked with its hint kept for its return (docs/tree.md). `rect` and `gaps`
+    /// are as for `unpark`. False when no window of that id is pending here.
+    @discardableResult
+    mutating func admit(_ window: WindowID, parked: Bool, in rect: CGRect, gaps: Gaps) -> Bool {
+        guard let index = pending.firstIndex(where: { $0.window == window }) else { return false }
+        let entry = pending.remove(at: index)
+        if let hint = entry.hint { hints.append(hint) }
+        if parked {
+            self.parked.append(Parked(window: window, floating: entry.floating))
+        } else if entry.floating {
+            floating.append(window)
+        } else {
+            restore(window, in: rect, gaps: gaps)
+            normalize()
+            if entry.fullscreen { fullscreenWindow = window }
+        }
+        // A workspace with a window has a focused one. Stamp 0 is older than any saved stamp,
+        // so the saved focus wins once its window is back.
+        stamps[window] = entry.stamp ?? (!parked && focusedWindow == nil ? 0 : nil)
         check()
         return true
     }
@@ -251,6 +297,11 @@ extension Workspace {
         }
         for window in stamps.keys where places[window] == nil {
             problems.append("unknown window \(window) has a focus stamp")
+        }
+        for (index, entry) in pending.enumerated() {
+            if places[entry.window] != nil { problems.append("pending window \(entry.window) has a place") }
+            if pending[..<index].contains(where: { $0.window == entry.window }) { problems.append("window \(entry.window) is pending twice") }
+            if !entry.floating, entry.hint == nil { problems.append("pending tiled window \(entry.window) has no restore hint") }
         }
         return problems
     }
@@ -394,11 +445,30 @@ extension Workspace {
         pair(window, with: roomiest, root[root.path(to: roomiest)!.dropLast()].orientation.opposite, first: false)
     }
 
-    /// Taken with every window that has a fresh hint put back, newest first, so hints taken
-    /// in any order agree on where each window goes.
-    private func hint(for window: WindowID) -> RestoreHint {
+    /// The tiles as the screen shows them, with the pending windows holding theirs.
+    func shownFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
+        let tiled = Set(root.windows)
+        return holdingPending.frames(in: rect, gaps: gaps, minimums: minimums).filter { tiled.contains($0.key) }
+    }
+
+    /// The tree with each pending window that was tiled back at its place while its hint is
+    /// fresh, so the windows back already have the tiles they had (docs/tree.md).
+    var holdingPending: Workspace {
         var whole = self
-        for hint in hints.reversed() where hint.edits == edits {
+        for entry in pending.reversed() where !entry.floating && !entry.parked {
+            guard let hint = entry.hint, hint.edits == edits else { continue }
+            whole.place(hint)
+            whole.normalize()
+        }
+        return whole
+    }
+
+    /// Taken with every window that has a fresh hint put back, newest first, so hints taken
+    /// in any order agree on where each window goes. The pending windows' hints are the
+    /// oldest.
+    func hint(for window: WindowID) -> RestoreHint {
+        var whole = self
+        for hint in (pending.compactMap(\.hint) + hints).reversed() where hint.edits == edits {
             whole.place(hint)
             whole.normalize()
         }
@@ -406,7 +476,7 @@ extension Workspace {
         var levels: [RestoreHint.Level] = []
         while let index = path.popLast() {
             let container = whole.root[path[...]]
-            let slots = container.children.map { (windows: Set($0.windows), weight: $0.weight) }
+            let slots = container.children.map { RestoreHint.Slot(windows: Set($0.windows), weight: $0.weight) }
             levels.append(RestoreHint.Level(orientation: container.orientation, slots: slots, index: index))
         }
         return RestoreHint(window: window, levels: levels, edits: edits)

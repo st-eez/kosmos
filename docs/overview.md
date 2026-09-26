@@ -196,11 +196,12 @@ files each one covers.
    AutoRaise), moving and resizing windows with a modifier and the mouse (retiring
    BetterTouchTool's window moving), `kosmos list-bindings` for launchers, and borders
    from Kosmos's own model (retiring JankyBorders).
-9. **Later.** A native bar as a separate process, and persistence across restarts.
+9. **Later.** A native bar as a separate process, and persistence across restarts of the
+   state beyond the layout ([tree.md](tree.md)).
 
 ## 8. Left out of the first version
 
 Scrolling and BSP layouts, tabbed and stacked title bars, resizing tiles by their edges
 ([geometry.md](geometry.md); a modifier drag resizes them, [modifier-drags.md](modifier-drags.md)), an embedded scripting language,
-window title matchers, marks, persistence across restarts, and one macOS Space per
-workspace.
+window title matchers, marks, persistence across restarts of any state but the layout
+([tree.md](tree.md)), and one macOS Space per workspace.

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A process, identified across pid reuse by its start time.
-public struct ProcessIdentity: Hashable, Sendable {
+public struct ProcessIdentity: Hashable, Codable, Sendable {
     public let pid: Int32
     /// Microseconds since 1970.
     public let start: UInt64

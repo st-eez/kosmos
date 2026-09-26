@@ -17,6 +17,8 @@ extension Session {
         for name in names where !newNames.contains(name) {
             let target = merge[name].flatMap { newNames.contains($0) ? $0 : nil } ?? newNames[0]
             mergedAway[name] = workspaces[name]
+            // Its saved windows not back yet go where they would at any launch (docs/tree.md).
+            mergedAway[name]!.pending = []
             for window in allWindows(of: name) {
                 carry(window, to: target)
                 if mergedFrom[window] == nil { mergedFrom[window] = name }

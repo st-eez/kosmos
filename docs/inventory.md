@@ -133,4 +133,10 @@
   windows some process has read from the list before, and a search that finds nothing
   took 0.4 to 0.8 s (`kosmos-probe ax-search` at 174c067, since removed), so Kosmos leaves
   the case to the next Space change. Launches behind a fullscreen Space often enough to
-  matter would call for it.
+  matter would call for it. A window the saved layout has holds its tile there until then,
+  unless the tree changes first ([tree.md](tree.md)).
+- At launch the saved layout puts each window it has back on its workspace as the sweep's
+  window is admitted ([tree.md](tree.md)). A window of a hidden workspace is concealed by a
+  batch of its own before any frame is written to it, so it never takes a tile of the shown
+  workspace, and the shown workspace's windows keep their tiles. Until then it shows, as
+  quit recovery showed it ([hiding.md](hiding.md)).

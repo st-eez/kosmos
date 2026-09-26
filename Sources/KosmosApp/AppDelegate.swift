@@ -83,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         server?.stop()
+        // The last second of changes has no write yet.
+        controller?.writeLayout(wait: true)
         // Slides end first, so recovery finds the pool's Spaces empty.
         controller?.endSlides()
         // Through Hiding when it exists, so batches still queued land first.

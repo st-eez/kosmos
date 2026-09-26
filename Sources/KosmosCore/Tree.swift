@@ -1,7 +1,7 @@
 /// The WindowServer id of a window.
 public typealias WindowID = UInt32
 
-public enum Orientation: Sendable {
+public enum Orientation: String, Codable, Sendable {
     case horizontal
     case vertical
 

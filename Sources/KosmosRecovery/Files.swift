@@ -12,6 +12,7 @@ public enum KosmosFiles {
     /// Held by the running Kosmos, and by whoever runs recovery.
     public static var lock: URL { support.appending(path: "kosmos.lock") }
     public static var record: URL { support.appending(path: "recovery.record") }
+    public static var layout: URL { support.appending(path: "layout.json") }
 }
 
 /// Released when the descriptor closes, so also when the process dies.
