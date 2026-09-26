@@ -163,6 +163,24 @@ import Testing
         #expect(plan.focus == .window(60) && s.focusedWorkspace == "5")
     }
 
+    @Test func aWindowMovedToAHiddenWorkspaceOnAnotherDisplayDoesNotEnterIt() {
+        var s = Desk.session()
+        _ = s.add(10); _ = s.add(11)
+        _ = s.add(20, to: "2"); _ = s.add(60, to: "6")
+        let concealed: (WindowID) -> Bool = { $0 == 20 || $0 == 60 }
+        // 10 and 11 show on the main panel.
+        let display: (WindowID) -> DisplayID? = { [10: Desk.main.id, 11: Desk.main.id][$0] }
+        var probe = s
+        let same = probe.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: true, window: 11))!
+        #expect(probe.entering(show: same.show, hide: same.hide, frames: same.frames.keys, concealed: concealed,
+                               display: display) == [11])
+        probe = s
+        let across = probe.perform(.moveNodeToWorkspace(.named("6"), focusFollowsWindow: true, window: 11))!
+        #expect(across.show == [60])
+        #expect(probe.entering(show: across.show, hide: across.hide, frames: across.frames.keys, concealed: concealed,
+                               display: display).isEmpty)
+    }
+
     @Test func moveNodeToMonitorByNumberReachesAnyDisplay() {
         var s = Desk.session()
         _ = s.add(10)
@@ -191,7 +209,7 @@ import Testing
         #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)])
                 == [10: CGRect(x: 200, y: 1571, width: 400, height: 300)])
         #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)])[10]?.size == Desk.builtIn.area.size)
-        // A window off every display, as a concealed one reads, stays.
+        // A window off every display stays.
         #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)]).isEmpty)
     }
 
@@ -247,9 +265,9 @@ import Testing
         var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(12, floating: true); _ = s.add(13, floating: true)
         _ = s.add(50, to: "5"); _ = s.add(51, to: "5", floating: true)
-        _ = s.park([13])
+        _ = s.park([13], because: .minimized)
         let between = CGRect(x: 760, y: 300, width: 400, height: 400)
-        let frames: [WindowID: CGRect] = [12: CGRect(x: 0, y: 300, width: 400, height: 400), 13: between, 51: between]
+        var frames: [WindowID: CGRect] = [12: CGRect(x: 0, y: 300, width: 400, height: 400), 13: between, 51: between]
         // A parked window and another workspace's floating window count nowhere, whatever
         // their frames.
         s.adopt(10)
@@ -257,8 +275,61 @@ import Testing
         s.adopt(10)
         #expect(s.perform(.focus(.left, boundaries: .allMonitors), frame: { frames[$0] })?.focus == .window(12))
         #expect(s.focusedWorkspace == "1")
-        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frame: { frames[$0] })?.focus == .window(50))
+        // On its own workspace a floating window counts, here right of 50, at the edge the
+        // focus enters by.
+        frames[51] = CGRect(x: -500, y: 300, width: 400, height: 400)
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frame: { frames[$0] })?.focus == .window(51))
         #expect(s.focusedWorkspace == "5")
+    }
+
+    /// Live on September 25, 2026 (docs/tree.md): the left panel showed workspace 7 with
+    /// Discord, and the main panel 3 with Helium left of Outlook. From Outlook, Command-Tab to
+    /// Discord and then `focus right` reach Helium, at the edge the focus enters by.
+    @Test func focusAcrossMonitorsEntersAtTheEdgeItCrosses() {
+        var s = Desk.session()
+        _ = s.perform(.workspace(.named("7"))); _ = s.perform(.workspace(.named("3")))
+        _ = s.add(30, to: "3"); _ = s.add(31, to: "3"); _ = s.add(70, to: "7")
+        #expect(s.workspaces["3"]!.tree == "h[30 31]")
+        s.adopt(31)
+        s.adopt(70)
+        #expect(s.focusedWorkspace == "7")
+        #expect(s.perform(.focus(.right, boundaries: .allMonitors))?.focus == .window(30))
+        #expect(s.focusedWorkspace == "3")
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(70))
+    }
+
+    /// Overlap decides a cross (docs/tree.md), between displays of one size and of two.
+    @Test func focusAcrossMonitorsTakesTheWindowThatOverlaps() {
+        var s = Desk.session()
+        _ = s.add(50, to: "5"); _ = s.add(51, to: "5"); _ = s.add(10); _ = s.add(11)
+        _ = s.add(80, to: "8"); _ = s.add(81, to: "8")
+        s.adopt(50)
+        _ = s.perform(.layout(.orientation(.vertical)))
+        s.adopt(11)
+        _ = s.perform(.layout(.orientation(.vertical)))
+        #expect(s.workspaces["5"]!.tree == "v[50 51]" && s.workspaces["1"]!.tree == "v[10 11]")
+        // From the main panel's bottom half, the left panel's, though its top was focused last.
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(51))
+        // From the main panel's right half, x 960 to 1910, down onto the narrower built-in
+        // display at x 200: 80 ends at x 956, so only 81 overlaps, though 80 was focused last.
+        s.adopt(11)
+        _ = s.perform(.layout(.orientation(.horizontal)))
+        s.adopt(80)
+        s.adopt(11)
+        #expect(s.perform(.focus(.down, boundaries: .allMonitors))?.focus == .window(81))
+    }
+
+    @Test func focusWrappingAcrossMonitorsEntersAtTheEdgeAndAnEmptyWorkspaceTakesTheFocus() {
+        var s = Desk.session()
+        _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
+        s.adopt(51)
+        s.adopt(11)
+        // From the main panel's right edge on to the left panel's left edge.
+        #expect(s.perform(.focus(.right, boundaries: .allMonitorsWrapping))?.focus == .window(50))
+        _ = s.perform(.workspace(.named("2")))
+        s.adopt(51)
+        #expect(s.perform(.focus(.right, boundaries: .allMonitors))?.focus == .noWindow)
+        #expect(s.focusedWorkspace == "2" && s.focusedDisplay == 2)
     }
 
     @Test func moveAcrossMonitorsTakesTheWindowOverTheEdgeAndFollowsIt() {
@@ -305,7 +376,7 @@ import Testing
         // main panel, keeps its Space, and so does 50, another app's.
         #expect(s.stripped([20, 50, 60], latest: latest) == [60])
         // Once 10 is minimized, nothing of the app shows, and nothing is stripped.
-        _ = s.park([10])
+        _ = s.park([10], because: .minimized)
         #expect(s.stripped([20, 60], latest: latest).isEmpty)
         let one = Session(names: ["1", "2"], display: Desk.main.frame)
         #expect(one.stripped([1, 2], latest: { _ in 1 }).isEmpty)
@@ -337,7 +408,7 @@ import Testing
     @Test func aWindowReturningToAnotherDisplayIsFollowedThere() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
-        _ = s.park([50])
+        _ = s.park([50], because: .minimized)
         let plan = s.unpark([50], follow: 50)
         #expect(s.focusedWorkspace == "5")
         #expect(plan.show.isEmpty && plan.hide.isEmpty)
@@ -397,7 +468,7 @@ func randomDisplayOperationsKeepTheScreenRight(seed: UInt64) {
                            floating: Int.random(in: 0..<4, using: &random) == 0))
             nextWindow += 1
         case 4: if let window { carryOut(s.remove(window)); concealed.remove(window); written[window] = nil }
-        case 5: if let window { carryOut(s.park([window])) }
+        case 5: if let window { carryOut(s.park([window], because: step.isMultiple(of: 2) ? .closedByApp : .fullscreen)) }
         case 6: if let window { carryOut(s.unpark([window], follow: Bool.random(using: &random) ? window : nil)) }
         case 7: if let window, let home = s.workspace(of: window), s.isShown(home) { s.adopt(window) }
         case 8: if let window, let home = s.workspace(of: window), !s.isShown(home), !s.isParked(window) { carryOut(s.follow(window)) }

@@ -124,7 +124,11 @@ queue sends its batches, to other Spaces.
    workspace with a new switch generation, and a focus intent with a new focus generation.
 2. The incoming workspace was laid out while hidden, so its frames are usually current.
    The frame ledger leaves out each target a window already has or was already sent, with
-   no read from WindowServer, and only changed frames go to their apps' workers.
+   no read from WindowServer, and only changed frames go to their apps' workers. When a
+   window to reveal has a write on its way, as each window of the workspace a moved window
+   joins does, the batch waits until a row shows the write, 1 s after the write at most,
+   and a window the batch conceals is written after it. The moved window, when it stays on
+   its display, is concealed at the command and revealed with them ([hiding.md](hiding.md)).
 3. The bridge queue sends the reveal of the incoming windows and the conceal of the
    outgoing windows back to back, then reads the holding Space until it shows them done.
    Revealing first shows windows of both workspaces for the length of one bridged

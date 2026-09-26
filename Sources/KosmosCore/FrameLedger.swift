@@ -38,6 +38,8 @@ public struct FrameLedger: Sendable {
     private var refused: [WindowID: (target: CGRect, kept: CGSize)] = [:]
     /// A target the window read back larger than once, past the slack.
     private var refusedLarger: [WindowID: CGRect] = [:]
+    /// The newest write sent to each window's app, until a row shows its read back.
+    private var landing: [WindowID: (target: CGRect, sent: ContinuousClock.Instant, readBack: CGRect?)] = [:]
 
     public init() {}
 
@@ -70,6 +72,7 @@ public struct FrameLedger: Sendable {
         if pending[id] == target || pending[id] == CGRect(origin: target.origin, size: readBack.size) {
             pending[id] = nil
         }
+        if landing[id]?.target == target { landing[id]?.readBack = readBack }
         let kept = CGSize(width: readBack.width > target.width + Self.slack ? readBack.width : 0,
                           height: readBack.height > target.height + Self.slack ? readBack.height : 0)
         guard kept == .zero || refusedLarger[id] == target else {
@@ -107,6 +110,30 @@ public struct FrameLedger: Sendable {
 
     public func isWriting(_ id: WindowID) -> Bool { pending[id] != nil }
 
+    /// A write gone to its app's worker, with the target its read back names.
+    public mutating func sent(_ id: WindowID, target: CGRect, at now: ContinuousClock.Instant) {
+        landing[id] = (target, now, nil)
+    }
+
+    /// A row of the window from WindowServer. True when it shows the newest write landed.
+    @discardableResult
+    public mutating func seen(_ id: WindowID, frame: CGRect) -> Bool {
+        guard let readBack = landing[id]?.readBack, readBack == frame else { return false }
+        landing[id] = nil
+        return true
+    }
+
+    /// Whether the newest write sent is yet to show in a row.
+    public func isLanding(_ id: WindowID, at now: ContinuousClock.Instant) -> Bool {
+        landingEnds(id).map { now < $0 } ?? false
+    }
+
+    /// A write no row has shown counts as landed after the Accessibility timeout, so a reveal
+    /// waits no longer (docs/hiding.md).
+    public func landingEnds(_ id: WindowID) -> ContinuousClock.Instant? {
+        landing[id].map { $0.sent + AXBackoff.timeout }
+    }
+
     /// Whether a change that came at `stamp` can be a write's. Ceiling: a change that came
     /// before the write was sent counts too (docs/geometry.md).
     public func isWriting(_ id: WindowID, at stamp: ContinuousClock.Instant) -> Bool {
@@ -116,6 +143,7 @@ public struct FrameLedger: Sendable {
     public mutating func forget(_ id: WindowID) {
         confirmed[id] = nil
         pending[id] = nil
+        landing[id] = nil
         refused[id] = nil
         refusedLarger[id] = nil
     }

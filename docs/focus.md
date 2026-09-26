@@ -70,9 +70,11 @@
     himself. A worker now reports its app's focused window when it starts, before any of
     the app's windows is admitted (geometry.md). KosmosCore's tests replay the waiting
     report through the admission and its follow (`KeyReportIntake`), and cover
-    `AdmissionFocus` and the classification. The Controller decides the report only once
-    the admission's plan has run, so that the follow's switch reveals the window the plan
-    conceals. No test covers that order, the worker's report at its start or its refusal of
+    `AdmissionFocus` and the classification. The Controller decides the report before the
+    admission's plan runs, and a follow joins that plan, so one switch shows the rule's
+    workspace with the window never concealed. Before this, the plan concealed the window
+    where its app opened it, and the follow's switch revealed it there before its write
+    moved it. No test covers that order, the worker's report at its start or its refusal of
     window reads before it: they are in KosmosApp, which has no test target.
   - macOS can key the next app before WindowServer orders a hidden app's windows out, so
     a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
@@ -141,8 +143,8 @@
   logged. The read and the raise go to the same app with the same timeout, so the app is
   not answering, and a record for a call that changes nothing would swallow a later click
   on the window: going ahead failed TLC's user configs, whose model assumes reads answer.
-  The empty workspace's window is key already when Kosmos is the front process and the
-  window's last key change on the main actor said it became key.
+  The empty workspace's window, its display's (below), is key already when Kosmos is the
+  front process and the window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
   WorkerRaise, FocusDecide as `queueKeys`, WorkerPost). Each side records the echo,
@@ -307,6 +309,27 @@
   every switch. A background accessory app keyed an invisible window of its own by the
   private key record in 10 of 10 trials, from its own background thread and from another
   process (`kosmos-probe keying`, September 24, 2026).
+  - Each display has a window of its own, made at its bottom left corner and never moved,
+    as each display keeps its own border window ([borders.md](borders.md)). Before
+    2026-09-25 one window moved to the empty workspace's display before each request:
+    `setFrameOrigin` ran on the main actor while the focus queue posted the key record from
+    its own thread, and the border hop showed AppKit's new frame reaching WindowServer after
+    another thread's SkyLight call. Keyed at its old place, the window left the menu bar and
+    the next new window on the display it came from. The focus queue also skipped the moved
+    window as key already when it was key on the other display. At each display change,
+    a display whose window is no longer at its corner gets a new window, created there, and
+    the old one closes, so no move is left to land late. That covers a display whose frame
+    changed, and a display that comes back: macOS moves an ordered in window off a display
+    that goes, and the empty workspace windows stay ordered in, so a returning display's
+    window is somewhere else by then and is replaced. Unmeasured: whether the order-in of a window made at a display change can
+    reach WindowServer after the key record of the resync that follows in the same main
+    actor turn.
+  - Inside the front app the key record keys nothing
+    ([overview.md, section 2](overview.md#2-what-the-fork-measured)), so while Kosmos is
+    the front process with another of its windows key, as another display's empty
+    workspace window, AppKit keys the window on the main actor, and the request records
+    its echo just before. Unmeasured: whether AppKit's key change inside Kosmos moves the
+    menu bar to the window's display as the key record does.
   - Kosmos is an accessory app, and the inventory tracks only regular apps' windows, so it
     never manages or conceals the window. The window becoming key is the key window report
     for an empty workspace, as Kosmos keeps no worker for itself; it names no window and

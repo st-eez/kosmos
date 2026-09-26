@@ -11,6 +11,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("destroyed-space", "destroyed-space", { _ in destroyedSpace() }),
     ("reveal", "reveal", { _ in reveal() }),
     ("holding", "holding", { _ in holding() }),
+    ("concealed-move", "concealed-move [onscreen]", { concealedMove(onscreen: $0.contains("onscreen")) }),
     ("fullscreen", "fullscreen [dry]", { fullscreen(dry: $0.contains("dry")) }),
     ("departures", "departures", { _ in departures() }),
     ("tabs", "tabs [strip|keep]", { tabs(conceal: $0.first) }),
@@ -28,6 +29,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
     ("borders", "borders", { _ in borders() }),
+    ("border-space", "border-space", { _ in borderSpace() }),
     ("borders-cpu", "borders-cpu [relayouts]", { bordersCPU(relayouts: $0.first.flatMap(Int.init) ?? 12) }),
     ("border-hop", "border-hop [one|per-display] [hops]", {
         borderHop(perDisplay: $0.first == "per-display", hops: $0.dropFirst().first.flatMap(Int.init) ?? 8)
@@ -38,6 +40,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     }),
     ("panel", nil, { _ in showPanel() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),
+    ("moving-window", nil, { movingWindow(onscreen: $0.contains("onscreen")) }),
     ("level-window", nil, { levelWindow(onscreen: $0.contains("onscreen"), opaque: $0.contains("opaque")) }),
     ("fullscreen-window", nil, { fullscreenWindow(dry: $0.contains("dry")) }),
     ("departures-window", nil, { _ in departuresWindow() }),

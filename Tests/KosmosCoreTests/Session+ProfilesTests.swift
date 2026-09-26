@@ -51,7 +51,7 @@ import Testing
         var s = Desk.session()
         _ = s.add(10); _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
         _ = s.add(70, to: "7", floating: true)
-        _ = s.add(71, to: "7"); _ = s.park([71])
+        _ = s.add(71, to: "7"); _ = s.park([71], because: .minimized)
         _ = s.perform(.workspace(.named("7")))
         let laptop = ["1", "2", "3", "4", "5"]
         s.reconfigure(names: laptop, monitors: [Desk.builtIn], assigned: Dictionary(uniqueKeysWithValues: laptop.map { ($0, 3) }),
@@ -67,6 +67,7 @@ import Testing
         s.reconfigure(names: Desk.names, monitors: [Desk.builtIn, Desk.left, Desk.main], assigned: Desk.home, merge: [:])
         #expect(s.workspaces["6"]!.tree == "h[60]" && s.workspace(of: 61) == "3")
         #expect(s.workspaces["7"]!.floating == [70] && s.isParked(71) && s.workspace(of: 71) == "7")
+        #expect(s.parkReason(of: 71) == .minimized)
         #expect(s.workspaces["1"]!.root.windows == [10])
         // Each display shows what it showed before the laptop profile, and the focus stays.
         #expect(s.shownWorkspaces == ["7", "2", "8"])
@@ -93,7 +94,7 @@ import Testing
                       merge: ["6": "1"])
         #expect(s.workspaces["1"]!.root.windows == [60, 61, 62, 63])
         // Meanwhile 60 minimizes, 61 closes and 63 moves to 3.
-        _ = s.park([60])
+        _ = s.park([60], because: .minimized)
         _ = s.remove(61)
         _ = s.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 63))
         s.reconfigure(names: Desk.names, monitors: [Desk.builtIn, Desk.left, Desk.main], assigned: Desk.home, merge: [:])
@@ -117,7 +118,7 @@ import Testing
             s.adopt(w3)
             _ = s.perform(.resize(.width, by: -1000))
             #expect(s.frames(of: "b")[w3]?.width == 1)
-            _ = s.park([w3, w2])
+            _ = s.park([w3, w2], because: .minimized)
             s.reconfigure(names: ["a"], monitors: [display], assigned: [:], merge: ["b": "a"])
             // Meanwhile 4 closes, and 3 and 2 return.
             _ = s.remove(w4)
@@ -135,7 +136,7 @@ import Testing
         var s = Session(names: ["a", "b"], monitors: [display])
         _ = s.perform(.workspace(.named("b")))
         _ = s.add(1)
-        if floated { _ = s.perform(.layout(.toggleFloating)) } else { _ = s.park([1]) }
+        if floated { _ = s.perform(.layout(.toggleFloating)) } else { _ = s.park([1], because: .minimized) }
         _ = s.add(2); _ = s.add(3)
         s.adopt(2)
         _ = s.perform(.resize(.width, by: 2000))

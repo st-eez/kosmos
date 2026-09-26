@@ -123,16 +123,57 @@ public enum CommandSource: Sendable {
     case cli
 }
 
-extension Command {
-    /// Whether mouse-follows-focus brings the pointer to the focus after this command. It reads
-    /// `toAnotherDisplay` only for a workspace command (docs/focus-follows-mouse.md).
-    public func movesPointer(from source: CommandSource, toAnotherDisplay: @autoclosure () -> Bool) -> Bool {
-        guard source == .hotkey else { return false }
+/// What moved the focus, for mouse-follows-focus (docs/focus-follows-mouse.md).
+public enum FocusChange: Sendable {
+    case command(Command, from: CommandSource)
+    /// `atLaunch`: the window was there when Kosmos launched.
+    case admission(AdmissionFocus, atLaunch: Bool)
+    /// Kosmos adopts or follows the key window its app reported. `admitted`: a new window,
+    /// keyed as Kosmos admitted it (KeyReportIntake.Report).
+    case keyReport(admitted: Bool)
+    /// Parked windows came back. `followed`: Kosmos follows one of them, with no command since.
+    case returned(followed: Bool)
+}
+
+/// The user's input as the app reads it. The rule reads each only for a change that needs it.
+public struct PointerReadings {
+    /// The focus is on another display than the pointer (Session.focusIsOnAnotherDisplay).
+    public var focusOnAnotherDisplay: () -> Bool
+    public var leftButtonDown: () -> Bool
+    /// Whether the last left mouse down landed on the Dock, read with the input.
+    public var activation: () -> (input: ActivationInput, onDock: Bool)
+
+    public init(focusOnAnotherDisplay: @escaping () -> Bool, leftButtonDown: @escaping () -> Bool,
+                activation: @escaping () -> (input: ActivationInput, onDock: Bool)) {
+        self.focusOnAnotherDisplay = focusOnAnotherDisplay
+        self.leftButtonDown = leftButtonDown
+        self.activation = activation
+    }
+}
+
+extension FocusChange {
+    /// Whether mouse-follows-focus brings the pointer to the focus after this change
+    /// (docs/focus-follows-mouse.md).
+    public func movesPointer(mouseFollowsFocus: Bool, reading input: PointerReadings) -> Bool {
+        guard mouseFollowsFocus else { return false }
         switch self {
-        case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
-        case .workspace, .workspaceBackAndForth: return toAnotherDisplay()
-        case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || toAnotherDisplay()
-        default: return false
+        case .command(let command, let source):
+            guard source == .hotkey else { return false }
+            switch command {
+            case .focus, .focusMonitor, .move, .swap, .moveNodeToMonitor: return true
+            case .workspace, .workspaceBackAndForth: return input.focusOnAnotherDisplay()
+            case .moveNodeToWorkspace(_, let focusFollowsWindow, _): return !focusFollowsWindow || input.focusOnAnotherDisplay()
+            default: return false
+            }
+        case .admission(let focus, let atLaunch):
+            return focus == .adopt && !atLaunch && !input.leftButtonDown()
+        case .keyReport(admitted: true):
+            return !input.leftButtonDown()
+        case .keyReport(admitted: false), .returned(followed: true):
+            let (activation, onDock) = input.activation()
+            return activation.bringsPointer(onDock: onDock)
+        case .returned(followed: false):
+            return false
         }
     }
 }

@@ -126,7 +126,7 @@ import Testing
         _ = s.lift(11)
         _ = s.remove(11)
         _ = s.lift(12)
-        _ = s.park([12])   // minimized, or closed and kept by its app
+        _ = s.park([12], because: .minimized)   // or closed and kept by its app
         #expect(s.lifted.isEmpty && s.isParked(12))
         #expect(s.drop(at: mainCenter).isEmpty)
         _ = s.unpark([12], follow: nil)

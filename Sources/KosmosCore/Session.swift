@@ -1,10 +1,12 @@
 import CoreGraphics
 
-/// Why a window Kosmos admits waits parked (docs/tree.md).
+/// Why a window waits parked (docs/tree.md).
 public enum ParkReason: Equatable, Sendable {
     case fullscreen
     case minimized
     case appHidden
+    /// Its app ordered it out and kept it.
+    case closedByApp
 
     /// Fullscreen comes first: a fullscreen window of a hidden app returns when it leaves
     /// fullscreen, and a minimized window stays minimized when its app unhides.
@@ -50,6 +52,8 @@ public struct Session: Sendable {
     /// Parked windows Kosmos concealed, their workspace hidden when they parked. Switches skip
     /// parked windows, so these stay concealed until they return.
     var parkedConcealed: Set<WindowID> = []
+    /// Every parked window has one, except a lifted one.
+    var parkReasons: [WindowID: ParkReason] = [:]
     /// The smallest size each window took, as read backs show, until it is seen smaller.
     var minimums: [WindowID: CGSize] = [:]
     /// Workspaces a profile left out, as they were, for a later profile that lists them.
@@ -124,6 +128,12 @@ public struct Session: Sendable {
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
+        for window in parkReasons.keys where !isParked(window) { problems.append("window \(window) with a park reason is not parked") }
+        for name in names {
+            for entry in workspaces[name]!.parked where (parkReasons[entry.window] == nil) != lifted.contains(entry.window) {
+                problems.append("parked window \(entry.window) must have a park reason exactly when it is not lifted")
+            }
+        }
         for (window, origin) in mergedFrom {
             if home[window] == nil { problems.append("merged window \(window) belongs to no workspace") }
             if mergedAway[origin]?.contains(window) != true { problems.append("merged window \(window) is not in \(origin)") }
@@ -195,6 +205,7 @@ public struct Session: Sendable {
         minimums[window] = nil
         mergedFrom[window] = nil
         parkedConcealed.remove(window)
+        parkReasons[window] = nil
         lifted.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
@@ -203,8 +214,8 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// `new`, the tab just selected, takes `old`'s place and a tiled `old`'s minimum
-    /// (docs/tree.md). Nil when `old` holds no place.
+    /// `new`, the tab just selected, takes `old`'s place with its park reason, and a tiled
+    /// `old`'s minimum (docs/tree.md). Nil when `old` holds no place.
     public mutating func replace(_ old: WindowID, with new: WindowID) -> Plan? {
         defer { check() }
         guard old != new, let name = home[old] else { return nil }
@@ -217,6 +228,7 @@ public struct Session: Sendable {
             changed.insert(current)
         }
         if lifted.remove(old) != nil { lifted.insert(new) }
+        parkReasons[new] = parkReasons.removeValue(forKey: old)
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
         home[new] = name
@@ -232,15 +244,20 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// The plan asks for no focus: macOS keys another window itself, and a request would pull
-    /// the screen out of a native fullscreen Space (docs/tree.md).
-    public mutating func park(_ windows: [WindowID]) -> Plan {
+    /// A parked window keeps its reason unless a minimize or native fullscreen replaces closed
+    /// and kept, and the plan asks for no focus (docs/tree.md).
+    public mutating func park(_ windows: [WindowID], because reason: ParkReason) -> Plan {
         defer { check() }
         var changed: Set<String> = []
         for window in windows {
-            guard let name = home[window], lifted.remove(window) != nil || workspaces[name]!.park(window) else { continue }
-            changed.insert(name)
-            if !isShown(name) { parkedConcealed.insert(window) }
+            guard let name = home[window] else { continue }
+            if lifted.remove(window) != nil || workspaces[name]!.park(window) {
+                changed.insert(name)
+                if !isShown(name) { parkedConcealed.insert(window) }
+            } else if parkReasons[window] != .closedByApp || reason == .appHidden {
+                continue
+            }
+            parkReasons[window] = reason
         }
         return Plan(frames: frames(of: changed))
     }
@@ -270,6 +287,7 @@ public struct Session: Sendable {
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
+        for window in returning { parkReasons[window] = nil }
         return plan
     }
 
@@ -296,6 +314,12 @@ public struct Session: Sendable {
     public func isParked(_ window: WindowID) -> Bool {
         guard let name = home[window] else { return false }
         return workspaces[name]!.parked.contains { $0.window == window }
+    }
+
+    public func parkReason(of window: WindowID) -> ParkReason? { parkReasons[window] }
+
+    public func parked(because reason: ParkReason) -> [WindowID] {
+        names.flatMap { workspaces[$0]!.parked.map(\.window) }.filter { parkReasons[$0] == reason }
     }
 
     public mutating func setMinimum(_ window: WindowID, _ size: CGSize) -> Plan {
@@ -354,16 +378,21 @@ public struct Session: Sendable {
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
         case .focus(let direction, let boundaries) where boundaries != .workspace:
-            return performOnFocused(command, frame: frame)
-                ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
+            if let plan = performOnFocused(command, frame: frame) { return plan }
+            guard let name = workspace(on: .direction(direction), wrapAround: boundaries == .allMonitorsWrapping) else { return nil }
+            let here = monitor(of: focusedWorkspace), there = monitor(of: name)
+            let source = focused.flatMap {
+                workspaces[focusedWorkspace]!.onScreen(frame, in: here.area, gaps: here.gaps, minimums: minimums)[$0]
+            }
+            workspaces[name]!.enter(direction, from: source, frame: frame, in: there.area, gaps: there.gaps, minimums: minimums)
+            return focusShown(name)
         case .move(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command) { return plan }
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
             return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
                                               wrapAround: boundaries == .allMonitorsWrapping))
         case .focusMonitor(let target, let wrap):
-            guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrap),
-                  let name = shown[monitor.id], name != focusedWorkspace else { return nil }
+            guard let name = workspace(on: target, wrapAround: wrap) else { return nil }
             return focusShown(name)
         case .moveNodeToMonitor(let target, let follow, let wrap, let chosen):
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
@@ -390,7 +419,7 @@ public struct Session: Sendable {
         case .move(let direction, let boundaries):
             guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }
         case .swap(let direction):
-            guard workspace.swap(window, direction) else { return nil }
+            guard workspace.swap(window, direction, in: display, gaps: gaps, minimums: minimums) else { return nil }
         case .joinWith(let direction):
             guard workspace.joinWith(window, direction) else { return nil }
         case .layout(.orientation(let orientation)):
@@ -438,6 +467,14 @@ public struct Session: Sendable {
             let step = target == .next ? 1 : -1
             return cycle[(index + step + cycle.count) % cycle.count]
         }
+    }
+
+    /// The workspace shown on the display `target` names from the focused one. Nil for the
+    /// focused workspace.
+    private func workspace(on target: Command.MonitorTarget, wrapAround: Bool) -> String? {
+        guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrapAround),
+              let name = shown[monitor.id], name != focusedWorkspace else { return nil }
+        return name
     }
 
     mutating func reach(_ name: String) -> Plan {
@@ -500,6 +537,23 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// The windows on screen that a batch's reveal takes in, as the one
+    /// move-node-to-workspace --focus-follows-window moves or a followed rule window. Each would
+    /// land at its tile before the reveal, so a batch of its own conceals it first. One that
+    /// `display` does not show on its workspace's display is left out: concealed, it keeps the
+    /// ordinary Space of the display it leaves, and whether its reveal shows it on the other is
+    /// open (docs/hiding.md). `concealed`: Hiding has or is sending the window's conceal.
+    public func entering(show: [WindowID], hide: [WindowID], frames: some Collection<WindowID>,
+                         concealed: (WindowID) -> Bool, display: (WindowID) -> DisplayID?) -> [WindowID] {
+        let revealed = Set(show.filter(concealed).compactMap { home[$0] })
+        guard !revealed.isEmpty else { return [] }
+        return frames.filter { id in
+            guard let name = home[id], revealed.contains(name), !hide.contains(id), !concealed(id), isVisible(id)
+            else { return false }
+            return display(id) == monitor(of: name).id
+        }
+    }
+
     /// The windows of `hide` that lose their ordinary Space as they are concealed
     /// (docs/displays.md).
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
@@ -514,7 +568,7 @@ public struct Session: Sendable {
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
     /// Targets for the shown workspaces' floating windows on a display showing another workspace
-    /// (docs/displays.md). A concealed window's center is on no display, so it stays.
+    /// (docs/displays.md). A window whose center is on no display stays.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {

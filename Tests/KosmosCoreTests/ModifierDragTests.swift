@@ -245,7 +245,7 @@ extension DragGate {
         var s = row()
         _ = s.add(20, to: "2")
         _ = s.add(21)
-        _ = s.park([21])
+        _ = s.park([21], because: .minimized)
         for window: WindowID in [20, 21, 99] {
             #expect(s.beginDrag(grab(window, at: .zero), frame: display) == nil)
         }

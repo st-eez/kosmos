@@ -31,6 +31,10 @@
 - `join-with` is AeroSpace's: the window joins its neighbour in the direction in a new
   container across the neighbour's parent. A neighbour that is a container already runs
   across its parent, so the window joins it.
+- `swap` exchanges the window with the tile `focus` reaches in the direction, below, and
+  each takes the other's place and share. AeroSpace's `swap` takes the window its `focus`
+  reaches too (SwapCommand.swift in aerospace-steez at 40b2b44d). Floating windows do not
+  count, since a swap exchanges places in the tree.
 - `resize` takes the space from the window's siblings in proportion to their shares. For
   a dimension across the window's container, the nearest ancestor in a container along
   the dimension resizes. It stops where it would take a window below its minimum, or
@@ -39,12 +43,21 @@
   Stopping there does as much as the key press can, so repeated presses reach the limit
   exactly, and the weights never ask for less than a window takes.
 - `focus` in a direction goes up the tree to the nearest container along the direction
-  with a sibling on that side, then into that sibling by focus order, as i3's
-  `get_tree_next` does. Focus order takes the child holding the most recently focused
-  window, the last one on a tie, as AeroSpace's `mostRecentChild` does. The
-  workspace's floating windows count as tiles, as AeroSpace's `focus` counts them
-  (FocusCommand.swift, `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard
-  reaches a floating window a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).
+  with a sibling on that side, as i3's `get_tree_next` does, then to the window over there.
+  The sibling's windows at its edge facing the focused window are the first or last child
+  of each container along the direction and every child of each container across it. Of
+  those whose span across the direction overlaps the focused window's, the most recently
+  focused takes the focus, or the last one when none of them was focused, as Hyprland's
+  `movefocus` picks by default. An overlap of 1 pt or less counts as none, as Hyprland's
+  `intersectLength <= 1` has it, so a window that meets the focused one only at a corner or
+  along a line is not over there. When none overlaps, the nearest takes the focus, by the
+  gap between its span and the focused window's, the most recently focused of the nearest
+  on a tie. So from Ghostty left of Chrome over Finder, with Finder used last,
+  `focus right` reaches Finder from a Ghostty at full height or over y 0 to 800 of 1080,
+  and Chrome from a Ghostty in the top half, which Finder does not overlap. The workspace's
+  floating windows count as tiles, as AeroSpace's `focus` counts them (FocusCommand.swift,
+  `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard reaches a floating window
+  a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).
   - Each floating window stands in the container of the tile under its center, just
     before that tile, or just after it when its center is at or past the tile's center
     along the container. The tile under a center is the one whose share of the tiling
@@ -59,11 +72,12 @@
     `testFocusOverFloatingWindows`).
   - The frames are the ones the inventory last heard from WindowServer, which the
     pointer's center uses too ([focus-follows-mouse.md](focus-follows-mouse.md)), so the command waits on no read. Only the
-    focused workspace's floating windows count, and parked windows never do: minimized,
-    hidden with their app or in native fullscreen.
-  - Into a container, Kosmos goes by each window's own focus order. AeroSpace's temporary
-    placement marks each floating window most recently focused, which its source calls a
-    bug ("floating windows break mru").
+    focused workspace's floating windows count, and on a cross the target workspace's, and
+    parked windows never do: minimized, hidden with their app or in native fullscreen.
+  - A floating window's place in the tree decides only whether it stands at the edge; its
+    overlap is its own frame's. Each window counts by its own focus. AeroSpace's
+    temporary placement marks each floating window most recently focused, which its source
+    calls a bug ("floating windows break mru").
   - Focusing a floating window raises it and centers the pointer on it as any focus does
     ([focus.md](focus.md) and [focus-follows-mouse.md](focus-follows-mouse.md)).
   - Hyprland's `movefocus` looks among windows of the focused window's kind first: from a
@@ -74,6 +88,38 @@
     window centered between them is never reached from a tile. Kosmos follows AeroSpace
     here, where [overview.md, section 1](overview.md#1-goal-and-constraints) would follow Omarchy, because only AeroSpace's rule reaches that
     window. Steve chose it.
+  - A focus that crosses to another display ([displays.md](displays.md)) enters the
+    workspace there the same way, with that whole workspace as the sibling and the frame
+    the focused window has on its own display, so it lands at the edge it crosses. That
+    workspace's floating windows count as tiles, as above. A workspace with a fullscreen
+    window keeps its focus, since that window covers every edge, and an empty workspace
+    takes the focus with no window. From an empty workspace, with no window to overlap,
+    the most recently focused window at the edge takes the focus.
+  - Before this, the focus went into the sibling by focus order, the child holding the
+    most recently focused window at each level, and into another display's workspace by
+    its most recently focused window. On September 25, 2026 the left panel showed Discord
+    and the main panel Helium left of Outlook. From Outlook, Command-Tab to Discord and
+    then `focus right` reached Outlook, where Helium stood at the edge (live). Steve asked
+    for the window over there, within a workspace too.
+  - Hyprland's `movefocus` looks at the windows of the workspaces every display shows, and
+    takes one whose edge meets the focused window's (within 2 px, or overlapping it by at
+    most half the smaller size), with a span across the direction that overlaps it by more
+    than 1 px. With `binds:focus_preferred_method` at its default of 0, which Steve's
+    Omarchy keeps, it takes the most recently focused of those; with 1, the one that
+    overlaps most (`CWindowQuery::inDirection` at e368c13). Kosmos takes the same window
+    from the sibling's edge, and falls back to the nearest one where none overlaps.
+  - AeroSpace goes into the sibling by `findLeafWindowRecursive(snappedTo:
+    direction.opposite)` (FocusCommand.swift in aerospace-steez at 40b2b44d, which upstream
+    39e51904 matches). It takes the first or last child along the direction, and across it
+    the child holding the most recently focused window, whatever its overlap. From a Ghostty
+    in the top half it reaches Finder, where Kosmos reaches Chrome, since Finder does not
+    overlap it. Its most recent child is
+    the one holding the most recently focused window anywhere below, where Kosmos compares
+    the edge windows' own focus. It enters another display's workspace that way only when
+    `wrap-around-all-monitors` wraps to the display at the other end
+    (`hitAllMonitorsOuterFrameBoundaries`). Crossing to the next display it focuses the
+    workspace's most recently focused window through `focusWorkspace` (focus.swift), so it
+    too reached Outlook.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
   workspace at their saved position, and Kosmos follows them to that workspace, as it does
   for Command-Tab. For an app that unhides, it follows the window the app keys if that
@@ -85,7 +131,9 @@
     no frame. Parking asks for no focus, since macOS keys another window itself and a
     request would pull the screen out of a native fullscreen Space. A window already
     minimized, hidden or in fullscreen when Kosmos admits it, as at launch, is parked at
-    once on the workspace it joins.
+    once on the workspace it joins. At admission native fullscreen comes before a minimize,
+    and a minimize before a hide. A parked window keeps the reason it parked for, and only
+    a window closed and kept takes a later one (below).
   - A window that leaves the tree to float or park keeps a restore hint that records the
     windows it stood among at each level up to the root, with their shares, since windows
     outlive the containers around them. Its space goes to the windows it shared space
@@ -112,14 +160,14 @@
     unless another window of its app is ordered in at its frame: only that window's
     order-out can still pair with the order-in as a tab switch, as when the user selects
     the tab of a window Merge All Windows parked, so the reopen then waits the pairing
-    window. The reopen pops the window in ([geometry.md](geometry.md)). Before this, every
-    reopen waited the pairing window, and Activity Monitor, closed with Command-W on
-    workspace 5 and reopened on workspace 6, showed at its workspace 5 tile for about
-    270 ms after its order-in, where its app ordered it in (live log, September 25, 2026).
-    The ceiling: a window that waits and is no tab switch shows at its old place for the
-    250 ms. A selected tab is already at its place. If the log shows such a wait, the
-    upgrade is to hold the window in a transparent Space of the pool while it waits, as a
-    new window waits for its write. Kosmos takes a managed
+    window. Before this, every reopen waited the pairing window, and Activity Monitor,
+    closed with Command-W on workspace 5 and reopened on workspace 6, showed at its
+    workspace 5 tile for about 270 ms after its order-in, where its app ordered it in
+    (live log, September 25, 2026). The ceiling: a window that waits and is no tab switch
+    stays at its old place for the 250 ms, then slides. A selected tab is already at its
+    place. The wait is the pairing window, which the open question below sets. The reopen
+    slides the window from where its app showed it to its place
+    ([geometry.md](geometry.md)). Kosmos takes a managed
     window ordered out for none of the other reasons as closed and kept, and looks at it
     as soon as the read that saw its order-out is applied with no other read of window
     rows under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A
@@ -140,10 +188,15 @@
     case. Activity Monitor, with no other window, parks at once.
   - Open: how far apart Kosmos applies a switch's two halves, which sets the pairing
     window and whether a window whose app has no other window ordered out needs the wait
-    too, as the tab that a window's first Command-T deselects might. Kosmos logged order
-    changes at debug level, and the live logs of September 23 to 25 kept info level, so
-    their five pairings, four Terminal tab switches and a Terminal window leaving
-    fullscreen that paired with another's toolbar windows, have no times for their halves.
+    too, as the tab that a window's first Command-T deselects might. Another window of the
+    app ordered in at the tab's frame gives no reason to wait. Its order-in applied before
+    the look, so it paired then and its claim holds the place, or it never pairs. The case
+    left, which the pairing log settles, is an incoming tab still unknown at the look, as a
+    first Command-T's new tab or a tab not seen since launch, whose events come in a later
+    main queue turn. Kosmos logged order changes at debug level, and the live logs of
+    September 23 to 25 kept info level, so their five pairings, four Terminal tab switches
+    and a Terminal window leaving fullscreen that paired with another's toolbar windows,
+    have no times for their halves.
     Kosmos now logs each candidate window's order change at info level, and says when a
     switch pairs after its deselected tab parked as closed and kept. A day of Ghostty and
     Finder tabs settles it, and the log goes then; until then the pairing window stays
@@ -240,16 +293,23 @@
     as when Finder opens several tabs or Command-T is pressed twice.
   - Closing the selected tab is a switch. When the destroy comes before the next tab, the
     closed tab's place waits the pairing window for it, if the app has windows ordered
-    out, in native fullscreen too. Closing the group's last tab is a close. A switch in
-    the meantime leaves the closed tab out of its batch ([hiding.md](hiding.md)).
+    out, in native fullscreen too. While a tab Kosmos has not admitted yet claims the
+    place, as a tab not selected since Kosmos launched, which no sweep lists while it is
+    ordered out, the place waits for that admission until a second after the destroy, as a
+    look does for a claim. Each wait is decided again when it ends, as a look's is, so a
+    claim made during the pairing window extends it. Before this, the destroy dropped the
+    claim, the place reflowed away, and the tab took a place of its own once admitted.
+    Closing the group's last tab is a close. A switch in the meantime leaves the closed tab
+    out of its batch ([hiding.md](hiding.md)).
   - A hidden member ordered in with no tab leaving is back after the pairing window if it
     is still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It
     floats when a rule floats its app, and the workspace a rule names does not apply to it.
-    A window its app had closed and kept opens again as a new window, 250 ms late only
-    while another window of its app is ordered in at its frame (above). Merge All Windows
-    parks the merged windows that way, and selecting one's tab brings it to the group's
-    place.
+    It shows for the pairing window before it takes its place, so it slides from there as
+    a reopened window does ([geometry.md](geometry.md)). A window its app had closed and
+    kept opens again as a new window, 250 ms late only while another window of its app is
+    ordered in at its frame (above). Merge All Windows parks the merged windows that way,
+    and selecting one's tab brings it to the group's place.
   - Kosmos does not read the AXTabGroup of the selected tab. Frames tell the cases seen
     so far apart at no cost, and a false switch now needs two windows of one app with one
     frame, one leaving and one arriving within 250 ms. The AXTabs of the incoming window

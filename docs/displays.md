@@ -23,8 +23,10 @@
 - When the front app keyed the new window, as when the user launched or activated the app,
   and the rule's workspace is hidden, Kosmos shows that workspace on its display and
   focuses the window, as for a Command-Tab to a concealed window ([focus.md](focus.md)).
-  Hyprland's `workspace` window rule does the same: the window opens on that workspace and
-  Hyprland switches to it, unless the rule adds `silent` (Hyprland wiki, Window Rules).
+  When that report came before Kosmos placed the window, one switch places and shows it,
+  and the window is never concealed. Hyprland's `workspace` window rule does the same: the
+  window opens on that workspace and Hyprland switches to it, unless the rule adds
+  `silent` (Hyprland wiki, Window Rules).
   With `mouse-follows-focus` the pointer comes along
   ([focus-follows-mouse.md](focus-follows-mouse.md)). A window its app opens in the
   background changes no workspace. The ceiling: a launch by an agent or a script that
@@ -63,7 +65,8 @@
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
     display in the direction at the edge of the workspace. `focus` is at the edge when no
     window, floating or tiled, stands in the direction ([tree.md](tree.md)), and then focuses
-    that display's workspace; `move` moves a tiled window there and follows it. A move is
+    the window over there on that display's workspace, as tree.md says; `move` moves a
+    tiled window there and follows it. A move is
     at the edge when the window has no sibling in the direction and no container above its
     own runs along the direction, where AeroSpace's `moveOut` reaches the workspace and a
     plain `move` wraps the root in a new root along the direction, as AeroSpace and i3 do.
@@ -121,10 +124,12 @@
   `layoutFloatingWindow` moves it. That covers a move to another display, a rule that
   sends a new window to a workspace another display shows, and a display change. Kosmos
   reads the windows' frames from WindowServer when it checks. A window whose center is on
-  no display, as a concealed one reads, is left for the check after its reveal. The read
-  waits on WindowServer, which is busy committing right after a switch, so it runs only
-  while a shown workspace has a floating window, and never between a keypress and its
-  batch or its focus request. The log gives each read's time, to measure at the desk.
+  no display stays. A concealed window's row gives the frame it has, as a shown window's
+  does ([hiding.md](hiding.md)), so one still concealed on a shown workspace, as while its
+  switch waits for its writes, goes home as a revealed one would. The read waits on
+  WindowServer, which is busy committing right after a switch, so it runs only while a
+  shown workspace has a floating window, and never between a keypress and its batch or its
+  focus request. The log gives each read's time, to measure at the desk.
 - A floating window the user drags onto a display showing another workspace joins that
   workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
   check above leaves it there. Kosmos takes a move of a floating window of a shown

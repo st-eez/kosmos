@@ -55,7 +55,8 @@
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
   replaces the confirmed one, and a size other than the one the window kept at a refusal
   ends that refusal, so the next layout writes the target again, as a first attempt. A
-  concealed window's frame reads as off every display and is left out.
+  concealed window's change is left out, though its row gives the frame it has, as a shown
+  window's does ([hiding.md](hiding.md)).
 - A tiled window the user resizes by its edges, as a change event reports it while the
   left button is down, goes back to its tile when the button comes up, which an `NSEvent`
   global monitor hears, as AeroSpace's GlobalObserver does. Omarchy leaves Hyprland's
@@ -119,13 +120,13 @@
   `animations = false` ([config.md](config.md)), match Omarchy: a window a relayout moves
   slides to its frame over 0.38 s along easeOutQuint, cubic-bezier(0.23, 1, 0.32, 1), and a
   window opened after launch onto a shown workspace pops in from 87% of its size about its
-  center and alpha 0 over 0.41 s. Switches and closes do not animate. The windows that
-  slide are a plan's writes to windows on screen on a shown workspace, other than one the
-  user holds or presses on, of an app whose worker is not backed off, on a display that
-  holds no native fullscreen window or holds the key window on its desktop Space. A
-  reveal, a hidden workspace, a drag's own writes, the 100 ms retry and floating windows
-  brought home jump, and so does a backed off app's window, whose write waits for the app
-  while its transform would hold it where it showed.
+  center and alpha 0 over 0.41 s, while its app has not ordered it in yet. Switches and
+  closes do not animate. The windows that slide are a plan's writes to windows on screen on
+  a shown workspace, other than one the user holds or presses on, of an app whose worker is
+  not backed off, from and to displays that hold no native fullscreen window or hold the
+  key window on their desktop Space. A reveal, a hidden workspace, a drag's own writes, the
+  100 ms retry and floating windows brought home jump, and so does a backed off app's
+  window, whose write waits for the app while its transform would hold it where it showed.
   - The window joins a Space of a pool, shown in place at level 1, one above the desktop
     Space's, and keeps its ordinary Space. Its frame goes through the ledger and its worker
     once, as any write. The Space's transform shows it where it showed, then eases to its
@@ -166,14 +167,33 @@
     leaves the slide: the worker reads the frame back about 3 ms after the write and
     WindowServer takes it about 9 ms later, so the other tiles' reflow at a title bar drag's
     lift lands with the button down.
-  - A new window's Space turns transparent before the window joins it, so the window
-    vanishes from where its app opened it until its write lands, then pops in where it
-    landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
-    in at its target, and the reads follow it until it lands. A window its app opens on its
-    own tile pops in too.
-  - A window its app closed and kept, then orders in again at its old place, vanishes from
-    there and pops in as a new window does. It shows there only while its reopen waits the
-    pairing window, the ceiling [tree.md](tree.md) names.
+  - An app shows its new window before Kosmos hears of it, so a window Kosmos places after
+    launch that is ordered in already slides from where it shows to its place, as a
+    relayout's window does, and stays put when that is its place. A pop hid it and faded it
+    back. In seven Ghostty Command-N on September 25, 2026, each window was ordered in when
+    Kosmos admitted it, 18 to 40 ms after its key report, so it showed opaque where Ghostty
+    opened it for 2 to 5 frames at 120 Hz, then nothing until its write landed, then faded
+    in (live log). At 60 fps, each of five Activity Monitor reopens showed the window for 1
+    frame, then nothing for 1 or 2 frames, then faded it in over about 0.4 s (screen
+    recording, September 25, 2026). A window its app closed and kept, then orders in again,
+    shows at its old frame, and a hidden tab dragged out of its group shows for the pairing
+    window before it takes a place ([tree.md](tree.md)), so they slide from there too. A
+    reopen that waits the pairing window slides after the wait, the ceiling
+    [tree.md](tree.md) names.
+  - Only a window still ordered out when Kosmos places it pops in, as Discord's was,
+    admitted 47 ms before its order-in (live log, September 25, 2026). Kosmos reads from
+    WindowServer the row of a window it places that would slide or pop, since the
+    inventory's row can lag an order-in whose read is under way. The pop's Space turns
+    transparent before the window joins it, and the window pops in where its write landed.
+    A write that has not landed after 0.25 s, as a launching app's, pops the window in at
+    its target, and the reads follow it until it lands. The ceiling: an order-in between
+    that read and the Space turning transparent, in the same main actor turn, shows the
+    window until then, and whether a window added to a Space while ordered out stays in it
+    once ordered in is unmeasured. If it leaves, the window shows where its app ordered it
+    in, then jumps to its place when its write lands. Adding each candidate window of a
+    regular app to a transparent Space of the pool at its first row, before its
+    Accessibility facts, would remove both, once a probe shows that the add outlasts the
+    order-in.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while Kosmos can conceal, with the guardian ready and every
@@ -192,16 +212,16 @@
     follow the windows they border in and out of the holding Space
     ([hiding.md](hiding.md)), takes no Space from the pool.
   - A Space of the pool shows over whatever Space its display shows, so a slide on a
-    display showing a native fullscreen Space would draw over the fullscreen app. So a
-    display that holds a native fullscreen window, as the inventory last read its frame,
-    slides nothing, unless it holds the key window while no fullscreen Space shows, as
-    the focus gate judges it from the key window ([focus.md](focus.md)): the user works on
-    its desktop Space. The ceiling: another display that holds one slides nothing while it
-    shows its desktop Space too. A slide under way when the user swipes its display to the
-    fullscreen Space draws over the fullscreen app until the slide ends, 0.38 s after it
-    began, or later while its write has not landed, and so does a relayout there before
-    the report that the fullscreen window is key. Reading each display's current Space
-    would tell them apart.
+    display showing a native fullscreen Space would draw over the fullscreen app. So no
+    window slides to or from a display that holds a native fullscreen window, as the
+    inventory last read its frame, unless it holds the key window while no fullscreen
+    Space shows, as the focus gate judges it from the key window ([focus.md](focus.md)):
+    the user works on its desktop Space. The ceiling: another display that holds one
+    slides nothing while it shows its desktop Space too. A slide under way when the user
+    swipes its display to the fullscreen Space draws over the fullscreen app until the
+    slide ends, 0.38 s after it began, or later while its write has not landed, and so
+    does a relayout there before the report that the fullscreen window is key. Reading
+    each display's current Space would tell them apart.
   - Limits, unmeasured: a resize scales the window's old content, so it stretches until
     the slide ends; a sliding window draws above every window of the desktop Space,
     floating windows included, and two sliding windows, whose Spaces share one level,

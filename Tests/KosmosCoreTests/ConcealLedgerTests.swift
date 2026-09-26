@@ -140,6 +140,40 @@ private struct Memberships {
     #expect(!batch.isDone(members: server.members(of: batch.touched)))
 }
 
+/// Command-W right before a switch: 3 closed, or its app ordered it out and kept it, after the
+/// batch read its row, so no Space lists it.
+@Test func aWindowGoneBeforeItsConcealLeavesTheBatch() {
+    var ledger = ConcealLedger(entries: [1: holding])
+    let batch = ledger.batch(show: [1], hide: [2, 3], stripping: [3], into: holding, isOnAnySpace: { _ in true })
+    var read: Set<WindowID> = []
+    let confirmed = batch.confirmed(members: [holding: [2]], orderedIn: { read = $0; return [] })
+    #expect(read == [3])
+    #expect(confirmed?.left == [3])
+    #expect(confirmed?.batch.fresh == [2] && confirmed?.batch.strip == [])
+    ledger.commit(confirmed!.batch, into: holding)
+    #expect(ledger.entries == [2: holding])
+}
+
+@Test func aFailedWindowStillOrderedInFailsTheBatch() {
+    let batch = ConcealLedger(entries: [1: holding]).batch(show: [1], hide: [2, 3], into: holding, isOnAnySpace: { _ in true })
+    #expect(batch.confirmed(members: [holding: [2]], orderedIn: { $0 }) == nil)
+    // A revealed window still listed.
+    #expect(batch.failed(members: [holding: [1, 2, 3]]) == [1])
+    #expect(batch.confirmed(members: [holding: [1, 2, 3]], orderedIn: { $0 }) == nil)
+    // A Space not read fails each of its windows, and one of them is ordered in.
+    #expect(batch.failed(members: [:]) == [1, 2, 3])
+    #expect(batch.confirmed(members: [:], orderedIn: { $0.intersection([2]) }) == nil)
+}
+
+@Test func aConfirmedBatchReadsNoRows() {
+    let batch = ConcealLedger().batch(show: [], hide: [2], into: holding, isOnAnySpace: { _ in true })
+    let confirmed = batch.confirmed(members: [holding: [2]], orderedIn: { _ in
+        Issue.record("rows read for a confirmed batch")
+        return []
+    })
+    #expect(confirmed?.batch == batch && confirmed?.left == [])
+}
+
 @Test func aWindowThatLeftTheHoldingSpaceOnItsOwnIsForgotten() {
     // A native tab deselected while concealed leaves the holding Space (kosmos-probe tabs).
     var ledger = ConcealLedger(entries: [1: 9, 2: 9])
