@@ -86,7 +86,7 @@ final class Apps {
             // Nil when the app did not answer.
             guard let window = await worker.focusedWindow() else { return }
             let kind: AXReport.Kind = kosmos_front_pid() == pid ? .focusedWindowChanged(window) : .backgroundFocus(window)
-            report(AXReport(pid: pid, kind: kind, received: received))
+            report(AXReport(pid: pid, kind: kind, received: received, activationRead: true))
         }
     }
 }

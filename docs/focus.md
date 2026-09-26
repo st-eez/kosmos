@@ -18,6 +18,37 @@
     app alone would take a Command-Tab to another window of that app for an echo. Records
     requested before the matched one go with it, so a record whose echo never comes goes
     once a later request's echo comes.
+  - The activation read of an app Kosmos key-recorded is that key record's echo whatever
+    window it reads (tla/README.md, change 25). The key record can activate the app with
+    its last key window, and the app keys the named window a moment later, so the read can
+    find the last key window. Live on 2026-09-24 at 23:56, with Activity Monitor front, the
+    pointer entered Preview's window 100924, Preview reported 99816, 100924 and 99816
+    within about 40 ms, and Kosmos adopted 99816, its main window, and keyed it. On
+    2026-09-25, after alt-1 key-recorded Ghostty's window on workspace 1, Ghostty's first
+    report was its last key window, concealed on workspace 5, and the grace followed it
+    there. A read of another window leaves the record for the named window's report, and
+    the kill switch counts it as a wrong window until that report comes. After a report
+    from the app that was no echo, as the user's click on another of its windows, the read
+    finds that window and consumes the record. When a read that consumes its record, or the
+    named window's report after a read that waited, names a window other than the intent,
+    it landed after a newer intent, and Kosmos requests the intent again, for a report of
+    an app no longer front too. A key record whose read never comes, as when the app came
+    front before the record was posted or did not answer, would take a later activation of
+    the app, as a Command-Tab seconds later, for its echo, so the read matches the record
+    whatever window it reads only within 1 s. Past that it matches as a notification does.
+    The spec has no time, and leaves the bound out. The log names each activation read in
+    its debug line for the report. Two ceilings. If the app never keys the named window,
+    its last key window stays key under a focus intent on the named window, and the record
+    takes a later report of the named window for its echo, until a later request's echo or
+    a miss clears it; the spec's apps always key it, and a timer, as a departure has, would
+    drop the record and request the intent again. The spec lets an app key its last key
+    window first only while that is still its focused window, so the first key sends no
+    notification. After a raise in the background the two differ, and no probe has shown
+    which window the app keys first then. If it is the last key window, its notification is
+    adopted as the user's change on a shown workspace. On a hidden one it is held and the
+    named window's report replaces it (below), unless no window was key before it, as on an
+    empty workspace, and then Kosmos follows it at once. A probe that raises a window of a
+    background app and then key-records another would settle it.
   - A report from an app that is not the front process, at the notification's callback or
     once the activation read returns, consumes an echo it matches and is otherwise
     ignored: background apps report windows they open, and a raise in a background app
@@ -49,52 +80,61 @@
   - A window the front app keyed before Kosmos admitted it, as a launching app keys its
     first window, is the user's choice too, and its report waits for the window's place
     (`AdmissionFocus`). So does the key report of a window closed and kept, which takes a
-    place as a new window when its app opens it again ([tree.md](tree.md)). On a shown
-    workspace the window becomes the focus. On a hidden one, which only a rule names for a
-    new window, the report is decided as one of a concealed window whose key window before
-    it stayed, since an app keys a window it opens, and Kosmos follows it there
-    (displays.md). A report that comes after the admission and
-    before the window's conceal completes is followed the same way. After that, Kosmos
-    requests its focus intent again, and a later report loses to it, as a tab's does
-    (tree.md). A command received after the report wins, as over a Command-Tab. Kosmos
-    follows no window parked at admission or admitted while the session is locked.
-    On 2026-09-25 at 10:25:31 Steve launched Chrome from workspace 8, and a rule put its
-    first window on workspace 4, which no display showed. The log has no key window report
-    from Chrome, and Accessibility answered for the window 854 ms after WindowServer made
-    it a candidate, within the launch retries: Chrome keyed the window before its worker's
-    observer was registered, and its activation read got no answer while it launched.
-    Kosmos concealed the window, keyed Claude on workspace 8 again, and Steve pressed alt-4
-    himself. A worker now reports its app's focused window when it starts, before any of
-    the app's windows is admitted (geometry.md). KosmosCore's tests replay the waiting
-    report through the admission and its follow (`KeyReportIntake`), and cover
-    `AdmissionFocus` and the classification. The Controller decides the report before the
-    admission's plan runs, and a follow joins that plan, so one switch shows the rule's
-    workspace with the window never concealed. Before this, the plan concealed the window
-    where its app opened it, and the follow's switch revealed it there before its write
-    moved it. No test covers that order, the worker's report at its start or its refusal of
-    window reads before it: they are in KosmosApp, which has no test target.
-  - macOS can key the next app before WindowServer orders a hidden app's windows out, so
-    a report that would follow waits 100 ms, then is decided by what Kosmos knows of the
-    window key before it. A report of another window replaces it, and a held report whose
-    window is no longer the key window last heard of when the grace ends is dropped. Every
-    held report logs its outcome. A Command-Tab after that report follows as usual, 100 ms
-    late. This happened live: Command-H on the only window of workspace 2 took Kosmos to
-    workspace 1, where macOS keyed Ghostty. So did the drop, on 2026-09-25: from
-    workspace 6, alt-1 key-recorded Ghostty's window on workspace 1, Ghostty first keyed
-    its last key window, concealed on workspace 5, then the requested one, and the held
-    report of the first, decided after Kosmos's echo of the second, took Kosmos to
-    workspace 5.
+    place as a new window when its app opens it again ([tree.md](tree.md)). The wait ends
+    at a report that would end a held report (below), of another placed window and not
+    Kosmos's echo, at another window's report with no place, which replaces it, and at a
+    report from another app that is not Kosmos's echo, the user's later choice: a
+    Command-Tab to an app with no windows or a click on the desktop reports no key window,
+    and an unminimized window is key as it returns. Kosmos's echo, and the app's own report
+    of no key window or of a parked window, leave the wait. On a shown workspace the window
+    becomes the focus. On a hidden one, which only a rule names for a new window, the
+    report is decided as one of a concealed window whose key window before it stayed, since
+    an app keys a window it opens, and Kosmos follows it there (displays.md). A report that
+    comes after the admission and before the window's conceal completes is followed the
+    same way. After that, Kosmos requests its focus intent again, and a later report is one
+    of a concealed window, held for the grace and followed as a Command-Tab is. A command
+    received after the report wins, as over a Command-Tab. Kosmos follows no window parked
+    at admission or admitted while the session is locked. On 2026-09-25 at 10:25:31 Steve
+    launched Chrome from workspace 8, and a rule put its first window on workspace 4, which
+    no display showed. The log has no key window report from Chrome, and Accessibility
+    answered for the window 854 ms after WindowServer made it a candidate, within the
+    launch retries: Chrome keyed the window before its worker's observer was registered,
+    and its activation read got no answer while it launched. Kosmos concealed the window,
+    keyed Claude on workspace 8 again, and Steve pressed alt-4 himself. A worker now
+    reports its app's focused window when it starts, before any of the app's windows is
+    admitted (geometry.md). KosmosCore's tests replay the waiting report through the
+    admission and its follow (`KeyReportIntake`), and cover `AdmissionFocus` and the
+    classification. The Controller decides the report before the admission's plan runs, and
+    a follow joins that plan, so one switch shows the rule's workspace with the window
+    never concealed. Before this, the plan concealed the window where its app opened it,
+    and the follow's switch revealed it there before its write moved it. No test covers
+    that order, the worker's report at its start or its refusal of window reads before it:
+    they are in KosmosApp, which has no test target.
+  - macOS can key the next app before WindowServer orders a hidden app's windows out, so a
+    report that would follow waits 100 ms, then is decided by what Kosmos knows of the
+    window key before it. A report of another window that is not Kosmos's echo replaces it.
+    A report that repeats its window leaves it held and consumes the echo it matches. After
+    a key record's first key is held, if its read comes next, it repeats the held window
+    and consumes the record, and the named window's report is no echo and replaces it. If
+    the named window's report comes first, it is the record's echo and leaves the hold, and
+    the read of that window after it is a report of its own and replaces it. A held report
+    whose grace ends while the session is locked is dropped, as the resync after the unlock
+    requests the intent again. Every held report logs its outcome. A Command-Tab after that
+    report follows as usual, 100 ms late. This happened live: Command-H on the only window
+    of workspace 2 took Kosmos to workspace 1, where macOS keyed Ghostty. From 6f54cda to
+    change 26 Kosmos also dropped a held report whose window was no longer the key window
+    it last heard of when the grace ended, for Ghostty's first key after alt-1 (above). The
+    drop lost a Command-Tab whose report came before the echo of an older request of
+    Kosmos's (tla/README.md, change 26, `split-user-helddrop`).
   - A report that repeats the key window Kosmos last heard of, while a request of Kosmos's
     to another window of that app awaits its echo, is a miss of that request, not the
     user's choice: the app kept its key window, or keyed another one itself before
-    reporting the requested one. Preview re-keyed its main window within about 40 ms of a
-    hover keying its second window (live, 2026-09-24 at 23:56). The missed request, the
-    oldest to the app as the focus queue runs requests in order, never comes back, so it
-    leaves the expected echoes. Kosmos requests the focus again, once for each requested
-    window; if that misses too, it leaves the key window where macOS put it. A report that
-    echoes a request is no miss: an app can report the window again after the raise that
-    follows its key record (below). A report that repeats the held window leaves the hold
-    standing.
+    reporting the requested one. The missed request, the oldest to the app as the focus
+    queue runs requests in order, never comes back, so it leaves the expected echoes.
+    Kosmos requests the focus again, once for each requested window; if that misses too,
+    it leaves the key window where macOS put it. A report that echoes a request is no
+    miss: an app can report the window again after the raise that follows its key record
+    (below). A report that repeats the held window leaves the hold standing.
   - A visible window of a workspace that no display shows is key only during a switch:
     macOS re-keyed after a hide, or the user clicked or Command-Tabbed to a window about to be
     concealed. The switch wins, and its focus is requested again. After a batch fails,
@@ -179,7 +219,9 @@
     Without the record `split-open-postraisenone` fails, and with a record kept until
     matched `split-open-postraisekept` does (changes 21 and 23). The ceiling: the worker's
     read can reach the app before the app handles the key record, and then finds the
-    window it had focused before and skips the raise. Each skip is logged with whether the
+    window it had focused before and skips the raise, and the window can stay behind its
+    app's others. The spec reaches this once a key record keys the app's own window first,
+    and exempts it (change 25, `lowTop`). Each skip is logged with whether the
     app was front and the window it had focused. The log stays until `kosmos-probe keying`
     runs its `record, then AXRaise while front and focused` order, which measures that
     read.
@@ -376,19 +418,21 @@
     the app front is adopted, over the user's later Command-Tab. The live evidence: a
     window adopted just after Kosmos activated its app, one the user did not pick, with its
     notification logged before the app's activation read.
-  - Removing only the matched record, with three rules that come with it (change 19): an
-    activation read matches its app's key record whatever window it reads, a notification
-    of that window only joins the record, and an echo that names a window other than the
-    intent requests the intent again. Removing only the matched record alone leaves a
-    record whose echo never comes, as when an app re-keys another window before reporting
-    the requested one, to swallow a later Command-Tab to its window, and the activation
-    read rule consumes that record. Kosmos drops the records before the matched one, so an
-    earlier request's echo that arrives after a later one's reads as the user's choice.
-    Kosmos also lets the notification of its own activation consume the record, so the
-    activation read is a report of its own. The split configs found these races before
-    change 19, and none keeps the old rules. The live evidence: on a fast sweep of the
-    pointer across apps, focus going back to a window the pointer left, with that
-    window's report logged after the echo of the later request.
+  - Removing only the matched record, with two rules that come with it (change 19): a
+    notification of a key record's window only joins the record, and a notification that
+    echoes a request no read waited on, as a raise inside the front app, requests the
+    intent again when it names a window other than the intent. Kosmos builds the rest of
+    change 19: an activation read matches its app's key record whatever window it reads,
+    and a read's echo, or the named window's report after a read that waited, requests the
+    intent again when it names a window other than the intent (above). Removing only the
+    matched record alone leaves a record whose echo never comes, as when an app keeps its
+    own key window, to swallow a later Command-Tab to its window. Kosmos drops the records
+    before the matched one, so an earlier request's echo that arrives after a later one's
+    reads as the user's choice. Kosmos also lets the notification of its own activation
+    consume the record, so the activation read is a report of its own. The split configs
+    found these races before change 19, and none keeps the old rules. The live evidence: on
+    a fast sweep of the pointer across apps, focus going back to a window the pointer left,
+    with that window's report logged after the echo of the later request.
   - An activation read of an app that lost the front that still stands when Kosmos
     recorded an activation after its stamp, or when the app had already lost the front to
     Kosmos's activation as the main actor noticed it (changes 19 and 20, `NoticeCheck`;
@@ -402,15 +446,16 @@
     workspace 3, and Kosmos followed it there. The worker's raise keys that window now.
     The activation read of a Command-Tab repeats the window its own notification just
     reported, so the rule takes it for a miss of an older request to that app, and the
-    Command-Tab is lost (`split-user-missrule`). Dropping the rule comes only with the
-    rule above that an activation read matches its app's key record whatever window it
-    reads. On the private path the miss rule is what clears a key record whose echo never
-    comes, as when Preview re-keyed its main window, and without either that record
-    swallows the user's later report of its window. The spec drops the held report's
-    repeat check with the rule; Kosmos keeps it, so a newer Command-Tab to the window of
-    an older held report is taken for that report, and lost when the grace finds the
-    older one stale. The live evidence: a Command-Tab lost as a miss, with "focus request
-    missed" logged for the window it reached, or lost at a grace's end.
+    Command-Tab is lost (`split-user-missrule`). The spec drops the rule along with the
+    rule that an activation read matches its app's key record whatever window it reads,
+    which Kosmos now builds. A read of the app's own window leaves the key record waiting
+    for the named window, and the miss rule clears it when the app reports its own window
+    again; without the miss rule that record swallows the user's later report of the named
+    window. The spec drops the held report's repeat check with the rule; Kosmos keeps it,
+    so a newer Command-Tab to the window of an older held report is taken for that report,
+    and lost when the grace finds the older one stale. The live evidence: a Command-Tab
+    lost as a miss, with "focus request missed" logged for the window it reached, or lost
+    at a grace's end.
   - Reports overtaken by a newer one (changes 19 to 21). A report stamped before the last
     report Kosmos adopted or followed is ignored, as is one stamped before a held report,
     which it would otherwise end and replace: the user clicked a window of one app, then of
