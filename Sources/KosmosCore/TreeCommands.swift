@@ -41,19 +41,23 @@ extension Workspace {
         return frames
     }
 
-    /// Of the windows at the edge of `node` that a focus in the direction enters by, the one
-    /// whose span across the direction overlaps `source` most, else the most recently focused
-    /// of those within a point of it, since frames have whole point edges (docs/tree.md).
+    /// Of the windows at the edge of `node` that a focus in the direction enters by, the most
+    /// recently focused of those whose span across the direction overlaps `source`'s by more
+    /// than a point, as Hyprland picks it. With none, the nearest (docs/tree.md).
     private func nearest(in node: Node, _ direction: Direction, to source: CGRect?, frames: [WindowID: CGRect]) -> WindowID {
         let span: (CGRect) -> (CGFloat, CGFloat) = direction.orientation == .horizontal ? { ($0.minY, $0.maxY) } : { ($0.minX, $0.maxX) }
+        // Negative for the gap between spans that do not meet.
         func overlap(_ window: WindowID) -> CGFloat {
             guard let source, let frame = frames[window] else { return 0 }
             let (a, b) = (span(source), span(frame))
-            return max(0, min(a.1, b.1) - max(a.0, b.0))
+            return min(a.1, b.1) - max(a.0, b.0)
         }
         let edge = edgeWindows(of: node, direction)
-        let most = edge.map(overlap).max()!
-        let near = edge.filter { overlap($0) >= most - 1 }
+        var near = edge.filter { overlap($0) > 1 }
+        if near.isEmpty {
+            let closest = edge.map(overlap).max()!
+            near = edge.filter { overlap($0) == closest }
+        }
         let latest = near.map { stamps[$0] ?? 0 }.max()!
         return near.last { stamps[$0] ?? 0 == latest }!
     }
