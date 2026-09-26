@@ -42,20 +42,27 @@ extension Controller {
             case .own: break
             }
             place(id, pid: pid, .admitted)
-        } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
-            // Perhaps a selected tab closed before the next tab came in: its place waits a
-            // pairing window for that tab (docs/tree.md).
-            after(TabSwitches.window) { controller in
-                if !controller.inventory.isManaged(id) { controller.forget(id) }
-            }
         } else {
-            forget(id)
+            unmanaged(id, pid: pid, at: .now)
         }
     }
 
-    /// A detached tab and a reopened window show where their app ordered them in before Kosmos
-    /// hears of them, so they slide from there, where a window admitted after launch pops in
-    /// (docs/geometry.md).
+    /// Perhaps a selected tab closed: its place waits for the next tab, or for the admission of
+    /// a tab that claims it, decided again when each wait ends, as a look is (docs/tree.md).
+    private func unmanaged(_ id: WindowID, pid: pid_t, at unmanagedAt: ContinuousClock.Instant) {
+        guard !inventory.isManaged(id) else { return }
+        if session.workspace(of: id) != nil,
+           let wait = ClosedAndKept.hold(orderedOut: unmanagedAt, claimed: tabs.isClaimed(id),
+                                         sibling: inventory.hasOrderedOutWindows(pid, besides: id),
+                                         spacesChanged: nil, at: .now) {
+            after(wait) { $0.unmanaged(id, pid: pid, at: unmanagedAt) }
+            return
+        }
+        forget(id)
+    }
+
+    /// A tab dragged out of its group keeps out of its rule's workspace, and a window its app
+    /// closed and kept opens again as a new window does (docs/tree.md).
     private enum Arrival { case admitted, detached, reopened }
 
     /// A window already minimized, in native fullscreen or hidden with its app waits parked,
@@ -83,9 +90,16 @@ extension Controller {
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
         if focus == .adopt { session.adopt(id) }
-        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: arrival == .admitted && !atLaunch ? id : nil)
-        // The follow's switch reveals the window the plan conceals.
-        windowPlaced(id)
+        // A report that keyed the window before it had a place follows it in this plan's switch,
+        // so its hidden workspace shows it without a conceal first (docs/focus.md).
+        var action = intake.placed(id, facts: reportFacts, reports: &reports, misses: &misses)
+        var movePointer = bringsPointer
+        if case .follow(id, let followPointer) = action {
+            touch(id)
+            (plan, movePointer, action) = (session.follow(id), bringsPointer || followPointer, .none)
+        }
+        execute(plan, movePointer: movePointer, floatingCheck: floats, popping: atLaunch ? nil : id)
+        run(action)
     }
 
     private func forget(_ id: WindowID) {

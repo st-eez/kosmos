@@ -58,6 +58,19 @@ extension Workspace {
         focus(direction, from: window, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
     }
 
+    /// `swap` on `screen` with `deskGaps`.
+    @discardableResult
+    mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
+        swap(window, direction, in: screen, gaps: deskGaps, minimums: [:])
+    }
+
+    /// `enter` from `source` on `screen` with `deskGaps`, with the floating windows at `frames`,
+    /// and the window it focuses.
+    mutating func enter(_ direction: Direction, from source: CGRect? = nil, frames: [WindowID: CGRect] = [:]) -> WindowID? {
+        enter(direction, from: source, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
+        return focusedWindow
+    }
+
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         resize(window, dimension, by: amount, in: rect, gaps: gaps, minimums: [:])
