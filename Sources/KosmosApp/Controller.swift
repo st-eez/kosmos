@@ -324,7 +324,9 @@ final class Controller {
             // Sent only now, so each lands concealed.
             self.sendWrites(self.order.done(batch.number))
             self.sendReadyBatches()
-            self.updateBorders()
+            // Last: a border's AppKit calls wait on WindowServer while it applies the batch, and
+            // held the focus request up by 5 ms at the median (docs/borders.md).
+            defer { self.updateBorders() }
             signposter.endInterval("switch", interval)
             let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - context.received
             controllerLog.notice("""

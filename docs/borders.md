@@ -62,7 +62,13 @@ state, and during a slide the frame the slide shows the window at.
   to workspace B and straight back to A, A's windows get their borders once the batch
   that conceals them and the one that reveals them have both finished. The outgoing
   workspace's borders go as Kosmos plans the switch, before its batch conceals the
-  windows, and the incoming ones come when the batch confirms, after the windows show.
+  windows, and the incoming ones come when the batch confirms, after the windows show
+  and after the switch's focus request. A border's AppKit calls wait on WindowServer
+  while it applies the batch: shown before the focus request, in 164 revealing switches
+  from the borders merge to September 26, 2026, the batch's completion took 5.0 ms at the
+  median, 29 ms at p90 and 136 ms at most, against 0.019 ms at the median in 434 before
+  borders, and the focus request waited for it (live log). How much later than its window
+  a border shows now is unmeasured until the benchmark runs.
 - `width` is the ring's thickness in points, from the window's edge outward. JankyBorders'
   `width = 4` looks like Kosmos's `width = 2`. Before 2026-09-25 Kosmos also drew 1 point
   inside the edge, over the window, which Steve found too thick. The ring's inner

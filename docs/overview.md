@@ -135,7 +135,8 @@ queue sends its batches, to other Spaces.
    operation; concealing first would show an empty desktop for the same time.
 4. Once the reads confirm the target window is revealed, and the switch generation is
    still current, the focus queue fronts the target, or Kosmos's own invisible window for an
-   empty workspace, and reads back the key window.
+   empty workspace, and reads back the key window. The main actor shows the incoming
+   windows' borders after the focus request ([borders.md](borders.md)).
 5. The main actor publishes one bar snapshot and one `subscribe` frame.
 
 A switch launches no process, writes no file and leaves the status item alone. Everything
