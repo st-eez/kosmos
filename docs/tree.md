@@ -333,6 +333,10 @@
     drops none, as read for every window closed it would lose the file at the next write
     (`SkyLight.readRows`, [hiding.md](hiding.md)). A window parked at the save holds no
     tile, nor does one ordered out at the launch, as one minimized since.
+  - During the hold, a focus in a direction and `swap` go by the tiles on screen, the held
+    ones (`Workspace.shownFrames`), and a floating window whose center is on a tile a
+    pending window holds stands first in the root. A `resize` ends the hold, as any change
+    to the tree does, so it measures on the tiles it leaves.
   - A saved window keeps its saved workspace and floating over its rule. A rule places a
     new window, and the user may have moved this one since, as the second Ghostty from
     workspace 1, its rule's, to 8; a reload leaves placed windows alone the same way. Where

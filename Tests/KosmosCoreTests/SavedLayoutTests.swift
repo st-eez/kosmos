@@ -118,6 +118,21 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(plan.frames == before.frames(of: "a"))
     }
 
+    /// During the hold a focus or a swap in a direction goes by the tiles on screen, where 1
+    /// spans only 3 and 4 below it, though 5 was focused later.
+    @Test func aFocusDuringTheHoldGoesByTheTilesOnScreen() {
+        var before = Session(names: ["a"], monitors: [Desk.main])
+        before.place("v[h[1 2] h[3 4 5]]", on: "a")
+        before.workspaces["a"]!.focus(1)
+        var after = Session(names: ["a"], monitors: [Desk.main])
+        after.restore(before.savedLayout())
+        for window in [1, 3, 4, 5] as [WindowID] { _ = after.add(window) }
+        var focusing = after
+        #expect(focusing.perform(.focus(.down))?.focus == .window(4))
+        _ = after.perform(.swap(.down))
+        #expect(after.workspaces["a"]!.tree == "v[4 h[3 1 5]]")
+    }
+
     /// A window Kosmos did not know changes the tree, and the tiles held for the saved windows
     /// go to the windows on screen.
     @Test func aNewWindowEndsTheHold() {

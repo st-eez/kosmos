@@ -189,8 +189,7 @@ public struct Session: Sendable {
     public func frames(of name: String) -> [WindowID: CGRect] {
         guard let workspace = workspaces[name] else { return [:] }
         let monitor = monitor(of: name)
-        return workspace.holdingPending.frames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
-            .filter { id, _ in home[id] != nil }
+        return workspace.shownFrames(in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
     func frames(of names: some Sequence<String>) -> [WindowID: CGRect] {

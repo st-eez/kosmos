@@ -445,6 +445,12 @@ extension Workspace {
         pair(window, with: roomiest, root[root.path(to: roomiest)!.dropLast()].orientation.opposite, first: false)
     }
 
+    /// The tiles as the screen shows them, with the pending windows holding theirs.
+    func shownFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
+        let tiled = Set(root.windows)
+        return holdingPending.frames(in: rect, gaps: gaps, minimums: minimums).filter { tiled.contains($0.key) }
+    }
+
     /// The tree with each pending window that was tiled back at its place while its hint is
     /// fresh, so the windows back already have the tiles they had (docs/tree.md).
     var holdingPending: Workspace {
