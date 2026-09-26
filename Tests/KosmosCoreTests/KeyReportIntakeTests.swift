@@ -355,15 +355,15 @@ private struct Replay {
 }
 
 @Test func onlyAReportThatWouldEndAHeldOneEndsTheWaitingReport() {
-    // As for a held report, a report of no key window, Kosmos's echo or a parked window's
-    // report leaves it (docs/focus.md).
-    var replay = Replay(windows: [11: ("1", ghostty), 30: ("1", activityMonitor), 31: ("1", preview)],
+    // As for a held report, Kosmos's echo, and the app's own report of no key window or of
+    // a parked window, leave it (docs/focus.md).
+    var replay = Replay(windows: [11: ("1", ghostty), 30: ("1", activityMonitor), 31: ("1", activityMonitor)],
                         parked: [30, 31], closedByApp: [30], intent: .window(11))
     _ = replay.heard(.window(11), from: ghostty, at: -100)
     #expect(replay.heard(.window(30), from: activityMonitor, at: 10) == .none)
     // 31 is minimized, and macOS keys it just before it returns.
-    #expect(replay.heard(.window(31), from: preview, at: 20) == .none)
-    #expect(replay.heard(.noWindow, from: finder, at: 22) == .none)
+    #expect(replay.heard(.window(31), from: activityMonitor, at: 20) == .none)
+    #expect(replay.heard(.noWindow, from: activityMonitor, at: 22) == .none)
     replay.requested(.window(11), app: ghostty, at: 24)
     #expect(replay.heard(.window(11), from: ghostty, at: 26) == .none)
     replay.parked = [31]
@@ -374,6 +374,20 @@ private struct Replay {
     replay.windows[32] = ("1", preview)
     #expect(replay.heard(.window(11), from: ghostty, at: 50) == .adopt(11, bringsPointer: false))
     #expect(replay.admit(32, at: 60).focus == .awaitKey)
+}
+
+@Test func anotherAppsReportThatIsNoEchoEndsTheWaitingReport() {
+    // The user's later choice: a Command-Tab to an app with no windows reports no key
+    // window, and an unminimized window is key as it returns (docs/focus.md).
+    for (key, app, parked) in [(KeyWindow.noWindow, finder, false), (.window(31), preview, true)] {
+        var replay = Replay(windows: [11: ("1", ghostty), 31: ("1", preview)], parked: parked ? [31] : [],
+                            intent: .window(11))
+        _ = replay.heard(.window(11), from: ghostty, at: -100)
+        #expect(replay.heard(.window(30), from: activityMonitor, at: 10) == .none)
+        #expect(replay.heard(key, from: app, at: 20) == .none)
+        replay.windows[30] = ("1", activityMonitor)
+        #expect(replay.admit(30, at: 30).focus == .awaitKey)
+    }
 }
 
 @Test func kosmossEchoAfterTheWaitingReportLeavesItToTheAdmission() {

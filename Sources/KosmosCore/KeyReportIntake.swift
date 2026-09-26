@@ -111,8 +111,8 @@ public struct KeyReportIntake: Sendable {
     private let ownApp: Int32
     private var keyHistory = KeyHistory()
     /// The last key report of a window with no place, or parked as closed and kept, decided
-    /// when the window takes a place. A report that would end a held one ends it too
-    /// (docs/focus.md).
+    /// when the window takes a place. A report that would end a held one ends it too, as
+    /// does another app's report that is not Kosmos's echo (docs/focus.md).
     private var unplaced: Report?
     /// Admitted on a shown workspace before their apps keyed them (AdmissionFocus.awaitKey).
     /// A report within `keyAfterAdmission` brings the pointer (docs/focus-follows-mouse.md).
@@ -161,6 +161,12 @@ public struct KeyReportIntake: Sendable {
         let repeated = key == reported
         let previous: WindowID? = if case .window(let window)? = keyHistory.heard(reported), window != id { window } else { nil }
         guard !facts.locked else { return .none }   // resync requests the intent again
+        // Another app's report that is not Kosmos's echo is the user's later choice, as a
+        // Command-Tab to an app with no windows or an unminimize (docs/focus.md).
+        if let waiting = unplaced, waiting.reporter != reporter,
+           !reports.isEcho(reported, activationOf: reader, receivedAt: stamp) {
+            unplaced = nil
+        }
         admittedUnkeyed = admittedUnkeyed.filter { stamp - $0.value < Self.keyAfterAdmission }
         let keyedAfterAdmission = id.flatMap { admittedUnkeyed.removeValue(forKey: $0) } != nil
         // The report a departure waited for, unless it is Kosmos's echo: a window keyed
