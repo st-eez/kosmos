@@ -154,6 +154,20 @@
   reads it back. The running Kosmos's recoveries, after a failed batch and when the
   guardian keeps dying (`restoreAll`), leave them to it, recorded; the quit, the guardian
   and the startup recovery destroy them.
+- Quit recovery, and the guardian's after a crash, shows every concealed window before the
+  next Kosmos starts, so at a restart each window of a hidden workspace shows at its tile
+  on its workspace's display, over the shown workspace, until the next Kosmos admits it
+  from the saved layout and conceals it again ([tree.md](tree.md),
+  [inventory.md](inventory.md)). At the install of September 26, 2026, the old Kosmos's
+  quit recovery ended at 00:46:16.900, the new one started at 00:46:17.670, and its first
+  conceals at admission, of windows a rule puts on hidden workspaces, completed at
+  00:46:17.909 and 00:46:17.947: about a second, 0.77 s of it between the two processes
+  (live log). The ceiling: a restart shows the hidden workspaces' windows for that second,
+  and after a crash until launchd starts Kosmos again. The upgrade path is a restart that
+  keeps them concealed: a quit that a launch follows, as `script/install.sh`'s, leaves the
+  record to it, the next Kosmos takes the holding Space and its windows into its ledger in
+  place of startup recovery, and the guardian still restores them when no Kosmos comes
+  back.
 - A window that closes leaves the ledger and the record once its concealing Space no
   longer lists it. The record's slot holds about 168 windows, 165 with the 8 Spaces
   windows slide in, and filled with closed ones it would stop every conceal. A window

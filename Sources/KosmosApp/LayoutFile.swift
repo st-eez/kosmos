@@ -8,7 +8,6 @@ private let layoutLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 /// The saved layout, beside the recovery record (docs/tree.md). Each write replaces the file
 /// whole by a rename, so a crash leaves the last one.
 enum LayoutFile {
-    static var url: URL { KosmosFiles.support.appending(path: "layout.json") }
     static let version = 1
 
     /// WindowServer numbers the windows, so under another one the ids name other windows.
@@ -25,12 +24,12 @@ enum LayoutFile {
 
     /// Nil for a file of another version or WindowServer.
     static func load(under windowServer: ProcessIdentity) -> SavedLayout? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = try? Data(contentsOf: KosmosFiles.layout) else { return nil }
         let contents: Contents
         do {
             contents = try JSONDecoder().decode(Contents.self, from: data)
         } catch {
-            layoutLog.error("\(url.path, privacy: .public) not read: \(String(describing: error), privacy: .public)")
+            layoutLog.error("\(KosmosFiles.layout.path, privacy: .public) not read: \(String(describing: error), privacy: .public)")
             return nil
         }
         guard contents.version == version, contents.windowServer == windowServer else {
@@ -48,10 +47,10 @@ enum LayoutFile {
             guard layout != written else { return }
             do {
                 let contents = Contents(version: version, windowServer: windowServer, layout: layout)
-                try JSONEncoder().encode(contents).write(to: url, options: .atomic)
+                try JSONEncoder().encode(contents).write(to: KosmosFiles.layout, options: .atomic)
                 written = layout
             } catch {
-                layoutLog.error("\(url.path, privacy: .public) not written: \(error.localizedDescription, privacy: .public)")
+                layoutLog.error("\(KosmosFiles.layout.path, privacy: .public) not written: \(error.localizedDescription, privacy: .public)")
             }
         }
         if wait { writes.sync(execute: work) } else { writes.async(execute: work) }

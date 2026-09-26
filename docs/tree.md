@@ -307,9 +307,10 @@
   - A change of the model asks for a write a second later, and the changes in that second
     share it, so a crash loses at most that second. The quit writes once more. A write
     replaces the file by a rename, and one that would change nothing is skipped. A switch
-    at most sets the timer. Building the layout on the main actor took 21 µs for 22 windows
-    in a release build, and the JSON encoding, 155 µs, and the write, 0.3 ms, run on a
-    utility queue (September 26, 2026).
+    at most sets the timer. Building the layout on the main actor took 21 µs for 22 windows,
+    and the JSON encoding, 155 µs, and the write, 0.3 ms, run on a utility queue (a
+    benchmark test under `swift test -c release` on the development Mac, not kept,
+    September 26, 2026).
   - At launch, before the inventory admits any window, Kosmos reads the file and keeps the
     windows WindowServer still has. Each display shows its saved workspace again where the
     profile lets it, the saved focused workspace takes the focus, and the rest goes as at a
@@ -318,8 +319,9 @@
   - As Kosmos admits a pending window, it goes back to its workspace as the file has it
     (`Workspace.admit`). A tiled window returns to its place by its hint, as a returning
     window does, with no minimum fitted. A floating one floats, and a parked one keeps its
-    hint for its return. The hints were taken with each other put back, so the windows come back to the same places and sizes in any order, and one
-    that never comes back leaves its share to the windows it stood among, as a close does.
+    hint for its return. The hints were taken with each other put back, so the windows come
+    back to the same places and sizes in any order, and one that never comes back leaves
+    its share to the windows it stood among, as a close does.
     A window the file lacks goes where it would at any launch, and its insert makes the
     pending hints stale, so the windows after it return as with a stale hint, beside the
     windows they stood among.
@@ -347,13 +349,13 @@
     the focused workspace's most recently focused window. A window keyed and adopted since
     the launch is more recent, so it keeps the focus.
   - The windows of hidden workspaces show from the quit until Kosmos admits them again,
-    about a second at an install ([inventory.md](inventory.md)).
+    about a second at an install ([hiding.md](hiding.md)).
   - Left out: the workspaces a profile merged away with the windows that came from them,
     the minimums Kosmos learned ([geometry.md](geometry.md)), and the workspace
     `workspace-back-and-forth` returns to. So after a restart under a profile that leaves a
-    saved workspace out, or a profile change that leaves it out before its windows are back,
-    its windows go where they would at any launch, and a later profile that lists the
-    workspace does not bring them back. Saving `mergedAway` and `mergedFrom` would.
+    saved workspace out, or a profile change that leaves it out before its windows are
+    back, its windows go where they would at any launch, and a later profile that lists
+    the workspace does not bring them back. Saving `mergedAway` and `mergedFrom` would.
 - Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
   id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
   window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325

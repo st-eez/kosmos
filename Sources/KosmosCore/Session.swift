@@ -70,7 +70,7 @@ public struct Session: Sendable {
     public internal(set) var lifted: Set<WindowID> = []
     /// The window focused when the restored layout was saved, until Kosmos admits it
     /// (docs/tree.md).
-    public internal(set) var savedFocus: WindowID?
+    var savedFocus: WindowID?
 
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
         precondition(!names.isEmpty, "a session needs a workspace")
