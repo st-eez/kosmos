@@ -1,5 +1,6 @@
 import AppKit
 import KosmosCore
+import KosmosSkyLight
 import os
 
 extension Controller {
@@ -52,9 +53,8 @@ extension Controller {
         }
     }
 
-    /// A detached tab and a reopened window show where their app ordered them in before Kosmos
-    /// hears of them, so they slide from there, where a window admitted after launch pops in
-    /// (docs/geometry.md).
+    /// A tab dragged out of its group keeps out of its rule's workspace, and a window its app
+    /// closed and kept opens again as a new window does (docs/tree.md).
     private enum Arrival { case admitted, detached, reopened }
 
     /// A window already minimized, in native fullscreen or hidden with its app waits parked,
@@ -82,7 +82,10 @@ extension Controller {
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
         if focus == .adopt { session.adopt(id) }
-        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: arrival == .admitted && !atLaunch ? id : nil)
+        // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the read
+        // shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
+        let entering = atLaunch ? nil : SkyLight.rows([id]).first.map { (id, Entrance(orderedIn: $0.orderedIn, frame: $0.frame)) }
+        execute(plan, movePointer: bringsPointer, floatingCheck: floats, entering: entering)
         // The follow's switch reveals the window the plan conceals.
         windowPlaced(id)
     }

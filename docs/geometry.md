@@ -119,13 +119,13 @@
   `animations = false` ([config.md](config.md)), match Omarchy: a window a relayout moves
   slides to its frame over 0.38 s along easeOutQuint, cubic-bezier(0.23, 1, 0.32, 1), and a
   window opened after launch onto a shown workspace pops in from 87% of its size about its
-  center and alpha 0 over 0.41 s. Switches and closes do not animate. The windows that
-  slide are a plan's writes to windows on screen on a shown workspace, other than one the
-  user holds or presses on, of an app whose worker is not backed off, from and to
-  displays that hold no native fullscreen window or hold the key window on their desktop
-  Space. A reveal, a hidden workspace, a drag's own writes, the 100 ms retry and floating
-  windows brought home jump, and so does a backed off app's window, whose write waits for
-  the app while its transform would hold it where it showed.
+  center and alpha 0 over 0.41 s, while its app has not ordered it in yet. Switches and
+  closes do not animate. The windows that slide are a plan's writes to windows on screen on
+  a shown workspace, other than one the user holds or presses on, of an app whose worker is
+  not backed off, from and to displays that hold no native fullscreen window or hold the
+  key window on their desktop Space. A reveal, a hidden workspace, a drag's own writes, the
+  100 ms retry and floating windows brought home jump, and so does a backed off app's
+  window, whose write waits for the app while its transform would hold it where it showed.
   - The window joins a Space of a pool, shown in place at level 1, one above the desktop
     Space's, and keeps its ordinary Space. Its frame goes through the ledger and its worker
     once, as any write. The Space's transform shows it where it showed, then eases to its
@@ -166,20 +166,32 @@
     leaves the slide: the worker reads the frame back about 3 ms after the write and
     WindowServer takes it about 9 ms later, so the other tiles' reflow at a title bar drag's
     lift lands with the button down.
-  - A new window's Space turns transparent before the window joins it, so the window
-    vanishes from where its app opened it until its write lands, then pops in where it
-    landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
-    in at its target, and the reads follow it until it lands. A window its app opens on its
-    own tile pops in too.
-  - A window its app closed and kept, then orders in again, shows at its old frame before
-    Kosmos hears of it, so it slides from there to its place as a relayout's window does,
-    and stays put when that is its place. A pop hid it and faded it back: at 60 fps, each
-    of five Activity Monitor reopens showed the window for 1 frame, then nothing for 1 or
-    2 frames, then faded it in over about 0.4 s (screen recording, September 25, 2026). A
+  - An app shows its new window before Kosmos hears of it, so a window Kosmos places after
+    launch that is ordered in already slides from where it shows to its place, as a
+    relayout's window does, and stays put when that is its place. A pop hid it and faded it
+    back. In seven Ghostty Command-N on September 25, 2026, each window was ordered in when
+    Kosmos admitted it, 18 to 40 ms after its key report, so it showed opaque where Ghostty
+    opened it for 2 to 5 frames at 120 Hz, then nothing until its write landed, then faded
+    in (live log). At 60 fps, each of five Activity Monitor reopens showed the window for 1
+    frame, then nothing for 1 or 2 frames, then faded it in over about 0.4 s (screen
+    recording, September 25, 2026). A window its app closed and kept, then orders in again,
+    shows at its old frame, and a hidden tab dragged out of its group shows for the pairing
+    window before it takes a place ([tree.md](tree.md)), so they slide from there too. A
     reopen that waits the pairing window slides after the wait, the ceiling
-    [tree.md](tree.md) names. A hidden tab dragged out of its group shows for the pairing
-    window before it takes a place, so it slides from where it shows too
-    ([tree.md](tree.md)).
+    [tree.md](tree.md) names.
+  - Only a window still ordered out when Kosmos places it pops in, as Discord's was,
+    admitted 47 ms before its order-in (live log, September 25, 2026). Kosmos reads the
+    window's row from WindowServer as it places it, since the inventory's row can lag an
+    order-in whose read is under way. The pop's Space turns transparent before the window
+    joins it, and the window pops in where its write landed. A write that has not landed
+    after 0.25 s, as a launching app's, pops the window in at its target, and the reads
+    follow it until it lands. The ceiling: an order-in between that read and the Space
+    turning transparent, in the same main actor turn, shows the window until then, and
+    whether a window added to a Space while ordered out stays in it once ordered in is
+    unmeasured. If it leaves, the window shows where its app ordered it in, then jumps to
+    its place when its write lands. Adding each candidate window of a regular app to a
+    transparent Space of the pool at its first row, before its Accessibility facts, would
+    remove both, once a probe shows that the add outlasts the order-in.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while Kosmos can conceal, with the guardian ready and every

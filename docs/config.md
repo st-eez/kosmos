@@ -30,8 +30,9 @@
   match by containment. A rule on the name never shadows one on the bundle identifier
   alone, whose app name is unknown.
 - `animations` is on by default, as in Omarchy: windows slide to the frames a relayout
-  gives them and new windows pop in ([geometry.md](geometry.md)). `animations = false`
-  turns both off, and a reload that turns them off ends every slide at once.
+  gives them, and new windows slide from where their app shows them or pop in when it has
+  not shown them yet ([geometry.md](geometry.md)). `animations = false` turns both off, and
+  a reload that turns them off ends every slide at once.
 - `include` names files in the config's directory, by file name alone, whose top-level
   keys join the config's, as Hyprland's `source` brings an Omarchy theme's colors into its
   config. The files are checked with the same schema. A key set in two files is an error,

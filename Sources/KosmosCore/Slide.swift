@@ -60,6 +60,18 @@ public struct Slide: Equatable, Sendable {
     }
 }
 
+/// How a window Kosmos places after launch comes in. Its app can show it before Kosmos hears
+/// of it, so only a window still ordered out pops in, and one on screen slides from where it
+/// shows (docs/geometry.md).
+public enum Entrance: Equatable, Sendable {
+    case pop
+    case slide(from: CGRect)
+
+    public init(orderedIn: Bool, frame: CGRect) {
+        self = orderedIn ? .slide(from: frame) : .pop
+    }
+}
+
 /// A window from the write that starts its slide to the slide's end (docs/geometry.md). A
 /// write lands once WindowServer has the frame the worker read back after it.
 public struct SlidingWindow: Sendable {
