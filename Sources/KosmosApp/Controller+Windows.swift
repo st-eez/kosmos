@@ -136,8 +136,6 @@ extension Controller {
     /// as only that window's order-out can still pair, and otherwise it reopens now
     /// (docs/tree.md).
     private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
-        // Measures the tab pairing window; remove once a day of Ghostty and Finder tabs sets it (docs/tree.md).
-        controllerLog.info("\(id) ordered \(orderedIn ? "in" : "out", privacy: .public), app \(self.inventory.appIdentity(pid).name ?? String(pid), privacy: .public)")
         if let change = tabSwitches.ordered(id, in: orderedIn, frame: frame, app: pid, at: at),
            tabSwitched(from: change.old, to: change.new, frame: frame) {
             return
@@ -145,7 +143,7 @@ extension Controller {
         let closed = session.parkReason(of: id) == .closedByApp
         guard orderedIn, tabs.hidden.contains(id) || closed else { return }
         // Ceiling: a window that waits and is no tab switch stays at its old place for the
-        // pairing window, then slides; measuring the pairing window sets the wait (docs/tree.md).
+        // pairing window, then slides (docs/tree.md).
         if closed, !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
             return reopen(id, pid: pid)
         }
