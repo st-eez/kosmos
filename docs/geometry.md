@@ -47,33 +47,43 @@
     refusals (below), which stay the fallback for an app that holds its size in its own
     code, where WindowServer reads 0. Where the minimums take effect is in
     [tree.md](tree.md).
-- A window whose frame reads back more than 2 pt larger than a write's target on an axis
-  refused the size. After its first refusal the target is written again whole 100 ms
-  later, and only a second refusal of the target records the size kept as the window's
-  minimum on that axis. Kosmos doesn't retry that size until the target changes. A first
-  refusal can pass. On 2026-09-24 `move-node-to-workspace` sent a 1900 pt wide Preview
-  window from the main panel to a hidden workspace on the left panel, shown 13 ms later.
-  Its 945 pt target read back 1900, and an Accessibility write of 945 seconds later
-  landed, so one refusal is no limit of the app's; recorded as a minimum, the width kept
-  the window over its neighbour until Kosmos restarted. An app can also apply a live
-  resize step queued before the button came up after Kosmos's write at the mouse up. The
-  mouse up forgets the windows it sends back or drops from the ledger, refusals too, so
-  that write's larger read back is a first refusal as well. The retry waits out the
-  100 ms, since the window's next change event can come inside a queued live resize step
-  or the display or Space change itself. A window the user holds again by then gets its
-  tile at that press's mouse up. A refusal read back while the window is concealed or
-  its workspace hidden says nothing of the app's limit either, as when it moves there,
-  its hidden workspace is laid out again, the displays change, or its reveal has not
-  landed yet, so it is a first refusal at most. A window on a hidden workspace gets no
-  retry, and showing the workspace forgets its refusal, so the write that shows the
-  window, sent before the reveal, is a first attempt, retried until the reveal lands. A
-  window a failed batch left concealed on a shown workspace is written every 100 ms while
-  it refuses, until a switch reveals it. The upgrade: the retry skips a concealed window,
-  and the switch that reveals it after the failed batch writes its tile. A window moved on screen to another display, by
+- A window whose frame reads back more than 2 pt larger or smaller than a write's target
+  on an axis refused the size. After its first refusal the target is written again whole
+  100 ms later. A second refusal of the target records the size kept as the window's
+  minimum on each axis where it is larger, and otherwise leaves the window at the size it
+  kept, as a window whose app rounds its size down. Kosmos doesn't retry that size until
+  the target changes. A first refusal can pass. On 2026-09-24 `move-node-to-workspace`
+  sent a 1900 pt wide Preview window from the main panel to a hidden workspace on the left
+  panel, shown 13 ms later. Its 945 pt target read back 1900, and an Accessibility write
+  of 945 seconds later landed, so one refusal is no limit of the app's; recorded as a
+  minimum, the width kept the window over its neighbour until Kosmos restarted. On
+  2026-09-26 `move-node-to-workspace --focus-follows-window` sent a 1708 pt wide Ghostty
+  window from the built-in display up to the 1920 pt main panel above it. Its 1900 pt
+  target left it 1718 pt wide, its right edge on the built-in display's right edge
+  (Steve's screenshot), and a later write on the panel left it 1900 pt wide. Taken then as
+  the app's rounding, the width stayed until the next command changed the target. An app
+  can also apply a live resize step queued before the button came up after Kosmos's write
+  at the mouse up. The mouse up forgets the windows it sends back or drops from the
+  ledger, refusals too, so that write's larger read back is a first refusal as well. The
+  retry waits out the 100 ms, since the window's next change event can come inside a
+  queued live resize step or the display or Space change itself. A window the user holds
+  again by then gets its tile at that press's mouse up. A refusal read back while the
+  window is concealed or its workspace hidden says nothing of the app's limit either, as
+  when it moves there, its hidden workspace is laid out again, the displays change, or its
+  reveal has not landed yet, so it is a first refusal at most. A window on a hidden
+  workspace gets no retry, and showing the workspace forgets its refusal, so the write
+  that shows the window, sent before the reveal, is a first attempt, retried until the
+  reveal lands. A window a failed batch left concealed on a shown workspace is written
+  every 100 ms while it refuses, until a switch reveals it. The upgrade: the retry skips a
+  concealed window, and the switch that reveals it after the failed batch writes its tile.
+  A window moved on screen to another display, by
   `move-node-to-workspace --focus-follows-window` or `move-node-to-monitor`, is neither
-  concealed nor revealed, so only the 100 ms retry keeps a size it ignores during the
-  move from counting. One that ignores the retry too records a minimum, until it is
-  seen smaller.
+  concealed nor revealed, so only the 100 ms retry keeps a size it ignores during the move
+  from counting. One that ignores the retry too records a minimum, until it is seen
+  smaller, or keeps a smaller size until the target changes. The ceiling: a window whose
+  app holds it more than 2 pt smaller than its tile, as by rounding its size down or by a
+  maximum size, takes a second write, 100 ms after the first, for each new target;
+  remembering the size each window keeps against its target would save that write.
 - A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
   Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
   axis. Its workspace is laid out again then, or at the mouse up during a press.

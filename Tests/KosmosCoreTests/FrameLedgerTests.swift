@@ -57,7 +57,28 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
     let within = CGRect(x: 10, y: 35, width: 947, height: 1035)
     #expect(ledger.confirm(1, target: target, readBack: within, at: t0) == .took)
-    #expect(ledger.confirm(1, target: target, readBack: resized, at: t0) == .took)
+}
+
+@Test func aSizeReadBackSmallerIsWrittenAgainBeforeTheWindowKeepsIt() {
+    var ledger = FrameLedger()
+    // Asked 1900 as it moved up from the built-in display, the window stopped at that
+    // display's right edge.
+    let target = CGRect(x: 10, y: 35, width: 1900, height: 1035)
+    let clamped = CGRect(x: 10, y: 35, width: 1718, height: 1035)
+    _ = ledger.writes(for: [1: target])
+    #expect(ledger.confirm(1, target: target, readBack: clamped, at: t0) == .refused)
+    #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
+    #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
+    let within = CGRect(x: 10, y: 35, width: 1898, height: 1035)
+    #expect(ledger.confirm(1, target: target, readBack: within, at: t0) == .took)
+    // A window that rounds its size down keeps it after the retry.
+    let half = CGRect(x: 10, y: 35, width: 945, height: 1035)
+    let rounded = CGRect(x: 10, y: 35, width: 940, height: 1035)
+    _ = ledger.writes(for: [1: half])
+    #expect(ledger.confirm(1, target: half, readBack: rounded, at: t0) == .refused)
+    #expect(ledger.writes(for: [1: half]) == [1: .frame(half)])
+    #expect(ledger.confirm(1, target: half, readBack: rounded, at: t0) == .took)
+    #expect(ledger.writes(for: [1: half]).isEmpty)
 }
 
 @Test func aNewTargetOrForgettingTheWindowStartsTheRefusalsOver() {
@@ -81,11 +102,11 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     // Written twice while hidden, each read back forgotten before its confirm.
     for _ in 1...2 {
         #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
-        ledger.forgetLargerReadBack(1)
+        ledger.forgetFirstRefusal(1)
         #expect(ledger.confirm(1, target: target, readBack: kept, at: t0) == .refused)
     }
     // The write that shows it, sent before the reveal lands, reads back larger once more.
-    ledger.forgetLargerReadBack(1)
+    ledger.forgetFirstRefusal(1)
     #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])
     #expect(ledger.confirm(1, target: target, readBack: kept, at: t0) == .refused)
     #expect(ledger.writes(for: [1: target]) == [1: .frame(target)])

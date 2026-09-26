@@ -288,7 +288,7 @@ extension Controller {
             // until a switch reveals it. Upgrade: writeTileAgain skips concealed windows, and
             // the switch that reveals them (needsResync) writes their tiles.
             if hiding.isConcealed(id) || session.workspace(of: id).map(session.isShown) != true {
-                ledger.forgetLargerReadBack(id)
+                ledger.forgetFirstRefusal(id)
             }
             slides?.confirmed(id, target: target, readBack: readBack)
             switch ledger.confirm(id, target: target, readBack: readBack, at: .now) {
