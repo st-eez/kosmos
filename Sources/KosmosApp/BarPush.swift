@@ -15,20 +15,24 @@ final class BarPush: Sendable {
 
     func publish(_ snapshot: Data) {
         pending.withLock { $0 = snapshot }
-        queue.async { self.flush(retry: true) }
+        queue.async { self.flush(failed: nil) }
     }
 
-    private func flush(retry: Bool) {
-        guard let snapshot = pending.withLock({ $0 }) else { return }
+    /// `failed`: the result of the send this one tries again.
+    private func flush(failed: kern_return_t?) {
+        guard let snapshot = pending.withLock({ $0 }) else {
+            if let failed { barLog.notice("SketchyBar send failed: \(failed); a later send went before the retry") }
+            return
+        }
         let payload = Self.payload(["--trigger", Self.event, "STATE=" + String(decoding: snapshot, as: UTF8.self)])
         let result = payload.withUnsafeBufferPointer { kosmos_bar_send(Self.barName, $0.baseAddress, UInt32($0.count)) }
-        if result == KERN_SUCCESS {
-            pending.withLock { if $0 == snapshot { $0 = nil } }
-        } else if retry {
-            // A busy or restarting bar gets one more try.
-            queue.asyncAfter(deadline: .now() + .milliseconds(250)) { self.flush(retry: false) }
-        } else {
-            barLog.debug("SketchyBar send failed: \(result)")
+        if result == KERN_SUCCESS { pending.withLock { if $0 == snapshot { $0 = nil } } }
+        if let failed {
+            barLog.notice("SketchyBar send failed: \(failed); 250 ms later \(result == KERN_SUCCESS ? "it went" : "it failed again: \(result)", privacy: .public)")
+        } else if result != KERN_SUCCESS {
+            // The zero send timeout fails while the bar's queue is full, and a restarting bar has
+            // no port yet, so a busy or restarting bar gets one more try.
+            queue.asyncAfter(deadline: .now() + .milliseconds(250)) { self.flush(failed: result) }
         }
     }
 
