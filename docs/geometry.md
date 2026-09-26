@@ -148,6 +148,9 @@
   key window on their desktop Space. A reveal, a hidden workspace, a drag's own writes, the
   100 ms retry and floating windows brought home jump, and so does a backed off app's
   window, whose write waits for the app while its transform would hold it where it showed.
+  So does a window of a shown workspace that a batch still in flight conceals, as after a
+  switch away and straight back: its slide's Space would show it above the desktop while
+  that batch conceals it ([hiding.md](hiding.md)).
   - The window joins a Space of a pool, shown in place at level 1, one above the desktop
     Space's, and keeps its ordinary Space. Its frame goes through the ledger and its worker
     once, as any write. The Space's transform shows it where it showed, then eases to its

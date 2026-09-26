@@ -399,13 +399,14 @@ final class Controller {
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
-    /// through here, and jump. `popping` pops only while still ordered out (docs/geometry.md).
+    /// through here, and jump. `popping` pops only while still ordered out. A window a batch in
+    /// flight conceals would show above the desktop in its slide's Space (docs/geometry.md).
     private func motions(for plan: Session.Plan, popping: WindowID?) -> [WindowID: Slides.Motion] {
         guard animations, slides != nil else { return [:] }
         let show = Set(plan.show), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
         var motions: [WindowID: Slides.Motion] = [:]
-        for id in plan.frames.keys where session.isVisible(id) && !show.contains(id) && !hiding.isConcealed(id) && id != held
-            && !session.lifted.contains(id) && mouseMoved[id] == nil {
+        for id in plan.frames.keys where session.isVisible(id) && !show.contains(id) && !hiding.isConcealedOrConcealing(id)
+            && id != held && !session.lifted.contains(id) && mouseMoved[id] == nil {
             guard let name = session.workspace(of: id), let pid = owner[id], inventory.worker(pid)?.answers == true else { continue }
             let display = session.monitor(of: name).id
             guard !fullscreen.contains(display) else { continue }
