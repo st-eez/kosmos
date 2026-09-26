@@ -189,8 +189,10 @@
     quit never came, as after a `launchctl kickstart` that failed or an install that
     stopped, cannot hand a later quit to another build (`handover-noexpiry`). The armed
     quit hands over only while the guardian is ready, as no other process would restore
-    the windows should no Kosmos follow (`handover-unready`). The ceiling: a build swapped in without
-    `script/install.sh` and then a crash leave the record to a build that may not read it.
+    the windows should no Kosmos follow (`handover-unready`). `Handover` decides the arm and
+    the quit, and KosmosRecovery's tests cover each rule above. The ceiling: a build swapped
+    in without `script/install.sh` and then a crash leave the record to a build that may not
+    read it.
   - A Kosmos names itself in the lock file, by its pid and start time, once it takes the
     record over: after its guardian reports ready, or after its startup recovery. Once its
     Kosmos exits and leaves a record, the guardian gives the next Kosmos a grace of 5 s. It
