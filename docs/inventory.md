@@ -46,9 +46,10 @@
   so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
   windows the lock held back: one that arrived while locked, and one destroyed while
   locked or whose app exited then. An event handled after a sweep, for a change its
-  snapshot already had, came late and still counts, so an event for a window within 1 s
-  after a sweep counted it is logged too, and the count can be corrected by eye. The 3 s
-  sweep this replaced found and lost none on 2026-09-24, over a day of use and live tests.
+  snapshot already had, came late and still counts: of the 32 windows sweeps counted from
+  September 24 to 26, 2026, 28 had their event within 1 s after the sweep, which Kosmos
+  logged then (live log), so a count most often marks a late event. The 3 s sweep this
+  replaced found and lost none on 2026-09-24, over a day of use and live tests.
   It counted none of its corrections, which it logged only at debug or info level.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
@@ -82,11 +83,11 @@
   listen for them. Kosmos asks for immediate delivery, because AppKit holds distributed
   notifications for an app that is not active. The session dictionary
   (`CGSessionCopyCurrentDictionary`) gives the state at launch, as alt-tab seeds it, and is
-  read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. Open
-  question: unlocked, the dictionary on this Mac has no `CGSSessionScreenIsLocked` key, and
-  a missing key reads as unlocked, so if the key is missing while locked too, each read
-  undoes the lock within 5 s. Every read logs the dictionary's lock and console keys, and a
-  lock test settles it. loginwindow
+  read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. Unlocked,
+  the dictionary on this Mac has no `CGSSessionScreenIsLocked` key, and a missing key
+  reads as unlocked. While locked it had the key: from September 24 to 26, 2026 all 128
+  reads while locked had `CGSSessionScreenIsLocked=1`, and none read as an unlock (live
+  log), so the 5 s read does not undo a lock. loginwindow
   coming to the front, which AeroSpace and rift also watch, is no lock signal. It also
   fronts its own dialogs, such as the log out confirmation.
 - While locked, the inventory admits and removes no window and runs no sweep, and Kosmos

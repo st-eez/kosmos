@@ -79,13 +79,10 @@ final class LockWatch: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: resync)
     }
 
-    /// A missing lock key reads as unlocked. Whether the key is there while locked is open,
-    /// and each read logs the keys to settle it (docs/inventory.md).
+    /// A missing lock key reads as unlocked. Every read while locked had it, so no read
+    /// undid a lock (docs/inventory.md).
     private static func read() -> LockState.Signal {
         let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
-        let keys = session.filter { $0.key.localizedCaseInsensitiveContains("lock") || $0.key == "kCGSSessionOnConsoleKey" }
-            .map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
-        lockLog.notice("session dictionary: \(keys, privacy: .public)")
         return .read(screenLocked: session["CGSSessionScreenIsLocked"] as? Bool ?? false,
                      onConsole: session["kCGSSessionOnConsoleKey"] as? Bool ?? true)
     }

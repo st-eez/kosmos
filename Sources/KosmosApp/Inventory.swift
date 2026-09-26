@@ -79,8 +79,6 @@ final class Inventory {
     private var sweepAgain = false
     private var swept = false
     private var presentAtStart: Set<WindowID> = []
-    private var markedMissed: [WindowID: ContinuousClock.Instant] = [:]
-    private static let lateBound: Duration = .seconds(1)
     /// Read once for each process, as each read is a synchronous LaunchServices call, and
     /// dropped by its exit source (docs/inventory.md).
     ///
@@ -294,16 +292,6 @@ final class Inventory {
 
     private func handle(_ event: WindowServerEvent) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
-        if let id = event.window, let marked = markedMissed.removeValue(forKey: id) {
-            let after = ContinuousClock.now - marked
-            if after < Self.lateBound {
-                inventoryLog.notice("""
-                    event \(String(describing: event), privacy: .public) came \
-                    \(after.formatted(.units(allowed: [.milliseconds], fractionalPart: .show(length: 1))), privacy: .public) \
-                    after the sweep counted \(id) missed by events: it may have been late
-                    """)
-            }
-        }
         switch event {
         case .created(let id):
             enqueue(.read(id, .none))
@@ -528,7 +516,8 @@ final class Inventory {
     }
 
     /// Ceiling: an event handled after this for a change the snapshot already had came late,
-    /// and its window is still logged as missed; the late event's own log line tells them apart.
+    /// and its window is still logged as missed: 28 of the 32 windows logged so from September
+    /// 24 to 26, 2026 had a late event (docs/inventory.md).
     private func finishSweep(_ rows: [WindowRow]) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
@@ -537,27 +526,19 @@ final class Inventory {
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
         let rows = rows.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
-        markedMissed = markedMissed.filter { ContinuousClock.now - $0.value < Self.lateBound }
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
             let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)
-            if swept, !reported {
-                markedMissed[row.id] = .now
-                inventoryLog.notice("sweep found \(row.id), missed by events")
-            }
+            if swept, !reported { inventoryLog.notice("sweep found \(row.id), missed by events") }
             apply(row)
         }
         for id in windows.keys where !seen.contains(id) && !touched.contains(id) {
-            if !removedWhileLocked.contains(id) {
-                markedMissed[id] = .now
-                inventoryLog.notice("sweep lost \(id), missed by events")
-            }
+            if !removedWhileLocked.contains(id) { inventoryLog.notice("sweep lost \(id), missed by events") }
             remove(id, reason: "absent from sweep")
         }
         for row in rows {
             guard let old = windows[row.id] else { continue }
             apply(row)
             guard let new = windows[row.id], new.orderedIn != old.orderedIn || isCandidate(new) != isCandidate(old) else { continue }
-            markedMissed[row.id] = .now
             inventoryLog.notice("""
                 sweep corrected \(row.id), missed by events: \(self.appName(row.pid), privacy: .public) \
                 ordered in \(old.orderedIn) to \(new.orderedIn), level \(old.level) to \(new.level), \
