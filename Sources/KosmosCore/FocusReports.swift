@@ -174,7 +174,7 @@ public struct FocusReports: Sendable {
         }
     }
 
-    /// Call it for every report, before `classify`. `repeated`: it names the last key window.
+    /// Call it for every report, before `consumeEcho`. `repeated`: it names the last key window.
     /// Ceiling: a Command-Tab's activation read can be lost as a miss (docs/focus.md, Deferred).
     public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, activationOf reader: Int32? = nil,
                               receivedAt stamp: ContinuousClock.Instant) -> Miss {
@@ -190,17 +190,9 @@ public struct FocusReports: Sendable {
         return .retry
     }
 
-    /// `concealed` and `recovered` say whether only the user could reach the window.
-    /// `keyLeft` is read only when the verdict needs it, as it can read WindowServer.
-    public mutating func classify(_ key: KeyWindow, activationOf app: Int32? = nil, receivedAt stamp: ContinuousClock.Instant,
-                                  onShownWorkspace: Bool, concealed: Bool, recovered: Bool = false, miss: Miss = .none,
-                                  keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
-        if consumeEcho(key, activationOf: app, receivedAt: stamp) != .none { return .echo }
-        return verdict(key, receivedAt: stamp, onShownWorkspace: onShownWorkspace, concealed: concealed,
-                       recovered: recovered, miss: miss, keyLeft: keyLeft())
-    }
-
-    /// `classify` for a report that consumed no echo.
+    /// For a report that consumed no echo. `concealed` and `recovered` say whether only the
+    /// user could reach the window. `keyLeft` is read only when the verdict needs it, as it
+    /// can read WindowServer.
     public func verdict(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant, onShownWorkspace: Bool,
                         concealed: Bool, recovered: Bool, miss: Miss, keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if isStale(stamp) { return .reassert }

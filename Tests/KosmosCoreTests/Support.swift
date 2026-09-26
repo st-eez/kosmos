@@ -142,6 +142,30 @@ let t0 = ContinuousClock.now
 /// Steve's gaps. On `screen`, `h[1 2]` has tile 1 at x 10 to 495 and tile 2 at x 505 to 990.
 let deskGaps = Gaps(inner: 10, outer: Insets(top: 10, left: 10, bottom: 10, right: 10))
 
+extension Session {
+    init(names: [String], display: CGRect, gaps: Gaps = Gaps()) {
+        self.init(names: names, monitors: [Monitor(id: 1, frame: display, gaps: gaps)])
+    }
+}
+
+extension FocusReports {
+    /// The echo check, then the verdict, as KeyReportIntake.decide makes them.
+    mutating func classify(_ key: KeyWindow, activationOf app: Int32? = nil, receivedAt stamp: ContinuousClock.Instant,
+                           onShownWorkspace: Bool, concealed: Bool, recovered: Bool = false, miss: Miss = .none,
+                           keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
+        if consumeEcho(key, activationOf: app, receivedAt: stamp) != .none { return .echo }
+        return verdict(key, receivedAt: stamp, onShownWorkspace: onShownWorkspace, concealed: concealed,
+                       recovered: recovered, miss: miss, keyLeft: keyLeft())
+    }
+}
+
+extension BorderSettings {
+    init(width: Double = 2, active: BorderColor? = nil, inactive: BorderColor = .clear, warning: BorderColor? = nil) {
+        self.init()
+        (self.width, self.active, self.inactive, self.warning) = (width, active, inactive, warning)
+    }
+}
+
 /// Steve's desk (docs/displays.md): the left panel, the main panel at the origin, and the
 /// built-in display below, with the home profile's workspaces.
 enum Desk {

@@ -84,10 +84,6 @@ public struct Session: Sendable {
         check()
     }
 
-    public init(names: [String], display: CGRect, gaps: Gaps = Gaps()) {
-        self.init(names: names, monitors: [Monitor(id: 1, frame: display, gaps: gaps)])
-    }
-
     public func workspace(of window: WindowID) -> String? { home[window] }
 
     public var focused: WindowID? { workspaces[focusedWorkspace]!.focusedWindow }

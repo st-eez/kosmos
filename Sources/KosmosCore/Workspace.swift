@@ -26,8 +26,8 @@ struct Workspace: Sendable {
     var clock: UInt64 = 0
     var lastContainerID = 0
 
-    init(orientation: Orientation = .horizontal) {
-        root = Container(id: 0, orientation: orientation, children: [])
+    init() {
+        root = Container(id: 0, orientation: .horizontal, children: [])
     }
 }
 
