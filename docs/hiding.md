@@ -238,7 +238,10 @@
     only confirms it. A concealed window whose admission plan does not hide it is revealed
     with that plan: one of a shown workspace, one whose workspace a switch showed before
     its admission, or one that parks (`handover-noreveal`). `Session.add` plans that reveal
-    from its `concealed` input, and KosmosCore's tests cover it. A kept window that no admission
+    from its `concealed` input, for a window taken over and for one its app closed and
+    kept while concealed that opens again, and KosmosCore's tests cover it. A window placed
+    a second time, which `add` leaves as it is, stays as it is. The Controller's check that
+    this replaced had revealed it, even on a hidden workspace. A kept window that no admission
     places within 5 s of the adoption, as one whose app never answers, is revealed where it
     is (`handover-nobackstop`); every window of the launch of 02:08:38 was admitted within
     68 ms of its start. A window whose app answers after the 5 s shows over the shown

@@ -334,9 +334,7 @@ public struct Session: Sendable {
         let concealed = parkedConcealed.contains(window), kept = learned[window]
         _ = remove(window)
         learned[window] = kept
-        var plan = add(window, to: name, floating: floating, minimum: minimum, parked: reason)
-        if concealed, isShown(home[window]!) { plan.show = [window] }
-        return plan
+        return add(window, to: name, floating: floating, minimum: minimum, parked: reason, concealed: concealed)
     }
 
     /// Nil for a managed `keyed` window that did not hide with the app: a minimized one follows
