@@ -40,7 +40,7 @@ extension Controller {
             case .takes(let old): if tabSwitched(from: old, to: id, frame: inventory.windows[id]?.frame) { return }
             case .own: break
             }
-            place(id, pid: pid, ruleWorkspace: true, reopened: false)
+            place(id, pid: pid, .admitted)
         } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
             // Perhaps a selected tab closed before the next tab came in: its place waits a
             // pairing window for that tab (docs/tree.md).
@@ -52,20 +52,24 @@ extension Controller {
         }
     }
 
+    /// A detached tab and a reopened window show where their app ordered them in before Kosmos
+    /// hears of them, so they slide from there, where a window admitted after launch pops in
+    /// (docs/geometry.md).
+    private enum Arrival { case admitted, detached, reopened }
+
     /// A window already minimized, in native fullscreen or hidden with its app waits parked,
-    /// and a minimized or fullscreen one returns on its own, not when its app unhides.
-    /// `reopened`: a window closed and kept, ordered in again, opens as a new window does
-    /// (docs/tree.md).
-    private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool, reopened: Bool) {
+    /// and a minimized or fullscreen one returns on its own, not when its app unhides. A
+    /// reopened window opens as a new window does (docs/tree.md).
+    private func place(_ id: WindowID, pid: pid_t, _ arrival: Arrival) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
         // A window there at launch joins the workspace of the display under it; a later one
         // joins the focused workspace, as in AeroSpace (docs/displays.md).
-        let atLaunch = !reopened && inventory.wasThereAtLaunch(id)
+        let atLaunch = arrival != .reopened && inventory.wasThereAtLaunch(id)
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
-        let floats = rule?.float == true, workspace = ruleWorkspace ? rule?.workspace : nil
-        let placed: Session.Plan? = reopened ? session.reopen(id, to: workspace, floating: floats)
-                                             : session.add(id, to: workspace, at: center, floating: floats)
+        let floats = rule?.float == true, workspace = arrival == .detached ? nil : rule?.workspace
+        let placed: Session.Plan? = arrival == .reopened ? session.reopen(id, to: workspace, floating: floats)
+                                                         : session.add(id, to: workspace, at: center, floating: floats)
         guard var plan = placed else { return }
         if floats, let frame = inventory.windows[id]?.frame {
             controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
@@ -78,7 +82,7 @@ extension Controller {
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
         if focus == .adopt { session.adopt(id) }
-        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: atLaunch ? nil : id)
+        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: arrival == .admitted && !atLaunch ? id : nil)
         // The follow's switch reveals the window the plan conceals.
         windowPlaced(id)
     }
@@ -118,8 +122,8 @@ extension Controller {
         }
         let closed = session.parkReason(of: id) == .closedByApp
         guard orderedIn, tabs.hidden.contains(id) || closed else { return }
-        // Ceiling: a window that waits and is no tab switch shows at its old place for the
-        // wait; a pool Space could hold it transparent (docs/tree.md).
+        // Ceiling: a window that waits and is no tab switch stays at its old place for the
+        // pairing window, then slides; measuring the pairing window sets the wait (docs/tree.md).
         if closed, !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
             return reopen(id, pid: pid)
         }
@@ -128,7 +132,7 @@ extension Controller {
             if controller.session.parkReason(of: id) == .closedByApp {
                 controller.reopen(id, pid: pid)
             } else if controller.tabs.detached(id), let pid = controller.owner[id] {
-                controller.place(id, pid: pid, ruleWorkspace: false, reopened: false)
+                controller.place(id, pid: pid, .detached)
             }
         }
     }
@@ -138,7 +142,7 @@ extension Controller {
     private func reopen(_ id: WindowID, pid: pid_t) {
         ledger.forget(id)
         hiding.forgetClosed(id)
-        place(id, pid: pid, ruleWorkspace: true, reopened: true)
+        place(id, pid: pid, .reopened)
     }
 
     /// `new` takes the deselected tab's place with no reflow and no follow, once admitted
