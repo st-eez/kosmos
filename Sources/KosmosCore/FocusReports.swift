@@ -94,6 +94,11 @@ public struct FocusReports: Sendable {
         var waited = false
     }
 
+    /// A key record's activation read comes as its app's worker gets to it, and one that
+    /// never came, as when the app did not answer, would take a later activation of the app
+    /// for its echo (docs/focus.md).
+    private static let readBound: Duration = .seconds(1)
+
     private var expected: [Request] = []
     private var lastCommand: ContinuousClock.Instant?
     /// The window whose missed request Kosmos made again.
@@ -135,7 +140,10 @@ public struct FocusReports: Sendable {
     }
 
     private func echo(of key: KeyWindow, activationOf app: Int32?, receivedAt stamp: ContinuousClock.Instant) -> Int? {
-        expected.firstIndex { $0.requested <= stamp && ($0.key == key || (app != nil && $0.activates && $0.app == app)) }
+        expected.firstIndex {
+            $0.requested <= stamp
+                && ($0.key == key || (app != nil && $0.activates && $0.app == app && stamp - $0.requested <= Self.readBound))
+        }
     }
 
     /// Consumes the expectation `key` answers and every one before it. Ceiling: an earlier

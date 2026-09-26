@@ -242,6 +242,20 @@ private struct Replay {
     #expect(replay.heard(.window(12), from: preview, at: 20) == .requestFocus(retry: false))
 }
 
+@Test func aKeyRecordsReadMatchesItWhateverWindowItReadsOnlyWithinASecond() {
+    // Ghostty came front before the key record was posted, so no read of it came. Seconds
+    // later a Command-Tab to Ghostty's window 15 on a hidden workspace is followed
+    // (docs/focus.md).
+    var replay = Replay(windows: [1: ("1", helium), 11: ("1", ghostty), 15: ("5", ghostty)], concealed: [15])
+    _ = replay.heard(.window(1), from: helium, at: -100)
+    replay.requested(.window(11), app: ghostty, at: 0, keyRecord: true)
+    #expect(replay.reports.isEcho(.window(15), activationOf: ghostty, receivedAt: ms(1000)))
+    replay.pickedAway = true
+    #expect(replay.heard(.window(15), from: ghostty, at: 3000, read: true) == .hold(1))
+    #expect(replay.expire(1) == .follow(15, bringsPointer: true))
+    #expect(replay.reports.isEcho(.window(11), receivedAt: ms(3001)))
+}
+
 @Test func aHeldReportIsDecidedByWhetherTheKeyWindowBeforeItLeft() {   // change 11
     // Live: Command-H on the only window of workspace 2 took Kosmos to workspace 1, where
     // macOS keyed Ghostty before WindowServer ordered the hidden app's window out.

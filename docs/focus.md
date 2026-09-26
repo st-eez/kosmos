@@ -32,19 +32,23 @@
     finds that window and consumes the record. When a read that consumes its record, or the
     named window's report after a read that waited, names a window other than the intent,
     it landed after a newer intent, and Kosmos requests the intent again, for a report of
-    an app no longer front too. The log names each activation read in its debug line for
-    the report. Two ceilings. If the app never keys the named window, its last key window
-    stays key under a focus intent on the named window, and the record takes a later report
-    of the named window for its echo, until a later request's echo or a miss clears it; the
-    spec's apps always key it, and a timer, as a departure has, would drop the record and
-    request the intent again. The spec lets an app key its last key window first only while
-    that is still its focused window, so the first key sends no notification. After a raise
-    in the background the two differ, and no probe has shown which window the app keys
-    first then. If it is the last key window, its notification is adopted as the user's
-    change on a shown workspace. On a hidden one it is held and the named window's report
-    replaces it (below), unless no window was key before it, as on an empty workspace, and
-    then Kosmos follows it at once. A probe that raises a window of a background app and
-    then key-records another would settle it.
+    an app no longer front too. A key record whose read never comes, as when the app came
+    front before the record was posted or did not answer, would take a later activation of
+    the app, as a Command-Tab seconds later, for its echo, so the read matches the record
+    whatever window it reads only within 1 s. Past that it matches as a notification does.
+    The spec has no time, and leaves the bound out. The log names each activation read in
+    its debug line for the report. Two ceilings. If the app never keys the named window,
+    its last key window stays key under a focus intent on the named window, and the record
+    takes a later report of the named window for its echo, until a later request's echo or
+    a miss clears it; the spec's apps always key it, and a timer, as a departure has, would
+    drop the record and request the intent again. The spec lets an app key its last key
+    window first only while that is still its focused window, so the first key sends no
+    notification. After a raise in the background the two differ, and no probe has shown
+    which window the app keys first then. If it is the last key window, its notification is
+    adopted as the user's change on a shown workspace. On a hidden one it is held and the
+    named window's report replaces it (below), unless no window was key before it, as on an
+    empty workspace, and then Kosmos follows it at once. A probe that raises a window of a
+    background app and then key-records another would settle it.
   - A report from an app that is not the front process, at the notification's callback or
     once the activation read returns, consumes an echo it matches and is otherwise
     ignored: background apps report windows they open, and a raise in a background app
