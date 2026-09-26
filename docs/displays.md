@@ -97,6 +97,13 @@
   glide use the notification, and the AeroSpace fork keeps its monitor snapshot until it
   (commit 1d8c379b).
 - A burst of changes gets one response, 0.5 s after the last, as a wake does ([inventory.md](inventory.md)).
+  No measurement chose the 0.5 s. The live log of September 24 to 26, 2026 had 64
+  notifications. Of the 39 gaps under 5 s between one and the next, 10 were under 0.5 s
+  and coalesced, and 29 were 533 to 4,918 ms, so each of those notifications got a
+  response of its own, with the resync below. Each notification logs the gap since the
+  one before, and each response whether the display set, the display frames or only the
+  visible area changed. Hotplug bursts in that log set the wait, or show that a change of
+  the visible area alone needs no resync of every frame.
   Slides end at each change, before the wait ([geometry.md](geometry.md)). Kosmos reads
   the displays, resolves the profile again, which ends a forced one, and arranges the
   workspaces:

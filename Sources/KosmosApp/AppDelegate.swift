@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var forcedProfile: String?
     private var displayIDs: Set<DisplayID> = []
     private var displayChange: DispatchWorkItem?
+    private var lastScreenChange: ContinuousClock.Instant?
     private var screensAsleep = false
     /// When `kosmos handover` asked the next quit to leave the record to the Kosmos that
     /// follows.
@@ -223,7 +224,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// While the session is locked or the displays sleep, the resync after the unlock or wake
     /// reads the displays instead, as a sleeping Mac can report them gone (docs/displays.md).
     private func screenParametersChanged() {
-        log.notice("screen parameters changed: \(NSScreen.screens.count) displays")
+        let now = ContinuousClock.now
+        let gap = lastScreenChange.map { String(format: ", %.0f ms after the one before", (now - $0).milliseconds) } ?? ""
+        lastScreenChange = now
+        log.notice("screen parameters changed: \(NSScreen.screens.count) displays\(gap, privacy: .public)")
         // A gone display's link stops firing, so its slides would hold their windows displaced
         // until the change applies (docs/geometry.md).
         controller?.endSlides("at a display change")
@@ -232,11 +236,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.displayChange = nil
-                if !self.inventory.sessionLocked, !self.screensAsleep { self.applyDisplays() }
+                guard !self.inventory.sessionLocked, !self.screensAsleep, let before = self.controller?.session.monitors
+                else { return }
+                self.applyDisplays()
+                guard let after = self.controller?.session.monitors else { return }
+                log.notice("display change applied: \(Self.changed(from: before, to: after), privacy: .public) changed")
             }
         }
         displayChange = apply
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: apply)
+    }
+
+    /// Whether a change the 0.5 s wait let through was a hotplug's or the visible area's alone
+    /// (docs/displays.md).
+    private static func changed(from old: [Monitor], to new: [Monitor]) -> String {
+        if Set(old.map(\.id)) != Set(new.map(\.id)) { return "the display set" }
+        if old.map(\.frame) != new.map(\.frame) { return "display frames" }
+        return old == new ? "nothing" : "only the visible area"
     }
 
     private func reloadConfig(_ loaded: ConfigFile.Loaded, atLaunch: Bool) -> (applied: Bool, messages: [String]) {
