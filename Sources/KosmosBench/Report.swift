@@ -9,7 +9,7 @@ public struct Record: Sendable {
     public let sent: Double
     public let settle: Screen.Settle
     public let analysis: Analysis
-    /// Kosmos's log from the send to the next step's.
+    /// Kosmos's log from the send to the settle.
     public var log: [LogLine] = []
     /// When the screen had settled, so what comes after it belongs to no step.
     public var end = Double.infinity

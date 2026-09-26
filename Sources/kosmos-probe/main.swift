@@ -34,9 +34,9 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         }
         benchWindows(count, on: rest.first { $0 != "--colors" }, colors: rest.contains("--colors"), slow: slow)
     }),
-    ("bench-frames", "bench-frames <directory> [real]", { arguments in
-        guard let directory = arguments.first else { usage() }
-        benchFrames(directory, real: arguments.dropFirst().first == "real")
+    ("bench-frames", "bench-frames <directory> <display> [real]", { arguments in
+        guard arguments.count >= 2 else { usage() }
+        benchFrames(arguments[0], display: arguments[1], real: arguments.dropFirst(2).first == "real")
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
     ("borders", "borders", { _ in borders() }),

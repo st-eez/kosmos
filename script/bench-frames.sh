@@ -66,7 +66,7 @@
 #                     easing put a window in white and where it showed in black, with the
 #                     step's state before and after
 #   kosmos-steps.txt  per step: its figures, its events, and Kosmos's log lines from its send
-#                     to the next step's, each with its time after the send
+#                     to its settle, each with its time after the send
 #   kosmos.log        Kosmos's log during the run
 #   banners.tsv       each notification banner on the display: its window, when it first
 #                     and last showed, and where
@@ -93,6 +93,7 @@ if [[ -z ${EPOCHREALTIME:-} ]]; then
 fi
 workspace=9
 count=3
+echo "Turn on Do Not Disturb for the run: a notification banner on the built-in display shows in the frames. Banners that show are logged."
 
 kosmos_pid=$(pgrep -x Kosmos || true)
 if [[ $(wc -w <<< "$kosmos_pid") -ne 1 ]]; then
@@ -113,16 +114,10 @@ if (($(df -k . | awk 'NR == 2 { print $4 }') < 20 * 1024 * 1024)); then
     exit 1
 fi
 
-nice -n 19 swift build -c release --product kosmos-probe
-bin=$(swift build -c release --show-bin-path)
-dir=$PWD/.build/bench/$(date +%Y%m%d-%H%M%S)-frames
-mkdir -p "$dir"
-
 # The workspace, its display, the other empty workspace there, and what to show again
 # afterwards.
-state=$dir/state.json
-"$kosmos" state > "$state"
-field() { plutil -extract "$1" raw "$state"; }
+state=$("$kosmos" state)
+field() { plutil -extract "$1" raw - <<< "$state"; }
 display_id= partner=
 for ((i = 0; i < $(field workspaces); i++)); do
     [[ $(field "workspaces.$i.name") == "$workspace" ]] || continue
@@ -162,6 +157,12 @@ if [[ -n $real ]]; then
         exit 1
     fi
 fi
+
+nice -n 19 swift build -c release --product kosmos-probe
+bin=$(swift build -c release --show-bin-path)
+dir=$PWD/.build/bench/$(date +%Y%m%d-%H%M%S)-frames
+mkdir -p "$dir"
+printf '%s\n' "$state" > "$dir/state.json"
 
 # The stub is a bundle of its own holding the probe, so macOS takes it for a regular app
 # from its launch, and Kosmos gives it a worker.
@@ -233,7 +234,7 @@ trap cleanup EXIT
 # left its reason in abort.txt.
 ask() {
     if [[ -z ${capture[1]:-} ]] || ! { printf '%s\n' "$1" >&"${capture[1]}"; } 2>/dev/null ||
-        ! IFS= read -r -t "${2:-15}" -u "${capture[0]}" reply; then
+        ! IFS= read -r -t "${2:-15}" -u "${capture[0]:-}" reply; then
         echo "The capture stopped: $(cat "$dir/abort.txt" 2>/dev/null || echo "no answer to \"$1\"; see $dir/capture.err")." >&2
         exit 1
     fi
@@ -243,22 +244,23 @@ ask() {
     fi
 }
 
-# Started before the stub's stdin opens as fd 3, so the capture does not hold it open.
-coproc capture { exec nice -n 19 "$bin/kosmos-probe" bench-frames "$dir" ${real:+real} 2> "$dir/capture.err"; }
+# Started before the stub's stdin opens as fd 3, so the capture does not hold it open. It
+# exits before recording unless $display_name is the built-in display.
+coproc capture { exec nice -n 19 "$bin/kosmos-probe" bench-frames "$dir" "$display_name" ${real:+real} 2> "$dir/capture.err"; }
+# With SIGPIPE ignored, a write to the capture or the stub after it has gone fails, and the
+# script exits through cleanup; SIGPIPE would kill it before cleanup restored the workspace.
+trap '' PIPE
 if ! IFS= read -r -t 20 -u "${capture[0]}" reply || [[ $reply != display* ]]; then
     echo "The capture did not start: ${reply:-no answer}; see $dir/capture.err." >&2
     exit 1
 fi
 IFS=$'\t' read -r captured rate size <<< "${reply#display }"
-if [[ $captured != "$display_name" ]]; then
-    echo "Workspace $workspace is on $display_name, and the capture records the built-in display, $captured." >&2
-    exit 1
-fi
 
 # The display stays awake for the run; Do Not Disturb is Steve's to set.
-caffeinate -di -w $$ &
-echo "Turn on Do Not Disturb for the run: a notification banner on the built-in display shows in the frames. Banners that show are logged."
+caffeinate -dimsu -w $$ &
 "$kosmos" workspace "$workspace"
+# The capture takes the first still screen, which would be the one before the switch.
+sleep 1
 ask wallpaper
 mkfifo "$dir/stub.in"
 open -g -n -W --stdin "$dir/stub.in" --stdout "$dir/stub.out" --stderr "$dir/stub.err" "$stub" \
@@ -453,6 +455,8 @@ ids+=("$partner_id")
 manage "$workspace" "$partner_id"
 "$kosmos" move-node-to-workspace --window-id "$partner_id" "$partner"
 restore
+# Waits out the relayout the move starts, so the first step's state before comes after it.
+sleep 1
 for ((rep = 1; rep <= reps; rep++)); do
     for entry in "${moves[@]}"; do
         IFS='|' read -r expect action command <<< "$entry"

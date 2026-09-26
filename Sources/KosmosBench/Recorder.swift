@@ -156,7 +156,7 @@ import ImageIO
     }
 
     /// Writes table.txt and kosmos-steps.txt, with Kosmos's log lines from each step's send to
-    /// the next step's, which kosmos.log holds once the script has stopped its `log stream`.
+    /// its settle, which kosmos.log holds once the script has stopped its `log stream`.
     public func finish() {
         guard !finished else { return }
         finished = true
@@ -209,7 +209,9 @@ import ImageIO
                 steps += String(format: "    %+8.1f ms  %@: %@\n", (line.time - record.sent) * 1000, line.category, line.message)
             }
         }
-        write("kosmos-steps.txt", steps)
+        // It repeats kosmos.log's lines, so it is left out when it would take the run past its cap.
+        let room = Self.mostOutput - outputBytes()
+        write("kosmos-steps.txt", Int64(steps.utf8.count) <= room ? steps : "left out: it would take \(directory.path) past 500 MB\n")
         let kept = records.reduce(0) { $0 + $1.analysis.frames }
         let intervals = records.filter { $0.expect == .slide }.flatMap { record in
             zip(record.analysis.rows, record.analysis.rows.dropFirst()).map { ($1.time - $0.time) * 1000 }

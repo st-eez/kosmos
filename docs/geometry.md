@@ -417,7 +417,8 @@
     records the built-in display with ScreenCaptureKit at its refresh rate, in sRGB, at 2
     points a pixel, below the menu bar and the notch. It runs as the terminal's child and uses the terminal's
     Screen Recording permission: it checks it with `CGPreflightScreenCaptureAccess` and
-    exits without it, since asking would prompt. Frames stay in memory until the step's
+    exits without it, since asking would prompt. It also exits before recording when the
+    run's workspace is on another display. Frames stay in memory until the step's
     figures are written (KosmosBench, tested on synthetic frames in KosmosBenchTests).
     - The stub paints each window one color of a palette, with no shadow, title or open
       animation, so a frame's pixels say which window each shows. A window of Steve's
@@ -455,9 +456,10 @@
       before again after it changed. What apps draw in their windows is left out: in a
       slide inside each window that stays put, and in a switch or focus move inside each
       window before or after it, as a revealed window's title bar buttons turn to color once
-      it takes the key. A window crossing under another has no place while hidden, and no
-      stall is counted across those frames.
-    - Each step is matched to Kosmos's log from its send to the next step's, streamed at
+      it takes the key, and so is the whole corner the buttons sit in, since their edges
+      blend with the window's color. A window crossing under another has no place while
+      hidden, and no stall is counted across those frames.
+    - Each step is matched to Kosmos's log from its send to its settle, streamed at
       debug level with signposts: each switch's total, its wait for writes to land (`held`)
       and its batch completion on the main actor, its bridge time less the parts the line
       names; each slide's display frames stepped, its landing and the time between the

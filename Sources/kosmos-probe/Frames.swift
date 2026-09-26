@@ -1,12 +1,14 @@
 // The screen side of script/bench-frames.sh (docs/geometry.md).
 //
-//   kosmos-probe bench-frames <directory> [real]
+//   kosmos-probe bench-frames <directory> <display> [real]
 //                                   Records the built-in display at its refresh rate and
 //                                   measures each step the script names on stdin, keeping only
 //                                   per frame figures and pictures of flagged frames in the
-//                                   directory. `real` says a window of Steve's is in the run.
-//                                   Needs Screen Recording for the terminal it runs from, and
-//                                   exits rather than ask for it.
+//                                   directory. It exits before recording unless the built-in
+//                                   display has the name given, as `kosmos state` gives it.
+//                                   `real` says a window of Steve's is in the run. Needs Screen
+//                                   Recording for the terminal it runs from, and exits rather
+//                                   than ask for it.
 //
 // It prints `display <name>\t<Hz>\t<width>x<height>` as it starts, then answers each line on
 // stdin:
@@ -14,8 +16,9 @@
 //   step <n> <rep> <expect> <action> `armed <n>` once the screen is still, with that frame as
 //                                    the state before the step; expect is instant or slide
 //   sent <n> <sent> <answered> <exit>
-//                                    `done <n> <latency ms> <frames> <stalls> <jumps> <flashes>
-//                                    <settle>` once the screen settles, with the step measured
+//                                    `done <n> <latency ms> <frames> <stalls> <jumps> <displaced>
+//                                    <flashes> <settle>` once the screen settles, with the step
+//                                    measured
 //   end                              `end` once table.txt and the files beside it are written
 // or `abort <why>` when free disk falls under 20 GB or the directory passes 500 MB.
 import AppKit
@@ -23,16 +26,20 @@ import CoreMedia
 import KosmosBench
 import ScreenCaptureKit
 
-@MainActor func benchFrames(_ directory: String, real: Bool) -> Never {
+@MainActor func benchFrames(_ directory: String, display: String, real: Bool) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
+    guard let screen = NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) != 0 }) else {
+        print("error: the built-in display is off")
+        exit(1)
+    }
+    guard screen.localizedName == display else {
+        print("error: the run's workspace is on \(display), and the capture records only the built-in display, \(screen.localizedName)")
+        exit(1)
+    }
     // Asking would show a prompt, which the bench must never do.
     guard CGPreflightScreenCaptureAccess() else {
         print("error: this terminal has no Screen Recording permission; run the bench from one that has it")
-        exit(1)
-    }
-    guard let screen = NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) != 0 }) else {
-        print("error: the built-in display is off")
         exit(1)
     }
     // In the display's points from its top left: the area under the menu bar and the notch.
@@ -152,7 +159,11 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Send
         // the two clocks cannot drift apart over the run.
         let now = Date().timeIntervalSince1970
         let time = Double(displayTime) * ticks + now - Double(mach_absolute_time()) * ticks
-        guard abs(time - now) < 1 else { return failed(String(format: "a frame's display time is %.3f s from now", time - now)) }
+        // The first frame is let through: whether its display time is its capture's or the
+        // display's last change, which can be long before, is unmeasured.
+        guard status == .started || abs(time - now) < 1 else {
+            return failed(String(format: "a frame's display time is %.3f s from now", time - now))
+        }
         CVPixelBufferLockBaseAddress(pixels, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
         let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels), stride = CVPixelBufferGetBytesPerRow(pixels)

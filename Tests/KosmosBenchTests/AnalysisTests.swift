@@ -200,6 +200,23 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(analysis.tracks[2].samples.first?.frame == 0 && analysis.tracks[2].start == opened)
 }
 
+@Test func aRevealedWindowsButtonsTurningToColorAreNoFlash() {
+    // From an empty workspace, the window shows with gray buttons, then takes the key. At the
+    // buttons' edges the capture blends them with the window's color: the colored buttons'
+    // edge still reads as the window, the gray ones' does not.
+    let buttons = CGRect(x: 14, y: 12, width: 12, height: 4)
+    var gray = picture([Shape(window: 1, rect: left)], at: began)
+    var keyed = picture([Shape(window: 1, rect: left)], at: began + refresh)
+    gray.fill(buttons.insetBy(dx: -1, dy: -1), with: Color.rgb(60, 238, 60))
+    gray.fill(buttons, with: Color.rgb(200, 200, 200))
+    keyed.fill(buttons.insetBy(dx: -1, dy: -1), with: Color.rgb(12, 238, 19))
+    keyed.fill(buttons, with: Color.rgb(40, 200, 64))
+    let (first, kept) = record(before: [], [gray, keyed])
+    let analysis = analyze(.instant, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    #expect(abs(analysis.keyed! - 20 - refresh * 1000) < 0.1)
+}
+
 @Test func whatAnAppDrawsInItsWindowIsItsOwn() {
     // The title bar buttons of the window that loses the key turn gray a refresh after the
     // border moves on.

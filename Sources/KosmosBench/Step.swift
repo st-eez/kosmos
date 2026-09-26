@@ -134,7 +134,9 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
             let b = Color.differ(frame.pixels[i], before.pixels[i]), a = Color.differ(frame.pixels[i], after.pixels[i])
             if b { fromBefore += 1 }
             if a { fromAfter += 1 }
-            guard !own[i] else { continue }
+            // The buttons' edges blend with the window's color, so the whole corner they sit in
+            // is left out of a switch's events; key ms times them.
+            guard !own[i], expect == .slide || !zones.isButton(i) else { continue }
             if a && b { neither.append(Int32(i)) } else if a { pending.append(Int32(i)) } else if b { done.append(Int32(i)) }
         }
         let last = index == frames.count - 1
@@ -340,6 +342,8 @@ struct Zones {
             for y in by0..<by1 { for x in bx0..<bx1 { map[y * width + x] = 2 } }
         }
     }
+
+    func isButton(_ index: Int) -> Bool { map[index] == 2 }
 
     /// The zones where at least `Picture.least` pixels changed: in the buttons and the rings
     /// only pixels that show neither a window's color nor the wallpaper on one side count.
