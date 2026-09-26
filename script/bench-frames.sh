@@ -4,7 +4,7 @@
 # frames until the screen settles, stalls, jumps and flashes. What each figure means is in
 # docs/geometry.md.
 #
-#   script/bench-frames.sh [reps] [window-id]
+#   script/bench-frames.sh [--slow <ms>] [reps] [window-id]
 #
 # Run it from a terminal that has Screen Recording, as Ghostty has: the capture runs as the
 # terminal's child and uses its permission, and it exits rather than ask for one, so a run
@@ -31,6 +31,10 @@
 #                                      and back
 #   alt-N, alt-N back                  workspace switches between the two
 # A rep takes about 20 s, so 20 reps take about 7 minutes.
+#
+# With --slow the stub holds its main thread that long at each new frame of a window, so its
+# Accessibility writes answer and land late, as a busy app's do: Steve's apps took 7.6 ms per
+# write at the median and 186 ms at p99 on September 26, 2026, Helium 29 ms at the median.
 #
 # With a window id from `kosmos list-windows`, that app's window joins the stub's for the run,
 # leftmost, and goes back to its own workspace at the end. It shows how an app slower than the
@@ -64,8 +68,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage="usage: script/bench-frames.sh [reps] [window-id]"
-if (($# > 2)) || [[ ! ${1:-20} =~ ^[1-9][0-9]*$ || ! ${2:-1} =~ ^[0-9]+$ ]]; then
+usage="usage: script/bench-frames.sh [--slow <ms>] [reps] [window-id]"
+slow=0
+if [[ ${1:-} == --slow ]]; then
+    slow=${2:-}
+    shift 2 || true
+fi
+if (($# > 2)) || [[ ! $slow =~ ^[0-9]+$ || ! ${1:-20} =~ ^[1-9][0-9]*$ || ! ${2:-1} =~ ^[0-9]+$ ]]; then
     echo "$usage" >&2
     exit 2
 fi
@@ -168,10 +177,12 @@ PLIST
 codesign --force --sign - "$stub"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-opener_pid= log_pid= real_moved= start= number=0
+opener_pid= log_pid= real_moved= start= number=0 cpu_before=() cpu_after=
 # Stops the log, then has the capture write its tables with the log's lines, and prints the
 # summary.
 finish() {
+    # Before the capture exits at `end`.
+    if ((${#cpu_before[@]} > 0)) && [[ -z ${cpu_after:-} ]]; then read -ra cpu_after < <(cpus | paste -sd " " -); fi
     if [[ -n $log_pid ]]; then
         sleep 1   # the log's last lines
         kill -INT "$log_pid" 2>/dev/null || true
@@ -185,7 +196,13 @@ finish() {
     [[ -s $dir/table.txt && ! -e $dir/summary.txt ]] || return 0
     {
         cat "$dir/run.txt" 2>/dev/null || true
-        awk -v a="${start:-$EPOCHREALTIME}" -v b="$EPOCHREALTIME" -v n="$number" 'BEGIN { printf "%d steps in %.1f minutes\n\n", n, (b - a) / 60 }'
+        awk -v a="${start:-$EPOCHREALTIME}" -v b="$EPOCHREALTIME" -v n="$number" 'BEGIN { printf "%d steps in %.1f minutes\n", n, (b - a) / 60 }'
+        if ((${#cpu_before[@]} > 0 && number > 0)); then
+            echo "CPU per step (ps -o time=, 10 ms steps over the run): $(paste -d ' ' <(printf '%s\n' "${cpu_names[@]}") \
+                <(printf '%s\n' "${cpu_before[@]}") <(printf '%s\n' "${cpu_after[@]}") |
+                awk -v n="$number" '{ printf "%s%s %.2f ms", NR > 1 ? ", " : "", $1, ($3 - $2) / n }')"
+        fi
+        echo
         cat "$dir/table.txt"
         echo
         echo "Each figure is median/95th percentile. Latency is from the command's send to the first changed frame,"
@@ -233,7 +250,7 @@ fi
 ask wallpaper
 mkfifo "$dir/stub.in"
 open -g -n -W --stdin "$dir/stub.in" --stdout "$dir/stub.out" --stderr "$dir/stub.err" "$stub" \
-    --args bench-windows "$count" "$display_name" --colors &
+    --args bench-windows "$count" "$display_name" --colors --slow "$slow" &
 opener_pid=$!
 exec 3> "$dir/stub.in"
 ids=()
@@ -321,10 +338,11 @@ restore() {
 {
     echo "$(date '+%Y-%m-%d %H:%M'), $("$kosmos" version 2>/dev/null || echo 'version unknown'): $kosmos_path, animations $mode"
     echo "$captured at $rate Hz, captured at $size, 2 points a pixel$( [[ $(pmset -g | awk '/lowpowermode/ { print $2 }') == 1 ]] && echo '; Low Power Mode is on, which holds the display to 60 Hz')"
-    echo "workspace $workspace with $count stub windows${real:+ and $real_app window $real}, and $partner for the switches; $shown_before showed before, with ${focused_before:-none} focused, and both come back as the script exits"
+    echo "workspace $workspace with $count stub windows$( ((slow > 0)) && echo ", $slow ms slow at each new frame")${real:+ and $real_app window $real}, and $partner for the switches; $shown_before showed before, with ${focused_before:-none} focused, and both come back as the script exits"
 } > "$dir/run.txt"
 
-log stream --style compact --level info --predicate 'subsystem == "io.github.st-eez.kosmos"' > "$dir/kosmos.log" 2>&1 3>&- &
+# Debug for the inventory's events, and signposts for any interval Kosmos marks.
+log stream --style compact --level debug --signpost --predicate 'subsystem == "io.github.st-eez.kosmos"' > "$dir/kosmos.log" 2>&1 3>&- &
 log_pid=$!
 sleep 1
 
@@ -348,8 +366,8 @@ step() {
         "$kosmos" "${words[@]}" > /dev/null || code=$?
     fi
     ask "sent $number $sent $EPOCHREALTIME $code" 30
-    read -r _ _ _ _ stalls jumps flashes _ <<< "$reply"
-    if ((stalls + jumps + flashes > 0)); then flagged=$((flagged + 1)); fi
+    read -r _ _ _ _ stalls jumps displaced flashes _ <<< "$reply"
+    if ((stalls + jumps + displaced + flashes > 0)); then flagged=$((flagged + 1)); fi
     if [[ $command == "stub new" ]]; then
         new_id=$(opened)
         ids+=("$new_id")
@@ -386,6 +404,17 @@ moves=(
     "instant|alt-N|workspace $partner"
     "instant|alt-N back|workspace $workspace"
 )
+# Each process's CPU time in ms: Kosmos, WindowServer, the stub, the capture, SketchyBar.
+stub_pid=$(pgrep -f "^$stub/Contents/MacOS/KosmosBenchStub" || true)
+cpu_names=(Kosmos WindowServer stub capture)
+cpu_pids=("$kosmos_pid" "$(pgrep -x WindowServer)" "$stub_pid" "$capture_PID")
+if bar_pid=$(pgrep -x sketchybar); then cpu_names+=(SketchyBar) cpu_pids+=("$bar_pid"); fi
+cpus() {
+    for pid in "${cpu_pids[@]}"; do
+        ps -o time= -p "$pid" | awk -F: '{ printf "%.0f\n", ($1 * 60 + $2) * 1000 }' || echo 0
+    done
+}
+read -ra cpu_before < <(cpus | paste -sd ' ' -)
 start=$EPOCHREALTIME
 for ((rep = 1; rep <= reps; rep++)); do
     for entry in "${steps[@]}"; do

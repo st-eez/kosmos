@@ -19,6 +19,7 @@ public struct Record: Sendable {
 
     public var stalls: [Event] { analysis.events.filter { $0.kind == .stall } }
     public var jumps: [Event] { analysis.events.filter { $0.kind == .jump || $0.kind == .backward } }
+    public var displaced: [Event] { analysis.events.filter { $0.kind == .displaced } }
     /// Frames with a flash, a partial change or a revert.
     public var flashes: [Event] { analysis.events.filter { [.flash, .partial, .revert].contains($0.kind) } }
 }
@@ -30,7 +31,8 @@ public func percentile(_ values: [Double], _ fraction: Double) -> Double? {
     return sorted[max(0, Int((Double(sorted.count) * fraction).rounded(.up)) - 1)]
 }
 
-/// The summary table: one row per action, in the order the run first took each.
+/// The summary: per action, in the order the run first took each, what the screen showed,
+/// then what Kosmos logged.
 public func summary(_ records: [Record]) -> String {
     var actions: [String] = []
     for record in records where !actions.contains(record.action) { actions.append(record.action) }
@@ -38,32 +40,45 @@ public func summary(_ records: [Record]) -> String {
         guard let median = percentile(values, 0.5), let p95 = percentile(values, 0.95) else { return "-" }
         return String(format: "\(format)/\(format)", median, p95)
     }
-    func share(_ count: Int, _ total: Int) -> String { count == 0 ? "0" : "\(count)/\(total)" }
+    func share(_ steps: [Record], _ events: (Record) -> [Event]) -> String {
+        let count = steps.filter { !events($0).isEmpty }.count
+        return count == 0 ? "0" : "\(count)/\(steps.count)"
+    }
     func counted(_ count: Int, _ what: String) -> String? { count == 0 ? nil : "\(count) \(what)" }
-    let header = ["action", "n", "latency ms", "frames", "span ms", "stalls", "longest", "jumps", "flashes", "switch ms",
-                  "held ms", "landed ms", "slowest link ms"]
-    var rows = [header]
+    var screen = [["action", "n", "latency ms", "frames", "span ms", "windows ms", "border ms", "key ms", "stalls", "longest ms",
+                   "jumps", "displaced", "flashes"]]
+    var log = [["action", "switch ms", "held ms", "completion ms", "landed ms", "stepped", "read gap ms", "slowest link ms",
+                "membership events"]]
     for action in actions {
         let steps = records.filter { $0.action == action }
         let changed = steps.filter { $0.analysis.latency != nil }
-        let facts = steps.map { Facts($0.log) }
-        let stalled = steps.filter { !$0.stalls.isEmpty }
-        let longest = steps.flatMap(\.stalls).compactMap(\.amount).max()
         var kinds: [String: Int] = [:]
         for event in steps.flatMap(\.flashes) { kinds["\(event.kind.rawValue) \(event.what)", default: 0] += 1 }
-        let flashed = steps.filter { !$0.flashes.isEmpty }.count
         let top = kinds.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.first.map { " (\($0.key))" } ?? ""
-        rows.append([
+        screen.append([
             action, ["\(steps.count)", counted(steps.filter { $0.settle == .unchanged }.count, "unchanged"),
                      counted(steps.filter { $0.settle == .cut }.count, "cut")].compactMap { $0 }.joined(separator: ", "),
             cell(changed.compactMap(\.analysis.latency)), cell(changed.map { Double($0.analysis.frames) }, "%.0f"),
-            cell(changed.map(\.analysis.span)), share(stalled.count, steps.count), longest.map { String(format: "%.1f", $0) } ?? "-",
-            share(steps.filter { !$0.jumps.isEmpty }.count, steps.count), share(flashed, steps.count) + top,
-            cell(facts.flatMap(\.switches)), cell(facts.flatMap(\.held)), cell(facts.flatMap(\.landed)),
-            facts.compactMap(\.slowestFrame).max().map { String(format: "%.2f", $0) } ?? "-",
+            cell(changed.map(\.analysis.span)), cell(steps.compactMap(\.analysis.windows)), cell(steps.compactMap(\.analysis.border)),
+            cell(steps.compactMap(\.analysis.keyed)), share(steps, \.stalls),
+            steps.flatMap(\.stalls).compactMap(\.amount).max().map { String(format: "%.1f", $0) } ?? "-",
+            share(steps, \.jumps), share(steps, \.displaced), share(steps, \.flashes) + top,
+        ])
+        let facts = steps.map { Facts($0.log) }
+        let stepped = facts.flatMap(\.stepped)
+        let short = stepped.filter { $0 < 40 }.count
+        log.append([
+            action, cell(facts.flatMap(\.switches)), cell(facts.flatMap(\.held)), cell(facts.flatMap(\.completions), "%.2f"),
+            cell(facts.flatMap(\.landed)), cell(stepped.map(Double.init), "%.0f") + (short > 0 ? ", \(short) under 40" : ""),
+            cell(facts.flatMap(\.readGaps), "%.2f"), facts.compactMap(\.slowestFrame).max().map { String(format: "%.2f", $0) } ?? "-",
+            String(format: "%.1f a step", Double(facts.reduce(0) { $0 + $1.memberships }) / Double(max(steps.count, 1))),
         ])
     }
-    let widths = header.indices.map { column in rows.map { $0[column].count }.max()! }
+    return table(screen) + "\n\n" + table(log)
+}
+
+private func table(_ rows: [[String]]) -> String {
+    let widths = rows[0].indices.map { column in rows.map { $0[column].count }.max()! }
     return rows.map { row in
         row.indices.map { row[$0].padding(toLength: widths[$0], withPad: " ", startingAt: 0) }.joined(separator: "  ")
             .trimmingCharacters(in: .whitespaces)

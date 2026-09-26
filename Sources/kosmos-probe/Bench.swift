@@ -1,7 +1,7 @@
 // The windows and readings script/bench-relayout.sh and script/bench-frames.sh use
 // (docs/geometry.md).
 //
-//   kosmos-probe bench-windows <count> [display] [--colors]
+//   kosmos-probe bench-windows <count> [display] [--colors] [--slow <ms>]
 //                                   Opens count windows on the display of that name, as
 //                                   `kosmos state` gives it, else the main one, and prints
 //                                   their ids, then `frame <id> <x> <y> <w> <h> <time>` at each
@@ -13,8 +13,11 @@
 //                                   and `show <id>` in again. With --colors each window is one
 //                                   color of KosmosBench's palette, a color no other open window
 //                                   has, with no shadow and no title, and `color <id> <index>
-//                                   <time>` names it. Run it from a bundle with `open -g`, as the
-//                                   scripts do: run from a terminal, it becomes the front app.
+//                                   <time>` names it. With --slow each new frame holds the main
+//                                   thread that long, so Accessibility writes answer and land
+//                                   late, as a busy app's do. Run it from a bundle with `open -g`,
+//                                   as the scripts do: run from a terminal, it becomes the front
+//                                   app.
 //   kosmos-probe eui [pid...]       AXEnhancedUserInterface of each running regular app, or of
 //                                   the apps given. While it is on, Chrome and Firefox animate
 //                                   their own Accessibility moves. Read only. Needs
@@ -22,12 +25,12 @@
 import AppKit
 import KosmosBench
 
-@MainActor func benchWindows(_ count: Int, on display: String?, colors: Bool) -> Never {
+@MainActor func benchWindows(_ count: Int, on display: String?, colors: Bool, slow: Double) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
     let screen = NSScreen.screens.first { $0.localizedName == display } ?? NSScreen.main ?? NSScreen.screens[0]
     let area = screen.visibleFrame
-    let bench = BenchWindows(colors: colors)
+    let bench = BenchWindows(colors: colors, slow: slow)
     let ids = (0..<count).map { index in
         let step = 30 * CGFloat(index)
         return bench.open(NSRect(x: area.minX + 40 + step, y: area.maxY - 340 - step, width: 480, height: 300))
@@ -62,13 +65,14 @@ func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970)
 
 @MainActor final class BenchWindows: NSObject, NSWindowDelegate {
     private let colors: Bool
+    private let slow: Double
     private var windows: [Int: NSWindow] = [:]
     private var colored: [Int: Int] = [:]
     private var printed: [Int: NSRect] = [:]
     private var closed: NSRect?
     private let top = NSScreen.screens[0].frame.maxY
 
-    init(colors: Bool) { self.colors = colors }
+    init(colors: Bool, slow: Double) { (self.colors, self.slow) = (colors, slow) }
 
     /// Orders the window in without making it key, so the app stays in the background, unless
     /// `key` asks for the key as an app's new window takes it.
@@ -121,6 +125,7 @@ func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970)
         guard printed[id] != frame else { return }
         printed[id] = frame
         print("frame \(id) \(Int(frame.minX)) \(Int(top - frame.maxY)) \(Int(frame.width)) \(Int(frame.height)) \(epochNow())")
+        if slow > 0 { Thread.sleep(forTimeInterval: slow / 1000) }
     }
 }
 

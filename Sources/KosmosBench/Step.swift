@@ -42,6 +42,9 @@ public struct Event: Sendable {
         /// A window still for longer than a refresh while the easing moves it 2 pixels a
         /// refresh or more.
         case stall
+        /// A window off its way for one frame, by 10% of it or 8 pixels, or a quarter of it
+        /// off the line from its start to its end, between frames on it.
+        case displaced
     }
 
     public let kind: Kind
@@ -57,6 +60,10 @@ public struct Event: Sendable {
     /// For a motion event, where the easing put the window, and where it showed.
     public var expected: CGRect?
     public var shown: CGRect?
+    /// For a stall, when the window last moved.
+    public var since: Double?
+    /// For a motion event of a stub window, its palette index.
+    public var window: Int?
 }
 
 public struct Row: Sendable {
@@ -81,6 +88,11 @@ public struct Analysis: Sendable {
     public var span: Double
     /// Milliseconds from the send to the start of the earliest slide.
     public var began: Double?
+    /// In a step expected at once, milliseconds from the send to the last change of the
+    /// windows, of the borders, and of the title bar buttons that show which window is key.
+    public var windows: Double?
+    public var border: Double?
+    public var keyed: Double?
     public var events: [Event]
     public var rows: [Row]
     public var tracks: [Track]
@@ -90,7 +102,8 @@ public struct Analysis: Sendable {
 /// the last of them the settled state.
 public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Picture], scene: Scene) -> Analysis {
     guard let after = frames.last else {
-        return Analysis(latency: nil, frames: 0, span: 0, began: nil, events: [], rows: [], tracks: [])
+        return Analysis(latency: nil, frames: 0, span: 0, began: nil, windows: nil, border: nil, keyed: nil, events: [], rows: [],
+                        tracks: [])
     }
     let width = before.width
     let states = (before: Shown(before, scene: scene), after: Shown(after, scene: scene))
@@ -102,17 +115,25 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
         events += motion(tracks[index], refresh: scene.refresh)
     }
     let own = appDrawn(states, real: scene.real, width: width)
+    let zones = Zones((states.before.rects + states.after.rects).compactMap { $0 }, picture: before)
+    var moments: [Zones.Zone: Double] = [:]
 
     var rows: [Row] = []
     for (index, frame) in frames.enumerated() {
         let previous = index == 0 ? before : frames[index - 1]
+        if expect == .instant {
+            for zone in zones.changed(from: index == 0 ? states.before : shown[index - 1], to: shown[index]) {
+                moments[zone] = (frame.time - sent) * 1000
+            }
+        }
         var neither: [Int32] = [], pending: [Int32] = [], done: [Int32] = []
         var fromBefore = 0, fromAfter = 0
         for i in frame.pixels.indices {
             let b = Color.differ(frame.pixels[i], before.pixels[i]), a = Color.differ(frame.pixels[i], after.pixels[i])
             if b { fromBefore += 1 }
             if a { fromAfter += 1 }
-            guard !own[i] else { continue }
+            // Key ms times the title bar buttons, so a switch's events leave them out.
+            guard !own[i], expect == .slide || !zones.isButton(i) else { continue }
             if a && b { neither.append(Int32(i)) } else if a { pending.append(Int32(i)) } else if b { done.append(Int32(i)) }
         }
         let last = index == frames.count - 1
@@ -152,6 +173,7 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
     let began = tracks.compactMap(\.began).min().map { ($0 - sent) * 1000 }
     return Analysis(latency: (frames[0].time - sent) * 1000, frames: frames.count,
                     span: (after.time - frames[0].time) * 1000, began: began,
+                    windows: moments[.windows], border: moments[.border], keyed: moments[.buttons],
                     events: events.sorted { ($0.frame, $0.kind.rawValue) < ($1.frame, $1.kind.rawValue) }, rows: rows, tracks: tracks)
 }
 
@@ -231,39 +253,102 @@ struct Shown {
     var real: (rect: CGRect, count: Int)? { KosmosBench.extents(of: 1, in: realMask(width: picture.width), width: picture.width)[0] }
 }
 
-/// Jumps, backward moves and stalls of one window against the easing.
+/// Displaced frames, jumps, backward moves and stalls of one window against the easing.
 private func motion(_ track: Track, refresh: Double) -> [Event] {
-    let distance = track.distance
     guard track.began != nil else { return [] }
+    let distance = track.distance, bound = max(8, 0.1 * distance), samples = track.samples
     let name = track.window.map { "window \($0)" } ?? "Steve's window"
+    func eased(_ i: Int) -> Double { track.predicted(at: samples[i].time)! }
+    func off(_ i: Int) -> Double { abs(samples[i].progress - eased(i)) * distance }
+    func misfit(_ i: Int) -> Double {
+        let rect = track.frame(at: samples[i].progress)
+        return Double(samples[i].misfit) / max(1, rect.width * rect.height)
+    }
+    func event(_ kind: Event.Kind, _ i: Int, _ detail: String, amount: Double) -> Event {
+        Event(kind: kind, frame: samples[i].frame, what: name, detail: detail, amount: amount,
+              expected: track.frame(at: eased(i)), shown: track.frame(at: samples[i].progress), window: track.window)
+    }
     var events: [Event] = []
-    var lastMove = track.samples.first
-    for (a, b) in zip(track.samples, track.samples.dropFirst()) {
-        let observed = (b.progress - a.progress) * distance
-        let expected = (track.predicted(at: b.time)! - track.predicted(at: a.time)!) * distance
-        let shown = track.frame(at: b.progress), eased = track.frame(at: track.predicted(at: b.time)!)
-        if observed - expected > max(8, 0.1 * distance) {
-            events.append(Event(kind: .jump, frame: b.frame, what: name,
-                                detail: String(format: "%@ moved %.0f px in %.1f ms where the easing gave %.0f", name, observed,
-                                               (b.time - a.time) * 1000, expected),
-                                amount: observed - expected, expected: eased, shown: shown))
-        } else if observed < -max(4, 0.05 * distance) {
-            events.append(Event(kind: .backward, frame: b.frame, what: name,
-                                detail: String(format: "%@ moved %.0f px back in %.1f ms", name, -observed, (b.time - a.time) * 1000),
-                                amount: -observed, expected: eased, shown: shown))
+    // One frame off the window's way between two on it, as when a write lands before the
+    // transform that follows it (docs/geometry.md).
+    let displaced = Set(samples.indices.dropFirst().dropLast().filter { i in
+        off(i) > bound && off(i - 1) <= bound && off(i + 1) <= bound
+            || misfit(i) > 0.25 && misfit(i - 1) <= 0.1 && misfit(i + 1) <= 0.1
+    })
+    for i in displaced.sorted() {
+        events.append(event(.displaced, i, String(format: "%@ showed %.0f px off its way, %.0f%% of it off its line, for one frame",
+                                                   name, off(i), misfit(i) * 100), amount: off(i)))
+    }
+    var lastMove = 0
+    for i in samples.indices.dropFirst() {
+        let a = samples[i - 1], b = samples[i]
+        let observed = (b.progress - a.progress) * distance, expected = (eased(i) - eased(i - 1)) * distance
+        if !displaced.contains(i), !displaced.contains(i - 1) {
+            if observed - expected > bound {
+                events.append(event(.jump, i, String(format: "%@ moved %.0f px in %.1f ms where the easing gave %.0f", name, observed,
+                                                     (b.time - a.time) * 1000, expected), amount: observed - expected))
+            } else if observed < -max(4, 0.05 * distance) {
+                events.append(event(.backward, i, String(format: "%@ moved %.0f px back in %.1f ms", name, -observed,
+                                                         (b.time - a.time) * 1000), amount: -observed))
+            }
         }
-        guard abs(observed) >= 0.75, let from = lastMove else { continue }
-        lastMove = b
+        guard abs(observed) >= 0.75 else { continue }
+        let from = samples[lastMove]
+        lastMove = i
         let gap = b.time - from.time
         let due = (track.predicted(at: from.time + refresh)! - track.predicted(at: from.time)!) * distance
         if gap > 1.5 * refresh, due >= 2 {
-            events.append(Event(kind: .stall, frame: b.frame, what: name,
-                                detail: String(format: "%@ still for %.1f ms where the easing moves it %.0f px a refresh", name,
-                                               (gap - refresh) * 1000, due),
-                                amount: (gap - refresh) * 1000, expected: eased, shown: shown))
+            var stall = event(.stall, i, String(format: "%@ still for %.1f ms where the easing moves it %.0f px a refresh", name,
+                                                (gap - refresh) * 1000, due), amount: (gap - refresh) * 1000)
+            stall.since = from.time
+            events.append(stall)
         }
     }
     return events
+}
+
+/// What a change between two frames touched, by where the stub windows are before and after
+/// the step: the title bar buttons, which show whether the window is key, the ring outside a
+/// window's edge, where its border draws, or the windows themselves.
+struct Zones {
+    enum Zone { case windows, border, buttons }
+
+    private let width: Int
+    /// 0 for the windows, 1 for a ring, 2 for buttons.
+    private var map: [UInt8]
+
+    init(_ rects: [CGRect], picture: Picture) {
+        width = picture.width
+        map = [UInt8](repeating: 0, count: picture.pixels.count)
+        for rect in rects {
+            let (x0, y0, x1, y1) = picture.clamped(rect.insetBy(dx: -3, dy: -3))
+            let inner = rect.insetBy(dx: 1, dy: 1)
+            for y in y0..<y1 {
+                for x in x0..<x1 where !inner.contains(CGPoint(x: x, y: y)) { map[y * width + x] = max(map[y * width + x], 1) }
+            }
+            // The buttons sit in the top left corner, within 90 by 40 points of it.
+            let (bx0, by0, bx1, by1) = picture.clamped(CGRect(x: rect.minX + 1, y: rect.minY + 1, width: 45, height: 20).intersection(inner))
+            for y in by0..<by1 { for x in bx0..<bx1 { map[y * width + x] = 2 } }
+        }
+    }
+
+    func isButton(_ index: Int) -> Bool { map[index] == 2 }
+
+    /// The zones where at least `Picture.least` pixels changed: in the buttons and the rings
+    /// only pixels that show neither a window's color nor the wallpaper on one side count.
+    func changed(from a: Shown, to b: Shown) -> [Zone] {
+        var counts = [0, 0, 0]
+        for i in a.picture.pixels.indices where Color.differ(a.picture.pixels[i], b.picture.pixels[i]) {
+            let zone = Int(map[i])
+            let other = a.labels[i] == Label.other || b.labels[i] == Label.other
+            if zone == 0 || (zone == 1 && other) || (zone == 2 && a.labels[i] == Label.other && b.labels[i] == Label.other) {
+                counts[zone] += 1
+            } else if zone == 1 || zone == 2 {
+                counts[0] += 1
+            }
+        }
+        return zip([Zone.windows, .border, .buttons], counts).filter { $0.1 >= Picture.least }.map(\.0)
+    }
 }
 
 /// Inside a window that stays put, what its app draws: the stub's title bar buttons, which
@@ -311,7 +396,7 @@ private func unexplained(_ neither: [Int32], frame: Int, labels: [UInt8], tracks
 }
 
 /// The largest groups of the pixels by what they show, and where they are: the ring outside
-/// a stub window's edge counts as `border`.
+/// a stub window's edge counts as `border` whether a border or the wallpaper shows there.
 func describePixels(_ pixels: [Int32], labels: [UInt8], rings: [CGRect], width: Int) -> (what: String, detail: String) {
     guard !pixels.isEmpty else { return ("none", "none") }
     var counts: [String: Int] = [:]
@@ -319,16 +404,16 @@ func describePixels(_ pixels: [Int32], labels: [UInt8], rings: [CGRect], width: 
     for i in pixels {
         let point = CGPoint(x: Int(i) % width, y: Int(i) / width)
         box = box.union(CGRect(origin: point, size: CGSize(width: 1, height: 1)))
+        let ring = rings.contains { $0.insetBy(dx: -3, dy: -3).contains(point) && !$0.insetBy(dx: 1, dy: 1).contains(point) }
         let what = switch labels[Int(i)] {
+        case Label.other where ring, Label.wallpaper where ring: "border"
         case Label.wallpaper: "wallpaper"
-        case Label.other where rings.contains(where: { $0.insetBy(dx: -3, dy: -3).contains(point) && !$0.insetBy(dx: 1, dy: 1).contains(point) }):
-            "border"
         case Label.other: "other"
         case let window: "window \(window - 1)"
         }
         counts[what, default: 0] += 1
     }
     let ranked = counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }
-    let parts = ranked.prefix(3).map { "\($0.key) \($0.value) px" }.joined(separator: ", ")
+    let parts = ranked.prefix(4).map { "\($0.key) \($0.value) px" }.joined(separator: ", ")
     return (ranked[0].key, "\(parts) in \(Int(box.minX)),\(Int(box.minY)) \(Int(box.width))x\(Int(box.height))")
 }

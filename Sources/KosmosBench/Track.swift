@@ -98,13 +98,16 @@ public struct Track: Sendable {
     }
 
     /// The fraction of the way that fits the window's pixels best, searched in steps of half
-    /// a pixel from 20% before the start to 20% past the end. Pixels of other windows count
-    /// neither way, since a sliding window can pass under or over them.
+    /// a pixel from a whole way before the start to a whole way past the end, where a write
+    /// that lands before the transform following it shows the window (docs/geometry.md).
+    /// Pixels of other windows count neither way, since a sliding window can pass under or
+    /// over them.
     func fit(window: Summed, wallpaper: Summed) -> (progress: Double, misfit: Int) {
         let step = min(0.002, 0.5 / max(distance, 1))
         var best = Int.max, ties: [Double] = []
-        for progress in stride(from: -0.2, through: 1.2, by: step) {
+        for progress in stride(from: -1.2, through: 2.2, by: step) {
             let rect = frame(at: progress)
+            guard rect.size.width > 0, rect.size.height > 0 else { continue }
             let misfit = window.total - window.count(rect) + wallpaper.count(rect)
             if misfit < best { (best, ties) = (misfit, [progress]) } else if misfit == best { ties.append(progress) }
         }

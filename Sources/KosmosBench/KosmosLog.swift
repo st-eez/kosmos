@@ -34,6 +34,16 @@ public struct Facts: Sendable {
     /// Milliseconds from each slide's write to its landing.
     public var landed: [Double] = []
     public var slid = 0, popped = 0, unlanded = 0, ended = 0, jumped = 0
+    /// Milliseconds each switch's batch completion held the main actor: its bridge time less
+    /// the parts the line names.
+    public var completions: [Double] = []
+    /// Display frames each slide and pop stepped, about 46 over 0.38 s at 120 Hz.
+    public var stepped: [Int] = []
+    /// Milliseconds between the reads that follow a landing write, each run's time over its
+    /// reads.
+    public var readGaps: [Double] = []
+    /// WindowServer's Space membership events, from the inventory's debug lines.
+    public var memberships = 0
     /// Milliseconds: the slowest display link callback, and the slowest Accessibility write.
     public var slowestFrame: Double?
     public var slowestWrite: Double?
@@ -46,9 +56,15 @@ public struct Facts: Sendable {
                 switches.append(Double(match.1)!)
                 if match.2 != "confirmed" { failed += 1 }
                 if let wait = message.firstMatch(of: #/held ([0-9.]+) ms/#) { held.append(Double(wait.1)!) }
-            } else if let match = message.firstMatch(of: #/^\d+ (slid|popped) in \d+ frames, (?:landed ([0-9.]+) ms|did not land)/#) {
+                let parts = #/bridge ([0-9.]+) ms \(queued ([0-9.]+), sent ([0-9.]+), confirmed ([0-9.]+)[^,]*, recovered ([0-9.]+), back ([0-9.]+)\)/#
+                if let bridge = message.firstMatch(of: parts) {
+                    let values = [bridge.1, bridge.2, bridge.3, bridge.4, bridge.5, bridge.6].map { Double($0)! }
+                    completions.append(max(0, values[0] - values.dropFirst().reduce(0, +)))
+                }
+            } else if let match = message.firstMatch(of: #/^\d+ (slid|popped) in (\d+) frames, (?:landed ([0-9.]+) ms|did not land)/#) {
                 if match.1 == "popped" { popped += 1 } else { slid += 1 }
-                if let ms = match.2 { landed.append(Double(ms)!) } else { unlanded += 1 }
+                stepped.append(Int(match.2)!)
+                if let ms = match.3 { landed.append(Double(ms)!) } else { unlanded += 1 }
             } else if message.firstMatch(of: #/^\d+ slide ended /#) != nil {
                 ended += 1
             } else if let match = message.firstMatch(of: #/^relayout: .*, (\d+) jump/#) {
@@ -57,6 +73,11 @@ public struct Facts: Sendable {
                 slowestFrame = max(slowestFrame ?? 0, Double(match.1)!)
             } else if let match = message.firstMatch(of: #/^\d+ written, AX time ([0-9.]+) ms/#) {
                 slowestWrite = max(slowestWrite ?? 0, Double(match.1)!)
+            } else if let match = message.firstMatch(of: #/^slide reads: (\d+), \d+ of them 0\.1 ms apart, over ([0-9.]+) ms/#),
+                      let reads = Double(match.1), reads > 0 {
+                readGaps.append(Double(match.2)! / reads)
+            } else if message.hasPrefix("event spaceMembership(") {
+                memberships += 1
             }
         }
     }

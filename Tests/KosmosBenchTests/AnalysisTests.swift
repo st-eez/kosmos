@@ -115,6 +115,39 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(analysis.events.filter { $0.kind == .jump }.map(\.frame) == [0, 0], "\(analysis.events.map(\.detail))")
 }
 
+@Test func aWriteLandingAheadOfItsTransformIsADisplacedFrame() {
+    // In the seventh frame window 1 shows offset by its whole move, where WindowServer draws it
+    // between its write landing and the read that sets its transform (docs/geometry.md).
+    let frames = slide(after, from: [left, right]) { index, eased in index == 6 ? eased + 1 : nil }
+    let (first, kept) = record(before: before, frames)
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.map(\.kind) == [.displaced, .displaced], "\(analysis.events.map(\.detail))")
+    #expect(analysis.events.allSatisfy { $0.frame == 6 })
+}
+
+@Test func aSwitchTimesItsWindowsBorderAndKey() {
+    // The windows show, the border a refresh later, and the title bar buttons turn from gray to
+    // the key window's colors a refresh after that.
+    let buttons = CGRect(x: 14, y: 12, width: 12, height: 4)
+    var windows = picture([Shape(window: 2, rect: left), Shape(window: 3, rect: right)], at: began)
+    var bordered = picture(other, at: began + refresh)
+    var keyed = picture(other, at: began + 2 * refresh)
+    windows.fill(buttons, with: Color.rgb(200, 200, 200))
+    bordered.fill(buttons, with: Color.rgb(200, 200, 200))
+    keyed.fill(buttons, with: Color.rgb(250, 90, 80))
+    let start = [Shape(window: 0, rect: left), Shape(window: 1, rect: right, border: true)]
+    let (first, kept) = record(before: start, [windows, bordered, keyed])
+    let analysis = analyze(.instant, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(abs(analysis.windows! - 20) < 0.1 && abs(analysis.border! - 20 - refresh * 1000) < 0.1
+        && abs(analysis.keyed! - 20 - 2 * refresh * 1000) < 0.1, "\(analysis.windows ?? -1) \(analysis.border ?? -1) \(analysis.keyed ?? -1)")
+    #expect(analysis.events.map(\.kind) == [.partial] && analysis.events.first?.what == "border", "\(analysis.events.map(\.detail))")
+
+    // With the border where it was before, its absence in the first frame is a blink.
+    let (blinkFirst, blinkKept) = record(before: before, [windows, bordered, keyed])
+    let blink = analyze(.instant, sent: sent, before: blinkFirst, frames: blinkKept, scene: scene)
+    #expect(blink.events.map(\.kind) == [.flash] && blink.events.first?.what == "border", "\(blink.events.map(\.detail))")
+}
+
 @Test func aWindowWhereNeitherStateHasItIsAFlash() {
     // A hidden workspace's window shows for one frame below the others.
     var frames = slide(after, from: [left, right])
@@ -257,6 +290,14 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(facts.switches == [39.187] && facts.held == [4.5] && facts.failed == 0)
     #expect(facts.slid == 1 && facts.popped == 1 && facts.unlanded == 1 && facts.landed == [12.5] && facts.jumped == 1)
     #expect(facts.slowestFrame == 0.35 && facts.slowestWrite == 0.41)
+    #expect(facts.stepped == [45, 49])
+    #expect(abs(facts.completions[0] - (39.036 - 0.039 - 2.314 - 35.565 - 0.001 - 0.104)) < 1e-9)
+    let more = """
+        2026-09-26 00:59:28.703 I  Kosmos[20670:2488082] [io.github.st-eez.kosmos:slide] slide reads: 20, 12 of them 0.1 ms apart, over 30.0 ms
+        2026-09-26 00:59:28.704 D  Kosmos[20670:2488082] [io.github.st-eez.kosmos:inventory] event spaceMembership(4242)
+        """
+    let extra = Facts(more.split(separator: "\n").compactMap { LogLine($0) })
+    #expect(extra.readGaps == [1.5] && extra.memberships == 1)
 }
 
 @Test func theSummaryHasARowPerAction() {
@@ -264,10 +305,10 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     let analysis = analyze(.slide, sent: sent, before: first, frames: frames, scene: scene)
     let records = (1...3).map { Record(number: $0, rep: $0, action: $0 == 2 ? "focus" : "resize", expect: .slide, sent: sent,
                                        settle: .settled, analysis: analysis) }
-    let lines = summary(records).split(separator: "\n")
-    #expect(lines.count == 3)
-    #expect(lines[1].hasPrefix("resize  2 "))
-    #expect(lines[2].hasPrefix("focus   1 "))
+    let tables = summary(records).components(separatedBy: "\n\n").map { $0.split(separator: "\n") }
+    #expect(tables.map(\.count) == [3, 3])
+    #expect(tables[0][1].hasPrefix("resize  2 ") && tables[0][2].hasPrefix("focus   1 "))
+    #expect(tables[1][0].hasPrefix("action  switch ms"))
 }
 
 @MainActor @Test func aRunWritesItsTablesAndPictures() throws {
@@ -284,7 +325,7 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     recorder.command("sent 1 \(sent) \(sent + 0.003) 0", at: sent + 0.6)
     recorder.check(at: sent + 1)
     #expect(replies.prefix(2) == ["ok", "armed 1"])
-    #expect(replies.count == 3 && replies[2].hasPrefix("done 1 20.00 ") && replies[2].hasSuffix(" 0 0 0 settled"), "\(replies)")
+    #expect(replies.count == 3 && replies[2].hasPrefix("done 1 20.00 ") && replies[2].hasSuffix(" 0 0 0 0 settled"), "\(replies)")
 
     // A switch with a blank frame between its states.
     recorder.command("step 2 1 instant alt-N", at: sent + 2)
@@ -293,7 +334,7 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     recorder.add(picture(other, at: switched + 0.03))
     recorder.command("sent 2 \(switched) \(switched + 0.003) 0", at: switched + 0.04)
     recorder.check(at: switched + 1)
-    #expect(replies.last == "done 2 20.00 2 0 0 1 settled")
+    #expect(replies.last == "done 2 20.00 2 0 0 0 1 settled")
 
     let stamp = DateFormatter()
     stamp.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"

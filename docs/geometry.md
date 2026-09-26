@@ -413,29 +413,40 @@
     actions Steve uses: workspace switches, to and from an empty workspace too,
     `move-node-to-workspace --focus-follows-window` into a hidden workspace with windows,
     focus moves, resize, balance, join, flatten, move and fullscreen relayouts, a new
-    window, a close, and a window ordered out and in again. `kosmos-probe bench-frames` records the built-in
-    display with ScreenCaptureKit at its refresh rate, in sRGB, at 2 points a pixel, below
-    the menu bar and the notch. It runs as the terminal's child and uses the terminal's
+    window, a close, and a window ordered out and in again. `kosmos-probe bench-frames`
+    records the built-in display with ScreenCaptureKit at its refresh rate, in sRGB, at 2
+    points a pixel, below the menu bar and the notch. It runs as the terminal's child and uses the terminal's
     Screen Recording permission: it checks it with `CGPreflightScreenCaptureAccess` and
     exits without it, since asking would prompt. Frames stay in memory until the step's
     figures are written (KosmosBench, tested on synthetic frames in KosmosBenchTests).
     - The stub paints each window one color of a palette, with no shadow, title or open
       animation, so a frame's pixels say which window each shows. A window of Steve's
-      given by id is what the stub windows, the wallpaper and their rings leave.
+      given by id is what the stub windows, the wallpaper and their rings leave. With
+      `--slow` the stub holds its main thread at each new frame, so its writes answer and
+      land late, as a busy app's do.
     - A step runs from the frame before its command until nothing has changed for 0.4 s, at
       least 0.6 s after the send, and ends with no change after 1.5 s or cut off at 4 s. A
       pixel differs when a channel differs by more than 24 levels, and a frame with fewer
       than 8 pixels that differ from the last kept one is dropped, so each kept frame is a
       change and a gap between kept frames is refreshes that showed nothing new.
     - Latency is from the send to the first changed frame, and includes the CLI's launch.
-      Frames and span count the changed frames from the first to the last.
+      Frames and span count the changed frames from the first to the last. In a switch or
+      a focus move, the windows, the border and the key each settle at the last frame that
+      changed them: the stub windows' pixels, the ring outside their edges, and their
+      title bar buttons, which turn from gray to color as the window becomes key. So a
+      revealing switch shows how long its border and its key come after its windows, the
+      cost of showing the border before the focus request.
     - A sliding window's place in each frame is how far along the line from its start to
       its end its pixels fit best, since a slide mixes origin and size by one eased
       fraction; other windows' pixels count neither way, as they pass over and under it.
       The slide's start is where the samples put it on the easing curve. A stall is a
       window still for more than 1.5 refreshes while the easing moves it 2 pixels a refresh
       or more; a jump is a frame that takes it further than the easing by 10% of its way
-      or 8 pixels, and a backward move one that takes it back.
+      or 8 pixels, and a backward move one that takes it back. A displaced frame shows the
+      window that far off its way, or a quarter of it off the line, for one frame between
+      frames on it, as when a write lands before the read that sets its transform: the
+      window then shows offset by its whole move, so the search runs a whole way before the
+      start and past the end.
     - A flash in a slide is pixels that match neither the state before nor after, outside
       every sliding window's fitted frame and the wallpaper its path uncovers. In a switch
       or a focus move, any frame between the states counts: a flash when pixels match
@@ -443,6 +454,14 @@
       that moves a frame after the windows, and `revert` when the screen shows the state
       before again. Inside a window that stays put, what its app draws is left out, as the
       stub's title bar buttons, which change with its key state.
+    - Each step is matched to Kosmos's log from its send to the next step's, streamed at
+      debug level with signposts: each switch's total, its wait for writes to land (`held`)
+      and its batch completion on the main actor, its bridge time less the parts the line
+      names; each slide's display frames stepped, its landing and the time between the
+      reads that follow its write; the slowest display link callback; and the inventory's
+      Space membership events. The log lines during a stall and about a displaced window
+      print under it in kosmos-steps.txt. The summary also gives the CPU per step of Kosmos,
+      WindowServer, the stub, the capture and SketchyBar.
     - The ceilings: a stray window drawn inside a sliding window's frame is taken for one
       it passes; a pop gives no position until it is nearly opaque; a frame the capture
       drops shows as a stall, and a capture held to 60 Hz would show every slide stalled,

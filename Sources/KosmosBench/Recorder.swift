@@ -40,7 +40,8 @@ import ImageIO
         write("frames.tsv", "step\tframe\ttime\tms\tchanged\tfrom before\tfrom after\tneither\tflagged\n")
         write("tracks.tsv", "step\twindow\tframe\tms\tprogress\teased\tmisfit\n")
         write("events.tsv", "step\tframe\tms\tkind\twhat\tdetail\tpicture\n")
-        write("steps.tsv", "step\trep\taction\texpect\tsent\tanswered\texit\tsettle\tlatency\tframes\tspan\tslide start\tstalls\tjumps\tflashes\n")
+        write("steps.tsv", "step\trep\taction\texpect\tsent\tanswered\texit\tsettle\tlatency\tframes\tspan\tslide start\twindows\tborder\t"
+            + "key\tstalls\tjumps\tdisplaced\tflashes\n")
     }
 
     public func add(_ picture: Picture) {
@@ -136,12 +137,13 @@ import ImageIO
         func number(_ value: Double?) -> String { value.map { String(format: "%.2f", $0) } ?? "-" }
         write("steps.tsv", "\(step.number)\t\(step.rep)\t\(step.action)\t\(step.expect.rawValue)\t\(String(format: "%.6f", sent.at))\t"
             + "\(String(format: "%.6f", sent.answered))\t\(sent.exit)\t\(settle.rawValue)\t\(number(analysis.latency))\t"
-            + "\(analysis.frames)\t\(number(analysis.span))\t\(number(analysis.began))\t\(record.stalls.count)\t\(record.jumps.count)\t"
-            + "\(record.flashes.count)\n")
+            + "\(analysis.frames)\t\(number(analysis.span))\t\(number(analysis.began))\t\(number(analysis.windows))\t"
+            + "\(number(analysis.border))\t\(number(analysis.keyed))\t\(record.stalls.count)\t\(record.jumps.count)\t"
+            + "\(record.displaced.count)\t\(record.flashes.count)\n")
         (self.step, self.sent) = (nil, nil)
         guard roomLeft() else { return }
         reply("done \(step.number) \(number(analysis.latency)) \(analysis.frames) \(record.stalls.count) \(record.jumps.count) "
-            + "\(record.flashes.count) \(settle.rawValue)")
+            + "\(record.displaced.count) \(record.flashes.count) \(settle.rawValue)")
     }
 
     /// Writes table.txt and kosmos-steps.txt, with Kosmos's log lines from each step's send to
@@ -179,8 +181,19 @@ import ImageIO
                 ?? "no change"
             steps += ", \(record.settle.rawValue)\n"
             for event in analysis.events {
-                steps += String(format: "  frame %d at %+.1f ms: %@ %@\n", event.frame, (analysis.rows[event.frame].time - record.sent) * 1000,
-                                event.kind.rawValue, event.detail)
+                let at = analysis.rows[event.frame].time
+                steps += String(format: "  frame %d at %+.1f ms: %@ %@\n", event.frame, (at - record.sent) * 1000, event.kind.rawValue, event.detail)
+                // What Kosmos logged while a window stood still, and about a window off its way.
+                let related = if event.kind == .stall, let since = event.since {
+                    record.log.filter { $0.time >= since - 0.002 && $0.time <= at + 0.002 }
+                } else if let window = event.window, let id = legend[window] {
+                    record.log.filter { $0.message.hasPrefix("\(id) ") }
+                } else {
+                    [LogLine]()
+                }
+                for line in related {
+                    steps += String(format: "      %+8.1f ms  %@: %@\n", (line.time - record.sent) * 1000, line.category, line.message)
+                }
             }
             for line in record.log {
                 steps += String(format: "    %+8.1f ms  %@: %@\n", (line.time - record.sent) * 1000, line.category, line.message)
