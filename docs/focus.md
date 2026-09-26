@@ -312,10 +312,12 @@
     its own thread, and the border hop showed AppKit's new frame reaching WindowServer after
     another thread's SkyLight call. Keyed at its old place, the window left the menu bar and
     the next new window on the display it came from. The focus queue also skipped the moved
-    window as key already when it was key on the other display. A display that goes keeps
-    its window for its return. A display whose frame changes gets a new window, created at
-    its new corner at the display change, and the old one closes, so no move is left to
-    land late. Unmeasured: whether the order-in of a window made at a display change can
+    window as key already when it was key on the other display. At each display change,
+    a display whose window is no longer at its corner gets a new window, created there, and
+    the old one closes, so no move is left to land late. That covers a display whose frame
+    changed, and a display that comes back: macOS moves an ordered in window off a display
+    that goes, and the empty workspace windows stay ordered in, so a returning display's
+    window is somewhere else by then and is replaced. Unmeasured: whether the order-in of a window made at a display change can
     reach WindowServer after the key record of the resync that follows in the same main
     actor turn.
   - Inside the front app the key record keys nothing

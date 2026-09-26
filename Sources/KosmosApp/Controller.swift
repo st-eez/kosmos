@@ -18,7 +18,7 @@ final class Controller {
     var misses = FocusMisses()
     let inventory: Inventory
     let hiding: Hiding
-    /// One for each display, kept for a display that goes (docs/focus.md).
+    /// One for each display, made again when it is off its display's corner (docs/focus.md).
     private var emptyWorkspaces: [DisplayID: EmptyWorkspaceWindow] = [:]
     private let focusQueue = FocusQueue()
     private let bar = BarPush()
