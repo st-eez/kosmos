@@ -171,9 +171,13 @@
     landed. A write that has not landed after 0.25 s, as a launching app's, pops the window
     in at its target, and the reads follow it until it lands. A window its app opens on its
     own tile pops in too.
-  - A window its app closed and kept, then orders in again at its old place, vanishes from
-    there and pops in as a new window does. It shows there only while its reopen waits the
-    pairing window, the ceiling [tree.md](tree.md) names.
+  - A window its app closed and kept, then orders in again, shows at its old frame before
+    Kosmos hears of it, so it slides from there to its place as a relayout's window does,
+    and stays put when that is its place. A pop hid it and faded it back: at 60 fps, each
+    of five Activity Monitor reopens showed the window for 1 frame, then nothing for 1 or
+    2 frames, then faded it in over about 0.4 s (screen recording, September 25, 2026). A
+    reopen that waits the pairing window slides after the wait, the ceiling
+    [tree.md](tree.md) names.
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while Kosmos can conceal, with the guardian ready and every

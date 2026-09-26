@@ -54,8 +54,9 @@ extension Controller {
 
     /// A window already minimized, in native fullscreen or hidden with its app waits parked,
     /// and a minimized or fullscreen one returns on its own, not when its app unhides.
-    /// `reopened`: a window closed and kept, ordered in again, opens as a new window does
-    /// (docs/tree.md).
+    /// `reopened`: a window closed and kept, ordered in again, opens as a new window does. Its
+    /// app shows it at its old frame before Kosmos hears of it, so it slides from there
+    /// (docs/geometry.md).
     private func place(_ id: WindowID, pid: pid_t, ruleWorkspace: Bool, reopened: Bool) {
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
@@ -78,7 +79,7 @@ extension Controller {
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
         if focus == .adopt { session.adopt(id) }
-        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: atLaunch ? nil : id)
+        execute(plan, movePointer: bringsPointer, floatingCheck: floats, popping: atLaunch || reopened ? nil : id)
         // The follow's switch reveals the window the plan conceals.
         windowPlaced(id)
     }
@@ -118,8 +119,8 @@ extension Controller {
         }
         let closed = session.parkReason(of: id) == .closedByApp
         guard orderedIn, tabs.hidden.contains(id) || closed else { return }
-        // Ceiling: a window that waits and is no tab switch shows at its old place for the
-        // wait; a pool Space could hold it transparent (docs/tree.md).
+        // Ceiling: a window that waits and is no tab switch stays at its old place for the
+        // pairing window, then slides; measuring the pairing window sets the wait (docs/tree.md).
         if closed, !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
             return reopen(id, pid: pid)
         }
