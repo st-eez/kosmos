@@ -25,15 +25,37 @@ import Testing
     #expect(workspace.focus(.down, from: 4) == nil)
 }
 
-@Test func focusDescendsByFocusOrder() {
+/// From 1, 2 and 3 face it and overlap it, so the more recently focused wins. 4 is not at
+/// the edge, though focused last (docs/tree.md).
+@Test func focusTakesTheMostRecentlyFocusedOverlappingWindowAtTheEdge() {
     var workspace = Workspace("h[1 v[2 h[3 4]]]")
-    #expect(workspace.focus(.right, from: 1) == 4)
     workspace.focus(2)
     workspace.focus(1)
     #expect(workspace.focus(.right, from: 1) == 2)
     workspace.focus(3)
+    workspace.focus(4)
     workspace.focus(1)
     #expect(workspace.focus(.right, from: 1) == 3)
+}
+
+/// Steve's example: Ghostty 1 left of Chrome 2 over Finder 3, with Finder used last.
+@Test func focusReachesTheWindowOverThere() {
+    var workspace = Workspace("h[1 v[2 3]]")
+    workspace.focus(3)
+    workspace.focus(1)
+    #expect(workspace.focus(.right, from: 1) == 3)
+    // Ghostty in the top half: Finder does not overlap it.
+    var stacked = Workspace("h[v[1 4] v[2 3]]")
+    stacked.focus(3)
+    stacked.focus(1)
+    #expect(stacked.focus(.right, from: 1) == 2)
+    // Ghostty over y 0 to 800 overlaps both, and Finder was used last.
+    var tall = Workspace("h[v[1:800 4:280] v[2 3]]")
+    tall.focus(3)
+    tall.focus(1)
+    let rect = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    #expect(tall.frames(in: rect, gaps: Gaps())[1]!.maxY == 800 && tall.frames(in: rect, gaps: Gaps())[3]!.minY == 540)
+    #expect(tall.focus(.right, from: 1, frame: { _ in nil }, in: rect, gaps: Gaps(), minimums: [:]) == 3)
 }
 
 @Test func focusIgnoresWindowsOutsideTheTree() {
@@ -87,18 +109,79 @@ import Testing
     for (tree, floating, frames, tiled) in cases {
         var workspace = Workspace(tree)
         workspace.floating = floating
-        #expect(workspace.withFloatingTiled({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:]).tree == tiled, "\(frames)")
+        let seen = workspace.withFloatingTiled(workspace.onScreen({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:]),
+                                               in: screen, gaps: deskGaps)
+        #expect(seen.tree == tiled, "\(frames)")
     }
 }
 
 /// 9 counts by its own focus, older than 3's (docs/tree.md).
-@Test func focusDescendsByEachWindowsOwnFocusOrder() {
+@Test func focusGoesByEachWindowsOwnFocusOrder() {
     var workspace = Workspace("h[1 v[2 3]]")
     workspace.floating = [9]
     workspace.focus(9)
     workspace.focus(3)
     let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 150, width: 200, height: 200)]
     #expect(workspace.focus(.right, from: 1, frames: frames) == 3)
+}
+
+/// 9 stands in v[2 9 3] and overlaps 1 by its own frame, so, focused last, it is over there.
+@Test func focusReachesAFloatingWindowByItsOwnFrame() {
+    var workspace = Workspace("h[v[1 4] v[2 3]]")
+    workspace.floating = [9]
+    workspace.focus(9)
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 100, width: 200, height: 150)]
+    let onScreen = workspace.onScreen({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
+    #expect(workspace.withFloatingTiled(onScreen, in: screen, gaps: deskGaps).tree == "h[v[1 4] v[2 9 3]]")
+    #expect(workspace.focus(.right, from: 1, frames: frames) == 9)
+}
+
+// MARK: Focus entering from another display
+
+/// Entered from the left, v[1 h[2 3]] offers 1 and 2 at its edge, and never 3, though
+/// focused last (docs/tree.md).
+@Test func enteringTakesTheMostRecentlyFocusedOverlappingWindowAtTheEdge() {
+    var workspace = Workspace("v[1 h[2 3]]")
+    let top = CGRect(x: -500, y: 0, width: 400, height: 250), bottom = CGRect(x: -500, y: 350, width: 400, height: 250)
+    let whole = CGRect(x: -500, y: 0, width: 400, height: 600)
+    workspace.focus(3)
+    #expect(workspace.enter(.right, from: top) == 1)
+    workspace.focus(3)
+    #expect(workspace.enter(.right, from: bottom) == 2)
+    // Overlapping both, or with no window to leave, the more recently focused.
+    #expect(workspace.enter(.right, from: whole) == 2)
+    workspace.focus(1)
+    #expect(workspace.enter(.right) == 1)
+    // An overlap of a point counts as none.
+    #expect(workspace.enter(.right, from: CGRect(x: -500, y: 294, width: 400, height: 300)) == 2)
+    // With no overlap, the nearest, though 3 was focused later.
+    workspace.focus(3)
+    #expect(workspace.enter(.up, from: CGRect(x: -500, y: 700, width: 400, height: 100)) == 2)
+    // Along the root, the first or last child alone.
+    #expect(workspace.enter(.up, from: CGRect(x: 0, y: 700, width: 1000, height: 100)) == 2)
+    // Chrome 2 beside Finder 3, entered from the left: Chrome, though Finder was used last.
+    var beside = Workspace("h[2 3]")
+    beside.focus(3)
+    #expect(beside.enter(.right, from: whole) == 2)
+}
+
+@Test func enteringCountsFloatingWindowsAsTiles() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [9]
+    // Left of tile 1's center, so it stands before tile 1.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 0, y: 100, width: 300, height: 300)]
+    #expect(workspace.enter(.right, frames: frames) == 9)
+    #expect(workspace.enter(.left, frames: frames) == 2)
+    #expect(workspace.tree == "h[1 2]")
+}
+
+@Test func enteringKeepsTheFocusOfAFullscreenWindowAndFindsNoneInAnEmptyWorkspace() {
+    var workspace = Workspace("h[1 2]")
+    workspace.toggleFullscreen(2)
+    #expect(workspace.enter(.right) == 2)
+    #expect(workspace.fullscreenWindow == 2)
+    var empty = Workspace("h[]")
+    #expect(empty.enter(.right) == nil)
 }
 
 // MARK: Swap
@@ -110,13 +193,18 @@ import Testing
     #expect(workspace.shares == [0.25, 0.75])
 }
 
-@Test func swapReachesFocusedWindowOfContainer() {
+@Test func swapTakesTheWindowFocusReaches() {
     var workspace = Workspace("h[1 v[2 3]]")
     workspace.focus(2)
     #expect(workspace.swap(1, .right) == true)
     #expect(workspace.tree == "h[2 v[1 3]]")
     #expect(workspace.swap(3, .left) == true)
     #expect(workspace.tree == "h[3 v[1 2]]")
+    // From the top half, the window over there, though 3 was focused last.
+    var stacked = Workspace("h[v[1 4] v[2 3]]")
+    stacked.focus(3)
+    #expect(stacked.swap(1, .right) == true)
+    #expect(stacked.tree == "h[v[2 4] v[1 3]]")
 }
 
 @Test func swapStopsAtWorkspaceEdge() {

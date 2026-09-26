@@ -14,23 +14,75 @@ extension Workspace {
     /// the edge of the workspace (docs/tree.md).
     mutating func focus(_ direction: Direction, from window: WindowID, frame: (WindowID) -> CGRect?,
                         in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
-        let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
+        let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
+        let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
         guard let path = seen.neighbor(of: window, direction) else { return nil }
-        let target = seen.mostRecentWindow(in: seen.root.node(at: path))
+        let target = seen.overThere(in: seen.root.node(at: path), direction, from: frames[window], frames: frames)
         focus(target)
         return target
     }
 
-    /// The workspace with each floating window that `frame` places tiled, for a focus in a
-    /// direction (docs/tree.md).
-    func withFloatingTiled(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
-                           minimums: [WindowID: CGSize]) -> Workspace {
+    /// Focuses the window a focus in the direction reaches as it enters from `source`, the
+    /// frame it leaves on another display (docs/tree.md). A fullscreen window covers every
+    /// edge, so its workspace keeps its focus.
+    mutating func enter(_ direction: Direction, from source: CGRect?, frame: (WindowID) -> CGRect?, in rect: CGRect,
+                        gaps: Gaps, minimums: [WindowID: CGSize]) {
+        let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
+        let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
+        guard fullscreenWindow == nil, !seen.root.children.isEmpty else { return }
+        focus(seen.overThere(in: Node(kind: .container(seen.root), weight: 1), direction, from: source, frames: frames))
+    }
+
+    /// Tiles where the layout puts them, and floating windows where `frame` does.
+    func onScreen(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
+                  minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
+        var frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        for window in floating { frames[window] = frame(window) }
+        return frames
+    }
+
+    /// Of the windows at the edge of `node` that a focus in the direction enters by, the most
+    /// recently focused of those whose span across the direction overlaps `source`'s by more
+    /// than a point, as Hyprland picks it. With none, the nearest (docs/tree.md).
+    private func overThere(in node: Node, _ direction: Direction, from source: CGRect?, frames: [WindowID: CGRect]) -> WindowID {
+        let span: (CGRect) -> (CGFloat, CGFloat) = direction.orientation == .horizontal ? { ($0.minY, $0.maxY) } : { ($0.minX, $0.maxX) }
+        // Negative for the gap between spans that do not meet.
+        func overlap(_ window: WindowID) -> CGFloat {
+            guard let source, let frame = frames[window] else { return 0 }
+            let (a, b) = (span(source), span(frame))
+            return min(a.1, b.1) - max(a.0, b.0)
+        }
+        let edge = edgeWindows(of: node, direction)
+        var near = edge.filter { overlap($0) > 1 }
+        if near.isEmpty {
+            let closest = edge.map(overlap).max()!
+            near = edge.filter { overlap($0) == closest }
+        }
+        let latest = near.map { stamps[$0] ?? 0 }.max()!
+        return near.last { stamps[$0] ?? 0 == latest }!
+    }
+
+    /// Along the direction a container gives its first or last child, and across it every
+    /// child.
+    private func edgeWindows(of node: Node, _ direction: Direction) -> [WindowID] {
+        switch node.kind {
+        case .window(let id):
+            [id]
+        case .container(let container) where container.orientation == direction.orientation:
+            edgeWindows(of: direction.isForward ? container.children.first! : container.children.last!, direction)
+        case .container(let container):
+            container.children.flatMap { edgeWindows(of: $0, direction) }
+        }
+    }
+
+    /// The workspace with each floating window tiled that has a frame in `frames`, which
+    /// `onScreen` gives, for a focus in a direction (docs/tree.md).
+    func withFloatingTiled(_ frames: [WindowID: CGRect], in rect: CGRect, gaps: Gaps) -> Workspace {
         let area = tilingRect(rect, gaps.outer)
         let shares = tileFrames(in: rect, gaps: Gaps(outer: gaps.outer))
-        let tiles = self.frames(in: rect, gaps: gaps, minimums: minimums)
         var places: [(window: WindowID, container: Int, index: Int, along: CGFloat)] = []
         for window in floating {
-            guard let frame = frame(window) else { continue }
+            guard let frame = frames[window] else { continue }
             let center = CGPoint(x: frame.midX, y: frame.midY)
             // The share under the center, whose right and bottom edges belong to the next
             // one. With no tiles there is none, and the window goes first in the root.
@@ -38,7 +90,7 @@ extension Workspace {
             var (container, index, tile): (Container, Int, CGRect?) = (root, 0, nil)
             if let id = shares.first(where: { $0.value.contains(point) })?.key {
                 let path = root.path(to: id)!
-                (container, index, tile) = (root[path.dropLast()], path.last!, tiles[id])
+                (container, index, tile) = (root[path.dropLast()], path.last!, frames[id])
             }
             let along: (CGPoint) -> CGFloat = container.orientation == .horizontal ? \.x : \.y
             if let tile, along(center) >= along(CGPoint(x: tile.midX, y: tile.midY)) { index += 1 }
@@ -53,12 +105,14 @@ extension Workspace {
         return seen
     }
 
-    /// With the window `focus` reaches in the direction, each taking the other's place and
-    /// share.
+    /// With the tile `focus` reaches in the direction, each taking the other's place and share
+    /// (docs/tree.md).
     @discardableResult
-    mutating func swap(_ window: WindowID, _ direction: Direction) -> Bool {
+    mutating func swap(_ window: WindowID, _ direction: Direction, in rect: CGRect, gaps: Gaps,
+                       minimums: [WindowID: CGSize]) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
-        let other = mostRecentWindow(in: root.node(at: neighbor))
+        let frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
+        let other = overThere(in: root.node(at: neighbor), direction, from: frames[window], frames: frames)
         let path = root.path(to: window)!, otherPath = root.path(to: other)!
         root[path.dropLast()].children[path.last!].kind = .window(other)
         root[otherPath.dropLast()].children[otherPath.last!].kind = .window(window)
