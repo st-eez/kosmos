@@ -189,3 +189,17 @@ private struct Memberships {
     let ledger = ConcealLedger(entries: [1: 9, 2: 9, 3: 8])
     #expect(ledger.departed([1, 2, 3, 4, 5], members: { $0 == 9 ? [2] : nil }, settled: { $0 == 4 }) == [1, 4])
 }
+
+/// 1 is recorded and open, 2 recorded and closed since. 3 is new with its owner identified,
+/// 4 new with its owner unidentified and 5 new and closed since.
+@Test func aBatchConcealsOnlyTheWindowsWithARowAndARecordableOwner() {
+    let hide: [WindowID] = [1, 2, 3, 4, 5]
+    let concealing = ConcealLedger.concealing(hide, rows: [1, 3, 4], recorded: [1, 2], owned: [3])
+    #expect(concealing == [1, 3])
+}
+
+/// A failed query cannot tell a closed window. A window new to the record then has no owner
+/// to record, so the batch stops and recovery runs (docs/hiding.md).
+@Test func withTheRowsUnreadABatchLeavesNoWindowOut() {
+    #expect(ConcealLedger.concealing([1, 3, 4], rows: nil, recorded: [1], owned: []) == [1, 3, 4])
+}

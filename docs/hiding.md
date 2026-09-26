@@ -281,7 +281,8 @@
   query, and a failed query leaves no window out, so a
   window new to the record, whose owner the query would have named, stops the batch and
   recovery runs. Read as every window gone, it would leave the windows to hide on screen
-  until their workspace was shown and hidden again.
+  until their workspace was shown and hidden again. `ConcealLedger.concealing` makes this
+  choice, and KosmosCore's tests cover it.
 - A window can also close, or its app order it out, after the batch reads its row and
   before its add lands, as at Command-W right before a switch. No Space lists it, so its
   conceal never shows and the batch fails its confirmation, and recovery would show every
