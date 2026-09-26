@@ -14,9 +14,9 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
 }
 
 @Test func crc32MatchesTheStandardCheckValue() {
-    var crc = CRC32()
-    crc.update(Array("123456789".utf8))
-    #expect(crc.value == 0xCBF4_3926)
+    let crc = Array("123456789".utf8).withUnsafeBytes { RecordFile.crc32($0) }
+    #expect(crc == 0xCBF4_3926)
+    #expect(Array("12345".utf8).withUnsafeBytes { head in Array("6789".utf8).withUnsafeBytes { RecordFile.crc32(head, $0) } } == crc)
 }
 
 @Test func emptyFileHasNoRecord() throws {
