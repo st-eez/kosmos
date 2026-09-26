@@ -53,6 +53,24 @@ import ScreenCaptureKit
     timer.schedule(deadline: .now(), repeating: .milliseconds(5))
     timer.setEventHandler { onMain(recorder) { recorder.check(at: Date().timeIntervalSince1970) } }
     timer.resume()
+    // Notification Center's windows on the display, read 5 times a second: a banner there shows
+    // in the frames, and its steps' events can be discounted. The window list's owner names
+    // and bounds need no permission of their own.
+    let bounds = CGDisplayBounds(screen.displayID)
+    let banners = DispatchSource.makeTimerSource(queue: .main)
+    banners.schedule(deadline: .now(), repeating: .milliseconds(200))
+    banners.setEventHandler {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[CFString: Any]] ?? []
+        let shown = windows.compactMap { window -> (id: Int, rect: CGRect)? in
+            guard (window[kCGWindowOwnerName] as? String)?.contains("Notification") == true,
+                  let id = window[kCGWindowNumber] as? Int, let box = window[kCGWindowBounds] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: box), rect.intersects(bounds),
+                  (window[kCGWindowAlpha] as? Double ?? 1) > 0 else { return nil }
+            return (id, rect)
+        }
+        onMain(recorder) { if !shown.isEmpty { recorder.banners(shown, at: Date().timeIntervalSince1970) } }
+    }
+    banners.resume()
     Thread.detachNewThread {
         while let line = readLine() { onMain(recorder) { recorder.command(line, at: Date().timeIntervalSince1970) } }
         onMain(recorder) { recorder.finish() }
@@ -132,7 +150,9 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Send
               let displayTime = info[.displayTime] as? UInt64, let pixels = CMSampleBufferGetImageBuffer(buffer) else { return }
         // The display time is mach absolute time; the offset to the wall clock is taken now, so
         // the two clocks cannot drift apart over the run.
-        let time = Double(displayTime) * ticks + Date().timeIntervalSince1970 - Double(mach_absolute_time()) * ticks
+        let now = Date().timeIntervalSince1970
+        let time = Double(displayTime) * ticks + now - Double(mach_absolute_time()) * ticks
+        guard abs(time - now) < 1 else { return failed(String(format: "a frame's display time is %.3f s from now", time - now)) }
         CVPixelBufferLockBaseAddress(pixels, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
         let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels), stride = CVPixelBufferGetBytesPerRow(pixels)

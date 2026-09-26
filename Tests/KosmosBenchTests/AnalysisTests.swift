@@ -115,6 +115,32 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(analysis.events.filter { $0.kind == .jump }.map(\.frame) == [0, 0], "\(analysis.events.map(\.detail))")
 }
 
+@Test func aWindowPassingUnderAnotherHasNoStall() {
+    // The windows swap places, window 0 drawn over window 1 where they cross.
+    let swapped = [Shape(window: 1, rect: left), Shape(window: 0, rect: right, border: true)]
+    let (first, kept) = record(before: before, slide(swapped, from: [right, left]))
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    let hidden = analysis.tracks.first { $0.window == 1 }.map { track in
+        zip(track.samples, track.samples.dropFirst()).contains { $1.frame > $0.frame + 1 }
+    }
+    #expect(hidden == true, "window 1 is hidden for some frames")
+}
+
+@Test func whatAnAppDrawsBeforeTheStepChangesIsNoRevert() {
+    // A static window's buttons change a refresh before the border moves.
+    let buttons = CGRect(x: 134, y: 12, width: 12, height: 4)
+    let moved = [Shape(window: 0, rect: left), Shape(window: 1, rect: right, border: true)]
+    var drawn = picture(before, at: began)
+    drawn.fill(buttons, with: Color.rgb(200, 200, 200))
+    var settled = picture(moved, at: began + refresh)
+    settled.fill(buttons, with: Color.rgb(200, 200, 200))
+    let (first, kept) = record(before: before, [drawn, settled])
+    let analysis = analyze(.instant, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    #expect(abs(analysis.latency! - 20 - refresh * 1000) < 0.1 && analysis.frames == 1)
+}
+
 @Test func aWriteLandingAheadOfItsTransformIsADisplacedFrame() {
     // In the seventh frame window 1 shows offset by its whole move, where WindowServer draws it
     // between its write landing and the read that sets its transform (docs/geometry.md).
@@ -266,8 +292,13 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(screen.settled(sent: sent, at: sent + Screen.longest) == .cut)
 }
 
-@Test func calibrationFollowsAShiftedCapture() {
-    let shifted = Picture(width: 100, height: 20, fill: Color.rgb(230, 30, 20))
+@Test func calibrationFollowsAShiftedCaptureOfAWindow() {
+    var shifted = wallpaper
+    shifted.fill(CGRect(x: 10, y: 10, width: 100, height: 90), with: Color.rgb(230, 30, 20))
+    // Scattered pixels near green, as a busy wallpaper could have, take no color.
+    for i in stride(from: 0, to: shifted.pixels.count, by: 5) where shifted.pixels[i] != Color.rgb(230, 30, 20) {
+        shifted.pixels[i] = Color.rgb(20, 230, 20)
+    }
     let palette = Palette.stub.calibrated(from: shifted)
     #expect(palette.colors[0] == Color.rgb(230, 30, 20))
     #expect(palette.colors[1] == Palette.stub.colors[1])
@@ -346,7 +377,7 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     func read(_ file: String) throws -> String { try String(contentsOf: directory.appendingPathComponent(file), encoding: .utf8) }
     #expect(try read("steps.tsv").split(separator: "\n").count == 3)
     #expect(try read("events.tsv").contains("step\tframe") && read("events.tsv").contains("2\t0\t20.00\tflash\twallpaper"))
-    #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("step-0002-frame-000-flash.png").path))
+    #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("step-0002-frame-000-flash-0.png").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("step-0002-before.png").path))
     #expect(try read("kosmos-steps.txt").contains("+12.0 ms  controller: switch to 0"))
     let table = try read("table.txt")

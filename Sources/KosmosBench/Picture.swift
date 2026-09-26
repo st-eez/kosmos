@@ -93,13 +93,19 @@ public struct Palette: Sendable {
         }
     }
 
-    /// The palette as a picture of the windows shows it: each color becomes the median of the
-    /// pixels within 48 of it on every channel, where at least 1000 are, since capture can
-    /// shift colors.
+    /// The palette as a picture of the windows shows it, since capture can shift colors: each
+    /// color becomes the median of the pixels within 48 of it on every channel where they
+    /// form a window, at least 5000 filling 80% of the box around them, and stays as it is
+    /// otherwise, so no patch of wallpaper takes a color.
     public func calibrated(from picture: Picture) -> Palette {
         Palette(colors: colors.map { color in
-            let near = picture.pixels.filter { Color.distance($0, color) <= 48 }
-            guard near.count >= 1000 else { return color }
+            var near: [UInt32] = [], (x0, y0, x1, y1) = (Int.max, Int.max, Int.min, Int.min)
+            for (i, pixel) in picture.pixels.enumerated() where Color.distance(pixel, color) <= 48 {
+                near.append(pixel)
+                (x0, y0) = (min(x0, i % picture.width), min(y0, i / picture.width))
+                (x1, y1) = (max(x1, i % picture.width), max(y1, i / picture.width))
+            }
+            guard near.count >= 5000, near.count * 5 >= (x1 - x0 + 1) * (y1 - y0 + 1) * 4 else { return color }
             func median(_ shift: UInt32) -> UInt8 { UInt8(near.map { $0 >> shift & 0xff }.sorted()[near.count / 2]) }
             return Color.rgb(median(16), median(8), median(0))
         })

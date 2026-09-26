@@ -114,9 +114,11 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
         tracks[index].placeOnCurve(refresh: scene.refresh)
         events += motion(tracks[index], refresh: scene.refresh)
     }
-    let own = appDrawn(states, real: scene.real, width: width)
+    let own = appDrawn(states, expect: expect, real: scene.real, width: width)
     let zones = Zones((states.before.rects + states.after.rects).compactMap { $0 }, picture: before)
     var moments: [Zones.Zone: Double] = [:]
+    // The first frame that changed more than what apps draw in their windows.
+    var first: Int?
 
     var rows: [Row] = []
     for (index, frame) in frames.enumerated() {
@@ -132,11 +134,11 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
             let b = Color.differ(frame.pixels[i], before.pixels[i]), a = Color.differ(frame.pixels[i], after.pixels[i])
             if b { fromBefore += 1 }
             if a { fromAfter += 1 }
-            // Key ms times the title bar buttons, so a switch's events leave them out.
-            guard !own[i], expect == .slide || !zones.isButton(i) else { continue }
+            guard !own[i] else { continue }
             if a && b { neither.append(Int32(i)) } else if a { pending.append(Int32(i)) } else if b { done.append(Int32(i)) }
         }
         let last = index == frames.count - 1
+        let changed = neither.count + done.count >= Picture.least, unfinished = neither.count + pending.count >= Picture.least
         var flagged: [Int32] = []
         let rings = (states.before.rects + states.after.rects + shown[index].rects).compactMap { $0 }
             + tracks.compactMap { track in track.samples.first { $0.frame == index }.map { track.frame(at: $0.progress) } }
@@ -144,9 +146,9 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
             describePixels(pixels, labels: labels, rings: rings, width: width)
         }
         switch expect {
-        case .instant where !last && neither.count + done.count < Picture.least:
+        case .instant where !last && !changed && first != nil:
             events.append(Event(kind: .revert, frame: index, what: "all", detail: "the screen shows the state before again"))
-        case .instant where !last && neither.count + pending.count >= Picture.least:
+        case .instant where !last && changed && unfinished:
             if neither.count >= Picture.least {
                 flagged = neither
                 let (what, detail) = describe(neither, shown[index].labels)
@@ -167,12 +169,14 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
             }
         default: break
         }
+        if changed, first == nil { first = index }
         rows.append(Row(frame: index, time: frame.time, changed: frame.differences(from: previous), fromBefore: fromBefore,
                         fromAfter: fromAfter, neither: neither.count, flagged: flagged.count))
     }
     let began = tracks.compactMap(\.began).min().map { ($0 - sent) * 1000 }
-    return Analysis(latency: (frames[0].time - sent) * 1000, frames: frames.count,
-                    span: (after.time - frames[0].time) * 1000, began: began,
+    let start = first ?? 0
+    return Analysis(latency: (frames[start].time - sent) * 1000, frames: frames.count - start,
+                    span: (after.time - frames[start].time) * 1000, began: began,
                     windows: moments[.windows], border: moments[.border], keyed: moments[.buttons],
                     events: events.sorted { ($0.frame, $0.kind.rawValue) < ($1.frame, $1.kind.rawValue) }, rows: rows, tracks: tracks)
 }
@@ -292,6 +296,11 @@ private func motion(_ track: Track, refresh: Double) -> [Event] {
                                                          (b.time - a.time) * 1000), amount: -observed))
             }
         }
+        // Frames without a position, as under a window crossing it, say nothing of a stall.
+        if b.frame > a.frame + 1 {
+            lastMove = i
+            continue
+        }
         guard abs(observed) >= 0.75 else { continue }
         let from = samples[lastMove]
         lastMove = i
@@ -332,8 +341,6 @@ struct Zones {
         }
     }
 
-    func isButton(_ index: Int) -> Bool { map[index] == 2 }
-
     /// The zones where at least `Picture.least` pixels changed: in the buttons and the rings
     /// only pixels that show neither a window's color nor the wallpaper on one side count.
     func changed(from a: Shown, to b: Shown) -> [Zone] {
@@ -351,26 +358,36 @@ struct Zones {
     }
 }
 
-/// Inside a window that stays put, what its app draws: the stub's title bar buttons, which
-/// change with its key state, and everything in Steve's window. A pixel of a stub window's
-/// color counts, so another window drawn over it does too.
-private func appDrawn(_ states: (before: Shown, after: Shown), real: Bool, width: Int) -> [Bool] {
+/// What apps draw in their windows, left out of the events: in a slide, inside each window
+/// that stays put; at once, inside each window before or after, since a revealed window can
+/// redraw, as its title bar buttons do once it takes the key after the switch. A stub
+/// window's own pixels are the ones not in its color, so another window drawn over it
+/// counts; Steve's window's are all of them.
+private func appDrawn(_ states: (before: Shown, after: Shown), expect: Expect, real: Bool, width: Int) -> [Bool] {
     var own = [Bool](repeating: false, count: states.before.labels.count)
-    func stays(_ a: CGRect?, _ b: CGRect?) -> CGRect? {
-        guard let a, let b, max(abs(a.minX - b.minX), abs(a.maxX - b.maxX), abs(a.minY - b.minY), abs(a.maxY - b.maxY)) <= 1 else {
-            return nil
-        }
-        return a.insetBy(dx: 2, dy: 2)
+    func stays(_ a: CGRect?, _ b: CGRect?) -> Bool {
+        guard let a, let b else { return false }
+        return max(abs(a.minX - b.minX), abs(a.maxX - b.maxX), abs(a.minY - b.minY), abs(a.maxY - b.maxY)) <= 1
     }
-    func mark(_ rect: CGRect, where drawn: (Int) -> Bool) {
-        let (x0, y0, x1, y1) = states.before.picture.clamped(rect)
+    func mark(_ rect: CGRect?, where drawn: (Int) -> Bool) {
+        guard let rect else { return }
+        let (x0, y0, x1, y1) = states.before.picture.clamped(rect.insetBy(dx: 2, dy: 2))
         for y in y0..<y1 { for x in x0..<x1 where drawn(y * width + x) { own[y * width + x] = true } }
     }
+    let drawn = { (i: Int) in states.before.labels[i] == Label.other || states.after.labels[i] == Label.other }
     for (a, b) in zip(states.before.rects, states.after.rects) {
-        guard let rect = stays(a, b) else { continue }
-        mark(rect) { states.before.labels[$0] == Label.other || states.after.labels[$0] == Label.other }
+        if expect == .instant {
+            mark(a, where: drawn)
+            mark(b, where: drawn)
+        } else if stays(a, b) {
+            mark(a, where: drawn)
+        }
     }
-    if real, let rect = stays(states.before.real?.rect, states.after.real?.rect) { mark(rect) { _ in true } }
+    let (a, b) = (states.before.real?.rect, states.after.real?.rect)
+    if real, expect == .instant || stays(a, b) {
+        mark(a) { _ in true }
+        mark(b) { _ in true }
+    }
     return own
 }
 
@@ -380,10 +397,12 @@ private func appDrawn(_ states: (before: Shown, after: Shown), real: Bool, width
 private func unexplained(_ neither: [Int32], frame: Int, labels: [UInt8], tracks: [Track], width: Int) -> [Int32] {
     var explained: [CGRect] = [], uncovered: [CGRect] = []
     for track in tracks {
-        let path = track.start.union(track.end).insetBy(dx: -3, dy: -3)
+        // Steve's window casts a shadow, 12 pixels of it counted; the stub's cast none.
+        let margin: CGFloat = track.window == nil ? -12 : -3
+        let path = track.start.union(track.end).insetBy(dx: margin, dy: margin)
         uncovered.append(path)
         if let sample = track.samples.first(where: { $0.frame == frame }) {
-            explained.append(track.frame(at: sample.progress).insetBy(dx: -3, dy: -3))
+            explained.append(track.frame(at: sample.progress).insetBy(dx: margin, dy: margin))
         } else {
             explained.append(path)
         }

@@ -41,14 +41,19 @@
 # stub, such as an Electron one, slides. Steve must approve moving one of his windows, and it
 # is on screen and recorded for the whole run.
 #
+# The script keeps the display awake with caffeinate and asks for Do Not Disturb, which it
+# leaves to Steve to set; each banner that shows is logged with the steps it showed in.
+#
 # Nothing but figures and pictures reaches the disk: the capture keeps each step's frames in
 # memory, at 2 points a pixel, until it has measured them. It stops the run when free disk
 # falls under 20 GB or the run's directory passes 500 MB. Each run writes
 # .build/bench/<time>-frames/:
 #   summary.txt       what the script prints at the end: per action, the median and 95th
-#                     percentile of each figure, how many steps stalled, jumped or flashed,
-#                     and Kosmos's switch totals, waits for writes to land, slide landings and
-#                     slowest display link callback from its log
+#                     percentile of each figure, how many steps stalled, jumped, showed a
+#                     displaced frame or flashed, and from Kosmos's log its switch totals,
+#                     waits for writes to land, batch completions, slide landings, frames
+#                     stepped, read gaps, slowest display link callback and Space membership
+#                     events; then the CPU per step and the notification banners
 #   steps.tsv         per step: its figures, send time and settle
 #   frames.tsv        per kept frame: its time, and how many pixels differ from the frame
 #                     before, the state before the step and the state after it, match
@@ -63,6 +68,9 @@
 #   kosmos-steps.txt  per step: its figures, its events, and Kosmos's log lines from its send
 #                     to the next step's, each with its time after the send
 #   kosmos.log        Kosmos's log during the run
+#   banners.tsv       each notification banner on the display: its window, when it first
+#                     and last showed, and where
+#   abort.txt         why the capture stopped the run, when it did
 #   stub.out          the stub's windows: `color <id> <palette index> <time>` names the
 #                     window each event calls `window <index>`
 set -euo pipefail
@@ -221,11 +229,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Sends the capture a line and reads its answer into $reply.
+# Sends the capture a line and reads its answer into $reply. A capture that stopped on its own
+# left its reason in abort.txt.
 ask() {
-    printf '%s\n' "$1" >&"${capture[1]}"
-    if ! IFS= read -r -t "${2:-15}" -u "${capture[0]}" reply; then
-        echo "The capture did not answer \"$1\"; see $dir/capture.err." >&2
+    if [[ -z ${capture[1]:-} ]] || ! { printf '%s\n' "$1" >&"${capture[1]}"; } 2>/dev/null ||
+        ! IFS= read -r -t "${2:-15}" -u "${capture[0]}" reply; then
+        echo "The capture stopped: $(cat "$dir/abort.txt" 2>/dev/null || echo "no answer to \"$1\"; see $dir/capture.err")." >&2
         exit 1
     fi
     if [[ $reply == abort* || $reply == error* ]]; then
@@ -246,6 +255,9 @@ if [[ $captured != "$display_name" ]]; then
     exit 1
 fi
 
+# The display stays awake for the run; Do Not Disturb is Steve's to set.
+caffeinate -di -w $$ &
+echo "Turn on Do Not Disturb for the run: a notification banner on the built-in display shows in the frames. Banners that show are logged."
 "$kosmos" workspace "$workspace"
 ask wallpaper
 mkfifo "$dir/stub.in"
@@ -318,21 +330,26 @@ rightmost() {
     awk -v ids=" ${ids[*]} " '$1 == "frame" && index(ids, " " $2 " ") { x[$2] = $3 + 0 }
         END { for (id in x) if (best == "" || x[id] > x[best]) best = id; print best }' "$dir/stub.out"
 }
-# Brings the key back to the window the steps start from, and its workspace to the screen.
+# Brings the key back to the window the steps start from, and its workspace to the screen,
+# then waits for what that shows, so the next step's state before takes it in.
 restore() {
-    local direction i
+    local direction i sent=
     if [[ $("$kosmos" list-workspaces | awk '$2 == "*" { print $1 }') != "$workspace" ]]; then
         "$kosmos" workspace "$workspace" > /dev/null
+        sent=1
     fi
     for direction in left right; do
         for ((i = 0; i <= windows; i++)); do
-            [[ $(key) == "$key_window" ]] && return 0
+            [[ $(key) == "$key_window" ]] && break 2
             "$kosmos" focus "$direction" > /dev/null
+            sent=1
         done
     done
-    [[ $(key) == "$key_window" ]] && return 0
-    echo "Window $key_window is no longer key, and focus moves did not bring it back." >&2
-    exit 1
+    if [[ $(key) != "$key_window" ]]; then
+        echo "Window $key_window is no longer key, and focus moves did not bring it back." >&2
+        exit 1
+    fi
+    if [[ -n $sent ]]; then sleep 0.5; fi
 }
 
 {

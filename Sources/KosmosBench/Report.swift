@@ -11,6 +11,8 @@ public struct Record: Sendable {
     public let analysis: Analysis
     /// Kosmos's log from the send to the next step's.
     public var log: [LogLine] = []
+    /// When the screen had settled, so what comes after it belongs to no step.
+    public var end = Double.infinity
 
     public init(number: Int, rep: Int, action: String, expect: Expect, sent: Double, settle: Screen.Settle, analysis: Analysis) {
         (self.number, self.rep, self.action, self.expect, self.sent, self.settle, self.analysis) =

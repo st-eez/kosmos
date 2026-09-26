@@ -452,8 +452,11 @@
       or a focus move, any frame between the states counts: a flash when pixels match
       neither, `partial` when part of the screen has changed and part not, as a border
       that moves a frame after the windows, and `revert` when the screen shows the state
-      before again. Inside a window that stays put, what its app draws is left out, as the
-      stub's title bar buttons, which change with its key state.
+      before again after it changed. What apps draw in their windows is left out: in a
+      slide inside each window that stays put, and in a switch or focus move inside each
+      window before or after it, as a revealed window's title bar buttons turn to color once
+      it takes the key. A window crossing under another has no place while hidden, and no
+      stall is counted across those frames.
     - Each step is matched to Kosmos's log from its send to the next step's, streamed at
       debug level with signposts: each switch's total, its wait for writes to land (`held`)
       and its batch completion on the main actor, its bridge time less the parts the line
@@ -461,7 +464,9 @@
       reads that follow its write; the slowest display link callback; and the inventory's
       Space membership events. The log lines during a stall and about a displaced window
       print under it in kosmos-steps.txt. The summary also gives the CPU per step of Kosmos,
-      WindowServer, the stub, the capture and SketchyBar.
+      WindowServer, the stub, the capture and SketchyBar. The capture reads Notification
+      Center's windows on the display 5 times a second and names the steps a banner showed
+      in; the script keeps the display awake with `caffeinate` and asks for Do Not Disturb.
     - The ceilings: a stray window drawn inside a sliding window's frame is taken for one
       it passes; a pop gives no position until it is nearly opaque; a frame the capture
       drops shows as a stall, and a capture held to 60 Hz would show every slide stalled,

@@ -26,6 +26,8 @@ import ImageIO
     private var sent: (at: Double, answered: Double, exit: String)?
     private var records: [Record] = []
     private var files: [String: FileHandle] = [:]
+    /// Notification banners on the display, by window id: when each first and last showed.
+    private var banners: [Int: (first: Double, last: Double, rect: CGRect)] = [:]
 
     private enum Waiting {
         case still(since: Double, then: () -> Void)
@@ -49,6 +51,12 @@ import ImageIO
         screen.add(picture)
     }
 
+    /// The notification banners the display shows now, which a step's events can then be
+    /// discounted for.
+    public func banners(_ shown: [(id: Int, rect: CGRect)], at now: Double) {
+        for (id, rect) in shown { banners[id] = (banners[id]?.first ?? now, now, rect) }
+    }
+
     public func command(_ line: String, at now: Double) {
         let words = line.split(separator: " ").map(String.init)
         switch words.first {
@@ -64,7 +72,7 @@ import ImageIO
             }
             guard roomLeft() else { return }
             wait(at: now) {
-                if let latest = self.screen.latest { self.scene.palette = self.scene.palette.calibrated(from: latest) }
+                if let latest = self.screen.latest { self.scene.palette = Palette.stub.calibrated(from: latest) }
                 self.step = (number, rep, expect, words[4...].joined(separator: " "))
                 self.screen.arm()
                 self.reply("armed \(number)")
@@ -95,17 +103,18 @@ import ImageIO
         case let .settle(at):
             guard let settle = screen.settled(sent: at, at: now) else { return }
             waiting = nil
-            measure(settle)
+            measure(settle, at: now)
         case nil:
             break
         }
     }
 
-    private func measure(_ settle: Screen.Settle) {
+    private func measure(_ settle: Screen.Settle, at now: Double) {
         guard let step, let sent, let (before, frames) = screen.take(sent: sent.at) else { return abort("no frames") }
         let analysis = analyze(step.expect, sent: sent.at, before: before, frames: frames, scene: scene)
-        let record = Record(number: step.number, rep: step.rep, action: step.action, expect: step.expect, sent: sent.at,
+        var record = Record(number: step.number, rep: step.rep, action: step.action, expect: step.expect, sent: sent.at,
                             settle: settle, analysis: analysis)
+        record.end = now
         records.append(record)
         let ms = { (time: Double) in String(format: "%.2f", (time - sent.at) * 1000) }
         for row in analysis.rows {
@@ -120,14 +129,14 @@ import ImageIO
             }
         }
         var pictures = 0
-        for event in analysis.events {
+        for (index, event) in analysis.events.enumerated() {
             var file = "-"
             if pictures < Self.picturesPerStep, outputBytes() < Self.mostPictures {
                 if pictures == 0 {
                     save(before, as: String(format: "step-%04d-before.png", step.number))
                     save(frames.last!, as: String(format: "step-%04d-after.png", step.number))
                 }
-                file = String(format: "step-%04d-frame-%03d-%@.png", step.number, event.frame, event.kind.rawValue)
+                file = String(format: "step-%04d-frame-%03d-%@-%d.png", step.number, event.frame, event.kind.rawValue, index)
                 save(frames[event.frame], marking: event.pixels, expected: event.expected, shown: event.shown, as: file)
                 pictures += 1
             }
@@ -155,7 +164,7 @@ import ImageIO
         let lines = log.split(separator: "\n").compactMap { LogLine($0) }
         for index in records.indices {
             let from = records[index].sent - 0.001
-            let to = index + 1 < records.count ? records[index + 1].sent - 0.001 : .infinity
+            let to = min(records[index].end, index + 1 < records.count ? records[index + 1].sent - 0.001 : .infinity)
             records[index].log = lines.filter { $0.time >= from && $0.time < to }
         }
         // The stub names each window's color as it opens it, and a color goes to a new window
@@ -170,13 +179,14 @@ import ImageIO
         for record in records {
             let analysis = record.analysis
             var legend: [Int: String] = [:]
-            for color in colors where color.time <= record.sent { legend[color.index] = color.id }
+            for color in colors where color.time <= record.end { legend[color.index] = color.id }
             let names = legend.sorted { $0.key < $1.key }.map { "window \($0.key) is \($0.value)" }.joined(separator: ", ")
             if names != named {
                 steps += "stub windows by color: \(names)\n"
                 named = names
             }
-            steps += "step \(record.number), rep \(record.rep), \(record.action): "
+            let bannered = banners.values.contains { $0.first <= record.end && $0.last >= record.sent }
+            steps += "step \(record.number), rep \(record.rep), \(record.action)\(bannered ? ", with a notification banner" : ""): "
             steps += analysis.latency.map { String(format: "first change %.1f ms after the send, %d frames over %.1f ms", $0, analysis.frames, analysis.span) }
                 ?? "no change"
             steps += ", \(record.settle.rawValue)\n"
@@ -212,13 +222,24 @@ import ImageIO
         table += "\(kept) kept as changes, \(median) ms apart at the median in slides\n"
         table += "events: " + (tally.isEmpty ? "none" : tally.sorted { ($0.value, $1.key) > ($1.value, $0.key) }
             .map { "\($0.value) \($0.key)" }.joined(separator: ", ")) + "\n"
+        let bannered = records.filter { record in banners.values.contains { $0.first <= record.end && $0.last >= record.sent } }
+        table += "notification banners: \(banners.count)"
+            + (bannered.isEmpty ? "" : ", during steps \(bannered.map { String($0.number) }.joined(separator: " ")), whose events can be discounted")
+            + "\n"
+        write("banners.tsv", "window\tfirst\tlast\tx\ty\twidth\theight\n" + banners.sorted { $0.value.first < $1.value.first }.map { id, banner in
+            String(format: "%d\t%.3f\t%.3f\t%.0f\t%.0f\t%.0f\t%.0f\n", id, banner.first, banner.last, banner.rect.minX, banner.rect.minY,
+                   banner.rect.width, banner.rect.height)
+        }.joined())
         write("table.txt", table)
         files.values.forEach { try? $0.close() }
         reply("end")
     }
 
+    /// Also written to abort.txt, which the script reads when the capture has gone before it
+    /// could read the answer.
     public func abort(_ why: String) {
         guard !finished else { return }
+        try? why.write(to: directory.appendingPathComponent("abort.txt"), atomically: true, encoding: .utf8)
         reply("abort \(why)")
         finish()
     }
