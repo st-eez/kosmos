@@ -1,0 +1,53 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts -Djavax.net.ssl.trustStoreType=JKS -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=43065 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|api.anthropic.com|api-staging.anthropic.com|api-pr-preview.anthropic.com|mcp-proxy.anthropic.com|mcp-proxy-staging.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes=
+TLC2 Version 2026.09.25.163503 (rev: 8f4bc8b)
+Running breadth-first search Model-Checking with fp 85 and seed 8132737622880555899 with 4 workers on 4 cores with 3042MB heap and 64MB offheap memory [pid: 688] (Linux 6.18.44-fc-v37 amd64, Ubuntu 21.0.10 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/user/kosmos/tla/MC.tla
+Parsing file /home/user/kosmos/tla/Kosmos.tla
+Parsing file /tmp/tlc-1050967431688320911/Integers.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-1050967431688320911/Sequences.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-1050967431688320911/FiniteSets.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-1050967431688320911/TLC.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-1050967431688320911/Naturals.tla (jar:file:/home/user/kosmos/tla/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Kosmos
+Semantic processing of module MC
+Linting of module Kosmos
+Linting of module MC
+Starting... (2026-09-26 03:49:12)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Finished computing initial states: 2 distinct states generated at 2026-09-26 03:49:13.
+Checking temporal properties for the current state space with 9698 total distinct states at (2026-09-26 03:49:16)
+Finished checking temporal properties in 00s at 2026-09-26 03:49:16
+Progress(7) at 2026-09-26 03:49:16: 42,822 states generated (42,822 s/min), 26,752 distinct states found (26,752 ds/min), 17,047 states left on queue.
+Checking temporal properties for the current state space with 736435 total distinct states at (2026-09-26 03:50:16)
+Finished checking temporal properties in 04s at 2026-09-26 03:50:20
+Progress(13) at 2026-09-26 03:50:20: 2,648,647 states generated (2,605,825 s/min), 1,108,281 distinct states found (1,081,529 ds/min), 371,823 states left on queue.
+Checking temporal properties for the current state space with 1548812 total distinct states at (2026-09-26 03:51:20)
+Finished checking temporal properties in 10s at 2026-09-26 03:51:31
+Progress(15) at 2026-09-26 03:51:31: 5,314,503 states generated (2,665,856 s/min), 2,063,397 distinct states found (955,116 ds/min), 514,583 states left on queue.
+Checking temporal properties for the current state space with 2422673 total distinct states at (2026-09-26 03:52:31)
+Finished checking temporal properties in 17s at 2026-09-26 03:52:48
+Progress(17) at 2026-09-26 03:52:48: 7,922,099 states generated (2,607,596 s/min), 2,929,679 distinct states found (866,282 ds/min), 507,004 states left on queue.
+Checking temporal properties for the current state space with 3349772 total distinct states at (2026-09-26 03:53:48)
+Finished checking temporal properties in 25s at 2026-09-26 03:54:14
+Progress(19) at 2026-09-26 03:54:14: 10,541,140 states generated (2,619,041 s/min), 3,745,361 distinct states found (815,682 ds/min), 395,589 states left on queue.
+Checking temporal properties for the current state space with 4335786 total distinct states at (2026-09-26 03:55:14)
+Finished checking temporal properties in 32s at 2026-09-26 03:55:46
+Progress(22) at 2026-09-26 03:55:46: 13,105,198 states generated (2,564,058 s/min), 4,512,610 distinct states found (767,249 ds/min), 176,814 states left on queue.
+Progress(37) at 2026-09-26 03:56:19: 14,440,593 states generated, 4,895,193 distinct states found, 0 states left on queue.
+Checking temporal properties for the complete state space with 4895193 total distinct states at (2026-09-26 03:56:19)
+Finished checking temporal properties in 36s at 2026-09-26 03:56:55
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 2.5E-6
+  based on the actual fingerprints:  val = 1.1E-6
+14440593 states generated, 4895193 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 37.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 22 and the 95th percentile is 3).
+Finished in 07min 43s at (2026-09-26 03:56:55)
