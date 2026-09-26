@@ -42,10 +42,13 @@ extension Controller {
             case .own: break
             }
             place(id, pid: pid, .admitted)
-        } else if session.workspace(of: id) != nil, inventory.hasOrderedOutWindows(pid, besides: id) {
-            // Perhaps a selected tab closed before the next tab came in: its place waits a
-            // pairing window for that tab (docs/tree.md).
-            after(TabSwitches.window) { controller in
+        } else if session.workspace(of: id) != nil,
+                  let wait = ClosedAndKept.hold(orderedOut: .now, claimed: tabs.isClaimed(id),
+                                                sibling: inventory.hasOrderedOutWindows(pid, besides: id),
+                                                spacesChanged: nil, at: .now) {
+            // Perhaps a selected tab closed: its place waits for the next tab, or for the
+            // admission of the tab that claims it (docs/tree.md).
+            after(wait) { controller in
                 if !controller.inventory.isManaged(id) { controller.forget(id) }
             }
         } else {

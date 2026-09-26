@@ -142,9 +142,13 @@
     case. Activity Monitor, with no other window, parks at once.
   - Open: how far apart Kosmos applies a switch's two halves, which sets the pairing
     window and whether a window whose app has no other window ordered out needs the wait
-    too, as the tab that a window's first Command-T deselects might. Kosmos logged order
-    changes at debug level, and the live logs of September 23 to 25 kept info level, so
-    their five pairings, four Terminal tab switches and a Terminal window leaving
+    too, as the tab that a window's first Command-T deselects might. Another window of the
+    app ordered in at the tab's frame gives no reason to wait. Its order-in applied before
+    the look, so it paired then and its claim holds the place, or it never pairs. The case
+    left is an incoming tab Kosmos has not read by the look, as a first Command-T's new tab
+    or a tab not seen since launch, whose events come in a later main queue turn. Kosmos
+    logged order changes at debug level, and the live logs of September 23 to 25 kept info
+    level, so their five pairings, four Terminal tab switches and a Terminal window leaving
     fullscreen that paired with another's toolbar windows, have no times for their halves.
     Kosmos now logs each candidate window's order change at info level, and says when a
     switch pairs after its deselected tab parked as closed and kept. A day of Ghostty and
@@ -242,8 +246,13 @@
     as when Finder opens several tabs or Command-T is pressed twice.
   - Closing the selected tab is a switch. When the destroy comes before the next tab, the
     closed tab's place waits the pairing window for it, if the app has windows ordered
-    out, in native fullscreen too. Closing the group's last tab is a close. A switch in
-    the meantime leaves the closed tab out of its batch ([hiding.md](hiding.md)).
+    out, in native fullscreen too. When the next tab came first and claims the place
+    before Kosmos admits it, as a tab not selected since Kosmos launched, which no sweep
+    lists while it is ordered out, the place waits for that admission until a second after
+    the destroy, as a look does for a claim. Before this, the destroy dropped the claim,
+    the place reflowed away, and the tab took a place of its own once admitted. Closing
+    the group's last tab is a close. A switch in the meantime leaves the closed tab out of
+    its batch ([hiding.md](hiding.md)).
   - A hidden member ordered in with no tab leaving is back after the pairing window if it
     is still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It
