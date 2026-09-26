@@ -193,14 +193,16 @@
     newest write's target and read back, as when the user moves it, a modifier drag taking
     it, and a window concealed, parked, closed, on a workspace no longer shown or on a
     display that gains a native fullscreen window end the slide at once, before a batch
-    conceals the window. So does a reload, a display change, a wake or an unlock, which
-    also stops every display link: a link stops firing when its display goes, and the next
-    slide starts one on a display that has a screen. A display change ends every slide at
-    AppKit's notification, as a slide on a display that went would hold its window displaced
-    through the 0.5 s wait for the burst to end ([displays.md](displays.md)). A change to the
-    write's own frame leaves the slide: the worker reads the frame back about 3 ms after the
-    write and WindowServer takes it about 9 ms later, so the other tiles' reflow at a title
-    bar drag's lift lands with the button down.
+    conceals the window. So does a reload, a wake or an unlock, and a display change, both
+    at AppKit's notification and when the change applies. Each stops every display link,
+    since a link stops firing when its display goes and the next slide starts one on a
+    display that has a screen. The notification also comes when the Dock changes a
+    display's visible area. Ending slides there keeps a slide on a display that went from
+    holding its window displaced through the 0.5 s wait for the burst to end
+    ([displays.md](displays.md)). A change to the write's own frame leaves the slide: the
+    worker reads the frame back about 3 ms after the write and WindowServer takes it about
+    9 ms later, so the other tiles' reflow at a title bar drag's lift lands with the button
+    down.
   - An app shows its new window before Kosmos hears of it, so a window Kosmos places after
     launch that is ordered in already slides from where it shows to its place, as a
     relayout's window does, and stays put when that is its place. A pop hid it and faded it
