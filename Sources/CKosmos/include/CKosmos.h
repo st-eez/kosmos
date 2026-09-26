@@ -36,6 +36,8 @@ extern int SLSWindowIteratorGetPID(CFTypeRef iterator);
 // Bit 0x2 is set while the window is ordered in (matches SLSWindowIsOrderedIn).
 extern uint64_t SLSWindowIteratorGetAttributes(CFTypeRef iterator);
 extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);
+// One window's bounds, as the window query's row gives them (kosmos-probe slide-landing).
+extern CGError SLSGetWindowBounds(SLSConnectionID cid, uint32_t window, CGRect *bounds);
 // The caller owns the array, despite the Get name (docs/borders.md).
 extern CFArrayRef SLSWindowIteratorGetCornerRadii(CFTypeRef iterator);
 // The smallest, largest and current size WindowServer holds the window to, as rift declares
