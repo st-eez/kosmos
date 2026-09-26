@@ -252,18 +252,20 @@ It leaves out the rows recovery reads, the windows standing on a kept window, an
 Spaces windows slide in, which KosmosRecovery's tests cover. The take-over's restores and
 its publish are one step, since the windows it restores are not concealed in the model.
 
-| Config | Inputs | Checks | Expected | Result |
-| --- | --- | --- | --- | --- |
-| `handover` | switches, quits, arms, handovers and crashes at any step of a start, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash, a guardian that fails to start or dies, a probe holding the lock | `TypeOK`, `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass | not run |
-| `handover-settles` | as `handover` | every run settles, or ends with no Kosmos and nothing concealed (liveness) | pass | not run |
-| `handover-recover` | as `handover`, with startup recovery in place of the take-over, as before | `KeepsHidden` | fails | not run |
-| `handover-nograce` | as `handover`, with the guardian recovering at once, as before | `KeepsHidden` | fails | not run |
-| `handover-ungated` | as `handover`, with an arm for a build that reads another record version standing | `RecordedBeforeHide`, `NeverStranded` | fails | not run |
-| `handover-noexpiry` | as `handover`, with an arm outliving its moment, so a later quit hands over to any build | `RecordedBeforeHide`, `NeverStranded` | fails | not run |
-| `handover-anyholder` | as `handover`, with the guardian leaving for any holder of the lock, as a probe or a Kosmos not yet named | `NeverStranded` | fails | not run |
-| `handover-unready` | as `handover`, with a take-over and a handover without a ready guardian | `NeverStranded` | fails | not run |
-| `handover-noreveal` | as `handover`, with no reveal at admission | `ConvergesWhenSettled` | fails | not run |
-| `handover-nobackstop` | as `handover`, with no reveal of a window never admitted | `ConvergesWhenSettled` | fails | not run |
+TLC checked every config at c79deac in a cloud session with 4 workers.
+
+| Config | Inputs | Checks | Result | States | Depth | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| `handover` | switches, quits, arms, handovers and crashes at any step of a start, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash, a guardian that fails to start or dies, a probe holding the lock | `TypeOK`, `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass | 137,883 | not reported | 5 s |
+| `handover-settles` | as `handover` | every run settles, or ends with no Kosmos and nothing concealed (liveness) | pass | 137,883 | not reported | 8 s |
+| `handover-recover` | as `handover`, with startup recovery in place of the take-over, as before | `KeepsHidden` | fails `KeepsHidden`, expected | 5,371 | 10 | 1 s |
+| `handover-nograce` | as `handover`, with the guardian recovering at once, as before | `KeepsHidden` | fails `KeepsHidden`, expected | 1,236 | 9 | under 1 s |
+| `handover-ungated` | as `handover`, with an arm for a build that reads another record version standing | `RecordedBeforeHide`, `NeverStranded` | fails `RecordedBeforeHide`, expected | 6,345 | 11 | 1 s |
+| `handover-noexpiry` | as `handover`, with an arm outliving its moment, so a later quit hands over to any build | `RecordedBeforeHide`, `NeverStranded` | fails `RecordedBeforeHide`, expected | 11,101 | 12 | 2 s |
+| `handover-anyholder` | as `handover`, with the guardian leaving for any holder of the lock, as a probe or a Kosmos not yet named | `NeverStranded` | fails `NeverStranded`, expected | 5,305 | 11 | 1 s |
+| `handover-unready` | as `handover`, with a take-over and a handover without a ready guardian | `NeverStranded` | fails `NeverStranded`, expected | 1,577 | 9 | under 1 s |
+| `handover-noreveal` | as `handover`, with no reveal at admission | `ConvergesWhenSettled` | fails `ConvergesWhenSettled`, expected | 35,043 | 16 | 2 s |
+| `handover-nobackstop` | as `handover`, with no reveal of a window never admitted | `ConvergesWhenSettled` | fails `ConvergesWhenSettled`, expected | 24,605 | 15 | 2 s |
 
 - `RecordedBeforeHide`: the record names every concealed window.
 - `NeverStranded`: with no Kosmos running, none on its way, no other holder of the lock and
