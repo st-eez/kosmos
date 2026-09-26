@@ -291,11 +291,17 @@ extension Controller {
                 ledger.forgetLargerReadBack(id)
             }
             slides?.confirmed(id, target: target, readBack: readBack)
-            switch ledger.confirm(id, target: target, readBack: readBack, at: .now) {
+            let fit = ledger.confirm(id, target: target, readBack: readBack, at: .now)
+            if let retried = retries.removeValue(forKey: id) {
+                let outcome = retried != target ? "superseded by a newer target" : fit == .took ? "landed" : "refused again"
+                controllerLog.notice("\(id) retry \(outcome, privacy: .public): \(asked, privacy: .public)")
+            }
+            switch fit {
             case .took:
                 break
             case .refused:
                 controllerLog.info("\(id) \(asked, privacy: .public); its tile is written again")
+                retries[id] = target
                 after(.milliseconds(100)) { $0.writeTileAgain(id) }
             case .minimum(let size):
                 controllerLog.notice("minimum for \(id): \(asked, privacy: .public)")
@@ -316,7 +322,15 @@ extension Controller {
     /// 100 ms after a first larger read back, as the window's next change event can come
     /// inside a live resize step still queued (docs/geometry.md).
     private func writeTileAgain(_ id: WindowID) {
-        guard mouseMoved[id] == nil, let name = session.workspace(of: id), session.isShown(name) else { return }
+        guard mouseMoved[id] == nil, let name = session.workspace(of: id), session.isShown(name) else {
+            if retries.removeValue(forKey: id) != nil { controllerLog.notice("\(id) retry dropped: held by the mouse, hidden or gone") }
+            return
+        }
         writeFrames(session.frames(of: name))
+        // With no write in flight, the window took its tile since, or has none.
+        if retries[id] != nil, !ledger.isWriting(id) {
+            retries[id] = nil
+            controllerLog.notice("\(id) retry wrote nothing")
+        }
     }
 }

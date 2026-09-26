@@ -41,6 +41,9 @@ final class Controller {
     /// Tiled windows the left button moved or resized without lifting them, which go back
     /// to their tiles at its mouse up. A resize by the edges never lifts (docs/geometry.md).
     var mouseMoved: [WindowID: (before: CGRect, resized: Bool)] = [:]
+    /// The target each 100 ms retry writes again, until the log names how it went
+    /// (docs/geometry.md).
+    var retries: [WindowID: CGRect] = [:]
     /// Each floating window's frame at the left button's press, as its first change in the press
     /// found it, which a drag out of fullscreen counts from (docs/tree.md).
     var floatingAtPress: [WindowID: CGRect] = [:]
