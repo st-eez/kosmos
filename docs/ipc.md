@@ -22,8 +22,10 @@
 - A send that fails is tried once more 250 ms later, with the newest snapshot: the zero
   timeout fails while the bar's message queue is full, and a restarting bar has no port
   yet. No failure has been seen, as failures logged at debug level, which the live log
-  of September 24 to 26, 2026 did not keep. Each failure logs at notice level with what
-  the retry did, and the retry goes unless that log shows a retry going through.
+  of September 24 to 26, 2026 did not keep. The first failure of a streak logs at notice
+  level, and so does the send that ends it, with the streak's length and whether a retry
+  sent it, so a Mac without SketchyBar logs once. The retry goes unless that log shows a
+  retry ending a streak.
 - The message has the format SketchyBar's own CLI sends, which SketchyBar documents
   nowhere: the arguments joined by NUL, with one more NUL at the end, in one out of line
   descriptor.
