@@ -295,7 +295,7 @@ final class Controller {
         }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
-        for id in plan.show { ledger.forgetFirstRefusal(id) }
+        for id in plan.show { ledger.forgetLargerReadBack(id) }
         let written = writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
         flashSpills(plan.frames, written: written)
         if movePointer { centerPointer() }

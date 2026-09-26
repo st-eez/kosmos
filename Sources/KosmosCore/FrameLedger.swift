@@ -16,11 +16,9 @@ public enum FrameWrite: Equatable, Sendable {
 
 /// What a frame read back after a write shows of the window's size.
 public enum Fit: Equatable, Sendable {
-    /// Within the slack of the target on each axis, or smaller at the target's second write,
-    /// as a window that rounds its size down keeps it.
+    /// No larger than the target on either axis, past the slack.
     case took
-    /// Larger or smaller, past the slack, than a target written for the first time: the
-    /// target is written whole again.
+    /// Larger than a target written for the first time: the target is written whole again.
     case refused
     /// Larger at the target's second write: the size kept on each axis it refused, zero on
     /// the other.
@@ -29,8 +27,8 @@ public enum Fit: Equatable, Sendable {
 
 /// Decides which windows need a frame write (docs/geometry.md).
 public struct FrameLedger: Sendable {
-    /// Apps round their size, so a window may read back this much larger or smaller than its
-    /// target on an axis and still have taken it.
+    /// Apps round their size, so a window may read back this much larger than its target on
+    /// an axis and still have taken it.
     public static let slack: CGFloat = 2
 
     private var confirmed: [WindowID: CGRect] = [:]
@@ -38,8 +36,8 @@ public struct FrameLedger: Sendable {
     /// Outlasts `forget`: a change that came before the confirm is still that write's.
     private var confirmedAt: [WindowID: ContinuousClock.Instant] = [:]
     private var refused: [WindowID: (target: CGRect, kept: CGSize)] = [:]
-    /// A target the window read back larger or smaller than once, past the slack.
-    private var refusedOnce: [WindowID: CGRect] = [:]
+    /// A target the window read back larger than once, past the slack.
+    private var refusedLarger: [WindowID: CGRect] = [:]
     /// The newest write sent to each window's app, until a row shows its read back.
     private var landing: [WindowID: (target: CGRect, sent: ContinuousClock.Instant, readBack: CGRect?)] = [:]
 
@@ -65,9 +63,8 @@ public struct FrameLedger: Sendable {
         return writes
     }
 
-    /// A first read back larger or smaller than the target is not remembered, so the next write
-    /// is whole: an app can ignore a size written as its window changes display or Space, and
-    /// macOS can hold a window to the display it leaves (docs/geometry.md).
+    /// A first read back larger than the target is not remembered, so the next write is whole:
+    /// an app can ignore a size written as its window changes display or Space.
     @discardableResult
     public mutating func confirm(_ id: WindowID, target: CGRect, readBack: CGRect, at now: ContinuousClock.Instant) -> Fit {
         confirmed[id] = readBack
@@ -78,13 +75,12 @@ public struct FrameLedger: Sendable {
         if landing[id]?.target == target { landing[id]?.readBack = readBack }
         let kept = CGSize(width: readBack.width > target.width + Self.slack ? readBack.width : 0,
                           height: readBack.height > target.height + Self.slack ? readBack.height : 0)
-        let smaller = readBack.width < target.width - Self.slack || readBack.height < target.height - Self.slack
-        guard (kept == .zero && !smaller) || refusedOnce[id] == target else {
-            refusedOnce[id] = target
+        guard kept == .zero || refusedLarger[id] == target else {
+            refusedLarger[id] = target
             refused[id] = nil
             return .refused
         }
-        if kept == .zero { refusedOnce[id] = nil }
+        if kept == .zero { refusedLarger[id] = nil }
         if readBack.size != target.size, refused[id]?.target != target {
             refused[id] = (target, readBack.size)
         }
@@ -96,14 +92,14 @@ public struct FrameLedger: Sendable {
         confirmed[id] = frame
         if let refusal = refused[id], refusal.kept != frame.size {
             refused[id] = nil
-            refusedOnce[id] = nil
+            refusedLarger[id] = nil
         }
     }
 
     /// A window concealed or on a hidden workspace can ignore a size on its way to the
     /// holding Space or another display, so such a refusal says nothing of the app's limit.
-    public mutating func forgetFirstRefusal(_ id: WindowID) {
-        refusedOnce[id] = nil
+    public mutating func forgetLargerReadBack(_ id: WindowID) {
+        refusedLarger[id] = nil
     }
 
     /// For a change that came before the last confirm. Its row, read after the confirm, can
@@ -149,6 +145,6 @@ public struct FrameLedger: Sendable {
         pending[id] = nil
         landing[id] = nil
         refused[id] = nil
-        refusedOnce[id] = nil
+        refusedLarger[id] = nil
     }
 }
