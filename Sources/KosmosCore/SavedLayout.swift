@@ -36,6 +36,28 @@ public struct SavedLayout: Codable, Equatable, Sendable {
     public var focusedWindow: WindowID?
     /// A window its app closed and kept is left out: shown again, it opens as a new window.
     public var windows: [Window]
+
+    /// The layout file's format.
+    public static let fileVersion = 1
+
+    /// Nil when a layout file of `version`, written under the WindowServer `writer`, holds
+    /// under `current`, or else why it is left out. WindowServer numbers the windows, so
+    /// under another one the ids name other windows (docs/tree.md).
+    public static func leftOut<WindowServer: Equatable>(version: Int, writtenUnder writer: WindowServer,
+                                                        current: WindowServer) -> String? {
+        guard version == fileVersion else { return "of version \(version)" }
+        return writer == current ? nil : "from another WindowServer"
+    }
+
+    /// Before the restore: a window closed since the save would hold its tile until the next
+    /// write, and one ordered out since, as minimized, would until the tree changes, so the
+    /// first goes and the second parks. `open` tells whether each open window is ordered in.
+    public mutating func prune(open: [WindowID: Bool]) {
+        windows.removeAll { open[$0.window] == nil }
+        for index in windows.indices where open[windows[index].window] == false {
+            windows[index].parked = true
+        }
+    }
 }
 
 extension Session {

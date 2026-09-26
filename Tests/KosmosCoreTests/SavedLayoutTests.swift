@@ -361,6 +361,26 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(stamped.focused == 2)
     }
 
+    /// At the restart 2 has closed and 3 is minimized: 2 gives its tile up, and 3 comes back
+    /// parked, as its admission finds it.
+    @Test func windowsClosedSinceTheSaveGoAndThoseOrderedOutPark() {
+        var s = Session(names: ["a"], monitors: [Desk.main])
+        s.place("h[1 2 3]", on: "a")
+        var layout = s.savedLayout()
+        layout.prune(open: [1: true, 3: false, 9: true])
+        #expect(layout.windows.map(\.window) == [1, 3])
+        #expect(layout.windows.map(\.parked) == [false, true])
+        let restored = Self.restored(layout, monitors: [Desk.main], assigned: [:], names: ["a"])
+        #expect(restored.pendingWindows == [1, 3] && restored.savedWorkspace(of: 2) == nil)
+    }
+
+    @Test func aLayoutFileHoldsOnlyAtItsVersionUnderTheWindowServerThatWroteIt() {
+        #expect(SavedLayout.leftOut(version: SavedLayout.fileVersion, writtenUnder: 7, current: 7) == nil)
+        #expect(SavedLayout.leftOut(version: SavedLayout.fileVersion, writtenUnder: 7, current: 8) == "from another WindowServer")
+        #expect(SavedLayout.leftOut(version: 2, writtenUnder: 7, current: 7) == "of version 2")
+        #expect(SavedLayout.leftOut(version: 0, writtenUnder: 7, current: 8) == "of version 0")
+    }
+
     @Test func aWindowClosedAndKeptIsLeftOut() {
         var s = Session(names: ["a"], monitors: [Desk.main])
         s.place("h[1 2]", on: "a")

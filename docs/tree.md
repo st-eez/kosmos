@@ -366,7 +366,8 @@
   - WindowServer numbers the windows, so their ids hold across a restart of Kosmos. The
     file names its WindowServer by pid and start time, as the recovery record does
     ([hiding.md](hiding.md)), and Kosmos leaves out a file from another one, as after a
-    logout or a restart of the Mac, whose ids name other windows. It leaves out a hint the
+    logout or a restart of the Mac, whose ids name other windows, and a file of another
+    version (`SavedLayout.leftOut`). It leaves out a hint the
     file garbles too, as a slot index out of range, a weight outside 1e-6 to 1 or a level
     whose weights do not sum to 1, since placing a window divides by its siblings' weights,
     and takes the focus stamps as an order only, so none runs a workspace's clock over.
@@ -408,7 +409,9 @@
     opens as a new window. The launch reads the saved windows the same way. A failed read
     drops none, as read for every window closed it would lose the file at the next write
     (`SkyLight.rows` returns nil for it, [inventory.md](inventory.md)). A window parked at the save holds no
-    tile, nor does one ordered out at the launch, as one minimized since.
+    tile, nor does one ordered out at the launch, as one minimized since
+    (`SavedLayout.prune`). KosmosCore's tests cover this pruning at the launch and the
+    file's gate.
   - During the hold, a focus in a direction and `swap` go by the tiles on screen, the held
     ones (`Workspace.shownFrames`), and a floating window whose center is on a tile a
     pending window holds stands first in the root. A `resize` ends the hold, as any change

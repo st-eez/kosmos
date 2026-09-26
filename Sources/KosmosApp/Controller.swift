@@ -122,13 +122,9 @@ final class Controller {
     private func restoreLayout() {
         guard let windowServer, var saved = LayoutFile.load(under: windowServer) else { return }
         let count = saved.windows.count
-        // A closed window would hold its tile until the next write, and one ordered out, as
-        // minimized since, until the tree changes. A failed read keeps every window.
+        // A failed read keeps every window.
         if let open = Self.openRows(saved.windows.map(\.window)) {
-            saved.windows.removeAll { open[$0.window] == nil }
-            for index in saved.windows.indices where open[saved.windows[index].window]?.orderedIn == false {
-                saved.windows[index].parked = true
-            }
+            saved.prune(open: open.mapValues(\.orderedIn))
         } else {
             controllerLog.error("saved windows not read from WindowServer; each waits for its admission")
         }

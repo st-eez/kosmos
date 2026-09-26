@@ -8,9 +8,6 @@ private let layoutLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "
 /// The saved layout, beside the recovery record (docs/tree.md). Each write replaces the file
 /// whole by a rename, so a crash leaves the last one.
 enum LayoutFile {
-    static let version = 1
-
-    /// WindowServer numbers the windows, so under another one the ids name other windows.
     private struct Contents: Codable {
         var version: Int
         var windowServer: ProcessIdentity
@@ -32,8 +29,7 @@ enum LayoutFile {
             layoutLog.error("\(KosmosFiles.layout.path, privacy: .public) not read: \(String(describing: error), privacy: .public)")
             return nil
         }
-        guard contents.version == version, contents.windowServer == windowServer else {
-            let why = contents.version == version ? "from another WindowServer" : "of version \(contents.version)"
+        if let why = SavedLayout.leftOut(version: contents.version, writtenUnder: contents.windowServer, current: windowServer) {
             layoutLog.notice("saved layout left out: \(why, privacy: .public)")
             return nil
         }
@@ -46,7 +42,7 @@ enum LayoutFile {
         let work: @Sendable () -> Void = {
             guard layout != written else { return }
             do {
-                let contents = Contents(version: version, windowServer: windowServer, layout: layout)
+                let contents = Contents(version: SavedLayout.fileVersion, windowServer: windowServer, layout: layout)
                 try JSONEncoder().encode(contents).write(to: KosmosFiles.layout, options: .atomic)
                 written = layout
             } catch {
