@@ -275,31 +275,29 @@ extension Controller {
             depart([id], because: .minimized)
         case .minimized(let id, false):
             returned([id], follow: id, at: report.received)
-        case .framesApplied(let results):
-            for result in results {
-                let asked = "asked \(Int(result.target.width))x\(Int(result.target.height)), kept \(Int(result.readBack.width))x\(Int(result.readBack.height))"
-                // Concealed or on a hidden workspace, a window refused once at most, and its
-                // retry waits for the reveal (docs/geometry.md). Ceiling: a window a failed batch
-                // left concealed on a shown workspace is written every 100 ms while it refuses,
-                // until a switch reveals it. Upgrade: writeTileAgain skips concealed windows, and
-                // the switch that reveals them (needsResync) writes their tiles.
-                if hiding.isConcealed(result.id) || session.workspace(of: result.id).map(session.isShown) != true {
-                    ledger.forgetLargerReadBack(result.id)
-                }
-                slides?.confirmed(result.id, target: result.target, readBack: result.readBack)
-                switch ledger.confirm(result.id, target: result.target, readBack: result.readBack, at: .now) {
-                case .took:
-                    break
-                case .refused:
-                    controllerLog.info("\(result.id) \(asked, privacy: .public); its tile is written again")
-                    after(.milliseconds(100)) { $0.writeTileAgain(result.id) }
-                case .minimum(let size):
-                    controllerLog.notice("minimum for \(result.id): \(asked, privacy: .public)")
-                    execute(session.setMinimum(result.id, size))
-                }
-                // WindowServer can take the frame before the read back comes (docs/hiding.md).
-                if let row = inventory.windows[result.id] { ledger.seen(result.id, frame: row.frame) }
+        case .frameApplied(let id, let target, let readBack):
+            let asked = "asked \(Int(target.width))x\(Int(target.height)), kept \(Int(readBack.width))x\(Int(readBack.height))"
+            // Concealed or on a hidden workspace, a window refused once at most, and its
+            // retry waits for the reveal (docs/geometry.md). Ceiling: a window a failed batch
+            // left concealed on a shown workspace is written every 100 ms while it refuses,
+            // until a switch reveals it. Upgrade: writeTileAgain skips concealed windows, and
+            // the switch that reveals them (needsResync) writes their tiles.
+            if hiding.isConcealed(id) || session.workspace(of: id).map(session.isShown) != true {
+                ledger.forgetLargerReadBack(id)
             }
+            slides?.confirmed(id, target: target, readBack: readBack)
+            switch ledger.confirm(id, target: target, readBack: readBack, at: .now) {
+            case .took:
+                break
+            case .refused:
+                controllerLog.info("\(id) \(asked, privacy: .public); its tile is written again")
+                after(.milliseconds(100)) { $0.writeTileAgain(id) }
+            case .minimum(let size):
+                controllerLog.notice("minimum for \(id): \(asked, privacy: .public)")
+                execute(session.setMinimum(id, size))
+            }
+            // WindowServer can take the frame before the read back comes (docs/hiding.md).
+            if let row = inventory.windows[id] { ledger.seen(id, frame: row.frame) }
             sendReadyBatches()
         case .framesDropped(let ids):
             // Forgotten, so their targets are not pending for good and the next writes are whole.

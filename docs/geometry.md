@@ -8,7 +8,13 @@
 - When the size changes, write size, then position, then size again, since an app can
   clamp the size against the old position; otherwise write the position alone. A position
   write queued behind a frame write that has not run becomes a whole frame write, since it
-  assumed that size had landed. Read the frame back once per batch.
+  assumed that size had landed. Read the frame back once per batch, and report it as soon
+  as it is read. An app's writes run one after another, 7.6 ms each at the median and
+  186 ms at p99 in 3,177 writes of September 25 and 26, 2026 (live log), and a window's
+  slide lands, and a batch that reveals it goes, only once its read back comes
+  ([hiding.md](hiding.md)). Reported after the app's last write, a read back had waited
+  for all of them; how much earlier slides land now is unmeasured until the benchmark
+  runs.
 - AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display edge
   that another display adjoins, while the bottom is at or past that edge. A window moved
   at its old height from the built-in display up to the panel above it hangs past the
