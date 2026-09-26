@@ -201,46 +201,67 @@ the first hide. [Handover.tla](Handover.tla) specifies recovery across Kosmos's 
 [Handover.tla](Handover.tla) specifies what happens to the hidden windows when Kosmos quits,
 hands its record over or crashes, and when the next Kosmos starts
 ([docs/hiding.md](../docs/hiding.md)). [MCHandover.tla](MCHandover.tla) has one display and
-three workspaces with one window each, and each config bounds the user to three switches,
-quits and crashes. `run.sh` checks a `handover-` config against it.
+three workspaces with one window each. Each config bounds switches, exits, guardian deaths
+and probes to three together. `run.sh` checks `handover` and each `handover-` config
+against MCHandover.tla.
 
 A running Kosmos admits each window, queues a conceal or reveal for it, and the bridge
 queue applies them one window at a time. A batch records each window before its first
 conceal. The saved layout's write can trail a switch, so a crash can lose it. A plain quit
-lands the queued operations and restores every window. A handover lands them, writes the
-layout, marks the record and leaves the windows concealed, only for a build that reads the
-record under `Gate`. A crash drops the operations still queued. After each exit a start is
-on its way within the grace, after it, as launchd's throttle makes one, or never. Each
-Kosmos's guardian runs from before its Kosmos takes the lock, leaves the record to a Kosmos
-that took the lock, and restores every recorded window when none did within the grace;
-without `Grace` it restores them at once. A starting Kosmos keeps concealed each recorded
-window the saved layout puts on a hidden workspace (`Adopt`), reveals a concealed window
-on admission when its workspace is shown (`AdmitReveal`), and reveals a window whose app
-never answers once every other window is admitted (`Backstop`).
+lands the queued operations and restores every window. `kosmos handover` arms the next
+quit: under `Gate` each arm replaces the last and stands only for a build that reads the
+record, and under `Expiry` it lapses once its moment passes. The armed quit lands the
+operations, writes the layout and leaves the windows concealed, and under `ReadyGate` it
+does so only while the guardian is ready. A crash drops the operations still queued. After
+each exit a start is on its way within the grace, after it, as launchd's throttle makes
+one, or never. A start takes the lock, spawns its guardian, names itself in the lock file
+and takes the record over, and it can crash between any two of these. Under `ReadyGate` it
+names itself and takes over only with its guardian ready, and restores every recorded
+window otherwise. The guardian of a Kosmos that exited leaves the record to a Kosmos named
+in the lock file, under `KosmosOnly` to nothing else, such as a probe that holds the lock,
+and restores every recorded window when no Kosmos named itself within the grace; without
+`Grace` it restores them at once. The take-over keeps each recorded window concealed
+(`Adopt`). Admission reveals a concealed window whose workspace is shown (`AdmitReveal`),
+and the backstop reveals every window taken over and not yet admitted, at any point after
+the take-over (`Backstop`).
 
-The model assumes the backstop's 5 s outlasts every admission of an app that answers, as
-the 68 ms of the launch in the live log did. It leaves out the rows recovery reads, the
-windows standing on a kept window, and the Spaces windows slide in, which KosmosCore's and
-KosmosRecovery's tests cover.
+The model assumes:
+
+- A `prompt` start names itself within the grace of every guardian waiting, including one
+  whose Kosmos exited before the last crash.
+- While an arm is fresh, the build that starts after its quit is the one it named.
+- A Kosmos does not crash in the second its dead guardian takes to respawn. That ceiling
+  predates the handover: a crash then leaves the windows concealed since with no guardian.
+- While its guardian is not ready, Kosmos admits nothing and takes no switch. The code
+  reveals then, skips the conceals, and resyncs once the guardian is back.
+- A probe holds the lock for less than the guardian's 30 s of retries.
+
+It leaves out the rows recovery reads, the windows standing on a kept window, and the
+Spaces windows slide in, which KosmosRecovery's tests cover. The take-over's restores and
+its publish are one step, since the windows it restores are not concealed in the model.
+
+None has been run yet, so the Expected column is a prediction.
 
 | Config | Inputs | Checks | Expected |
 | --- | --- | --- | --- |
-| `handover` | switches, quits, handovers and crashes, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash | `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass |
+| `handover` | switches, quits, arms, handovers and crashes at any step of a start, starts within the grace, after it or never, a next build that reads another record version, a hung app, a layout write lost at a crash, a guardian that fails to start or dies, a probe holding the lock | `TypeOK`, `RecordedBeforeHide`, `NeverStranded`, `KeepsHidden`, `ConvergesWhenSettled` | pass |
 | `handover-settles` | as `handover` | every run settles, or ends with no Kosmos and nothing concealed (liveness) | pass |
-| `handover-recover` | as `handover`, with startup recovery in place of the adoption, as before | `KeepsHidden` | fails |
+| `handover-recover` | as `handover`, with startup recovery in place of the take-over, as before | `KeepsHidden` | fails |
 | `handover-nograce` | as `handover`, with the guardian recovering at once, as before | `KeepsHidden` | fails |
-| `handover-ungated` | as `handover`, handing over to a build that reads another record version | `RecordedBeforeHide`, `NeverStranded` | fails |
+| `handover-ungated` | as `handover`, with an arm for a build that reads another record version standing | `RecordedBeforeHide`, `NeverStranded` | fails |
+| `handover-noexpiry` | as `handover`, with an arm outliving its moment, so a later quit hands over to any build | `RecordedBeforeHide`, `NeverStranded` | fails |
+| `handover-anyholder` | as `handover`, with the guardian leaving for any holder of the lock, as a probe or a Kosmos not yet named | `NeverStranded` | fails |
+| `handover-unready` | as `handover`, with a take-over and a handover without a ready guardian | `NeverStranded` | fails |
 | `handover-noreveal` | as `handover`, with no reveal at admission | `ConvergesWhenSettled` | fails |
 | `handover-nobackstop` | as `handover`, with no reveal of a window never admitted | `ConvergesWhenSettled` | fails |
 
-None has been run yet.
-
 - `RecordedBeforeHide`: the record names every concealed window.
-- `NeverStranded`: with no Kosmos running, none on its way and every guardian done, no
-  window is concealed.
+- `NeverStranded`: with no Kosmos running, none on its way, no other holder of the lock and
+  no guardian waiting, no window is concealed.
 - `KeepsHidden`: after a handover or a crash whose next Kosmos comes within the grace, each
   window concealed at the exit stays concealed while the saved layout keeps its workspace
-  hidden, until the user's next input, unless its app never answers.
+  hidden, until the user's next input, unless the backstop reveals it or the next Kosmos's
+  guardian fails to start.
 - `ConvergesWhenSettled`: once Kosmos has admitted every window whose app answers and its
   operations have landed, exactly the admitted windows of hidden workspaces are concealed.
 
