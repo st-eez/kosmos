@@ -222,7 +222,8 @@
     it, and stops once none is left; at the end the Space goes back to identity and the
     window leaves it.
   - Each display frame's transforms, alphas and borders go out together a quarter of a
-    refresh after the link's callback, and show a refresh after the link's target.
+    refresh after the vsync that the link's callback reports, and show a refresh after the
+    link's target.
     WindowServer takes a change into the next composite only until about 0.3 ms after the
     vsync, and the link calls back 0.05 ms after it (`kosmos-probe slide-sync`, built-in
     display at 120 Hz, September 26, 2026). Sent from the callback, a transform made that
@@ -253,14 +254,23 @@
       steps, and sent from the callback, the first move is followed by a refresh with
       nothing new. Whether a display at a fixed refresh rate skips that refresh is
       unmeasured.
-    - The ceilings: the cut-off was measured on the built-in display at 120 Hz only, and a
-      main thread held past the next cut-off still drops a frame. Running the links on a
-      thread of their own, as the perf audit of September 26, 2026 proposes, would keep
-      main actor work from delaying a frame.
+    - The ceilings:
+      - The cut-off and the deferred send were measured on the built-in display at 120 Hz
+        only, with the screen otherwise still. The probe records only the built-in display.
+        External and fixed-rate displays, Steve's twin ASUS panels among them, are
+        unmeasured, as is the deferred send on a busy screen. The upgrade is a display
+        argument for `kosmos-probe slide-sync` and a run of its `deferred` mode with the
+        display kept busy, as its `warm` mode keeps it.
+      - A frame goes a quarter of a refresh after its vsync however late its callback ran,
+        plus up to 1 ms of dispatch's timer leeway. A callback the main actor delays past
+        the next cut-off, about 8.6 ms after the vsync at 120 Hz, shows its frame a refresh
+        late, in the composite of the frame after it. Running the links on a thread of
+        their own, as the perf audit of September 26, 2026 proposes, would keep main actor
+        work from delaying a frame.
   - At debug level the slide log gives each display frame: how long after the link's
-    timestamp it was stepped, its target, and each sliding window's time into its slide,
-    its fraction of the way and whether its transform changed; and each read that set a
-    window's transform for a new frame. `script/bench-frames.sh` streams the log at debug
+    timestamp it was stepped, its target, and the frame each sliding window shows at and
+    whether its transform changed; and each read that set a window's transform for a new
+    frame. `script/bench-frames.sh` streams the log at debug
     level, so each step's lines place its captured frames against the frames Kosmos set.
   - WindowServer applies a Space's transform to each window the Space shows in that
     window's own coordinates, origin at its top left and y down, and maps where a point

@@ -15,7 +15,7 @@
 //                                               display, both sent in the callback, as Kosmos
 //                                               did before 2026-09-26
 //                                     deferred  both sent a quarter of a refresh after the
-//                                               callback, as Kosmos sends them
+//                                               vsync, as Kosmos sends them
 //                                     flush     layer, with CATransaction.flush() after the ring
 //                                     busy      layer, with the ring sent 0.5 ms after the
 //                                               transform, as a callback's border work delays it
@@ -58,6 +58,8 @@ private enum RingMode: String, CaseIterable {
 }
 
 @MainActor func slideSync(slides: Int, modes: [String]) -> Never {
+    let named = modes.map(RingMode.init(rawValue:))
+    guard !named.contains(nil) else { usage() }
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     guard let screen = NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) != 0 }) else {
@@ -117,7 +119,7 @@ private enum RingMode: String, CaseIterable {
     print(String(format: "built-in display at %d Hz, %.0fx; window %.0f by %.0f at (%.0f, %.0f), sliding %.0f points right over %.2f s",
                  rate, scale, rest.width, rest.height, rest.minX, rest.minY, distance, Slide.moveDuration))
 
-    let chosen = modes.isEmpty ? RingMode.allCases : modes.compactMap(RingMode.init(rawValue:))
+    let chosen = named.isEmpty ? RingMode.allCases : named.compactMap { $0 }
     for mode in chosen {
         let run = SyncRun(mode, screen: screen, space: space, target: target, border: border, backdrop: backdrop, rest: rest, end: end,
                           rate: rate, green: green)
@@ -235,7 +237,7 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         guard slide != nil else { return }
         let (entry, timestamp, at) = (CACurrentMediaTime(), link.timestamp, link.targetTimestamp)
         guard mode == .deferred else { return step(link, entry: entry, timestamp: timestamp, at: at) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + link.duration / 4) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, timestamp + link.duration / 4 - CACurrentMediaTime())) {
             MainActor.assumeIsolated { self.step(link, entry: entry, timestamp: timestamp, at: at) }
         }
     }

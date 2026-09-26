@@ -207,7 +207,7 @@ state, and during a slide the frame the slide shows the window at.
   as `kosmos-probe borders-cpu` does, would limit that to the slide's path. A new window
   waiting for its write to land, transparent, shows no border yet.
 - A display frame's ring moves go out with its transforms, a quarter of a refresh after the
-  link's callback, and land in the same composite ([geometry.md](geometry.md) has
+  vsync the link's callback reports, and land in the same composite ([geometry.md](geometry.md) has
   WindowServer's cut-off). In `kosmos-probe slide-sync` on 2026-09-26 the ring showed with
   its window in 137 of 137 and 116 of 122 frames.
   - Sent from the callback, after the border work, the ring often missed the composite its
@@ -218,7 +218,11 @@ state, and during a slide the frame the slide shows the window at.
   - The border's window grows to cover its display as the slide starts, through AppKit, and
     AppKit's window moves landed a refresh after a transform sent with them in 74 of 84
     frames of the probe. So a first frame sent from the callback showed the ring where it
-    had been. Sent a quarter of a refresh later, the first frame comes after the resize.
+    had been. Sent a quarter of a refresh after the vsync, the first frame comes after the
+    resize when the slide starts its display's link. A window that starts sliding while
+    another slides on its display takes its first frame from the link's next send, which
+    can come less than a refresh after its border's resize, so its ring can show where it
+    had been, or cut off, for that refresh.
   - `CATransaction.flush()` after the border work left the ring out of step as often in the
     probe: each border's changes already commit in a transaction of their own.
   - The ring's window in the slide's animation Space showed with its window in all 71 and

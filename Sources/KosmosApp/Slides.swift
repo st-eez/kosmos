@@ -35,21 +35,6 @@ final class Slides {
         var callbacks = 0, time = 0.0, slowest = 0.0
     }
 
-    /// A window a display frame stepped, and whether its transform was sent, for the log.
-    private struct Stepped {
-        let id: WindowID
-        let slide: Slide?
-        let sent: Bool
-
-        static func describe(_ windows: [Stepped], at time: Double) -> String {
-            windows.map { window in
-                guard let slide = window.slide else { return "\(window.id) waiting to pop" }
-                return String(format: "%u %.1f ms into its slide, %.4f of the way%@", window.id, (time - slide.start) * 1000,
-                              Slide.ease((time - slide.start) / slide.duration), window.sent ? "" : ", unchanged")
-            }.joined(separator: "; ")
-        }
-    }
-
     init(hiding: Hiding) {
         self.hiding = hiding
         hiding.createAnimationSpaces(Self.poolSize, level: Self.level) { [weak self] spaces in
@@ -194,7 +179,7 @@ final class Slides {
     /// `timestamp` and `at` are the link's timestamp and target for this display frame.
     private func frame(timestamp: Double, at: Double, on display: DisplayID) {
         let began = CACurrentMediaTime()
-        var stepped: [Stepped] = []
+        var stepped: [(id: WindowID, shown: CGRect, sent: Bool)] = []
         let done = onscreen.state.withLock { state in
             var done: [(WindowID, SlidingWindow)] = []
             for (id, var window) in state.windows where window.display == display {
@@ -206,7 +191,7 @@ final class Slides {
                 if window.shown != shown { window.show() }
                 if window.alpha != alpha { kosmos_space_set_alpha(window.space, Float(window.alpha)) }
                 state.windows[id] = window
-                stepped.append(Stepped(id: id, slide: window.slide, sent: window.shown != shown))
+                stepped.append((id, window.shown, window.shown != shown))
             }
             return done
         }
@@ -216,7 +201,7 @@ final class Slides {
             frame \((self.links[display]?.callbacks ?? 0) + 1) on display \(display): stepped \
             \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after the link's timestamp, target \
             \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it; \
-            \(Stepped.describe(stepped, at: at), privacy: .public)
+            \(stepped.map { "\($0.id) shown at \($0.shown)\($0.sent ? "" : ", unchanged")" }.joined(separator: "; "), privacy: .public)
             """)
         for (id, window) in done { finished(id, window) }
         if done.isEmpty { onChange?() }
@@ -230,14 +215,15 @@ final class Slides {
     private func startLink(on display: DisplayID) -> Bool {
         guard links[display] == nil else { return true }
         guard let screen = NSScreen.screens.first(where: { $0.displayID == display }) else { return false }
-        // The link keeps its target. WindowServer takes a change into the next composite only
-        // until about 0.3 ms after the vsync, and the link calls back 0.05 ms after it, so each
-        // frame's transforms and borders go a quarter of a refresh later, and land together a
-        // refresh after the target (kosmos-probe slide-sync, docs/geometry.md).
+        // The link keeps its target. Sent a quarter of a refresh after the vsync, clear of
+        // WindowServer's cut-off for the next composite, a frame's transforms and borders land
+        // in the same one, a refresh after the target; measured on the built-in display at
+        // 120 Hz only (docs/geometry.md).
         let link = screen.displayLink(target: LinkTarget { [weak self] link in
             let (timestamp, at) = (link.timestamp, link.targetTimestamp)
+            let wait = max(0, timestamp + link.duration / 4 - CACurrentMediaTime())
             let step: @MainActor () -> Void = { self?.frame(timestamp: timestamp, at: at, on: display) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + link.duration / 4) { MainActor.assumeIsolated(step) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { MainActor.assumeIsolated(step) }
         }, selector: #selector(LinkTarget.frame))
         let rate = Float(screen.maximumFramesPerSecond)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
