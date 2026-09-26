@@ -280,6 +280,27 @@ import Testing
         #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(70))
     }
 
+    /// Overlap decides a cross (docs/tree.md), between displays of one size and of two.
+    @Test func focusAcrossMonitorsTakesTheWindowThatOverlaps() {
+        var s = Desk.session()
+        _ = s.add(50, to: "5"); _ = s.add(51, to: "5"); _ = s.add(10); _ = s.add(11)
+        _ = s.add(80, to: "8"); _ = s.add(81, to: "8")
+        s.adopt(50)
+        _ = s.perform(.layout(.orientation(.vertical)))
+        s.adopt(11)
+        _ = s.perform(.layout(.orientation(.vertical)))
+        #expect(s.workspaces["5"]!.tree == "v[50 51]" && s.workspaces["1"]!.tree == "v[10 11]")
+        // From the main panel's bottom half, the left panel's, though its top was focused last.
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(51))
+        // From the main panel's right half, x 960 to 1910, down onto the narrower built-in
+        // display at x 200: 80 ends at x 956, so only 81 overlaps, though 80 was focused last.
+        s.adopt(11)
+        _ = s.perform(.layout(.orientation(.horizontal)))
+        s.adopt(80)
+        s.adopt(11)
+        #expect(s.perform(.focus(.down, boundaries: .allMonitors))?.focus == .window(81))
+    }
+
     @Test func focusWrappingAcrossMonitorsEntersAtTheEdgeAndAnEmptyWorkspaceTakesTheFocus() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")

@@ -14,10 +14,10 @@ extension Workspace {
     /// the edge of the workspace (docs/tree.md).
     mutating func focus(_ direction: Direction, from window: WindowID, frame: (WindowID) -> CGRect?,
                         in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
-        let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
-        guard let path = seen.neighbor(of: window, direction) else { return nil }
         let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
-        let target = seen.nearest(in: seen.root.node(at: path), direction, to: frames[window], frames: frames)
+        let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
+        guard let path = seen.neighbor(of: window, direction) else { return nil }
+        let target = seen.overThere(in: seen.root.node(at: path), direction, from: frames[window], frames: frames)
         focus(target)
         return target
     }
@@ -27,10 +27,10 @@ extension Workspace {
     /// edge, so its workspace keeps its focus.
     mutating func enter(_ direction: Direction, from source: CGRect?, frame: (WindowID) -> CGRect?, in rect: CGRect,
                         gaps: Gaps, minimums: [WindowID: CGSize]) {
-        let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
+        let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
+        let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
         guard fullscreenWindow == nil, !seen.root.children.isEmpty else { return }
-        focus(seen.nearest(in: Node(kind: .container(seen.root), weight: 1), direction, to: source,
-                           frames: onScreen(frame, in: rect, gaps: gaps, minimums: minimums)))
+        focus(seen.overThere(in: Node(kind: .container(seen.root), weight: 1), direction, from: source, frames: frames))
     }
 
     /// Tiles where the layout puts them, and floating windows where `frame` does.
@@ -44,7 +44,7 @@ extension Workspace {
     /// Of the windows at the edge of `node` that a focus in the direction enters by, the most
     /// recently focused of those whose span across the direction overlaps `source`'s by more
     /// than a point, as Hyprland picks it. With none, the nearest (docs/tree.md).
-    private func nearest(in node: Node, _ direction: Direction, to source: CGRect?, frames: [WindowID: CGRect]) -> WindowID {
+    private func overThere(in node: Node, _ direction: Direction, from source: CGRect?, frames: [WindowID: CGRect]) -> WindowID {
         let span: (CGRect) -> (CGFloat, CGFloat) = direction.orientation == .horizontal ? { ($0.minY, $0.maxY) } : { ($0.minX, $0.maxX) }
         // Negative for the gap between spans that do not meet.
         func overlap(_ window: WindowID) -> CGFloat {
@@ -75,16 +75,14 @@ extension Workspace {
         }
     }
 
-    /// The workspace with each floating window that `frame` places tiled, for a focus in a
-    /// direction (docs/tree.md).
-    func withFloatingTiled(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
-                           minimums: [WindowID: CGSize]) -> Workspace {
+    /// The workspace with each floating window tiled that has a frame in `frames`, which
+    /// `onScreen` gives, for a focus in a direction (docs/tree.md).
+    func withFloatingTiled(_ frames: [WindowID: CGRect], in rect: CGRect, gaps: Gaps) -> Workspace {
         let area = tilingRect(rect, gaps.outer)
         let shares = tileFrames(in: rect, gaps: Gaps(outer: gaps.outer))
-        let tiles = self.frames(in: rect, gaps: gaps, minimums: minimums)
         var places: [(window: WindowID, container: Int, index: Int, along: CGFloat)] = []
         for window in floating {
-            guard let frame = frame(window) else { continue }
+            guard let frame = frames[window] else { continue }
             let center = CGPoint(x: frame.midX, y: frame.midY)
             // The share under the center, whose right and bottom edges belong to the next
             // one. With no tiles there is none, and the window goes first in the root.
@@ -92,7 +90,7 @@ extension Workspace {
             var (container, index, tile): (Container, Int, CGRect?) = (root, 0, nil)
             if let id = shares.first(where: { $0.value.contains(point) })?.key {
                 let path = root.path(to: id)!
-                (container, index, tile) = (root[path.dropLast()], path.last!, tiles[id])
+                (container, index, tile) = (root[path.dropLast()], path.last!, frames[id])
             }
             let along: (CGPoint) -> CGFloat = container.orientation == .horizontal ? \.x : \.y
             if let tile, along(center) >= along(CGPoint(x: tile.midX, y: tile.midY)) { index += 1 }
@@ -114,7 +112,7 @@ extension Workspace {
                        minimums: [WindowID: CGSize]) -> Bool {
         guard let neighbor = neighbor(of: window, direction) else { return false }
         let frames = self.frames(in: rect, gaps: gaps, minimums: minimums)
-        let other = nearest(in: root.node(at: neighbor), direction, to: frames[window], frames: frames)
+        let other = overThere(in: root.node(at: neighbor), direction, from: frames[window], frames: frames)
         let path = root.path(to: window)!, otherPath = root.path(to: other)!
         root[path.dropLast()].children[path.last!].kind = .window(other)
         root[otherPath.dropLast()].children[otherPath.last!].kind = .window(window)

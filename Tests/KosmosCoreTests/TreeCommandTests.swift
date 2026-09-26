@@ -109,7 +109,9 @@ import Testing
     for (tree, floating, frames, tiled) in cases {
         var workspace = Workspace(tree)
         workspace.floating = floating
-        #expect(workspace.withFloatingTiled({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:]).tree == tiled, "\(frames)")
+        let seen = workspace.withFloatingTiled(workspace.onScreen({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:]),
+                                               in: screen, gaps: deskGaps)
+        #expect(seen.tree == tiled, "\(frames)")
     }
 }
 
@@ -121,6 +123,17 @@ import Testing
     workspace.focus(3)
     let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 150, width: 200, height: 200)]
     #expect(workspace.focus(.right, from: 1, frames: frames) == 3)
+}
+
+/// 9 stands in v[2 9 3] and overlaps 1 by its own frame, so, focused last, it is over there.
+@Test func focusReachesAFloatingWindowByItsOwnFrame() {
+    var workspace = Workspace("h[v[1 4] v[2 3]]")
+    workspace.floating = [9]
+    workspace.focus(9)
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 650, y: 100, width: 200, height: 150)]
+    let onScreen = workspace.onScreen({ frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
+    #expect(workspace.withFloatingTiled(onScreen, in: screen, gaps: deskGaps).tree == "h[v[1 4] v[2 9 3]]")
+    #expect(workspace.focus(.right, from: 1, frames: frames) == 9)
 }
 
 // MARK: Focus entering from another display

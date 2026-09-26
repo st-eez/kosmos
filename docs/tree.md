@@ -72,8 +72,8 @@
     `testFocusOverFloatingWindows`).
   - The frames are the ones the inventory last heard from WindowServer, which the
     pointer's center uses too ([focus-follows-mouse.md](focus-follows-mouse.md)), so the command waits on no read. Only the
-    focused workspace's floating windows count, and parked windows never do: minimized,
-    hidden with their app or in native fullscreen.
+    focused workspace's floating windows count, and on a cross the target workspace's, and
+    parked windows never do: minimized, hidden with their app or in native fullscreen.
   - A floating window's place in the tree decides only whether it stands at the edge; its
     overlap is its own frame's. Each window counts by its own focus. AeroSpace's
     temporary placement marks each floating window most recently focused, which its source
