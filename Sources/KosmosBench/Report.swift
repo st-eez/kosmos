@@ -20,6 +20,7 @@ public struct Record: Sendable {
     }
 
     public var stalls: [Event] { analysis.events.filter { $0.kind == .stall } }
+    public var skips: [Event] { analysis.events.filter { $0.kind == .skip } }
     public var jumps: [Event] { analysis.events.filter { $0.kind == .jump || $0.kind == .backward } }
     public var displaced: [Event] { analysis.events.filter { $0.kind == .displaced } }
     /// Frames with a flash, a partial change or a revert.
@@ -47,7 +48,7 @@ public func summary(_ records: [Record]) -> String {
         return count == 0 ? "0" : "\(count)/\(steps.count)"
     }
     func counted(_ count: Int, _ what: String) -> String? { count == 0 ? nil : "\(count) \(what)" }
-    var screen = [["action", "n", "latency ms", "frames", "span ms", "windows ms", "border ms", "key ms", "stalls", "longest ms",
+    var screen = [["action", "n", "latency ms", "frames", "span ms", "windows ms", "border ms", "key ms", "skips", "stalls", "longest ms",
                    "jumps", "displaced", "flashes"]]
     var log = [["action", "switch ms", "held ms", "completion ms", "landed ms", "stepped", "read gap ms", "slowest link ms",
                 "membership events"]]
@@ -62,7 +63,7 @@ public func summary(_ records: [Record]) -> String {
                      counted(steps.filter { $0.settle == .cut }.count, "cut")].compactMap { $0 }.joined(separator: ", "),
             cell(changed.compactMap(\.analysis.latency)), cell(changed.map { Double($0.analysis.frames) }, "%.0f"),
             cell(changed.map(\.analysis.span)), cell(steps.compactMap(\.analysis.windows)), cell(steps.compactMap(\.analysis.border)),
-            cell(steps.compactMap(\.analysis.keyed)), share(steps, \.stalls),
+            cell(steps.compactMap(\.analysis.keyed)), share(steps, \.skips), share(steps, \.stalls),
             steps.flatMap(\.stalls).compactMap(\.amount).max().map { String(format: "%.1f", $0) } ?? "-",
             share(steps, \.jumps), share(steps, \.displaced), share(steps, \.flashes) + top,
         ])

@@ -101,17 +101,20 @@ public struct Track: Sendable {
     /// a pixel from a whole way before the start to a whole way past the end, where a write
     /// that lands before the transform following it shows the window (docs/geometry.md).
     /// Pixels of other windows count neither way, since a sliding window can pass under or
-    /// over them.
-    func fit(window: Summed, wallpaper: Summed) -> (progress: Double, misfit: Int) {
+    /// over them. Among equal fits the frame holding fewest of them wins, then the smallest:
+    /// a window growing or shrinking over others, as in fullscreen, or filling the screen,
+    /// fits every frame larger than its own.
+    func fit(window: Summed, wallpaper: Summed, others: Summed) -> (progress: Double, misfit: Int) {
         let step = min(0.002, 0.5 / max(distance, 1))
-        var best = Int.max, ties: [Double] = []
+        var best = (misfit: Int.max, others: Int.max, area: CGFloat.infinity), ties: [Double] = []
         for progress in stride(from: -1.2, through: 2.2, by: step) {
             let rect = frame(at: progress)
             guard rect.size.width > 0, rect.size.height > 0 else { continue }
-            let misfit = window.total - window.count(rect) + wallpaper.count(rect)
-            if misfit < best { (best, ties) = (misfit, [progress]) } else if misfit == best { ties.append(progress) }
+            let key = (misfit: window.total - window.count(rect) + wallpaper.count(rect), others: others.count(rect),
+                       area: rect.width * rect.height)
+            if key < best { (best, ties) = (key, [progress]) } else if key == best { ties.append(progress) }
         }
-        return (ties[ties.count / 2], best)
+        return (ties[ties.count / 2], best.misfit)
     }
 
     /// The median of each sample's start on the easing curve, from the samples between 3% and

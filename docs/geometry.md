@@ -439,26 +439,33 @@
       cost of showing the border before the focus request.
     - A sliding window's place in each frame is how far along the line from its start to
       its end its pixels fit best, since a slide mixes origin and size by one eased
-      fraction; other windows' pixels count neither way, as they pass over and under it.
-      The slide's start is where the samples put it on the easing curve. A stall is a
-      window still for more than 1.5 refreshes while the easing moves it 2 pixels a refresh
-      or more; a jump is a frame that takes it further than the easing by 10% of its way
+      fraction; other windows' pixels count neither way, as they pass over and under it,
+      but among equal fits the frame holding fewest of them wins, then the smallest, so a
+      window growing over others, as in fullscreen, or filling the screen is placed by its
+      own edges. A window new to the screen that first shows inside where it ends was
+      uncovered in place and does not move. The slide's start is where the samples put it
+      on the easing curve. A skip is a window still for one refresh, and a stall for two or
+      more, while the easing moves it 2 pixels a refresh or more; a jump is a frame that takes it further than the easing by 10% of its way
       or 8 pixels, and a backward move one that takes it back. A displaced frame shows the
       window that far off its way, or a quarter of it off the line, for one frame between
       frames on it, as when a write lands before the read that sets its transform: the
       window then shows offset by its whole move, so the search runs a whole way before the
       start and past the end.
-    - A flash in a slide is pixels that match neither the state before nor after, outside
-      every sliding window's fitted frame and the wallpaper its path uncovers. In a switch
-      or a focus move, any frame between the states counts: a flash when pixels match
-      neither, `partial` when part of the screen has changed and part not, as a border
-      that moves a frame after the windows, and `revert` when the screen shows the state
+    - A flash in a slide is pixels that match neither the state before nor after, more than
+      5 pixels outside every sliding window's fitted frame, which takes in its border, and
+      outside the wallpaper its path uncovers. In a switch or a focus move, any frame
+      between the states counts: a flash when pixels match neither, `partial` when part of
+      the screen has changed and part not, as a border that moves a frame after the
+      windows, and `revert` when the screen shows the state
       before again after it changed. What apps draw in their windows is left out: in a
       slide inside each window that stays put, and in a switch or focus move inside each
       window before or after it, as a revealed window's title bar buttons turn to color once
       it takes the key, and so is the whole corner the buttons sit in, since their edges
-      blend with the window's color. A window crossing under another has no place while
-      hidden, and no stall is counted across those frames.
+      blend with the window's color. Where the border moves, a pixel along a window's edge
+      or in its rounded corners that matches neither state is the border not yet as after,
+      since the capture blends the edge with the border or the wallpaper beside it: it
+      counts toward `partial` and border ms. A window crossing under another has no place
+      while hidden, and no stall is counted across those frames.
     - Each step is matched to Kosmos's log from its send to its settle, streamed at
       debug level with signposts: each switch's total, its wait for writes to land (`held`)
       and its batch completion on the main actor, its bridge time less the parts the line

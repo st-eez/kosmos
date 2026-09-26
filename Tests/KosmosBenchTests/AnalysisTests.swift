@@ -141,6 +141,67 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(abs(analysis.latency! - 20 - refresh * 1000) < 0.1 && analysis.frames == 1)
 }
 
+@Test func oneMissedRefreshIsASkip() {
+    // The display shows nothing new for one refresh, as when a composite misses it.
+    let frames = slide(after, from: [left, right]).enumerated().filter { $0.offset != 4 }.map(\.element)
+    let (first, kept) = record(before: before, frames)
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.map(\.kind) == [.skip, .skip], "\(analysis.events.map(\.detail))")
+}
+
+@Test func aWindowGrowingOverAnotherIsPlacedByItsOwnEdges() {
+    // Fullscreen: window 0 grows over window 1 until it fills the screen, so a larger frame
+    // takes in no wallpaper, only the window below and then what lies past the screen.
+    let screen = CGRect(x: 0, y: 0, width: 240, height: 150)
+    let start = [Shape(window: 1, rect: right), Shape(window: 0, rect: left, border: true)]
+    let end = [Shape(window: 1, rect: right), Shape(window: 0, rect: screen, border: true)]
+    let (first, kept) = record(before: start, slide(end, from: [nil, left]))
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    #expect(analysis.tracks.map(\.window) == [0])
+}
+
+@Test func aWindowUncoveredInPlaceDoesNotMove() {
+    // Fullscreen off: window 0 shrinks back to its tile, uncovering window 1 where it was.
+    let screen = CGRect(x: 0, y: 0, width: 240, height: 150)
+    let start = [Shape(window: 1, rect: right), Shape(window: 0, rect: screen, border: true)]
+    let end = [Shape(window: 1, rect: right), Shape(window: 0, rect: left, border: true)]
+    let (first, kept) = record(before: start, slide(end, from: [nil, screen]))
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    #expect(analysis.tracks.map(\.window) == [0])
+}
+
+@Test func aBorderLateToShowOnBlendedEdgesIsPartial() {
+    // alt-N: the capture blends each window's edge with what lies outside it, and its
+    // rounded corners show it, the wallpaper until the ring shows a refresh after the windows.
+    func blend(_ a: UInt32, _ b: UInt32) -> UInt32 {
+        let (ar, ag, ab) = Color.components(a), (br, bg, bb) = Color.components(b)
+        return Color.rgb(UInt8((ar + br) / 2), UInt8((ag + bg) / 2), UInt8((ab + bb) / 2))
+    }
+    func edges(_ picture: inout Picture, _ rect: CGRect, outside: (Int) -> UInt32) {
+        let (x0, y0, x1, y1) = picture.clamped(rect)
+        for y in y0..<y1 {
+            for x in x0..<x1 {
+                let i = y * 240 + x, edge = x == x0 || x == x1 - 1 || y == y0 || y == y1 - 1
+                let corner = min(x - x0, x1 - 1 - x) < 3 && min(y - y0, y1 - 1 - y) < 3
+                if corner { picture.pixels[i] = outside(i) } else if edge { picture.pixels[i] = blend(picture.pixels[i], outside(i)) }
+            }
+        }
+    }
+    var shown = picture([Shape(window: 2, rect: left), Shape(window: 3, rect: right)], at: began)
+    var ringed = picture(other, at: began + refresh)
+    for rect in [left, right] { edges(&shown, rect) { wallpaper.pixels[$0] } }
+    edges(&ringed, left) { _ in accent }
+    edges(&ringed, right) { wallpaper.pixels[$0] }
+    let start = [Shape(window: 0, rect: left), Shape(window: 1, rect: right, border: true)]
+    let (first, kept) = record(before: start, [shown, ringed])
+    let analysis = analyze(.instant, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.map(\.kind) == [.partial] && analysis.events.first?.what == "border", "\(analysis.events.map(\.detail))")
+    #expect(abs(analysis.windows! - 20) < 0.1 && abs(analysis.border! - 20 - refresh * 1000) < 0.1,
+            "\(analysis.windows ?? -1) \(analysis.border ?? -1)")
+}
+
 @Test func aWriteLandingAheadOfItsTransformIsADisplacedFrame() {
     // In the seventh frame window 1 shows offset by its whole move, where WindowServer draws it
     // between its write landing and the read that sets its transform (docs/geometry.md).

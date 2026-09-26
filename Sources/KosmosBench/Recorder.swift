@@ -43,7 +43,7 @@ import ImageIO
         write("tracks.tsv", "step\twindow\tframe\tms\tprogress\teased\tmisfit\n")
         write("events.tsv", "step\tframe\tms\tkind\twhat\tdetail\tpicture\n")
         write("steps.tsv", "step\trep\taction\texpect\tsent\tanswered\texit\tsettle\tlatency\tframes\tspan\tslide start\twindows\tborder\t"
-            + "key\tstalls\tjumps\tdisplaced\tflashes\n")
+            + "key\tskips\tstalls\tjumps\tdisplaced\tflashes\n")
     }
 
     public func add(_ picture: Picture) {
@@ -147,7 +147,7 @@ import ImageIO
         write("steps.tsv", "\(step.number)\t\(step.rep)\t\(step.action)\t\(step.expect.rawValue)\t\(String(format: "%.6f", sent.at))\t"
             + "\(String(format: "%.6f", sent.answered))\t\(sent.exit)\t\(settle.rawValue)\t\(number(analysis.latency))\t"
             + "\(analysis.frames)\t\(number(analysis.span))\t\(number(analysis.began))\t\(number(analysis.windows))\t"
-            + "\(number(analysis.border))\t\(number(analysis.keyed))\t\(record.stalls.count)\t\(record.jumps.count)\t"
+            + "\(number(analysis.border))\t\(number(analysis.keyed))\t\(record.skips.count)\t\(record.stalls.count)\t\(record.jumps.count)\t"
             + "\(record.displaced.count)\t\(record.flashes.count)\n")
         (self.step, self.sent) = (nil, nil)
         guard roomLeft() else { return }

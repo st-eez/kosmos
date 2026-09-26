@@ -39,9 +39,12 @@ public struct Event: Sendable {
         case jump
         /// A window back towards where it started.
         case backward
-        /// A window still for longer than a refresh while the easing moves it 2 pixels a
+        /// A window still for two refreshes or more while the easing moves it 2 pixels a
         /// refresh or more.
         case stall
+        /// A window still for one refresh while the easing moves it 2 pixels a refresh or
+        /// more: a refresh the display showed nothing new in.
+        case skip
         /// A window off its way for one frame, by 10% of it or 8 pixels, or a quarter of it
         /// off the line from its start to its end, between frames on it.
         case displaced
@@ -137,7 +140,15 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
             // The buttons' edges blend with the window's color, so the whole corner they sit in
             // is left out of a switch's events; key ms times them.
             guard !own[i], expect == .slide || !zones.isButton(i) else { continue }
-            if a && b { neither.append(Int32(i)) } else if a { pending.append(Int32(i)) } else if b { done.append(Int32(i)) }
+            // Where the border moves, the capture blends each window's edge with the border or
+            // the wallpaper beside it, so a ring pixel between them is the border not yet as after.
+            if a && b, expect == .slide || !zones.isRing(i) || !Color.differ(before.pixels[i], after.pixels[i]) {
+                neither.append(Int32(i))
+            } else if a {
+                pending.append(Int32(i))
+            } else if b {
+                done.append(Int32(i))
+            }
         }
         let last = index == frames.count - 1
         let changed = neither.count + done.count >= Picture.least, unfinished = neither.count + pending.count >= Picture.least
@@ -196,7 +207,10 @@ private func slides(_ states: (before: Shown, after: Shown), frames: [Shown], sc
         guard let end = states.after.rects[window] else { continue }
         if let start = states.before.rects[window] {
             if moved(start, end) { tracks.append((Track(window: window, start: start, end: end), nil)) }
-        } else if let first = frames.firstIndex(where: { $0.isWhole(window) }), let start = frames[first].rects[window], moved(start, end) {
+        } else if let first = frames.firstIndex(where: { $0.isWhole(window) }), let start = frames[first].rects[window], moved(start, end),
+                  // One that first shows inside where it ends was there all along, uncovered as
+                  // another window moved off it.
+                  !end.insetBy(dx: -2, dy: -2).contains(start) {
             tracks.append((Track(window: window, start: start, end: end), first))
         }
     }
@@ -211,12 +225,14 @@ private func slides(_ states: (before: Shown, after: Shown), frames: [Shown], sc
     for (index, frame) in frames.enumerated() {
         let wallpaper = Summed(frame.labels, width: width) { $0 == Label.wallpaper }
         for t in tracks.indices where index >= tracks[t].first ?? 0 {
-            let summed = if let window = tracks[t].track.window {
-                Summed(frame.labels, width: width) { $0 == UInt8(window + 1) }
+            let own = tracks[t].track.window.map { UInt8($0 + 1) }
+            let summed = if let own {
+                Summed(frame.labels, width: width) { $0 == own }
             } else {
                 Summed(frame.realMask(width: width), width: width) { $0 == 1 }
             }
-            let (progress, misfit) = tracks[t].track.fit(window: summed, wallpaper: wallpaper)
+            let others = Summed(frame.labels, width: width) { $0 != Label.other && $0 != Label.wallpaper && $0 != own }
+            let (progress, misfit) = tracks[t].track.fit(window: summed, wallpaper: wallpaper, others: others)
             let rect = tracks[t].track.frame(at: progress)
             // Hidden under other windows, or not yet opaque in a pop, it gives no position.
             guard summed.total * 4 >= Int(rect.width * rect.height) else { continue }
@@ -309,8 +325,9 @@ private func motion(_ track: Track, refresh: Double) -> [Event] {
         let gap = b.time - from.time
         let due = (track.predicted(at: from.time + refresh)! - track.predicted(at: from.time)!) * distance
         if gap > 1.5 * refresh, due >= 2 {
-            var stall = event(.stall, i, String(format: "%@ still for %.1f ms where the easing moves it %.0f px a refresh", name,
-                                                (gap - refresh) * 1000, due), amount: (gap - refresh) * 1000)
+            var stall = event(gap > 2.5 * refresh ? .stall : .skip, i,
+                              String(format: "%@ still for %.1f ms where the easing moves it %.0f px a refresh", name, (gap - refresh) * 1000, due),
+                              amount: (gap - refresh) * 1000)
             stall.since = from.time
             events.append(stall)
         }
@@ -337,6 +354,12 @@ struct Zones {
             for y in y0..<y1 {
                 for x in x0..<x1 where !inner.contains(CGPoint(x: x, y: y)) { map[y * width + x] = max(map[y * width + x], 1) }
             }
+            // Inside the rounded corners, 8 by 8 pixels at most, the border or the wallpaper shows.
+            for corner in [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX - 8, y: rect.minY),
+                           CGPoint(x: rect.minX, y: rect.maxY - 8), CGPoint(x: rect.maxX - 8, y: rect.maxY - 8)] {
+                let (cx0, cy0, cx1, cy1) = picture.clamped(CGRect(origin: corner, size: CGSize(width: 8, height: 8)))
+                for y in cy0..<cy1 { for x in cx0..<cx1 { map[y * width + x] = max(map[y * width + x], 1) } }
+            }
             // The buttons sit in the top left corner, within 90 by 40 points of it.
             let (bx0, by0, bx1, by1) = picture.clamped(CGRect(x: rect.minX + 1, y: rect.minY + 1, width: 45, height: 20).intersection(inner))
             for y in by0..<by1 { for x in bx0..<bx1 { map[y * width + x] = 2 } }
@@ -344,6 +367,7 @@ struct Zones {
     }
 
     func isButton(_ index: Int) -> Bool { map[index] == 2 }
+    func isRing(_ index: Int) -> Bool { map[index] == 1 }
 
     /// The zones where at least `Picture.least` pixels changed: in the buttons and the rings
     /// only pixels that show neither a window's color nor the wallpaper on one side count.
@@ -401,8 +425,10 @@ private func appDrawn(_ states: (before: Shown, after: Shown), expect: Expect, r
 private func unexplained(_ neither: [Int32], frame: Int, labels: [UInt8], tracks: [Track], width: Int) -> [Int32] {
     var explained: [CGRect] = [], uncovered: [CGRect] = []
     for track in tracks {
-        // Steve's window casts a shadow, 12 pixels of it counted; the stub's cast none.
-        let margin: CGFloat = track.window == nil ? -12 : -3
+        // Steve's window casts a shadow, 12 pixels of it counted; the stub's cast none. Around
+        // a stub window the border, its anti-aliased edge and a pixel of fit error reach 3
+        // pixels out, which the first run flagged in join-with, flatten and balance.
+        let margin: CGFloat = track.window == nil ? -12 : -5
         let path = track.start.union(track.end).insetBy(dx: margin, dy: margin)
         uncovered.append(path)
         if let sample = track.samples.first(where: { $0.frame == frame }) {
@@ -418,8 +444,9 @@ private func unexplained(_ neither: [Int32], frame: Int, labels: [UInt8], tracks
     }
 }
 
-/// The largest groups of the pixels by what they show, and where they are: the ring outside
-/// a stub window's edge counts as `border` whether a border or the wallpaper shows there.
+/// The largest groups of the pixels by what they show, and where they are: the ring along a
+/// stub window's edge counts as `border` whatever shows there, since the capture blends the
+/// window's edge with the border or the wallpaper beside it.
 func describePixels(_ pixels: [Int32], labels: [UInt8], rings: [CGRect], width: Int) -> (what: String, detail: String) {
     guard !pixels.isEmpty else { return ("none", "none") }
     var counts: [String: Int] = [:]
@@ -429,7 +456,7 @@ func describePixels(_ pixels: [Int32], labels: [UInt8], rings: [CGRect], width: 
         box = box.union(CGRect(origin: point, size: CGSize(width: 1, height: 1)))
         let ring = rings.contains { $0.insetBy(dx: -3, dy: -3).contains(point) && !$0.insetBy(dx: 1, dy: 1).contains(point) }
         let what = switch labels[Int(i)] {
-        case Label.other where ring, Label.wallpaper where ring: "border"
+        case _ where ring: "border"
         case Label.wallpaper: "wallpaper"
         case Label.other: "other"
         case let window: "window \(window - 1)"

@@ -123,7 +123,9 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Send
         configuration.sourceRect = area
         configuration.width = width
         configuration.height = height
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(rate, 1)))
+        // The shortest time ScreenCaptureKit leaves between frames. At half a refresh it cannot
+        // drop a refresh that comes a little early, as a whole refresh could.
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(2 * max(rate, 1)))
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.showsCursor = false
