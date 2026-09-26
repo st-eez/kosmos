@@ -5,7 +5,7 @@ import CoreGraphics
 public enum ResizeDimension: Sendable {
     case width
     case height
-    /// Along the window's container.
+    /// Along the window's container, and a floating window's width.
     case smart
 }
 

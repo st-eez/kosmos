@@ -416,8 +416,8 @@ public struct Session: Sendable {
     // MARK: Commands
 
     /// Nil when the command does not apply, such as a focus at the edge. `frame` gives where
-    /// a window is now, for a focus in a direction and a floating window's fullscreen
-    /// (docs/tree.md).
+    /// a window is now, for a focus in a direction and a floating window's fullscreen and
+    /// resize (docs/tree.md).
     public mutating func perform(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         defer { check() }
         switch command {
@@ -493,6 +493,11 @@ public struct Session: Sendable {
             guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
         case .fullscreen:
             guard workspace.toggleFullscreen(window, frame: frame(window)) else { return nil }
+        case .resize(let dimension, let amount) where workspace.floating.contains(window):
+            // Hyprland's resize refuses a fullscreen window (docs/tree.md).
+            guard workspace.fullscreenWindow != window, let old = frame(window) else { return nil }
+            let new = resizedFloating(old, dimension, by: amount, least: leastSize(of: window), in: display)
+            return new == old ? nil : Plan(frames: [window: new])
         case .resize(let dimension, let amount):
             guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
         case .balanceSizes:
@@ -682,9 +687,29 @@ public struct Session: Sendable {
 
 private func floatingFrame(_ frame: CGRect, from: CGRect, movingTo area: CGRect) -> CGRect {
     guard from.width > 0, from.height > 0 else { return frame }
-    let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
     let x = area.minX + (frame.minX - from.minX) * area.width / from.width
     let y = area.minY + (frame.minY - from.minY) * area.height / from.height
-    return CGRect(x: min(max(x, area.minX), area.maxX - size.width), y: min(max(y, area.minY), area.maxY - size.height),
-                  width: size.width, height: size.height).integral
+    return fitted(CGRect(origin: CGPoint(x: x, y: y), size: frame.size), in: area).integral
+}
+
+/// Ceiling: an app that keeps another size keeps the target's top left corner, so the center
+/// moves by half the change (docs/tree.md). Upgrade: at a read back of another size, write
+/// the position again around the target's center.
+private func resizedFloating(_ frame: CGRect, _ dimension: ResizeDimension, by amount: CGFloat, least: CGSize,
+                             in area: CGRect) -> CGRect {
+    var size = frame.size
+    if dimension == .height {
+        size.height = max(size.height + amount, least.height)
+    } else {
+        size.width = max(size.width + amount, least.width)
+    }
+    return fitted(CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
+                         width: size.width, height: size.height), in: area)
+}
+
+/// No larger than `area`, and moved inside it.
+private func fitted(_ frame: CGRect, in area: CGRect) -> CGRect {
+    let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
+    return CGRect(x: min(max(frame.minX, area.minX), area.maxX - size.width),
+                  y: min(max(frame.minY, area.minY), area.maxY - size.height), width: size.width, height: size.height)
 }

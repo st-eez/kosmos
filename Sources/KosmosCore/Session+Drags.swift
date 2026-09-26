@@ -136,22 +136,28 @@ extension Session {
         return Plan(frames: frames(of: name))
     }
 
+    /// A resize leaves a floating window at least its minimum, and at least
+    /// `ModifierDrag.smallestSide`, Hyprland's `MIN_WINDOW_SIZE` (docs/modifier-drags.md).
+    func leastSize(of window: WindowID) -> CGSize {
+        let minimum = minimums[window] ?? .zero, side = ModifierDrag.smallestSide
+        return CGSize(width: max(minimum.width, side), height: max(minimum.height, side))
+    }
+
     public func resized(_ drag: ModifierDrag, by delta: CGSize) -> CGRect {
-        let start = drag.frame, least = minimums[drag.grab.window] ?? .zero, side = ModifierDrag.smallestSide
-        let (width, height) = (max(least.width, side), max(least.height, side))
+        let start = drag.frame, least = leastSize(of: drag.grab.window)
         var frame = start
         for edge in drag.edges {
             switch edge {
             case .left:
-                frame.size.width = max(start.width - delta.width, width)
+                frame.size.width = max(start.width - delta.width, least.width)
                 frame.origin.x = start.maxX - frame.width
             case .right:
-                frame.size.width = max(start.width + delta.width, width)
+                frame.size.width = max(start.width + delta.width, least.width)
             case .up:
-                frame.size.height = max(start.height - delta.height, height)
+                frame.size.height = max(start.height - delta.height, least.height)
                 frame.origin.y = start.maxY - frame.height
             case .down:
-                frame.size.height = max(start.height + delta.height, height)
+                frame.size.height = max(start.height + delta.height, least.height)
             }
         }
         return frame
