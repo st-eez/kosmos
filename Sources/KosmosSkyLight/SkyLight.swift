@@ -67,14 +67,16 @@ public enum SkyLight {
         return missing
     }()
 
-    /// Delivers every event on the main queue in the order WindowServer sent it. Call once.
-    public static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) {
+    /// Delivers every event on the main queue in the order WindowServer sent it, stamped as its
+    /// callback ran, before the hop, so a job on the main queue delays no stamp
+    /// (docs/tree.md). Call once.
+    public static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void) {
         let sink = Unmanaged.passRetained(EventSink(handler)).toOpaque()   // lives for the process
         for id in WindowServerEvent.ids {
             let result = SLSRegisterConnectionNotifyProc(connection, { id, data, length, context, _ in
                 let payload = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
                 guard let context, let event = WindowServerEvent(id: id, payload: payload) else { return }
-                Unmanaged<EventSink>.fromOpaque(context).takeUnretainedValue().send(event)
+                Unmanaged<EventSink>.fromOpaque(context).takeUnretainedValue().send(event, at: .now)
             }, id, sink)
             if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
         }
@@ -157,13 +159,13 @@ public enum SkyLight {
 @MainActor private var secureInputChanged: (@MainActor () -> Void)?
 
 private final class EventSink: Sendable {
-    private let handler: @MainActor (WindowServerEvent) -> Void
+    private let handler: @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void
 
-    init(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) { self.handler = handler }
+    init(_ handler: @escaping @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void) { self.handler = handler }
 
     /// Callbacks arrive on whichever thread read the message, so every event goes through
     /// the main queue to keep one order.
-    func send(_ event: WindowServerEvent) {
-        DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event) } }
+    func send(_ event: WindowServerEvent, at stamp: ContinuousClock.Instant) {
+        DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event, stamp) } }
     }
 }

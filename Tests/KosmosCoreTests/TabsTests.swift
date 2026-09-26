@@ -15,6 +15,16 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(tabs.ordered(3, in: true, frame: tile, app: 100, at: t0 + .seconds(1) + .milliseconds(4)).map { [$0.old, $0.new] } == [2, 3])
 }
 
+/// Each half carries the stamp of its WindowServer event, so a job on the main actor that
+/// holds the second half's read back 20 ms parts nothing (docs/tree.md).
+@Test func halvesStampedApartPairHoweverLateTheyApply() async throws {
+    var tabs = TabSwitches()
+    let first = ContinuousClock.now
+    #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: first) == nil)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(tabs.ordered(2, in: true, frame: tile, app: 100, at: first + .milliseconds(1)).map { [$0.old, $0.new] } == [1, 2])
+}
+
 @Test func windowsThatComeAndGoApartAreNotATabSwitch() {
     var tabs = TabSwitches()
     #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: t0) == nil)

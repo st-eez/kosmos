@@ -265,7 +265,7 @@ nonisolated(unsafe) var concealedMoveLines: [(at: Double, text: String)] = []
     let child = Child(["moving-window"] + (onscreen ? ["onscreen"] : []))
     let window = child.readWindows()[0]
     var events = 0
-    SkyLight.subscribe { event in
+    SkyLight.subscribe { event, _ in
         guard case .changed(let id) = event, id == window else { return }
         events += 1
         let row = SkyLight.rows([window])?.first.map { "x \(Int($0.frame.minX)) y \(Int($0.frame.minY)) width \(Int($0.frame.width))" }

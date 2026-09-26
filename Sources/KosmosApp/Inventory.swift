@@ -90,12 +90,15 @@ final class Inventory {
     private enum FollowUp: Sendable {
         case none
         case readIfUnknown
-        case spaceMembership(ContinuousClock.Instant)
-        case changed(at: ContinuousClock.Instant)
+        case spaceMembership
+        case changed
     }
+    /// `at`: when WindowServer's event came, or the read was asked for. An order change carries
+    /// it, so a job on the main actor between two reads does not part a tab switch's halves
+    /// (docs/tree.md).
     private enum PendingEvent: Sendable {
-        case read(WindowID, FollowUp)
-        case destroyed(WindowID)
+        case read(WindowID, FollowUp, at: ContinuousClock.Instant)
+        case destroyed(WindowID, at: ContinuousClock.Instant)
         case appExited(pid_t)
     }
     private var pending: [PendingEvent] = []
@@ -105,7 +108,7 @@ final class Inventory {
     private var looks = ClosedAndKept.Looks()
 
     func start() {
-        SkyLight.subscribe { [weak self] event in self?.handle(event) }
+        SkyLight.subscribe { [weak self] event, stamp in self?.handle(event, at: stamp) }
         // NSRunningApplication(processIdentifier:) returned nil for a running app at startup
         // (docs/inventory.md).
         for app in NSWorkspace.shared.runningApplications {
@@ -156,12 +159,12 @@ final class Inventory {
         switch report.kind {
         case .windowCreated(let id):
             // WindowServer can report the window before its app's worker knows it.
-            enqueue(.read(id, .readIfUnknown))
+            enqueue(.read(id, .readIfUnknown, at: report.received))
         case .answering:
             readIfUnknown(windows.filter { $0.value.pid == report.pid }.keys)
         case .windowDestroyed(let id):
             // AX alone never removes a window (docs/inventory.md).
-            enqueue(.read(id, .none))
+            enqueue(.read(id, .none, at: report.received))
         case .focusedWindowChanged(let id):
             // The worker knows a window its app reports focused.
             if let id { readIfUnknown([id]) }
@@ -291,20 +294,20 @@ final class Inventory {
         }
     }
 
-    private func handle(_ event: WindowServerEvent) {
+    private func handle(_ event: WindowServerEvent, at stamp: ContinuousClock.Instant) {
         inventoryLog.debug("event \(String(describing: event), privacy: .public)")
         switch event {
         case .created(let id):
-            enqueue(.read(id, .none))
+            enqueue(.read(id, .none, at: stamp))
         case .changed(let id):
-            enqueue(.read(id, .changed(at: .now)))
+            enqueue(.read(id, .changed, at: stamp))
         case .reordered(let id):
-            enqueue(.read(id, .changed(at: .now)))
+            enqueue(.read(id, .changed, at: stamp))
             if isManaged(id) { onEvent?(.reordered(window: id)) }
         case .spaceMembership(let id):
-            enqueue(.read(id, .spaceMembership(.now)))
+            enqueue(.read(id, .spaceMembership, at: stamp))
         case .destroyed(let id):
-            enqueue(.destroyed(id))
+            enqueue(.destroyed(id, at: stamp))
         case .spacesChanged:
             spacesChangedSinceSweep = true
             spacesChangedAt = .now
@@ -316,7 +319,7 @@ final class Inventory {
     /// sweep's snapshot may predate the change.
     private func enqueue(_ event: PendingEvent) {
         switch event {
-        case .read(let id, _), .destroyed(let id): touchedDuringSweep?.insert(id)
+        case .read(let id, _, _), .destroyed(let id, _): touchedDuringSweep?.insert(id)
         case .appExited(let pid): touchedDuringSweep?.formUnion(windows.filter { $0.value.pid == pid }.keys)
         }
         if pending.isEmpty {
@@ -332,7 +335,7 @@ final class Inventory {
         let events = pending
         pending = []
         let ids = Set(events.compactMap { event -> WindowID? in
-            guard case .read(let id, _) = event else { return nil }
+            guard case .read(let id, _, _) = event else { return nil }
             return id
         })
         looks.readAsked()
@@ -342,35 +345,34 @@ final class Inventory {
         }
     }
 
-    /// A failed read leaves each window it names as it was.
     private func applyReads(_ events: [PendingEvent], _ read: [WindowRow]?) {
         defer { readApplied() }
         if read == nil { inventoryLog.notice("the rows for \(events.count) window events did not read; their windows stay as they were") }
         let rows = Dictionary((read ?? []).map { ($0.id, $0) }) { first, _ in first }
         for event in events {
             switch event {
-            case .read(let id, let followUp):
+            case .read(let id, let followUp, let at):
                 if let row = rows[id] {
-                    if case .changed(let at) = followUp { apply(row, changedAt: at) } else { apply(row) }
+                    if case .changed = followUp { apply(row, changedAt: at, at: at) } else { apply(row, at: at) }
                 } else if read != nil {
-                    remove(id, reason: "gone")
+                    remove(id, reason: "gone", at: at)
                 }
-                follow(followUp, id)
-            case .destroyed(let id):
-                remove(id, reason: "destroyed")
+                follow(followUp, id, at: at)
+            case .destroyed(let id, let at):
+                remove(id, reason: "destroyed", at: at)
             case .appExited(let pid):
                 appExited(pid)
             }
         }
     }
 
-    private func follow(_ followUp: FollowUp, _ id: WindowID) {
+    private func follow(_ followUp: FollowUp, _ id: WindowID, at changed: ContinuousClock.Instant) {
         switch followUp {
         case .none, .changed:
             break
         case .readIfUnknown:
             readIfUnknown([id])
-        case .spaceMembership(let changed):
+        case .spaceMembership:
             // It may join the shown Space, where Accessibility lists it.
             readIfUnknown([id])
             if let row = windows[id], isCandidate(row) {
@@ -380,14 +382,15 @@ final class Inventory {
         }
     }
 
-    private func apply(_ row: WindowRow, changedAt: ContinuousClock.Instant? = nil) {
+    /// `at`: when the change came, which order changes carry.
+    private func apply(_ row: WindowRow, changedAt: ContinuousClock.Instant? = nil, at stamp: ContinuousClock.Instant = .now) {
         touchedDuringSweep?.insert(row.id)
         guard ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
             if arrivedWhileLocked.updateValue(row, forKey: row.id) == nil { scheduleWatch() }
             if isCandidate(row) {
                 _ = heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: nil, frame: row.frame,
-                                      at: .now, locked: true)
+                                      at: stamp, locked: true)
             }
             return
         }
@@ -397,8 +400,8 @@ final class Inventory {
         // A new tab can be seen first already ordered in.
         if isCandidate(row),
            heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: old?.orderedIn, frame: row.frame,
-                             at: .now, locked: sessionLocked) {
-            onEvent?(.orderChange(window: row.id, pid: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now))
+                             at: stamp, locked: sessionLocked) {
+            onEvent?(.orderChange(window: row.id, pid: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp))
         }
         // Perhaps closed and kept: a conceal leaves a window ordered in, and a minimize, a hide
         // and native fullscreen have their own reports (docs/tree.md).
@@ -421,13 +424,13 @@ final class Inventory {
         }
     }
 
-    private func remove(_ id: WindowID, reason: StaticString) {
+    private func remove(_ id: WindowID, reason: StaticString, at stamp: ContinuousClock.Instant = .now) {
         guard !sessionLocked else {
             if windows[id] != nil { removedWhileLocked.insert(id) }
             if let row = windows[id], isCandidate(row) {
-                _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now, locked: true)
+                _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp, locked: true)
             } else if let row = arrivedWhileLocked.removeValue(forKey: id) {
-                _ = heldOrder.removed(id, app: row.pid, orderedIn: false, frame: row.frame, at: .now, locked: true)
+                _ = heldOrder.removed(id, app: row.pid, orderedIn: false, frame: row.frame, at: stamp, locked: true)
             }
             return
         }
@@ -440,8 +443,8 @@ final class Inventory {
         if row.orderedIn { departures.left(id, at: .now) }
         // Before the removal, so a tab that replaces this one takes its place.
         if isCandidate(row),
-           heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: .now, locked: false) {
-            onEvent?(.orderChange(window: id, pid: row.pid, orderedIn: false, frame: row.frame, at: .now))
+           heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp, locked: false) {
+            onEvent?(.orderChange(window: id, pid: row.pid, orderedIn: false, frame: row.frame, at: stamp))
         }
         if wasManaged { onEvent?(.managedChange(window: id, pid: row.pid, managed: false)) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")

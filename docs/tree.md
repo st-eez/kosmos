@@ -288,21 +288,23 @@
     could order in, the look waits until a pairing window after the order-out, as a
     destroyed tab's place does. Closing the selected Ghostty or Finder tab is the likely
     case. Activity Monitor, with no other window, parks at once.
-  - Kosmos applies a switch's two halves within a millisecond. In a deliberate run on
+  - A switch's two halves come within a millisecond. In a deliberate run on
     September 26, 2026, from 18:30:54 to 18:31:29, Steve switched, opened with Command-T
     and closed Finder tabs: 75 order-ins and 75 order-outs. 72 switches paired, each with
     its halves logged 0 to 1 ms apart, and no window parked as closed and kept (live log).
     Among them were a window's first Command-T while its app had no other window ordered
     out, at 18:31:03 and 18:31:10, so such a window needs no wait at the look either.
     Ghostty with `macos-titlebar-style = hidden` has no native tabs. The pairing window is
-    10 ms; it was 250 ms, the yabai forks' value. Each half is stamped as its row read
-    applies, so a delay on the main queue holds back both halves of a switch, and halves
-    that fall in two reads are one read apart, about 1.4 ms at the desk
-    ([inventory.md](inventory.md)). The ceiling: halves more than 10 ms apart, as a read
-    that waits out a Space transition might leave them, do not pair. The deselected tab
-    parks as closed and kept and the selected tab takes a place of its own, one reflow
-    too many, and the next switch between the two pairs and puts them back in one place.
-    Reading the AXTabGroup (below) would pair them at once.
+    10 ms; it was 250 ms, the yabai forks' value. Each order change is stamped when
+    SkyLight's callback receives its event, before the hop to the main queue, and carries
+    that stamp through the row read. So neither a job on the main actor nor a second read
+    parts the halves, and the gap left is WindowServer's own, 0.2 ms in `kosmos-probe
+    tabs`. The ceiling: a switch whose events come more than 10 ms apart does not pair.
+    The deselected tab parks as closed and kept, and the selected tab, a hidden member
+    ordered in with no partner, is placed 10 ms later as a tab dragged out is, on the
+    focused workspace, so a group on another workspace moves there. The next switch
+    between the two pairs through `Session.replace`, which keeps the selected tab's new
+    place. Reading the AXTabGroup (below) would pair them.
   - A minimize and a hide have reports of their own, taken to come before the order-out:
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize

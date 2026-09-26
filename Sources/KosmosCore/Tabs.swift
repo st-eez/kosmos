@@ -3,8 +3,8 @@ import CoreGraphics
 /// Pairs a native tab switch's halves, the deselected tab's order-out or destroy and the
 /// selected tab's order-in, when the two windows have one frame (docs/tree.md).
 public struct TabSwitches: Sendable {
-    /// Two changes this close form one switch. A switch's halves came at most 1 ms apart in
-    /// 72 Finder tab switches, and a delay on the main queue holds back both (docs/tree.md).
+    /// Two changes this close form one switch. Each is stamped as WindowServer's event came, and
+    /// a switch's halves came at most 1 ms apart in 72 Finder tab switches (docs/tree.md).
     public static let window: Duration = .milliseconds(10)
     private struct Change {
         let window: WindowID
