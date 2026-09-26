@@ -93,7 +93,6 @@ if [[ -z ${EPOCHREALTIME:-} ]]; then
 fi
 workspace=9
 count=3
-echo "Turn on Do Not Disturb for the run: a notification banner on the built-in display shows in the frames. Banners that show are logged."
 
 kosmos_pid=$(pgrep -x Kosmos || true)
 if [[ $(wc -w <<< "$kosmos_pid") -ne 1 ]]; then
@@ -257,7 +256,8 @@ fi
 IFS=$'\t' read -r captured rate size <<< "${reply#display }"
 
 # The display stays awake for the run; Do Not Disturb is Steve's to set.
-caffeinate -dimsu -w $$ &
+caffeinate -di -w $$ &
+echo "Turn on Do Not Disturb for the run: a notification banner on the built-in display shows in the frames. Banners that show are logged."
 "$kosmos" workspace "$workspace"
 # The capture takes the first still screen, which would be the one before the switch.
 sleep 1
