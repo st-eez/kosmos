@@ -60,18 +60,22 @@ struct RecoveryPlan: Equatable {
     }
 }
 
+/// A handover ends at the recovery or the adoption, so a crash after it gets a crash's grace.
 extension RecoveryRecord {
     func keptAfterIncomplete(gone: Set<UInt64>, keepingAnimationSpaces keeping: Bool) -> RecoveryRecord {
         var kept = self
+        kept.handover = false
         kept.spaces.removeAll(where: gone.contains)
         if !keeping { kept.animationSpaces.removeAll(where: gone.contains) }
         return kept
     }
 
-    /// Nil when no Space is left, which clears the record.
-    func keptAfterRestore(left: Set<UInt64>, keepingAnimationSpaces keeping: Bool) -> RecoveryRecord? {
+    /// Nil when no Space is left, which clears the record. The windows in `sparing` stay
+    /// concealed and recorded, and `left` holds their Spaces.
+    func keptAfterRestore(left: Set<UInt64>, keepingAnimationSpaces keeping: Bool, sparing: Set<UInt32> = []) -> RecoveryRecord? {
         var kept = self
-        kept.windows = []
+        kept.handover = false
+        kept.windows.removeAll { !sparing.contains($0.id) }
         kept.spaces.removeAll { !left.contains($0) }
         if !keeping { kept.animationSpaces.removeAll { !left.contains($0) } }
         return kept.spaces.isEmpty && kept.animationSpaces.isEmpty ? nil : kept
