@@ -416,8 +416,8 @@ public struct Session: Sendable {
     // MARK: Commands
 
     /// Nil when the command does not apply, such as a focus at the edge. `frame` gives where
-    /// a window is now, for a focus in a direction and a floating window's fullscreen
-    /// (docs/tree.md).
+    /// a window is now, for a focus in a direction and a floating window's fullscreen and
+    /// resize (docs/tree.md).
     public mutating func perform(_ command: Command, frame: (WindowID) -> CGRect? = { _ in nil }) -> Plan? {
         defer { check() }
         switch command {
@@ -496,7 +496,7 @@ public struct Session: Sendable {
         case .resize(let dimension, let amount) where workspace.floating.contains(window):
             // Hyprland's resize refuses a fullscreen window (docs/tree.md).
             guard workspace.fullscreenWindow != window, let old = frame(window) else { return nil }
-            let new = resizedFloating(old, dimension, by: amount, minimum: minimums[window] ?? .zero, in: display)
+            let new = resizedFloating(old, dimension, by: amount, least: leastSize(of: window), in: display)
             return new == old ? nil : Plan(frames: [window: new])
         case .resize(let dimension, let amount):
             guard workspace.resize(window, dimension, by: amount, in: display, gaps: gaps) else { return nil }
@@ -687,26 +687,29 @@ public struct Session: Sendable {
 
 private func floatingFrame(_ frame: CGRect, from: CGRect, movingTo area: CGRect) -> CGRect {
     guard from.width > 0, from.height > 0 else { return frame }
-    let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
     let x = area.minX + (frame.minX - from.minX) * area.width / from.width
     let y = area.minY + (frame.minY - from.minY) * area.height / from.height
-    return CGRect(x: min(max(x, area.minX), area.maxX - size.width), y: min(max(y, area.minY), area.maxY - size.height),
-                  width: size.width, height: size.height).integral
+    return fitted(CGRect(origin: CGPoint(x: x, y: y), size: frame.size), in: area).integral
 }
 
-/// A floating window's `resize` keeps its center, as Hyprland's does, and `smart` is the width,
-/// as Omarchy's Super minus and equal change it. Never below the minimum or
-/// `ModifierDrag.smallestSide`, and inside `area` (docs/tree.md).
-private func resizedFloating(_ frame: CGRect, _ dimension: ResizeDimension, by amount: CGFloat, minimum: CGSize,
+/// Ceiling: an app that keeps another size keeps the target's top left corner, so the center
+/// moves by half the change (docs/tree.md). Upgrade: at a read back of another size, write
+/// the position again around the target's center.
+private func resizedFloating(_ frame: CGRect, _ dimension: ResizeDimension, by amount: CGFloat, least: CGSize,
                              in area: CGRect) -> CGRect {
     var size = frame.size
     if dimension == .height {
-        size.height = max(size.height + amount, minimum.height, ModifierDrag.smallestSide)
+        size.height = max(size.height + amount, least.height)
     } else {
-        size.width = max(size.width + amount, minimum.width, ModifierDrag.smallestSide)
+        size.width = max(size.width + amount, least.width)
     }
-    size = CGSize(width: min(size.width, area.width), height: min(size.height, area.height))
-    let x = min(max(frame.midX - size.width / 2, area.minX), area.maxX - size.width)
-    let y = min(max(frame.midY - size.height / 2, area.minY), area.maxY - size.height)
-    return CGRect(origin: CGPoint(x: x, y: y), size: size)
+    return fitted(CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
+                         width: size.width, height: size.height), in: area)
+}
+
+/// No larger than `area`, and moved inside it.
+private func fitted(_ frame: CGRect, in area: CGRect) -> CGRect {
+    let size = CGSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
+    return CGRect(x: min(max(frame.minX, area.minX), area.maxX - size.width),
+                  y: min(max(frame.minY, area.minY), area.maxY - size.height), width: size.width, height: size.height)
 }

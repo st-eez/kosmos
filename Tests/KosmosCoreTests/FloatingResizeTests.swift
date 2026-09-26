@@ -34,6 +34,11 @@ import Testing
             == CGRect(x: 0, y: 25, width: 500, height: 300))
         #expect(s.perform(.resize(.height, by: 100), frame: { _ in corner })?.frames[2]
             == CGRect(x: 0, y: 25, width: 400, height: 400))
+        let opposite = CGRect(x: 600, y: 500, width: 400, height: 300)
+        #expect(s.perform(.resize(.width, by: 100), frame: { _ in opposite })?.frames[2]
+            == CGRect(x: 500, y: 500, width: 500, height: 300))
+        #expect(s.perform(.resize(.height, by: 100), frame: { _ in opposite })?.frames[2]
+            == CGRect(x: 600, y: 400, width: 400, height: 400))
         #expect(s.perform(.resize(.smart, by: 100), frame: { _ in CGRect(x: 20, y: 100, width: 950, height: 300) })?.frames[2]
             == CGRect(x: 0, y: 100, width: 1000, height: 300))
         #expect(s.perform(.resize(.smart, by: 100), frame: { _ in CGRect(x: 0, y: 100, width: 1000, height: 300) }) == nil)
@@ -53,7 +58,7 @@ import Testing
     @Test func aFullscreenWindowIsLeftAlone() {
         var s = Self.session()
         _ = s.perform(.fullscreen, frame: { _ in Self.own })
-        #expect(s.perform(.resize(.smart, by: 100), frame: { _ in Self.area }) == nil)
+        #expect(s.perform(.resize(.smart, by: -100), frame: { _ in Self.area }) == nil)
         #expect(s.perform(.fullscreen)?.frames[2] == Self.own)
     }
 }
