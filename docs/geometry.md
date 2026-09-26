@@ -26,6 +26,62 @@
   edge another display adjoins. So a window left more than 2 pt taller than a frame write
   asked is written again through a height 40 pt shorter, then the target's, and only a
   window still taller refused the height.
+- AppKit holds a window that grows onto another display to the old display's edge until
+  its app has taken the move, 10 to 30 ms after the position write. On 2026-09-26 a
+  Ghostty window moved from the built-in display up to the 1920 pt main panel above it
+  was asked 1900 pt and kept 1718, its right edge on the built-in display's right edge at
+  1728 (Steve's screenshot), and the ledger took that read back as the app's rounding.
+  `kosmos-probe display-clamp` reproduced it that day with a window of its own, moved
+  between the built-in display's tile, 1708 by 1070 pt at 10, 1117, and the panel's,
+  1900 by 1035 pt at 10, 35, 10 trials each. The reads at once, 50 ms and 300 ms after
+  the last call matched in every row, and the calls took 4 to 16 ms at the median:
+
+  | Calls, in order | Up, as tiled | Up, 1 pt shorter | Up, 30 pt shorter | Down |
+  |---|---|---|---|---|
+  | size, position, size | 1718x1035, 0 of 10 | 1718x1034, 0 of 10 | 1718x1005, 0 of 10 | 10 of 10 |
+  | position, size | 1718x1070, 0 of 10 | 1718x1070, 0 of 10 | 1718x1070, 0 of 10 | 10 of 10 |
+  | position, size, position | 1718x1070, 0 of 10 | 1718x1070, 0 of 10 | 1718x1070, 0 of 10 | 10 of 10 |
+  | size, position, size, read, size | 1718x1035, 0 of 10 | 1718x1034, 0 of 10 | 1718x1005, 0 of 10 | 10 of 10 |
+  | size, position, size, read, size 40 pt shorter, size | 1718x1035, 0 of 10 | | | 10 of 10 |
+  | size, position, size 40 pt shorter, size | 1718x1035, 0 of 10 | | | 10 of 10 |
+  | size 40 pt shorter, position, size | 1718x1035, 0 of 10 | | | 10 of 10 |
+
+  The 1 pt shorter target is AeroSpace's, which lays out each tile 1 pt short for
+  displays stacked with a narrower one below (`layoutWorkspace` in its
+  layoutRecursive.swift); the 30 pt shorter one puts the bottom out of the 25 pt zone
+  above. Down ran as tiled, and 1 pt shorter for the first four orders. `AXFrame` is not
+  settable (AXError -25205). The size written again after size, position, size, going up:
+
+  | Size written again | Took the target |
+  |---|---|
+  | at once | 0 of 10 |
+  | 5 ms later | 1 of 10, in two runs |
+  | 10 ms later | 3 of 10, then 7 of 10 |
+  | 20, 50 and 100 ms later | 10 of 10 |
+  | every 2 ms while it reads back smaller | 10 of 10, the write 26 ms at the median and 41 at most, with 3 more sizes at the median and 5 at most |
+  | with no pause while it reads back smaller | 10 of 10, the write 31 ms at the median and 37 at most, with 9 more sizes at the median and 43 at most |
+  | alone, to a window its app placed on the panel 1718 pt wide | 10 of 10 at once |
+
+  So no order lands in one pass. A frame write that moves the window to another display,
+  as the Controller judges from where WindowServer last had the window and the target, and
+  reads back more than 2 pt smaller than the target on an axis, writes the size again
+  every 2 ms while it reads back smaller, for up to 50 ms. The worker does so after the
+  app's other writes of the same drain, so none of them waits, and the app has longer to
+  take the move. It logs how many more sizes it wrote, the read back and the time, and a
+  notice with the same when the window still reads back smaller at 50 ms. The ceiling:
+  the app's worker blocks up to 50 ms for each such window, one after another, as when a
+  display change moves several of the app's windows. The app's writes that come
+  meanwhile wait, and so does a reveal that waits for them. The focus queue waits up to
+  30 ms for the worker before it keys a window of the app while the app is in the
+  background, and every focus request queued behind it waits too; with the app in front,
+  its raise lands after the wait. A window its app holds smaller, by rounding its size
+  down or by a maximum size, blocks the worker the whole 50 ms at each move to another
+  display, and remembering each window that still read back smaller would spare it the
+  next ones. A window still smaller at 50 ms keeps that size until its target changes,
+  as the ledger takes it for the app's rounding. A give-up the log measures for a window
+  its app does not hold smaller would call for the ledger's fallback: the worker marks the
+  give-up in its report, and the ledger takes it as a first refusal, which the 100 ms
+  retry writes again.
 - Each window's minimum size comes first from WindowServer. The inventory's reads of
   window rows take the size WindowServer holds each window to
   (`SLSWindowIteratorGetConstraints`), and for a row at level 0 with no parent that holds

@@ -36,11 +36,15 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("border-hop", "border-hop [one|per-display] [hops]", {
         borderHop(perDisplay: $0.first == "per-display", hops: $0.dropFirst().first.flatMap(Int.init) ?? 8)
     }),
+    ("display-clamp", "display-clamp [trials] [later]", {
+        displayClamp(trials: $0.first.flatMap(Int.init) ?? 10, later: $0.contains("later"))
+    }),
     ("border-watch", "border-watch <window> [seconds]", { arguments in
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
     }),
     ("panel", nil, { _ in showPanel() }),
+    ("clamp-window", nil, { _ in clampWindow() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),
     ("handover-creator", nil, { arguments in
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
