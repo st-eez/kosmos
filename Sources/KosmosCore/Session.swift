@@ -503,7 +503,7 @@ public struct Session: Sendable {
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
             fitMinimums(nil)
-        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusMonitor,
+        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .focusMonitor,
              .moveNodeToMonitor, .profile, .focusFollowsMouse:
             return nil
         }

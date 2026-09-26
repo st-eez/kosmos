@@ -13,19 +13,16 @@ private let signature: OSType = 0x4B53_4D53
 @MainActor
 final class Hotkeys: NSObject {
     struct Problem: Equatable, CustomStringConvertible {
-        var mode: String
         /// The binding's combination as the config writes it.
         var key: String
         var message: String
 
-        var description: String { "mode \(mode), \(key): \(message)" }
+        var description: String { "\(key): \(message)" }
     }
 
-    private(set) var mode = "main"
-    private(set) var modes: [String: [Binding]] = [:]
+    private(set) var bindings: [Binding] = []
     private var layout: [Character: UInt16]
-    /// A pressed key's command comes from here, so a key two modes share stays registered
-    /// across a switch.
+    /// A pressed key's command comes from here, so a key a reload keeps stays registered.
     private var table = HotkeyTable([], layout: [:])
     private var registered: [PhysicalKey: EventHotKeyRef] = [:]
     private let handler: @MainActor (Binding) -> Void
@@ -61,27 +58,17 @@ final class Hotkeys: NSObject {
             object: nil, suspensionBehavior: .deliverImmediately)
     }
 
-    /// Activates mode main. The problems are the bindings of any mode that macOS also uses as
-    /// keyboard shortcuts, and main's bindings that could not be registered.
-    func load(_ modes: [String: [Binding]]) -> [Problem] {
-        self.modes = modes
-        mode = "main"
+    /// The problems are the bindings that macOS also uses as keyboard shortcuts, and those that
+    /// could not be registered.
+    func load(_ bindings: [Binding]) -> [Problem] {
+        self.bindings = bindings
         return systemShortcutProblems() + apply()
     }
 
-    /// The problems are the mode's bindings that could not be registered.
-    func switchMode(to name: String) -> [Problem] {
-        guard name == "main" || modes[name] != nil else {
-            return [Problem(mode: name, key: "", message: "no mode has this name")]
-        }
-        mode = name
-        return apply()
-    }
-
     private func apply() -> [Problem] {
-        let next = HotkeyTable(modes[mode] ?? [], layout: layout)
+        let next = HotkeyTable(bindings, layout: layout)
         var problems = next.collisions.map { collision in
-            Problem(mode: mode, key: collision.dropped.key,
+            Problem(key: collision.dropped.key,
                     message: "is the same key as \(collision.kept.key) on the current keyboard layout and is left out")
         }
         // Against what is registered, so a key that failed to register before is tried again.
@@ -94,7 +81,7 @@ final class Hotkeys: NSObject {
             let message = status == OSStatus(eventHotKeyExistsErr)
                 ? "another app has registered this combination"
                 : "RegisterEventHotKey failed with status \(status)"
-            problems.append(Problem(mode: mode, key: binding.key, message: message))
+            problems.append(Problem(key: binding.key, message: message))
         }
         return problems
     }
@@ -114,7 +101,7 @@ final class Hotkeys: NSObject {
     }
 
     private func pressed(_ key: PhysicalKey) {
-        // A press queued before a mode switch took its key out of the table is dropped.
+        // A press queued before a reload took its key out of the table is dropped.
         guard let binding = table.bindings[key] else { return }
         handler(binding)
     }
@@ -134,17 +121,11 @@ final class Hotkeys: NSObject {
                 taken.insert([code, modifiers & (cmdKey | shiftKey | optionKey | controlKey | Int(kEventKeyModifierFnMask))])
             }
         }
-        var problems: [Problem] = []
-        for (mode, bindings) in modes.sorted(by: { $0.key < $1.key }) {
-            for binding in bindings {
-                let key = binding.combo.physicalKey(layout: layout)
-                if taken.contains([Int(key.code), Int(carbonModifiers(key.modifiers))]) {
-                    problems.append(Problem(mode: mode, key: binding.key, message: "macOS uses this combination as a keyboard "
-                        + "shortcut; turn the shortcut off in System Settings > Keyboard > Keyboard Shortcuts"))
-                }
-            }
-        }
-        return problems
+        return bindings.filter { binding in
+            let key = binding.combo.physicalKey(layout: layout)
+            return taken.contains([Int(key.code), Int(carbonModifiers(key.modifiers))])
+        }.map { Problem(key: $0.key, message: "macOS uses this combination as a keyboard shortcut; "
+            + "turn the shortcut off in System Settings > Keyboard > Keyboard Shortcuts") }
     }
 
     @objc private func layoutChanged() {

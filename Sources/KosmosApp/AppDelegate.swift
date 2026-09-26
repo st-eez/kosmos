@@ -148,7 +148,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func run(_ command: Command, received: ContinuousClock.Instant, from source: CommandSource) -> Response {
-        if case .mode(let name) = command { return switchMode(to: name) }
         guard let controller else { return Self.waiting }
         // Changing the model without moving windows would leave the two apart.
         guard controller.managing else { return failure("observing only while another window manager runs") }
@@ -188,17 +187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let hotkeys else { return failure("no hotkeys are registered") }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let listed = (try? encoder.encode(ListedBinding.list(hotkeys.modes))) ?? Data("[]".utf8)
+        let listed = (try? encoder.encode(ListedBinding.list(hotkeys.bindings))) ?? Data("[]".utf8)
         return Response(stdout: String(decoding: listed, as: UTF8.self))
-    }
-
-    private func switchMode(to name: String) -> Response {
-        guard let hotkeys else { return failure("no hotkeys are registered") }
-        // The command reports its own problems; the status item keeps the ones a load found,
-        // so its icon never changes during a command.
-        let problems = hotkeys.switchMode(to: name)
-        for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
-        return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
     }
 
     /// The profile holds until the displays change or the config reloads (docs/displays.md).
@@ -287,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = self?.run(binding.command, received: .now, from: .hotkey)
         }
         self.hotkeys = hotkeys
-        let problems = hotkeys.load(config.modes)
+        let problems = hotkeys.load(config.bindings)
         showHotkeyProblems(problems)
         messages += problems.map(\.description)
         log.notice("config loaded from \(loaded.source, privacy: .public): profile \(controller.profile ?? "base", privacy: .public)")

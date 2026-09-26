@@ -26,7 +26,7 @@ public struct Diagnostic: Error, Equatable, Sendable, CustomStringConvertible {
 
     public var severity: Severity
     public var position: SourcePosition
-    /// The key the problem is about, such as `mode.main.binding.alt-h` or `rule[2].workspace`.
+    /// The key the problem is about, such as `binding.alt-h` or `rule[2].workspace`.
     /// Empty when the problem is outside any key.
     public var path: String
     public var message: String

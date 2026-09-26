@@ -77,8 +77,8 @@ private struct ConfigDecoder {
         let start = SourcePosition(line: 1, column: 1)
         _ = table(TOMLValue(kind: .table(root), position: start), path, allowed: [
             "config-version", "include", "mouse-follows-focus", "focus-follows-mouse", "focus-follows-mouse-ignore-apps",
-            "mouse-modifier", "animations", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "mode", "rule",
-            "profile",
+            "mouse-modifier", "animations", "workspaces", "monitors", "workspace-monitor", "gaps", "borders", "binding",
+            "mode", "rule", "profile",
         ])
         var config = Config()
 
@@ -128,8 +128,13 @@ private struct ConfigDecoder {
         if let entry = root["borders"] {
             config.borders = borders(entry.value, path.key(entry.key))
         }
+        if let entry = root["binding"] {
+            config.bindings = bindings(entry.value, path.key(entry.key))
+        }
+        // A config written for binding modes would otherwise load with no bindings.
         if let entry = root["mode"] {
-            config.modes = modes(entry.value, path.key(entry.key))
+            fail("Kosmos has no binding modes; move the bindings of [mode.main.binding] to [binding]",
+                 at: entry.keyPosition, path.key(entry.key))
         }
         var rules: [(rule: WindowRule, position: SourcePosition, path: ValuePath)] = []
         if let entry = root["rule"] {
@@ -307,56 +312,30 @@ private struct ConfigDecoder {
         return color
     }
 
-    private mutating func modes(_ value: TOMLValue, _ path: ValuePath) -> [String: [Binding]] {
-        guard let table = table(value, path) else { return [:] }
-        var modes: [String: [Binding]] = [:]
-        // Modes that `mode` commands name, checked once every mode is known.
-        var targets: [Located] = []
-        for mode in table.entries {
-            let modePath = path.key(mode.key)
-            if mode.key.isEmpty || mode.key.unicodeScalars.contains(where: \.properties.isWhitespace) {
-                fail("mode names cannot be empty or contain whitespace", at: mode.keyPosition, modePath)
+    private mutating func bindings(_ value: TOMLValue, _ path: ValuePath) -> [Binding] {
+        guard let table = table(value, path) else { return [] }
+        var bindings: [Binding] = []
+        var seen: [KeyCombo: TOMLTable.Entry] = [:]
+        for binding in table.entries {
+            let bindingPath = path.key(binding.key)
+            let combo: KeyCombo
+            do {
+                combo = try KeyCombo(binding.key)
+            } catch {
+                fail(error.message, at: binding.keyPosition, bindingPath)
+                continue
             }
-            var bindings: [Binding] = []
-            let bindingsPath = modePath.key("binding")
-            if let fields = self.table(mode.value, modePath, allowed: ["binding"]),
-               let entry = fields["binding"], let table = self.table(entry.value, bindingsPath) {
-                var seen: [KeyCombo: TOMLTable.Entry] = [:]
-                for binding in table.entries {
-                    let bindingPath = bindingsPath.key(binding.key)
-                    let combo: KeyCombo
-                    do {
-                        combo = try KeyCombo(binding.key)
-                    } catch {
-                        fail(error.message, at: binding.keyPosition, bindingPath)
-                        continue
-                    }
-                    if let first = seen[combo] {
-                        fail("'\(binding.key)' is the same combination as '\(first.key)' on line \(first.keyPosition.line)",
-                             at: binding.keyPosition, bindingPath)
-                        continue
-                    }
-                    seen[combo] = binding
-                    guard let command = command(binding.value, bindingPath) else { continue }
-                    switch command {
-                    case .mode(let target):
-                        targets.append((target, binding.value.position, bindingPath))
-                    case .profile(let target):
-                        profileTargets.append((target, binding.value.position, bindingPath))
-                    default:
-                        break
-                    }
-                    bindings.append(Binding(key: binding.key, combo: combo, command: command))
-                }
+            if let first = seen[combo] {
+                fail("'\(binding.key)' is the same combination as '\(first.key)' on line \(first.keyPosition.line)",
+                     at: binding.keyPosition, bindingPath)
+                continue
             }
-            modes[mode.key] = bindings
+            seen[combo] = binding
+            guard let command = command(binding.value, bindingPath) else { continue }
+            if case .profile(let target) = command { profileTargets.append((target, binding.value.position, bindingPath)) }
+            bindings.append(Binding(key: binding.key, combo: combo, command: command))
         }
-        // Mode main always exists, with no bindings when the config gives it none.
-        for target in targets where target.value != "main" && modes[target.value] == nil {
-            fail("no mode named '\(target.value)'" + suggestion(for: target.value, from: modes.keys),
-                 at: target.position, target.path)
-        }
-        return modes
+        return bindings
     }
 
     /// The string splits at whitespace with no quoting: no command takes an argument that

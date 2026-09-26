@@ -18,7 +18,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(config.workspaces == ["1", "2", "3"])
         #expect(!config.mouseFollowsFocus)
         #expect(config.gaps == GapSettings())
-        #expect(config.modes.isEmpty && config.rules.isEmpty && config.profiles.isEmpty)
+        #expect(config.bindings.isEmpty && config.rules.isEmpty && config.profiles.isEmpty)
     }
 
     @Test func requiredKeys() {
@@ -223,28 +223,25 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
     @Test func bindings() throws {
         let body = """
-        [mode.main.binding]
+        [binding]
         alt-h = 'focus left'
         alt-shift-1 = 'move-node-to-workspace --focus-follows-window 1'
         alt-equal = "  resize\tsmart   +100 "
-        alt-r = 'mode resize'
-        [mode.resize.binding]
-        esc = 'mode main'
+        esc = 'reload-config'
         """
-        let config = try #require(load(body).config)
-        let main = try #require(config.modes["main"])
-        #expect(main.map(\.key) == ["alt-h", "alt-shift-1", "alt-equal", "alt-r"])
-        #expect(main[0].command == .focus(.left))
-        #expect(main[1].command == .moveNodeToWorkspace(.named("1"), focusFollowsWindow: true))
+        let bindings = try #require(load(body).config).bindings
+        #expect(bindings.map(\.key) == ["alt-h", "alt-shift-1", "alt-equal", "esc"])
+        #expect(bindings[0].command == .focus(.left))
+        #expect(bindings[1].command == .moveNodeToWorkspace(.named("1"), focusFollowsWindow: true))
         // A string splits at any run of whitespace.
-        #expect(main[2].command == .resize(.smart, by: 100))
-        #expect(try main[1].combo == KeyCombo("shift-alt-1"))
-        #expect(config.modes["resize"]?.first?.combo.modifiers == [])
+        #expect(bindings[2].command == .resize(.smart, by: 100))
+        #expect(try bindings[1].combo == KeyCombo("shift-alt-1"))
+        #expect(bindings[3].combo.modifiers == [])
     }
 
     @Test func badBindings() {
         let body = """
-        [mode.main.binding]
+        [binding]
         alt-hh = 'fullscreen'
         opt-h = 'fullscreen'
         alt-shift-j = 'fullscreen'
@@ -253,49 +250,42 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         alt-l = []
         alt-m = 3
         alt-n = '   '
-        [mode.'two words'.binding]
-        [mode.x]
-        bindings = {}
         """
         #expect(load(body).diagnostics == [
-            "4:1: error: mode.main.binding.alt-hh: 'hh' is not a key name; did you mean 'h'?",
-            "5:1: error: mode.main.binding.opt-h: 'opt' is not a modifier; use cmd, ctrl, alt or shift; did you mean 'alt'?",
-            "7:1: error: mode.main.binding.shift-alt-j: 'shift-alt-j' is the same combination as 'alt-shift-j' on line 6",
-            "8:9: error: mode.main.binding.alt-k: the string is empty",
-            "9:9: error: mode.main.binding.alt-l: expected a command as a string, found an array",
-            "10:9: error: mode.main.binding.alt-m: expected a command as a string, found an integer",
-            "11:9: error: mode.main.binding.alt-n: no command",
-            "12:7: error: mode.\"two words\": mode names cannot be empty or contain whitespace",
-            "14:1: error: mode.x.bindings: unknown key; did you mean 'binding'?",
+            "4:1: error: binding.alt-hh: 'hh' is not a key name; did you mean 'h'?",
+            "5:1: error: binding.opt-h: 'opt' is not a modifier; use cmd, ctrl, alt or shift; did you mean 'alt'?",
+            "7:1: error: binding.shift-alt-j: 'shift-alt-j' is the same combination as 'alt-shift-j' on line 6",
+            "8:9: error: binding.alt-k: the string is empty",
+            "9:9: error: binding.alt-l: expected a command as a string, found an array",
+            "10:9: error: binding.alt-m: expected a command as a string, found an integer",
+            "11:9: error: binding.alt-n: no command",
         ])
     }
 
     @Test func invalidCommandsFailTheLoad() {
         let body = """
-        [mode.main.binding]
+        [binding]
         alt-h = 'focus left'
         alt-j = 'fcous down'
         alt-k = 'resize smart 100'
+        alt-r = 'mode resize'
         """
         let result = load(body)
         #expect(result.config == nil)
         #expect(result.diagnostics == [
-            "5:9: error: mode.main.binding.alt-j: unknown command or arguments: fcous down",
-            "6:9: error: mode.main.binding.alt-k: resize: amount must be +N or -N points, up to 100000, got 100",
+            "5:9: error: binding.alt-j: unknown command or arguments: fcous down",
+            "6:9: error: binding.alt-k: resize: amount must be +N or -N points, up to 100000, got 100",
+            "7:9: error: binding.alt-r: unknown command or arguments: mode resize",
         ])
     }
 
-    @Test func modeCommandsNameDefinedModes() {
-        let body = """
-        [mode.main.binding]
-        alt-r = 'mode resize'
-        alt-s = 'mode resise'
-        [mode.resize.binding]
-        esc = 'mode main'
-        """
-        #expect(load(body).diagnostics == ["5:9: error: mode.main.binding.alt-s: no mode named 'resise'; did you mean 'resize'?"])
-        // Mode main exists even when the config gives it no bindings.
-        #expect(load("[mode.resize.binding]\nesc = 'mode main'").diagnostics.isEmpty)
+    /// A config written for binding modes fails, rather than loading with no bindings.
+    @Test func aModeTableNamesTheBindingTable() {
+        let result = load("[mode.main.binding]\nalt-h = 'focus left'")
+        #expect(result.config == nil)
+        #expect(result.diagnostics == [
+            "3:2: error: mode: Kosmos has no binding modes; move the bindings of [mode.main.binding] to [binding]",
+        ])
     }
 
     @Test func rulesNeedAMatcherAndAnAction() {
@@ -370,7 +360,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
 @Suite struct ProfileTests {
     @Test func bindingsNameKnownProfiles() {
-        let header = "config-version = 1\nworkspaces = ['1']\n[mode.main.binding]\nalt-b = "
+        let header = "config-version = 1\nworkspaces = ['1']\n[binding]\nalt-b = "
         #expect(Config.load(header + "'profile p'\n[[profile]]\nname = 'p'\n").diagnostics.isEmpty)
         let bad = Config.load(header + "'profile q'\n[[profile]]\nname = 'p'\n")
         #expect(bad.config == nil)

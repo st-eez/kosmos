@@ -1,5 +1,5 @@
-/// One mode's bindings by the physical key each names on a keyboard layout, one Carbon
-/// hotkey per entry (docs/hotkeys.md).
+/// The bindings by the physical key each names on a keyboard layout, one Carbon hotkey per
+/// entry (docs/hotkeys.md).
 public struct HotkeyTable: Equatable, Sendable {
     public struct Collision: Equatable, Sendable {
         public var kept: Binding
@@ -7,7 +7,7 @@ public struct HotkeyTable: Equatable, Sendable {
     }
 
     public private(set) var bindings: [PhysicalKey: Binding] = [:]
-    /// Bindings an earlier binding of the mode shadows on this layout, as `alt-sectionSign`
+    /// Bindings an earlier binding shadows on this layout, as `alt-sectionSign`
     /// shadows `alt-6` on a French layout.
     public private(set) var collisions: [Collision] = []
 

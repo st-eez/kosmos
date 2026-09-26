@@ -207,6 +207,8 @@ window title matchers, marks, persistence across restarts of any state but the l
 ([tree.md](tree.md)), and one macOS Space per workspace. Also left out:
 
 - a `summon` command, to bring a window to the current workspace on purpose;
+- binding modes and the `mode` command, which AeroSpace has and no config of Steve's used;
+  a second set of bindings, as for resizing, would call for them ([config.md](config.md));
 - hooks that launch programs at a reload or a profile change;
 - a `subscribe` stream of snapshots on the socket, for scripts and bars, which the first
   design had before SketchyBar's Mach event took its place; a bar that cannot take that

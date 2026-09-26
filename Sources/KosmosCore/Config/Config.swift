@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// A checked config file (docs/config.md): `Config.load` builds one, and every monitor,
-/// workspace and mode name in it is defined. docs/sample-config.toml shows the schema.
+/// and workspace name in it is defined. docs/sample-config.toml shows the schema.
 public struct Config: Equatable, Sendable {
     /// Move the mouse pointer to the focus the keyboard moved (FocusChange.movesPointer).
     public var mouseFollowsFocus = false
@@ -21,8 +21,8 @@ public struct Config: Equatable, Sendable {
     /// Borders around the windows on screen, or nil while `borders = false` turns them off
     /// (docs/borders.md).
     public var borders: BorderSettings? = BorderSettings()
-    /// Each mode's bindings in file order. Kosmos starts in mode `main`.
-    public var modes: [String: [Binding]] = [:]
+    /// The bindings in file order.
+    public var bindings: [Binding] = []
     /// Window rules in file order. The first rule that matches a window applies.
     public var rules: [WindowRule] = []
     /// Display profiles in file order. The first whose `when` holds applies (`setup(for:)`).

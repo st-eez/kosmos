@@ -23,9 +23,8 @@
 - **Launchers and cheat sheets.** `kosmos list-bindings` asks the running Kosmos for the
   bindings it has loaded, so a launcher's keybinding list reads them instead of keeping its
   own copy, as the Raycast keybinds extension in Steve's dotfiles does. It prints one JSON
-  array of objects with four strings: `mode`; `key`, as the config writes it, such as
-  `alt-shift-left`; `description`; and `category`. Mode main comes first, then the other
-  modes by name, each in file order.
+  array of objects with three strings, in file order: `key`, as the config writes it,
+  such as `alt-shift-left`; `description`; and `category`.
   - KosmosCore writes the description and the category from the parsed command
     (`Command.summary` and `Command.category`), so the config holds no descriptions:
     `focus --boundaries all-monitors-outer-frame left` is "Focus left, across monitors" in

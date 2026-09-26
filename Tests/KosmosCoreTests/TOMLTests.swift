@@ -158,7 +158,7 @@ private func failure(_ text: String) -> String? {
     @Test func duplicateKeysAndTablesAreErrors() {
         #expect(failure("a = 1\nb = 2\na = 3") == "3:1: a: duplicate key; it is first defined at line 1")
         #expect(failure("[gaps]\ninner = 1\n[gaps]") == "3:2: gaps: 'gaps' is already defined at line 1")
-        #expect(failure("[mode.main.binding]\nalt-h = 'a'\nalt-h = 'b'") == "3:1: mode.main.binding.alt-h: duplicate key; it is first defined at line 2")
+        #expect(failure("[binding]\nalt-h = 'a'\nalt-h = 'b'") == "3:1: binding.alt-h: duplicate key; it is first defined at line 2")
         #expect(failure("[[rule]]\n[rule]") == "2:2: rule: 'rule' is already defined at line 1")
         #expect(failure("a = [1]\n[[a]]") == "2:3: a: 'a' is already defined at line 1")
         #expect(failure("t = { x = 1 }\n[t.y]") == "2:2: t: 't' is already defined at line 1")
@@ -172,7 +172,7 @@ private func failure(_ text: String) -> String? {
     }
 
     @Test func syntaxErrorsCarryPositionAndPath() {
-        #expect(failure("[mode.main.binding]\nalt-h 'focus'") == "2:7: mode.main.binding.alt-h: expected '=' after the key")
+        #expect(failure("[binding]\nalt-h 'focus'") == "2:7: binding.alt-h: expected '=' after the key")
         #expect(failure("a = 1 2") == "1:7: a: expected the end of the line, found '2'")
         #expect(failure("[gaps\ninner = 1") == "1:6: gaps: expected ']' to close the table header")
         #expect(failure("[[rule]\n") == "1:8: rule: expected ']]' to close the table header")

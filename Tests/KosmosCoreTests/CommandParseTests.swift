@@ -19,7 +19,6 @@ import Testing
         (["resize", "width", "-50"], .resize(.width, by: -50)),
         (["flatten-workspace-tree"], .flattenWorkspaceTree),
         (["reload-config"], .reloadConfig),
-        (["mode", "resize"], .mode("resize")),
         (["focus-follows-mouse", "on"], .focusFollowsMouse(.on)),
         (["focus-follows-mouse", "off"], .focusFollowsMouse(.off)),
         (["focus-follows-mouse", "toggle"], .focusFollowsMouse(.toggle)),
@@ -32,7 +31,7 @@ import Testing
 @Test func rejectsWhatItDoesNotKnow() {
     for arguments in [[], ["focus"], ["focus", "sideways"], ["resize", "smart", "100"], ["resize", "smart", "+0"],
                       ["fullscreen", "--no-outer-gaps"], ["layout", "accordion"], ["move-node-to-workspace"],
-                      ["workspace", "1", "2"], ["exec-and-forget", "true"], ["mode"], ["mode", "a", "b"],
+                      ["workspace", "1", "2"], ["exec-and-forget", "true"], ["mode", "resize"],
                       ["move-node-to-workspace", "--window-id", "x", "2"], ["move-node-to-workspace", "--window-id"],
                       ["move-node-to-workspace", "--wrap-around", "2"],
                       ["focus-follows-mouse"], ["focus-follows-mouse", "true"], ["focus-follows-mouse", "on", "off"]] {
