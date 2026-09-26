@@ -213,7 +213,8 @@ final class Controller {
         let (show, hide) = (windows.show, windows.hide)
         if resyncs { needsResync = false }
         let entering = session.entering(show: show, hide: hide, frames: plan.frames.keys,
-                                        concealed: hiding.isConcealedOrConcealing)
+                                        concealed: hiding.isConcealedOrConcealing,
+                                        display: { inventory.windows[$0].flatMap { display(under: $0.frame) } })
         // Before the writes, which wait for the batches that conceal their windows.
         var added: [Int] = []
         func add(show: [WindowID], hide: [WindowID]) {

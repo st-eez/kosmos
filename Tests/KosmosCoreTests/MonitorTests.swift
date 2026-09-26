@@ -163,6 +163,24 @@ import Testing
         #expect(plan.focus == .window(60) && s.focusedWorkspace == "5")
     }
 
+    @Test func aWindowMovedToAHiddenWorkspaceOnAnotherDisplayDoesNotEnterIt() {
+        var s = Desk.session()
+        _ = s.add(10); _ = s.add(11)
+        _ = s.add(20, to: "2"); _ = s.add(60, to: "6")
+        let concealed: (WindowID) -> Bool = { $0 == 20 || $0 == 60 }
+        // 10 and 11 show on the main panel.
+        let display: (WindowID) -> DisplayID? = { [10: Desk.main.id, 11: Desk.main.id][$0] }
+        var probe = s
+        let same = probe.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: true, window: 11))!
+        #expect(probe.entering(show: same.show, hide: same.hide, frames: same.frames.keys, concealed: concealed,
+                               display: display) == [11])
+        probe = s
+        let across = probe.perform(.moveNodeToWorkspace(.named("6"), focusFollowsWindow: true, window: 11))!
+        #expect(across.show == [60])
+        #expect(probe.entering(show: across.show, hide: across.hide, frames: across.frames.keys, concealed: concealed,
+                               display: display).isEmpty)
+    }
+
     @Test func moveNodeToMonitorByNumberReachesAnyDisplay() {
         var s = Desk.session()
         _ = s.add(10)

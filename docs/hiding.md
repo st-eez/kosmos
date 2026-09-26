@@ -59,14 +59,16 @@
   one, each of a window's two concealed moves posted two change events 10 to 13 ms after
   it, and the row showed the new frame without the holding Space's offset (September 25,
   2026).
-- A window on screen that the revealed workspace takes in, as the one
-  `move-node-to-workspace --focus-follows-window` moves or a followed rule window, is
-  concealed at the command by a batch of its own, whose switch line shows nothing, and
+- A window on screen that the revealed workspace takes in on the display it shows on, as
+  the one `move-node-to-workspace --focus-follows-window` moves or a followed rule window,
+  is concealed at the command by a batch of its own, whose switch line shows nothing, and
   revealed with the workspace once its write lands. Written at once, it had landed at its
   tile over the old workspace 1 or 2 frames before the rest. Into an empty workspace
   nothing is revealed around it, so the switch goes at once and the window slides there.
-  Moved to a workspace on another display, it leaves its own display at the command, and
-  the windows left there slide into its place.
+  One whose workspace is on another display is left out and lands there as before, 1 or
+  2 frames before the rest: concealed without being stripped, it would keep the ordinary
+  Space of the display it leaves, and whether its reveal then shows it on the other
+  display is open (below).
 - A window a batch conceals is written only once the batch is done, so its write lands
   concealed. A batch the bridge queue sent late (p98 15.7 ms, 162 ms at most, in the same
   switches) had let the reflow of the workspace it hid show before the conceal. A write
@@ -186,6 +188,11 @@
   returns nil for a failed query, where `SkyLight.rows` returns no rows. Read as every
   window gone, a failed query would leave a live window whose conceal failed on screen,
   and one whose reveal failed concealed, with no recovery.
+- Open until the desk: `move-node-to-workspace --focus-follows-window` to a hidden
+  workspace on another display, as alt-shift-N there. Whether a window concealed with the
+  ordinary Space of one display, then written onto another, shows there once revealed
+  ([displays.md](displays.md) lists the question) decides whether the batch that conceals
+  a window a switch takes in can cover such a move too.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

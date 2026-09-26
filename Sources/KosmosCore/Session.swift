@@ -539,14 +539,18 @@ public struct Session: Sendable {
 
     /// The windows on screen that a batch's reveal takes in, as the one
     /// move-node-to-workspace --focus-follows-window moves or a followed rule window. Each would
-    /// land at its tile before the reveal, so a batch of its own conceals it first
-    /// (docs/hiding.md). `concealed`: Hiding has or is sending the window's conceal.
+    /// land at its tile before the reveal, so a batch of its own conceals it first. One that
+    /// `display` does not show on its workspace's display is left out: concealed, it keeps the
+    /// ordinary Space of the display it leaves, and whether its reveal shows it on the other is
+    /// open (docs/hiding.md). `concealed`: Hiding has or is sending the window's conceal.
     public func entering(show: [WindowID], hide: [WindowID], frames: some Collection<WindowID>,
-                         concealed: (WindowID) -> Bool) -> [WindowID] {
+                         concealed: (WindowID) -> Bool, display: (WindowID) -> DisplayID?) -> [WindowID] {
         let revealed = Set(show.filter(concealed).compactMap { home[$0] })
         guard !revealed.isEmpty else { return [] }
         return frames.filter { id in
-            !hide.contains(id) && !concealed(id) && isVisible(id) && home[id].map(revealed.contains) == true
+            guard let name = home[id], revealed.contains(name), !hide.contains(id), !concealed(id), isVisible(id)
+            else { return false }
+            return display(id) == monitor(of: name).id
         }
     }
 
