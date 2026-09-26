@@ -1,6 +1,6 @@
 # TLA+ spec of the workspace switch
 
-The code implements changes 1 to 18 below, and the parts of changes 19 to 24 that
+The code implements changes 1 to 18 below, and the parts of changes 19 to 25 that
 [docs/focus.md](../docs/focus.md) describes; its Deferred list names the rules of those
 changes the code leaves out, change 21's drop of change 12's miss rule among them.
 
@@ -142,7 +142,9 @@ after the change (`NoteDelay`), and the activation read, which runs on the app's
 and reads the app's focused window whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
 unless named `busyb`). AXRaise alone keys a window inside the front app (`RaiseKeys`), and
 a raise in a background app is reported as a focus change (`RaiseReports`), both as
-`kosmos-probe keying` measured. Requests do not miss there, so the split configs run
+`kosmos-probe keying` measured. A key record can activate a background app with its last
+key window, and the app keys the named window a step later (`KeyOldFirst`), as Preview and
+Ghostty did live (change 25). Requests do not miss there, so the split configs run
 without misses and without the miss rule (change 21). In the `background` configs
 background apps also change their own focused window (`AllowBackground`). In the `notice`
 configs the main actor also notices an activation some time after it happens
@@ -170,7 +172,7 @@ violation and the depth it had reached.
 | `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 4,376,652 | 55 |
 
 Each of these runs one rule the implementation had, or one the spec had, and fails as
-expected (changes 17 to 23):
+expected (changes 17 to 25):
 
 | Config | Rule | Result | States | Depth |
 | --- | --- | --- | --- | --- |
@@ -188,6 +190,7 @@ expected (changes 17 to 23):
 | `split-open-readfollows` | only activation reads follow into another workspace (`NoteFollows` off) | fails last activation wins, expected | 224,729 | 13 |
 | `split-open-postraisenone` | the raise after a key record records no echo (`PostRaiseEcho = "none"`) | fails last command wins, expected | 22,690,877 | 38 |
 | `split-open-postraisekept` | that raise's record stays until a report matches it (`PostRaiseEcho = "kept"`) | fails last activation wins, expected | 30,429,128 | 40 |
+| `split-user-readsbywindow` | with `KeyOldFirst`, an activation read matches a record of the window it reads, and no notification waits for it (`ReadsByWindow`, `HoldNotes` off), as the implementation had | fails convergence, expected | 9,814,646 | 29 |
 
 `RecoveryPath` holds by construction here, because the holding Space is recorded before
 the first hide. The recovery protocol needs its own spec.
@@ -505,3 +508,44 @@ change that removed it:
       before the click and recorded after it, and the click's callback ran after the record,
       so the click read as the raise's echo. The exemption of change 22 (`lastRaced`) now
       starts at the worker's read.
+25. **Activations that key the app's last key window first.** Live, a key record activated
+    Preview with its main window before Preview keyed the window the pointer entered, and
+    Ghostty with its last key window, concealed on another workspace, before the requested
+    one. The activation read ran between the two and found the first. Kosmos matched a
+    read by the window it named, so it adopted Preview's main window, and held Ghostty's
+    and followed it there when the grace ended (`split-user-readsbywindow`, which also
+    turns off `HoldNotes`, as Kosmos has none). The model now lets a key record activate a
+    background app with the window key when the app was last front, while that is still
+    the app's focused window, and key the named one a step later (`KeyOldFirst`). Change
+    19's rule takes the read for the key record's echo. That found five more:
+    - The read consumed the record, and the named window's notification then read as the
+      user's. After `workspace 2` and then `workspace 1`, the key record for w3 landed
+      between the two commands, and Kosmos followed w3 back to workspace 2
+      (`split-commands`, depth 32). A read of another window now leaves the record for the
+      named window's notification, unless a notification held for the read says the user
+      changed the window.
+    - A busy app's raise landed after Kosmos had keyed its empty workspace's window, so
+      the app's focused window was the raised one, and the key record of `workspace 2`
+      activated the app with its last key window, concealed on workspace 1. The app
+      notified that first key, and once the read found its window the notification held
+      for the read was taken for the user's change: Kosmos followed it to workspace 1
+      (`split-commands`, depth 54). An app fronted with no window brought forward keys its
+      last key window, and after a raise in the background the public path keyed another
+      window than the raised one in 9 of 9 trials ([docs/focus.md](../docs/focus.md)), but
+      no probe has shown which window a key record keys first when the two differ. The
+      model keys the last key window first only while it is the app's focused window, and
+      docs/focus.md names the ceiling.
+    - A key record's read that ran after Kosmos key-recorded the same app again found the
+      later record's first key, and took the notification held for the later record for
+      the user's change (`split-commands`, depth 54, over three commands). An app handles
+      key records in order, so the model's focus queue posts a key record to an app only
+      once the app has keyed the window the one before named.
+    - The activation read of a Command-Tab ran while an older key record to that app had
+      not yet keyed its named window, and found the user's window, which the named window
+      then replaced (`split-hover`, depth 32). That is change 19's race of Kosmos keying an
+      app again before its read runs, and its ghost (`lastAmb`) covers it now.
+    - The raise after the key record found the app's own focused window and skipped, and
+      the named window stayed behind its app's others (`FocusOnTop` failed `split-commands`
+      at depth 18). That is the ceiling [docs/focus.md](../docs/focus.md) names for that
+      raise, and the spec exempts it with a ghost (`lowTop`) until a window of that app
+      comes to its front.

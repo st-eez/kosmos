@@ -83,34 +83,37 @@
 (* background app the worker's job only orders the request behind the      *)
 (* app's earlier jobs; the queue records and posts the key record, which   *)
 (* activates the app with the window but leaves it where it sits in the    *)
-(* app's stacking order, and then the worker raises it (PostRaise). Each   *)
-(* side records the echo only right before its own call that changes the   *)
-(* key window. The raise after the key record changes it only when the     *)
-(* user keyed another window of the app first, so its record goes once the *)
-(* worker has seen the raise done (PostRaiseEcho). Reports come as the     *)
-(* implementation takes them. An app's focus notification reaches its      *)
-(* observer callback some time after the change (NoteDelay). The           *)
-(* activation read runs on the app's worker, queued when the main thread   *)
-(* notices the activation, also some time after it happens (NoticeDelay),  *)
-(* and reads whatever window the app has by then. Each report is stamped,  *)
-(* and checked against the front app and the hidden windows, when its      *)
-(* callback or notice runs. Both run before the user's next input, and an  *)
-(* app's callbacks run before its activation read. Kosmos follows either   *)
-(* into another workspace when its window was hidden at its stamp          *)
-(* (NoteFollows): a notification reports a window opened inside the front  *)
-(* app. A notification from an app Kosmos activated waits for that         *)
-(* activation's read (HoldNotes), and a notice records that its app had    *)
-(* already lost the front to Kosmos's activation (NoticeCheck). A          *)
-(* background app can change its own focused window (AllowBackground, and  *)
-(* a raise landing there, which it reports: RaiseReports). While no window *)
-(* is key after a departure, the app whose window closed or minimized      *)
-(* stays front, and the departure is evidence that the next key change is  *)
-(* macOS's own for a second, which passes once Kosmos has every report     *)
-(* (Age). ActFrontCheck, LateNoteCheck, RaiseTimeout, BackgroundRaise and  *)
-(* SplitRules = "d1be665" each run a rule the implementation had, and      *)
-(* turning off HoldNotes, NoticeCheck, NoteFollows or PostRaise, on        *)
-(* ReassertTakes, or PostRaiseEcho other than "done", a rule the spec had, *)
-(* for configs that fail as expected.                                      *)
+(* app's stacking order, and then the worker raises it (PostRaise). With   *)
+(* KeyOldFirst the app can first key its last key window, while that is    *)
+(* still its focused window, and the named one a step later, as Preview    *)
+(* and Ghostty did live. Each side records the echo only right before its  *)
+(* own call that changes the key window. The raise after the key record    *)
+(* changes it only when the user keyed another window of the app first, so *)
+(* its record goes once the worker has seen the raise done                 *)
+(* (PostRaiseEcho). Reports come as the implementation takes them. An      *)
+(* app's focus notification reaches its observer callback some time after  *)
+(* the change (NoteDelay). The activation read runs on the app's worker,   *)
+(* queued when the main thread notices the activation, also some time      *)
+(* after it happens (NoticeDelay), and reads whatever window the app has   *)
+(* by then. Each report is stamped, and checked against the front app and  *)
+(* the hidden windows, when its callback or notice runs. Both run before   *)
+(* the user's next input, and an app's callbacks run before its activation *)
+(* read. Kosmos follows either into another workspace when its window was  *)
+(* hidden at its stamp (NoteFollows): a notification reports a window      *)
+(* opened inside the front app. A notification from an app Kosmos          *)
+(* activated waits for that activation's read (HoldNotes), and a notice    *)
+(* records that its app had already lost the front to Kosmos's activation  *)
+(* (NoticeCheck). A background app can change its own focused window       *)
+(* (AllowBackground, and a raise landing there, which it reports:          *)
+(* RaiseReports). While no window is key after a departure, the app whose  *)
+(* window closed or minimized stays front, and the departure is evidence   *)
+(* that the next key change is macOS's own for a second, which passes once *)
+(* Kosmos has every report (Age). ActFrontCheck, LateNoteCheck,            *)
+(* RaiseTimeout, BackgroundRaise, ReadsByWindow and SplitRules = "d1be665" *)
+(* each run a rule the implementation had, and turning off HoldNotes,      *)
+(* NoticeCheck, NoteFollows or PostRaise, on ReassertTakes, or             *)
+(* PostRaiseEcho other than "done", a rule the spec had, for configs that  *)
+(* fail as expected.                                                       *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
@@ -170,9 +173,14 @@ CONSTANTS
                     \* taken for the user's
     PostRaise,      \* with SplitQueue, the worker raises a background app's window after the
                     \* queue's key record, once the app is front
-    PostRaiseEcho   \* with SplitQueue, the echo that raise leaves: "none"; "kept", recorded just
+    PostRaiseEcho,  \* with SplitQueue, the echo that raise leaves: "none"; "kept", recorded just
                     \* before it until a report matches it; or "done", recorded just before it
                     \* until the worker has seen the raise done
+    KeyOldFirst,    \* with SplitQueue, a key record can activate a background app with the window
+                    \* key when the app was last front, while that is still its focused window, and
+                    \* key the named window a step later (live)
+    ReadsByWindow   \* with SplitQueue, an activation read matches a record of the window it
+                    \* reads, as a notification does (the implementation before change 25)
 
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ AllowLeave \in BOOLEAN /\ FollowRekeys \in BOOLEAN
 ASSUME AllowReturn \in BOOLEAN /\ FollowStale \in BOOLEAN /\ Grace \in BOOLEAN
@@ -183,7 +191,7 @@ ASSUME SplitRules \in {"record-at-call", "d1be665"} /\ AllowBackground \in BOOLE
 ASSUME BackgroundRaise \in BOOLEAN /\ LateNoteCheck \in BOOLEAN /\ RaiseTimeout \in BOOLEAN
 ASSUME NoteDelay \in BOOLEAN /\ NoticeDelay \in BOOLEAN /\ HoldNotes \in BOOLEAN /\ NoticeCheck \in BOOLEAN
 ASSUME NoteFollows \in BOOLEAN /\ ReassertTakes \in BOOLEAN /\ PostRaise \in BOOLEAN
-ASSUME PostRaiseEcho \in {"none", "kept", "done"}
+ASSUME PostRaiseEcho \in {"none", "kept", "done"} /\ KeyOldFirst \in BOOLEAN /\ ReadsByWindow \in BOOLEAN
 
 \* No workspace window is key: Kosmos keyed its own window for an empty workspace, or macOS
 \* left no key window after a departure. Both report no window.
@@ -283,8 +291,16 @@ Init ==
                aged     |-> {},       \* Kosmos: departures older than its second of evidence
                lastEarly |-> FALSE,   \* ghost: the latest input came within that second of a
                                       \* departure of the key window Kosmos last heard of
-               lastRaced |-> FALSE ]  \* ghost: the user keyed a window of an app whose raise
+               lastRaced |-> FALSE,   \* ghost: the user keyed a window of an app whose raise
                                       \* Kosmos decided and the app has not performed
+               named    |-> [a \in Apps |-> NoWin],   \* macOS: the window a key record named, which
+                                                     \* its app keys after its own (KeyOldFirst)
+               lastKey  |-> [a \in Apps |-> IF AppOf[f] = a THEN f ELSE CHOOSE w \in Win : AppOf[w] = a],
+                                      \* macOS: each app's window key when it was last front,
+                                      \* which a key record activates it with (KeyOldFirst)
+               lowTop   |-> {} ]      \* ghost: apps whose raise after a key record found the app
+                                      \* not yet keying the named window, until one of their
+                                      \* windows comes to their front
     /\ history = <<>>
 
 Visible == {w \in Win : ~s.hidden[w] /\ w \notin s.gone}
@@ -345,6 +361,7 @@ KeyChangeBy(t, w, at, user) ==
              lose == {b \in Apps : activated /\ b = FrontApp(t)}
              u == [t EXCEPT !.osFocus = w, !.bare = "kosmos", !.rekey = <<>>, !.ne = t.ne + 1,
                             !.afocus = IF ~SplitQueue \/ w = NoWin THEN @ ELSE [@ EXCEPT ![a] = w],
+                            !.lastKey = IF KeyOldFirst /\ w # NoWin THEN [@ EXCEPT ![a] = w] ELSE @,
                             !.nq = [b \in Apps |-> IF b \in lose
                                                    THEN [n \in 1..Len(t.nq[b]) |-> [t.nq[b][n] EXCEPT !.lost = TRUE]]
                                                    ELSE t.nq[b]]]
@@ -359,7 +376,7 @@ KeyChangeBy(t, w, at, user) ==
 KeyChange(t, w, at) == KeyChangeBy(t, w, at, FALSE)
 
 \* macOS keys a window it chose, or the user keyed: that window is the front of its app.
-Top(t, w) == IF SplitQueue /\ w # NoWin THEN [t EXCEPT !.atop[AppOf[w]] = w] ELSE t
+Top(t, w) == IF SplitQueue /\ w # NoWin THEN [t EXCEPT !.atop[AppOf[w]] = w, !.lowTop = @ \ {AppOf[w]}] ELSE t
 
 \* A background app's own focused window changes, and the app reports it as a focus
 \* change although the key window stays where it is.
@@ -443,10 +460,11 @@ Resume(t, x) ==
 \* change's index. An activation read reports whatever window the app has by then, so with
 \* SplitQueue it is the echo of the activation Kosmos recorded for that app, whichever
 \* window it names: Kosmos records an activation only just before making it. It is never
-\* the echo of a change inside the front app.
+\* the echo of a change inside the front app. With ReadsByWindow it matches as a
+\* notification does.
 Matches(ev, x) ==
     IF ~SplitQueue THEN x.w = ev.w /\ ev.i >= x.i
-    ELSE IF ev.act THEN x.kind = "act" /\ AppOfX(x.w) = AppOfX(ev.w) /\ ev.ts > x.ts
+    ELSE IF ev.act /\ ~ReadsByWindow THEN x.kind = "act" /\ AppOfX(x.w) = AppOfX(ev.w) /\ ev.ts > x.ts
     ELSE x.w = ev.w /\ ev.ts > x.ts
 
 \* A stale report: focus the current intent again. If a switch is in flight,
@@ -554,11 +572,18 @@ ObserveSplit(t, ev0) ==
         \* window only joins it, and leaves the record for it.
         joins == ks # {} /\ ~ev.act /\ t.expect[k].kind = "act"
         a == AppOfX(ev.w)
+        \* A read of another window than the key record named, with no notification held for its
+        \* app, ran before the app keyed the named window after its last key window
+        \* (KeyOldFirst): the record then waits for that window's notification. A held
+        \* notification is the user's change, which the read finds.
+        waits == ks # {} /\ ev.act /\ t.expect[k].kind = "act" /\ ev.w # t.expect[k].w /\ t.noteHeld[a] = NoEv
         tk == IF bg THEN t ELSE [t EXCEPT !.seenKey = ev.w, !.seenPrev = ev.prev,
                                           !.waiting = IF ev.prev = @ /\ ks = {} THEN NoWin ELSE @]
         \* Reports of one app wait behind its worker, so an echo can come after the echo of
         \* a later request: only the matched record goes.
-        t2 == IF joins THEN tk ELSE [tk EXCEPT !.expect = SubSeq(@, 1, k - 1) \o SubSeq(@, k + 1, Len(@))]
+        t2 == IF joins THEN tk
+              ELSE IF waits THEN [tk EXCEPT !.expect[k].kind = "note"]
+              ELSE [tk EXCEPT !.expect = SubSeq(@, 1, k - 1) \o SubSeq(@, k + 1, Len(@))]
         \* The activation read that is the echo of Kosmos's activation settles the
         \* notification held for its app.
         settles == ks # {} /\ ev.act /\ ev.w # NoWin /\ ~joins
@@ -576,7 +601,7 @@ ObserveSplit(t, ev0) ==
        THEN IF h # NoEv /\ h.w = ev.w THEN UserReport(t3, h, FALSE)
             \* An echo can land after a newer intent, as a busy app's late raise does: the
             \* intent is requested again.
-            ELSE IF ~joins /\ ev.w # t3.focus THEN Reassert(t3) ELSE t3
+            ELSE IF ~joins /\ ~waits /\ ev.w # t3.focus THEN Reassert(t3) ELSE t3
        ELSE IF bg THEN t
        \* A notification from an app Kosmos activated, before that activation's read: a
        \* change the user made after the activation, or one the app made in the background
@@ -715,11 +740,38 @@ FocusStart ==
 KeyRecord(t, a, w) ==
     IF FrontApp(t) # a \/ t.atop[a] = w THEN KeyChange(t, w, Len(history)) ELSE t
 
+\* With KeyOldFirst the key record can activate a background app with the window that was
+\* key when the app was last front, and the app keys the named window a step later
+\* (KeyNamed). Live, Preview reported its main window and then the hovered one, and Ghostty
+\* its last key window, concealed on another workspace, and then the requested one: the
+\* activation read ran between the two. The spec does this only while that window is still
+\* the app's focused window, so the first key changes nothing the app notifies. After a raise
+\* in the background the two differ, no probe has shown which the app keys first, and the
+\* notification of a first key would read as the user's change (docs/focus.md).
+KeyRecords(t, a, w) ==
+    {KeyRecord(t, a, w)}
+    \cup IF KeyOldFirst /\ FrontApp(t) # a /\ t.lastKey[a] = t.afocus[a] /\ t.lastKey[a] \notin {w} \cup t.gone
+          THEN {[KeyChange(t, t.lastKey[a], Len(history)) EXCEPT !.named[a] = w]}
+          ELSE {}
+
+\* The app keys the window its key record named: inside the app while it is still front, and
+\* as its own focused window once another app came front.
+KeyNamed(a) ==
+    LET w == s.named[a]
+        t == [s EXCEPT !.named[a] = NoWin]
+    IN /\ SplitQueue
+       /\ w # NoWin
+       /\ s' = IF w \in s.gone THEN t
+               ELSE IF FrontApp(s) = a THEN KeyChange(t, w, Len(history))
+               ELSE IF s.afocus[a] # w THEN BackgroundFocus(t, w, Len(history))
+               ELSE t
+       /\ UNCHANGED history
+
 \* AXRaise brings the window to the front of its app. Inside the front app it also keys
 \* the window when RaiseKeys; in a background app it changes the app's own focused window,
 \* reported when RaiseReports. A window that left is not raised.
 Raise(t, a, w) ==
-    LET u == [t EXCEPT !.atop[a] = w]
+    LET u == [t EXCEPT !.atop[a] = w, !.lowTop = @ \ {a}]
     IN IF w \in t.gone THEN t
        ELSE IF FrontApp(t) = a THEN (IF RaiseKeys THEN KeyChange(u, w, Len(history)) ELSE u)
        ELSE IF t.afocus[a] = w THEN u
@@ -730,24 +782,26 @@ Raise(t, a, w) ==
 \* record-at-call: for a front app the queue only moves on; the worker keys. For a
 \* background app, unless the request went stale, its window left, the app came front
 \* meanwhile, or the worker is keying it, the queue records and posts the key record, and
-\* with PostRaise hands the worker the raise that follows it.
+\* with PostRaise hands the worker the raise that follows it. An app handles key records in
+\* order, so one keys the named window of the one before it first.
 \* d1be665: a pending request is recorded by the queue; then the key record follows.
 FocusDecide ==
     LET c == s.fcur
         t == [s EXCEPT !.fcur = NoReq]
         ph == s.kr[c.r]
         a == AppOf[c.w]
-        keyed == [KeyRecord(Record(t, c.w, c.r), a, c.w) EXCEPT !.kr[c.r] = "sent"]
+        post(u) == IF PostRaise
+                   THEN [u EXCEPT !.wq[a] = Append(@, [r |-> c.r, w |-> c.w, g |-> c.g, front |-> TRUE, st |-> "post"])]
+                   ELSE u
     IN /\ SplitQueue
        /\ c # NoReq
        /\ c.st = "wait"
        /\ c.r \in s.jdone \/ a = BusyApp
-       /\ s' = IF SplitRules = "record-at-call"
-               THEN IF c.front \/ c.g # s.gen \/ c.w \in s.gone \/ FrontApp(s) = a \/ ph = "raising" THEN t
-                    ELSE IF PostRaise
-                         THEN [keyed EXCEPT !.wq[a] = Append(@, [r |-> c.r, w |-> c.w, g |-> c.g, front |-> TRUE, st |-> "post"])]
-                         ELSE keyed
-               ELSE CASE ph = "skipped" -> t
+       /\ s.named[a] = NoWin
+       /\ IF SplitRules = "record-at-call"
+          THEN IF c.front \/ c.g # s.gen \/ c.w \in s.gone \/ FrontApp(s) = a \/ ph = "raising" THEN s' = t
+               ELSE \E u \in KeyRecords([Record(t, c.w, c.r) EXCEPT !.kr[c.r] = "sent"], a, c.w) : s' = post(u)
+          ELSE s' = CASE ph = "skipped" -> t
                       [] ph = "pending" -> [Record(s, c.w, c.r) EXCEPT !.kr[c.r] = "recorded", !.fcur.st = "key"]
                       [] OTHER -> [s EXCEPT !.fcur.st = "key"]
        /\ UNCHANGED history
@@ -835,14 +889,17 @@ WorkerRaise(a) ==
 \* while the app is front and the target is its focused window, so it never re-keys over
 \* a window the user chose since. The target is key then, so the raise keys nothing unless
 \* the user keys another window of the app before it lands. Unless PostRaiseEcho is "none"
-\* the worker records just before it.
+\* the worker records just before it. The ceiling docs/focus.md names: the worker finds the
+\* app with its last key window before the app keys the named one (KeyOldFirst), skips
+\* the raise, and the window can stay behind its app's others (`lowTop`).
 IsPost(j) == s.kr[j.r] = "sent"
 WorkerPost(a) ==
     LET j == Head(s.wq[a])
     IN /\ SplitQueue
        /\ s.wq[a] # <<>>
        /\ j.st = "post"
-       /\ s' = IF FrontApp(s) # a \/ s.afocus[a] # j.w \/ j.w \in s.gone THEN Finish(s, a, j)
+       /\ s' = IF FrontApp(s) # a \/ s.afocus[a] # j.w \/ j.w \in s.gone
+               THEN [Finish(s, a, j) EXCEPT !.lowTop = IF s.named[a] = j.w THEN @ \cup {a} ELSE @]
                ELSE [(IF PostRaiseEcho # "none" THEN Record(s, j.w, j.r) ELSE s) EXCEPT !.wq[a][1].st = "land"]
        /\ UNCHANGED history
 
@@ -910,8 +967,10 @@ WorkerAct(a) ==
        /\ s' = [s EXCEPT !.wq[a] = Tail(@),
                          \* ghost: the read finds another window than the activation keyed, as when
                          \* Kosmos keyed that app again before the read ran; if the activation was
-                         \* the user's, no report says what they chose, and it makes no claim
-                         !.lastAmb = @ \/ (w # j.w /\ j.w \in s.lastWin),
+                         \* the user's, no report says what they chose, and it makes no claim. With
+                         \* KeyOldFirst Kosmos's key record can activate the app with the user's
+                         \* window and key its own after the read.
+                         !.lastAmb = @ \/ ((w # j.w \/ s.named[a] # NoWin) /\ j.w \in s.lastWin),
                          !.evs = Append(@, Ev(w, TRUE, j.t, 0, j.hs[w], NoWin, FrontApp(s) # a, j.ts, j.ko))]
        /\ UNCHANGED history
 
@@ -991,7 +1050,8 @@ Expire ==
 \* Reports of key changes that have not reached the main actor's queue: observer
 \* callbacks, activation notices and reads.
 InFlight == s.evs # <<>> \/ s.an # <<>>
-            \/ \E a \in Apps : s.nq[a] # <<>> \/ \E n \in 1..Len(s.wq[a]) : s.wq[a][n].st \in {"act", "note"}
+            \/ \E a \in Apps : s.nq[a] # <<>> \/ s.named[a] # NoWin
+                            \/ \E n \in 1..Len(s.wq[a]) : s.wq[a][n].st \in {"act", "note"}
 
 \* The bound of a departure that waited for macOS's report of the next key
 \* window ends without one, as when the app keeps no key window: the departure
@@ -1021,13 +1081,14 @@ Fallback ==
     /\ UNCHANGED history
 
 \* Observer callbacks and activation notices only stamp, check and post, so each runs
-\* before the user's next input.
-Noticed == s.an = <<>> /\ \A a \in Apps : s.nq[a] = <<>>
+\* before the user's next input. An app keys the window its key record named within
+\* milliseconds, before it too.
+Noticed == s.an = <<>> /\ \A a \in Apps : s.nq[a] = <<>> /\ s.named[a] = NoWin
 
 Quiescent == s.mq = <<>> /\ s.bq = <<>> /\ s.fq = <<>> /\ s.evs = <<>> /\ s.notices = <<>>
              /\ s.lag = {} /\ s.held = <<>> /\ s.waiting = NoWin /\ s.rekey = <<>>
              /\ s.an = <<>> /\ s.fcur = NoReq
-             /\ \A a \in Apps : s.wq[a] = <<>> /\ s.late[a] = <<>> /\ s.nq[a] = <<>>
+             /\ \A a \in Apps : s.wq[a] = <<>> /\ s.late[a] = <<>> /\ s.nq[a] = <<>> /\ s.named[a] = NoWin
 
 \* A misjudged activation can decide what later inputs lead to until Kosmos settles.
 Misjudged == s.lastMis /\ ~Quiescent
@@ -1190,7 +1251,7 @@ Age ==
 
 Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports \/ PostNotices \/ OrderOut \/ Expire \/ Nudge \/ Rekey
             \/ Age
-            \/ ActNotice \/ FocusStart \/ FocusDecide \/ FocusKey \/ \E a \in Apps : Worker(a) \/ ObserverPost(a)
+            \/ ActNotice \/ FocusStart \/ FocusDecide \/ FocusKey \/ \E a \in Apps : Worker(a) \/ ObserverPost(a) \/ KeyNamed(a)
 
 Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab \/ Open \/ Leave \/ Return \/ Hover \/ UserBackground
 
@@ -1198,7 +1259,7 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
                               /\ WF_vars(ExecFocus) /\ WF_vars(PostReports) /\ WF_vars(PostNotices)
                               /\ WF_vars(OrderOut) /\ WF_vars(Expire) /\ WF_vars(Nudge) /\ WF_vars(Rekey)
                               /\ WF_vars(ActNotice) /\ WF_vars(FocusStart) /\ WF_vars(FocusDecide) /\ WF_vars(FocusKey)
-                              /\ \A a \in Apps : WF_vars(Worker(a)) /\ WF_vars(ObserverPost(a))
+                              /\ \A a \in Apps : WF_vars(Worker(a)) /\ WF_vars(ObserverPost(a)) /\ WF_vars(KeyNamed(a))
 
 (***************************************************************************)
 (* Properties                                                              *)
@@ -1209,8 +1270,9 @@ Converged == Visible = ShownWins(s) \ s.gone /\ s.osFocus = s.focus
 ConvergesWhenQuiet == Quiescent => Converged /\ \A a \in Apps : s.noteHeld[a] = NoEv
 
 \* The key window is the front of its app (SplitQueue): a background app keyed by the key
-\* record alone stays behind its other windows.
-FocusOnTop == Quiescent /\ SplitQueue /\ s.osFocus # NoWin => s.atop[AppOf[s.osFocus]] = s.osFocus
+\* record alone stays behind its other windows. The ceiling of the raise after it is exempt.
+FocusOnTop == Quiescent /\ SplitQueue /\ s.osFocus # NoWin /\ AppOf[s.osFocus] \notin s.lowTop
+              => s.atop[AppOf[s.osFocus]] = s.osFocus
 
 RECURSIVE LastCommand(_)
 LastCommand(h) ==   \* 0 when another input came after the last command
@@ -1267,5 +1329,6 @@ TraceView == [history |-> history, active |-> s.active, onDisplay |-> s.onDispla
               fq |-> s.fq, expect |-> s.expect, evs |-> s.evs, seenKey |-> s.seenKey,
               afocus |-> s.afocus, atop |-> s.atop, fcur |-> s.fcur, wq |-> s.wq, kr |-> s.kr, late |-> s.late,
               nq |-> s.nq, an |-> s.an, clk |-> s.clk, kact |-> s.kact, noteHeld |-> s.noteHeld,
-              lastWin |-> s.lastWin, goal |-> s.goal, lastRep |-> s.lastRep, hidden |-> s.hidden]
+              lastWin |-> s.lastWin, goal |-> s.goal, lastRep |-> s.lastRep, hidden |-> s.hidden,
+              named |-> s.named, lastKey |-> s.lastKey, lowTop |-> s.lowTop]
 =============================================================================
