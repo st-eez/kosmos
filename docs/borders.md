@@ -32,7 +32,8 @@ state, and during a slide the frame the slide shows the window at.
 - A window whose app refuses its tile takes `warning` for 0.3 s, focused or not, so with
   a transparent `inactive` the flash still shows. `warning` defaults to macOS's system
   red, `NSColor.systemRed` in sRGB under Kosmos's appearance, read again when the accent
-  is. A transparent `warning` leaves each window its own color.
+  is, and `warning = true` keeps it. `warning = false` or a transparent `warning` leaves
+  each window its own color.
   - A plan Kosmos carries out flashes each window that spills past its tile on an axis
     ([tree.md](tree.md)) where the plan writes its frame to move along that axis from where
     WindowServer last had it, or moves its tile along that axis from where the last plan
