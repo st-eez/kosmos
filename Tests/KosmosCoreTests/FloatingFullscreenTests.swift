@@ -14,7 +14,7 @@ import Testing
     static func session() -> Session {
         var s = Session(names: ["1", "2"], display: display)
         _ = s.add(1); _ = s.add(2); _ = s.add(3, floating: true)
-        s.adopt(3)
+        _ = s.adopt(3)
         #expect(s.perform(.fullscreen, frame: { $0 == 3 ? own : nil })?.frames[3] == display)
         return s
     }
@@ -84,7 +84,7 @@ import Testing
     @Test func adoptingAnotherTileLaysOutATiledFullscreenWindow() {
         var s = Session(names: ["1"], display: Self.display)
         _ = s.add(1); _ = s.add(2)
-        s.adopt(1)
+        _ = s.adopt(1)
         _ = s.perform(.fullscreen)
         #expect(s.adopt(2).frames == Self.tiles())
         #expect(s.adopt(1).isEmpty)
@@ -118,7 +118,7 @@ import Testing
     @Test func tilingItEndsIt() {
         var s = Self.session()
         let plan = s.perform(.layout(.toggleFloating))
-        #expect(s.workspaces["1"]!.fullscreenWindow == nil && s.workspaces["1"]!.floatingFrame == nil)
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && s.workspaces["1"]!.frameBeforeFullscreen == nil)
         #expect(plan?.frames[3] != Self.display && plan?.frames[3] != Self.own)
     }
 
@@ -151,6 +151,20 @@ import Testing
         #expect(s.perform(.fullscreen)?.frames[3] == Self.own.offsetBy(dx: 900, dy: 0))
     }
 
+    /// The laptop profile merges 6 to 0 into 1 to 5 at an unplug.
+    @Test func aProfileMergingItsWorkspaceAwayKeepsItInFullscreen() {
+        let left = Monitor(id: 1, frame: Self.display), right = Monitor(id: 2, frame: Self.display.offsetBy(dx: 1000, dy: 0))
+        var s = Session(names: ["1", "2"], monitors: [left, right], assigned: ["1": 1, "2": 2])
+        _ = s.add(3, to: "2", floating: true)
+        _ = s.follow(3)
+        _ = s.perform(.fullscreen, frame: { _ in Self.own.offsetBy(dx: 1000, dy: 0) })
+        s.reconfigure(names: ["1"], monitors: [left], assigned: [:], merge: ["2": "1"])
+        #expect(s.workspaces["1"]!.fullscreenWindow == 3 && s.resyncPlan(layingOutHidden: false).frames[3] == left.area)
+        s.reconfigure(names: ["1", "2"], monitors: [left, right], assigned: ["1": 1, "2": 2], merge: [:])
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && s.workspaces["2"]!.fullscreenWindow == 3)
+        #expect(s.workspaces["2"]!.frameBeforeFullscreen == Self.own.offsetBy(dx: 1000, dy: 0))
+    }
+
     // MARK: Parking and drags
 
     @Test func parkingEndsItAndTheReturnGoesBackToItsFrame() {
@@ -162,22 +176,40 @@ import Testing
         #expect(s.unpark([3], follow: 3).frames[3] == nil)
     }
 
+    /// Measured from the frame at the press, so a window its app keeps short of the display
+    /// stays in fullscreen at a jitter.
     @Test func aDragPastTheThresholdEndsItWhereTheDragLeavesIt() {
         var s = Self.session()
-        #expect(s.dragged(3, to: Self.display.offsetBy(dx: 6, dy: 6)) == nil)
+        let kept = Self.display.insetBy(dx: 0, dy: 40)
+        #expect(s.dragged(3, to: kept.offsetBy(dx: 6, dy: 6), from: kept) == nil)
         #expect(s.workspaces["1"]!.fullscreenWindow == 3)
-        #expect(s.dragged(3, to: Self.display.insetBy(dx: 0, dy: 20)) == Session.Plan())
+        #expect(s.dragged(3, to: kept.offsetBy(dx: 0, dy: 20), from: kept) == Session.Plan())
         #expect(s.workspaces["1"]!.fullscreenWindow == nil && s.perform(.fullscreen, frame: { _ in nil }) == nil)
     }
 
-    @Test func aModifierDragStartsFromItsFrameCenteredOnThePointer() throws {
+    @Test func aModifierDragEndsItPastTheThreshold() throws {
         var s = Self.session()
         let grab = DragGate.Grab(button: .left, window: 3, start: CGPoint(x: 700, y: 500))
-        let drag = try #require(s.beginDrag(grab, frame: Self.display))
-        #expect(drag.frame == CGRect(x: 500, y: 350, width: 400, height: 300))
-        #expect(s.workspaces["1"]!.fullscreenWindow == 3)
-        #expect(s.dragged(3, to: drag.moved(by: CGSize(width: 30, height: 0))) != nil)
+        var drag = try #require(s.beginDrag(grab, frame: Self.display))
+        let jitter = drag.delta(to: CGPoint(x: 705, y: 500)), moved = drag.delta(to: CGPoint(x: 730, y: 500))
+        #expect(jitter == nil)
+        let delta = try #require(moved)
+        #expect(s.dragged(3, to: drag.moved(by: delta), from: drag.frame) != nil)
         #expect(s.workspaces["1"]!.fullscreenWindow == nil)
+    }
+
+    /// Dropped over the floating fullscreen window, the tile lands beside the tile under it.
+    @Test func aTileDroppedOverItTilesAndEndsIt() {
+        let left = Monitor(id: 1, frame: Self.display), right = Monitor(id: 2, frame: Self.display.offsetBy(dx: 1000, dy: 0))
+        var s = Session(names: ["1", "2"], monitors: [left, right], assigned: ["1": 1, "2": 2])
+        _ = s.add(1); _ = s.add(2)
+        _ = s.add(5, to: "2"); _ = s.add(3, to: "2", floating: true)
+        _ = s.follow(3)
+        _ = s.perform(.fullscreen, frame: { _ in Self.own.offsetBy(dx: 1000, dy: 0) })
+        _ = s.lift(1)
+        let plan = s.drop(at: CGPoint(x: 1500, y: 400))
+        #expect(s.workspace(of: 1) == "2" && s.workspaces["2"]!.root.windows.contains(1))
+        #expect(s.workspaces["2"]!.fullscreenWindow == nil && plan.frames[3] == Self.own.offsetBy(dx: 1000, dy: 0))
     }
 
     // MARK: Restart
@@ -185,10 +217,10 @@ import Testing
     @Test func aRestartKeepsItAndItsFrame() throws {
         var before = Session(names: ["1", "2"], display: Self.display)
         _ = before.add(1); _ = before.add(2); _ = before.add(3, floating: true); _ = before.add(4, floating: true)
-        before.adopt(4)
+        _ = before.adopt(4)
         _ = before.perform(.fullscreen, frame: { _ in CGRect(x: 600, y: 400, width: 200, height: 100) })
         _ = before.park([4], because: .minimized)
-        before.adopt(3)
+        _ = before.adopt(3)
         _ = before.perform(.fullscreen, frame: { _ in Self.own })
         let saved = try JSONDecoder().decode(SavedLayout.self, from: JSONEncoder().encode(before.savedLayout()))
         var after = Session(names: ["1", "2"], display: Self.display)
@@ -203,11 +235,11 @@ import Testing
     /// A file from before floating frames were saved has none, and one with no area loses it.
     @Test func aSavedFloatingWindowWithNoSoundFrameComesBackOutOfFullscreen() throws {
         var entry = SavedLayout.Window(window: 3, workspace: "1", floating: true, parked: false, fullscreen: true,
-                                       frame: CGRect(x: 0, y: 0, width: 0, height: 300), stamp: 1, stale: false)
-        #expect(entry.pending(edits: 0)?.frame == nil)
-        entry.frame = nil
+                                       frameBeforeFullscreen: CGRect(x: 0, y: 0, width: 0, height: 300), stamp: 1, stale: false)
+        #expect(entry.pending(edits: 0)?.frameBeforeFullscreen == nil)
+        entry.frameBeforeFullscreen = nil
         let json = String(data: try JSONEncoder().encode(entry), encoding: .utf8)!
-        #expect(!json.contains("frame"))
+        #expect(!json.contains("frameBeforeFullscreen"))
         var s = Session(names: ["1"], display: Self.display)
         s.restore(SavedLayout(shown: [], focusedWorkspace: "1", focusedWindow: 3, windows: [entry]))
         _ = s.add(3)

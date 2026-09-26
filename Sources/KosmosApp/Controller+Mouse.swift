@@ -30,7 +30,9 @@ extension Controller {
             return
         }
         if session.shownFloatingWindows.contains(id) {
-            guard key == .window(id), let plan = session.dragged(id, to: frame) else { return }
+            let start = floatingAtPress[id] ?? old
+            if button == .down { floatingAtPress[id] = start }
+            guard key == .window(id), let plan = session.dragged(id, to: frame, from: start) else { return }
             let now = session.workspace(of: id) ?? "?"
             controllerLog.info("\(id) \(now == name ? "dragged out of fullscreen" : "dragged to workspace \(now)", privacy: .public)")
             execute(plan)
@@ -105,6 +107,7 @@ extension Controller {
         clickedWindow = 0
         guard onDisplay else { return }
         leftButton.pressed(at: .now)
+        floatingAtPress = [:]
         if mouseFollowsFocus { clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0) }
     }
 
@@ -113,6 +116,7 @@ extension Controller {
     func forgetPresses() {
         leftButton = LeftButton()
         mouseMoved = [:]
+        floatingAtPress = [:]
         modifierDrag = nil
         dragTap?.endIfReleased()
     }
@@ -233,7 +237,7 @@ extension Controller {
     private func writeDragFrame(_ drag: ModifierDrag, _ frame: CGRect) {
         writeFrames([drag.grab.window: frame])
         let source = session.workspace(of: drag.grab.window)
-        guard drag.floating, let plan = session.dragged(drag.grab.window, to: frame) else { return }
+        guard drag.floating, let plan = session.dragged(drag.grab.window, to: frame, from: drag.frame) else { return }
         let now = session.workspace(of: drag.grab.window) ?? "?"
         dragLog.info("\(drag.grab.window) \(now == source ? "dragged out of fullscreen" : "dragged to workspace \(now)", privacy: .public)")
         execute(plan)

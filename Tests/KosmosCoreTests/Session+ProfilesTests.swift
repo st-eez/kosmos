@@ -95,13 +95,13 @@ import Testing
         var s = Desk.session()
         _ = s.perform(.workspace(.named("6")))
         _ = s.add(60); _ = s.add(61)
-        s.adopt(61)
+        _ = s.adopt(61)
         _ = s.add(62)
-        s.adopt(62)
+        _ = s.adopt(62)
         _ = s.perform(.joinWith(.left))
-        s.adopt(60)
+        _ = s.adopt(60)
         _ = s.perform(.resize(.width, by: 300))
-        s.adopt(62)
+        _ = s.adopt(62)
         _ = s.add(63, to: "6")
         #expect(s.workspaces["6"]!.tree == "h[60 v[61 62 63]]")
         let frames = s.frames(of: "6")
@@ -154,12 +154,12 @@ import Testing
         if floated { _ = s.perform(.layout(.toggleFloating)) } else { _ = s.park([1], because: .minimized) }
         _ = s.add(2); _ = s.add(3)
         s.workspaces["b"]!.squeeze(3, to: 1, in: display.area, gaps: display.gaps)
-        s.adopt(3)
+        _ = s.adopt(3)
         #expect(s.frames(of: "b")[3]?.width == 1)
         s.reconfigure(names: ["a"], monitors: [display], assigned: [:], merge: ["b": "a"])
         // Meanwhile 1 tiles, or returns, in a.
         if floated {
-            s.adopt(1)
+            _ = s.adopt(1)
             _ = s.perform(.layout(.toggleFloating))
         } else {
             _ = s.unpark([1], follow: nil)
@@ -181,7 +181,7 @@ import Testing
     @Test func aMergedWindowThatBecomesTheSelectedTabLeavesItsOwnPlace() {
         var s = Desk.session()
         _ = s.add(60, to: "6"); _ = s.add(61, to: "6")
-        s.adopt(61)
+        _ = s.adopt(61)
         _ = s.add(62, to: "6")
         #expect(s.workspaces["6"]!.tree == "h[60 61 62]")
         s.reconfigure(names: ["1", "2", "3", "4", "5"], monitors: [Desk.builtIn], assigned: [:], merge: ["6": "1"])

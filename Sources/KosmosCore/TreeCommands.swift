@@ -187,17 +187,16 @@ extension Workspace {
         return layout(window, root[path.dropLast()].orientation.opposite)
     }
 
-    /// A floating window keeps `frame`, where it is now, to go back to (docs/tree.md). False for
-    /// a floating window with no frame.
+    /// A floating window keeps `frame`, where it is now, to go back to (docs/tree.md).
     @discardableResult
     mutating func toggleFullscreen(_ window: WindowID, frame: CGRect? = nil) -> Bool {
         let floats = floating.contains(window)
         guard root.path(to: window) != nil || floats else { return false }
         if fullscreenWindow == window {
-            (fullscreenWindow, floatingFrame) = (nil, nil)
+            (fullscreenWindow, frameBeforeFullscreen) = (nil, nil)
         } else {
             guard !floats || frame != nil else { return false }
-            (fullscreenWindow, floatingFrame) = (window, floats ? frame : nil)
+            (fullscreenWindow, frameBeforeFullscreen) = (window, floats ? frame : nil)
             stamp(window)
         }
         check()

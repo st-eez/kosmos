@@ -98,7 +98,7 @@ private func session() -> Session {
     _ = s.add(3)
     _ = s.park([3], because: .fullscreen)
     _ = s.add(4, to: "2")
-    s.adopt(1)
+    _ = s.adopt(1)
     return s
 }
 
@@ -423,7 +423,7 @@ private func desk() -> Session {
         // A move sets no focus. The pointer follows the window to the tile the plan writes,
         // on this display or another, so nothing is read from WindowServer.
         var s = desk()
-        s.adopt(10)
+        _ = s.adopt(10)
         let before = s.frames(of: "1")
         let result = s.perform(.move(.right))
         let plan = try #require(result)

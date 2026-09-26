@@ -16,16 +16,16 @@ public enum TitleBarDrag {
 
 extension Session {
     /// A floating window whose center lands on a display showing another workspace joins it
-    /// (docs/displays.md). A fullscreen one the drag moves or resizes past `dragThreshold`
-    /// leaves fullscreen where the drag puts it (docs/tree.md). The plan asks for no focus: the
-    /// window is key.
-    public mutating func dragged(_ window: WindowID, to frame: CGRect) -> Plan? {
+    /// (docs/displays.md). A fullscreen one the drag moves or resizes past `dragThreshold` from
+    /// `start`, its frame at the press, leaves fullscreen where the drag puts it (docs/tree.md).
+    /// The plan asks for no focus: the window is key.
+    public mutating func dragged(_ window: WindowID, to frame: CGRect, from start: CGRect) -> Plan? {
         defer { check() }
         guard let source = home[window], isShown(source), workspaces[source]!.floating.contains(window) else { return nil }
-        let cover = monitor(of: source).area.standardized, reach = TitleBarDrag.dragThreshold
+        let reach = TitleBarDrag.dragThreshold
         let left = workspaces[source]!.fullscreenWindow == window
-            && (hypot(frame.minX - cover.minX, frame.minY - cover.minY) > reach
-                || abs(frame.width - cover.width) > reach || abs(frame.height - cover.height) > reach)
+            && (hypot(frame.minX - start.minX, frame.minY - start.minY) > reach
+                || abs(frame.width - start.width) > reach || abs(frame.height - start.height) > reach)
         if left { workspaces[source]!.toggleFullscreen(window) }
         guard let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return left ? Plan() : nil }
         var plan = move(window, from: source, to: name, follow: focused == window)
@@ -98,17 +98,10 @@ extension Session {
     }
 
     /// A resize moves the edges on the press's side of the center, and a tile with no neighbour
-    /// there moves the other edge (docs/modifier-drags.md). A floating fullscreen window leaves
-    /// fullscreen at its size from before, centered on the pointer, as Hyprland's
-    /// `drag_center_window` has it (docs/tree.md).
+    /// there moves the other edge (docs/modifier-drags.md).
     public func beginDrag(_ grab: DragGate.Grab, frame: CGRect) -> ModifierDrag? {
         guard isVisible(grab.window), let name = home[grab.window] else { return nil }
         let workspace = workspaces[name]!
-        var frame = frame
-        if workspace.fullscreenWindow == grab.window, let before = workspace.floatingFrame {
-            frame = CGRect(x: (grab.start.x - before.width / 2).rounded(), y: (grab.start.y - before.height / 2).rounded(),
-                           width: before.width, height: before.height)
-        }
         let sides: [Direction] = [grab.start.x < frame.midX ? .left : .right, grab.start.y < frame.midY ? .up : .down]
         if workspace.floating.contains(grab.window) {
             return ModifierDrag(grab: grab, frame: frame, edges: sides, tile: nil)

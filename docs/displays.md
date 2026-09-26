@@ -135,9 +135,9 @@
   WindowServer, which is busy committing right after a switch, so it runs only while a
   shown workspace has a floating window, and never between a keypress and its batch or its
   focus request. The log gives each read's time, to measure at the desk. A window with a
-  write of Kosmos's still landing, as one leaving fullscreen onto another display, is left
-  to the write: WindowServer can still have it where it was, and the check would move it
-  from there.
+  write of Kosmos's in flight, or sent and not yet shown in a row, as one leaving
+  fullscreen onto another display, is left to the write: WindowServer can still have it
+  where it was, and the check would move it from there.
 - A floating window the user drags onto a display showing another workspace joins that
   workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
   check above leaves it there. Kosmos takes a move of a floating window of a shown

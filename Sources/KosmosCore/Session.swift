@@ -395,7 +395,6 @@ public struct Session: Sendable {
     // MARK: Focus reports
 
     /// The plan has frames only when the focus ended a fullscreen.
-    @discardableResult
     public mutating func adopt(_ window: WindowID) -> Plan {
         defer { check() }
         guard let name = home[window] else { return Plan() }
@@ -413,8 +412,6 @@ public struct Session: Sendable {
         return plan
     }
 
-    /// When the focus ends a fullscreen, the workspace's frames, with a floating fullscreen
-    /// window back at its frame from before (docs/tree.md).
     private mutating func focusEndingFullscreen(_ window: WindowID, on name: String) -> [WindowID: CGRect] {
         let before = framesBeforeFullscreen, fullscreen = workspaces[name]!.fullscreenWindow
         workspaces[name]!.focus(window)
@@ -665,20 +662,17 @@ public struct Session: Sendable {
         return targets
     }
 
-    /// The frame each floating window had before fullscreen: the one that covers its display,
-    /// and each parked since, which goes back to it when it returns (docs/tree.md).
     var framesBeforeFullscreen: [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         for workspace in workspaces.values {
-            if let window = workspace.fullscreenWindow, let frame = workspace.floatingFrame { frames[window] = frame }
-            for entry in workspace.parked { frames[entry.window] = entry.frame }
+            if let window = workspace.fullscreenWindow, let frame = workspace.frameBeforeFullscreen { frames[window] = frame }
+            for entry in workspace.parked { frames[entry.window] = entry.frameBeforeFullscreen }
         }
         return frames
     }
 
-    /// The windows of `before` that float out of fullscreen now, at their frames from before.
-    /// A frame whose center is off its workspace's display goes there as `floatingFrames` moves
-    /// a window, or into the display's area from no display.
+    /// The windows of `before` that float out of fullscreen now, at their frames from before
+    /// (docs/tree.md).
     func backFromFullscreen(since before: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         for (window, frame) in before {

@@ -90,10 +90,12 @@
   `CDefaultFloatingAlgorithm::recenter`, which sets the box that algorithm last gave the
   window (src/managers/fullscreen/FullscreenController.cpp, Hyprland main at e368c13).
   - Kosmos keeps no floating frames, as WindowServer has them, so the workspace keeps the
-    one frame its floating fullscreen window had before (`Workspace.floatingFrame`), as the
-    inventory last read it when the command ran. A floating window the inventory has no
-    frame for stays out of fullscreen. Parked since, the window keeps the frame on its
-    parked place (`Parked.frame`).
+    one frame its floating fullscreen window had before (`Workspace.frameBeforeFullscreen`),
+    as the inventory last read it when the command ran, or where a write of Kosmos's still
+    in flight puts the window. So a second `fullscreen` pressed before the write back of the
+    first one lands keeps the frame from before, where the inventory still has the display's
+    area. A floating window with no frame stays out of fullscreen. Parked since, the window
+    keeps the frame on its parked place (`Parked.frameBeforeFullscreen`).
   - Fullscreen ends for a floating window where it ends for a tiled one, and the window goes
     back to that frame: at a second `fullscreen` or one on another window, a focus on a tile
     of its workspace, by a command, a click, Command-Tab or a new window keyed, a move to
@@ -113,25 +115,34 @@
     ([displays.md](displays.md)), or into the area from off every display. So a window that
     went fullscreen on a display since unplugged comes back on the display its workspace
     moved to.
-  - A drag ends it where the drag puts it: a move of the window by more than 10 pt
-    (`TitleBarDrag.dragThreshold`), or a resize by more than that on an axis, by the title
-    bar, an edge or a modifier drag. A tiled fullscreen window lifts out the same way
-    ([displays.md](displays.md)). A modifier drag carries the window at its frame from
-    before, centered on the pointer, as Hyprland's `updateDragWindow` does with
-    `binds:drag_center_window` at its default, which Omarchy keeps
-    (src/layout/supplementary/DragController.cpp).
+  - A drag ends it where the drag puts it, and the frame from before goes: a move of the
+    window by more than 10 pt (`TitleBarDrag.dragThreshold`) from its frame at the press,
+    or a resize by more than that on an axis, by the title bar, an edge or a modifier drag.
+    Counted from the press, a window its app keeps short of the area, as a fixed size
+    window, stays in fullscreen at a click that jitters its title bar. A tiled fullscreen
+    window leaves fullscreen only as a title-bar move or a left-button modifier drag past
+    10 pt lifts it ([displays.md](displays.md)): an edge resize goes back to the area at the
+    mouse up, and a right-button modifier drag resizes nothing. Hyprland gives a dragged
+    fullscreen window its floating size back, centered on the pointer
+    (`binds:drag_center_window`, src/layout/supplementary/DragController.cpp); Kosmos
+    keeps the frame the drag gives it.
   - Kosmos keeps its tiled rules where Hyprland differs. Hyprland's `movetoworkspace` takes
     the window out of fullscreen and puts it back in on the workspace it moves to
     (`CGlobalWindowController::moveWindowToWorkspace`), and Omarchy sets
     `misc:on_focus_under_fullscreen` to 1, so a tile focused under a fullscreen window
     takes the fullscreen over (default/hypr/looknfeel.lua in basecamp/omarchy at e1614f2).
     Kosmos ends fullscreen at both, for tiled and floating windows alike.
-  - Left out: a profile that merges away a workspace with a floating window in fullscreen,
-    or parked from it, writes no frame, since the resync after a profile change writes none
-    for floating windows. The window in fullscreen keeps the display's size on the workspace
-    it joins, and goes back in fullscreen when a profile lists its workspace again; the
-    parked one returns where macOS puts it. Carrying the frames from `Session.reconfigure`
-    into that resync would cover both.
+  - A profile that merges away a workspace keeps its floating fullscreen window in
+    fullscreen on the workspace it joins, with its frame from before, when that workspace
+    has no fullscreen window (`Session.carry`). Steve's laptop profile merges 6 to 0 into 1
+    to 5, so an unplug to the laptop alone takes this path. The resync after the profile
+    change gives the window its new display's area, and the workspace coming back takes it
+    out of the one it joined, back into fullscreen on its own.
+  - Left out: where the workspace it joins has a fullscreen window already, and for a
+    window parked from fullscreen, the merge keeps no frame from before. The first keeps the
+    display's size out of fullscreen, and the second returns where macOS puts it. The
+    resync writes no floating frame to put them back. Carrying those frames from
+    `Session.reconfigure` into that resync would cover both.
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, as i3's `get_tree_next` does, then to the window over there.
   The sibling's windows at its edge facing the focused window are the first or last child
@@ -161,7 +172,8 @@
     Chrome windows. AeroSpace does the same (FocusCommandTest.swift,
     `testFocusOverFloatingWindows`).
   - The frames are the ones the inventory last heard from WindowServer, which the
-    pointer's center uses too ([focus-follows-mouse.md](focus-follows-mouse.md)), so the command waits on no read. Only the
+    pointer's center uses too ([focus-follows-mouse.md](focus-follows-mouse.md)), or where
+    a write of Kosmos's in flight puts the window, so the command waits on no read. Only the
     focused workspace's floating windows count, and on a cross the target workspace's, and
     parked windows never do: minimized, hidden with their app or in native fullscreen.
   - A floating window's place in the tree decides only whether it stands at the edge; its
@@ -377,7 +389,9 @@
     hint, and its frame from before fullscreen, for its return. The file can garble a frame
     too: one with no area is left out, and a floating window saved in fullscreen without a
     frame comes back floating where it is. A window saved parked from fullscreen that is back
-    on screen at the launch stays where macOS put it, as nothing writes its frame then. The
+    on screen at the launch stays where macOS put it, as nothing writes its frame then;
+    `admitSaved` writing the saved frame for a floating window admitted out of fullscreen
+    and unparked would cover it. The
     hints were taken with each other put back, so the windows come back to the same places
     and sizes in any order, and one that never comes back leaves its share to the windows it
     stood among, as a close does.

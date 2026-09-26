@@ -8,7 +8,7 @@ import Testing
     @Test func aWindowDraggedInItsWorkspaceTilesBesideTheWindowUnderThePointer() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(11)
-        s.adopt(11)
+        _ = s.adopt(11)
         _ = s.add(12)
         #expect(s.workspaces["1"]!.tree == "h[10 11 12]")
         let lift = s.lift(10)!
@@ -55,7 +55,7 @@ import Testing
         let spaced = Monitor(id: 2, frame: Desk.main.frame, gaps: Gaps(inner: 20, outer: Desk.gaps.outer))
         var s = Session(names: Desk.names, monitors: [spaced])
         _ = s.add(10); _ = s.add(11); _ = s.add(12)
-        s.adopt(10)
+        _ = s.adopt(10)
         _ = s.perform(.resize(.width, by: 300))
         _ = s.lift(12)
         #expect(s.workspaces["1"]!.tree == "h[10 11]")

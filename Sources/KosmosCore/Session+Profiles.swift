@@ -62,9 +62,14 @@ extension Session {
         let source = home[window]!
         let floating = workspaces[source]!.floating.contains(window)
         let parked = workspaces[source]!.parked.first { $0.window == window }
+        let fullscreen = workspaces[source]!.fullscreenWindow == window ? workspaces[source]!.frameBeforeFullscreen : nil
         _ = workspaces[source]!.remove(window)
         if floating || parked?.floating == true {
             workspaces[name]!.floating.append(window)
+            if let fullscreen, workspaces[name]!.fullscreenWindow == nil {
+                workspaces[name]!.fullscreenWindow = window
+                workspaces[name]!.frameBeforeFullscreen = fullscreen
+            }
         } else {
             workspaces[name]!.insert(window, first: false)
         }

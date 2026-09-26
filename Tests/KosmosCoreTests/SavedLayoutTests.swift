@@ -305,7 +305,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         var after = Session(names: ["a"], monitors: [Desk.main])
         after.restore(before.savedLayout())
         _ = after.add(1)
-        after.adopt(1)
+        _ = after.adopt(1)
         #expect(after.add(2).focus == nil)
         #expect(after.focused == 1)
     }
@@ -357,7 +357,7 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         stamped.restore(layout)
         _ = stamped.add(1)
         _ = stamped.add(2)
-        stamped.adopt(2)
+        _ = stamped.adopt(2)
         #expect(stamped.focused == 2)
     }
 

@@ -143,8 +143,7 @@ public struct ModifierDrag: Equatable, Sendable {
     static let smallestSide: CGFloat = 20
 
     public let grab: DragGate.Grab
-    /// The window's frame when the button went down, as WindowServer last reported it, or the
-    /// one a floating fullscreen window leaves fullscreen at (`Session.beginDrag`).
+    /// The window's frame when the button went down, as WindowServer last reported it.
     public let frame: CGRect
     /// The edges a resize moves, at most one on each axis.
     public let edges: [Direction]
