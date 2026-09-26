@@ -188,28 +188,38 @@ private final class HidingStore: @unchecked Sendable {
     /// `sent` is nil when the batch stopped before sending, `barrier` nil when it read nothing.
     func apply(show: [WindowID], on displays: [WindowID: CGDirectDisplayID], hide: [WindowID],
                stripping: Set<WindowID>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
-        guard let (batch, sent) = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
+        guard case (var batch, let sent)? = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
         let touched = batch.touched
         guard let any = touched.first else { return (true, sent, nil, batch.strip.count) }
         // A Space whose read fails is left out, which proves nothing.
-        func done() -> Bool {
+        func members() -> [SpaceID: Set<WindowID>] {
             var members: [SpaceID: Set<WindowID>] = [:]
             for space in touched {
                 if let list = SkyLight.windows(in: space) { members[space] = Set(list) }
             }
-            return batch.isDone(members: members)
+            return members
         }
         // Direct reads show the operations once WindowServer applied them; the barrier also
         // waits behind WindowManager.app, so it goes only once the direct reads run out of time
         // (docs/hiding.md).
         let deadline = ContinuousClock.now + Self.directReadsBeforeBarrier
-        var confirmed = done()
+        var confirmed = batch.isDone(members: members())
         while !confirmed && ContinuousClock.now < deadline {
             usleep(100)
-            confirmed = done()
+            confirmed = batch.isDone(members: members())
         }
         if !confirmed {
-            guard kosmos_barrier(any), done() else { return (false, sent, true, batch.strip.count) }
+            // A window that closed or was ordered out after its row read leaves the batch
+            // (docs/hiding.md).
+            guard kosmos_barrier(any), let (kept, left) = batch.confirmed(members: members(), orderedIn: { failed in
+                Set(SkyLight.rows(Array(failed)).filter(\.orderedIn).map(\.id))
+            }) else { return (false, sent, true, batch.strip.count) }
+            if !left.isEmpty {
+                // Their conceal never landed.
+                history.withLock { history in left.intersection(batch.fresh).forEach { history.forget($0) } }
+                hidingLog.notice("left out of the batch, closed or ordered out since their rows were read: \(left.sorted(), privacy: .public)")
+            }
+            batch = kept
         }
         ledger.commit(batch, into: space)
         return (true, sent, !confirmed, batch.strip.count)

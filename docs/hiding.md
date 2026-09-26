@@ -63,8 +63,9 @@
   else to that display's first ordinary Space. A display missing from WindowServer's Space
   list gives way to the main display. A native fullscreen Space is never chosen, so a
   switch works while one is on screen.
-- There is no fallback to corner parking. At the first unconfirmed bridged operation:
-  restore every hidden window, stop hiding, report the cause, and retry at the next switch.
+- There is no fallback to corner parking. At the first unconfirmed bridged operation on a
+  window still ordered in (below): restore every hidden window, stop hiding, report the
+  cause, and retry at the next switch.
   On a macOS that lacks one of the bridged operation classes, as after an update that
   renames one, Kosmos logs one fault at startup and names the class in its status menu from
   launch. It conceals nothing, and a batch that confirms its reveals counts as confirmed.
@@ -124,6 +125,18 @@
   their workspace is shown and hidden again. If that shows up, the upgrade is for
   `SkyLight.rows` to return nil for a failed query, and for the batch to keep its whole
   hide set then.
+- A window can also close, or its app order it out, after the batch reads its row and
+  before its add lands, as at Command-W right before a switch. No Space lists it, so its
+  conceal never shows and the batch fails its confirmation, and recovery would show every
+  other concealed window until the next switch while leaving that one where it is. So when
+  the read after the barrier still fails a batch, Kosmos reads the rows of the windows it
+  failed. When none of them is ordered in, each closed or was ordered out since the batch
+  read it, and the batch is confirmed without them: a window it concealed stays out of the
+  ledger, one it revealed stays in, and the log names them. A failed window still ordered
+  in fails the batch, and recovery runs. KosmosCore's tests cover the rule
+  (`ConcealLedger.Batch.confirmed`). The ceiling above holds here too: a failed row query
+  reads as every window gone, so a live window whose conceal failed stays on screen until
+  its workspace is shown and hidden again, and the same upgrade covers it.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until
