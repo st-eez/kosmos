@@ -464,7 +464,7 @@ final class Controller {
     /// its report can come (docs/focus.md).
     private func performing(_ target: KeyWindow, pid: pid_t, path: FocusPath, retry: Bool,
                             at stamp: ContinuousClock.Instant) {
-        reports.focusRequested(target, app: pid, at: stamp, publicly: path == .activation)
+        reports.focusRequested(target, app: pid, at: stamp, publicly: path == .activation, keyRecord: path == .keyRecord)
         guard path == .keyRecord, focusQueue.killSwitch.isOn, case .window(let id) = target,
               misses.willRequest(id, pid: pid, at: stamp, retry: retry) else { return }
         focusQueue.killSwitch.turnOff(.wrongWindows)

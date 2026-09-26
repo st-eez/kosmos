@@ -24,6 +24,9 @@ struct AXReport: Sendable {
     let pid: pid_t
     let kind: Kind
     let received: ContinuousClock.Instant
+    /// The read of the app's focused window as it came front (Apps.activated): the echo of
+    /// Kosmos's key record to the app whatever window it reads (docs/focus.md).
+    var activationRead = false
 }
 
 struct AXWindowInfo: Sendable {

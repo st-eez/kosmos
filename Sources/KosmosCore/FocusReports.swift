@@ -3,6 +3,17 @@ public enum KeyWindow: Hashable, Sendable {
     case noWindow
 }
 
+/// What a report consumed of Kosmos's focus requests (docs/focus.md; tla/Kosmos.tla, ObserveSplit).
+public enum Echo: Equatable, Sendable {
+    case none
+    /// The record of a request. `waited`: a key record's activation read that found another
+    /// window left it for this report of the window it named.
+    case named(waited: Bool)
+    /// A key record's activation read that ran before the app keyed the named window after
+    /// its own: the record waits for that window's report.
+    case awaitsNamed
+}
+
 /// What to do with a key window report (docs/focus.md; tla/Kosmos.tla, Adopt).
 public enum ReportVerdict: Equatable, Sendable {
     /// Kosmos's own request coming back.
@@ -48,8 +59,8 @@ public enum AdmissionFocus: Equatable, Sendable {
     /// Kosmos follows its key report there, as it follows a Command-Tab (docs/focus.md).
     case placedHidden
 
-    /// `keyed`: the window is the key window Kosmos last heard of. A parked window's return
-    /// decides the focus instead.
+    /// `keyed`: its app keyed it before it had a place, and no command came since. A parked
+    /// window's return decides the focus instead.
     public static func decide(keyed: Bool, shown: Bool, parked: Bool, atLaunch: Bool, locked: Bool) -> AdmissionFocus {
         guard !locked, !parked else { return .none }
         if shown { return keyed ? .adopt : atLaunch ? .none : .awaitKey }
@@ -70,7 +81,25 @@ public func showsFullscreenSpace(key: KeyWindow?, keyManaged: Bool, keyApp: Int3
 /// Classifies key window reports against Kosmos's focus requests by their receipt stamps
 /// (docs/focus.md).
 public struct FocusReports: Sendable {
-    private var expected: [(key: KeyWindow, app: Int32?, requested: ContinuousClock.Instant, publicly: Bool)] = []
+    private struct Request {
+        let key: KeyWindow
+        let app: Int32?
+        let requested: ContinuousClock.Instant
+        let publicly: Bool
+        /// A key record, whose app's activation read is its echo whatever window it reads.
+        var activates: Bool
+        /// A report of the app that was no echo came since.
+        var answered = false
+        /// Its activation read found another window, and left it for the named window's report.
+        var waited = false
+    }
+
+    /// A key record's activation read comes as its app's worker gets to it, and one that
+    /// never came, as when the app did not answer, would take a later activation of the app
+    /// for its echo (docs/focus.md).
+    private static let readBound: Duration = .seconds(1)
+
+    private var expected: [Request] = []
     private var lastCommand: ContinuousClock.Instant?
     /// The window whose missed request Kosmos made again.
     private var retried: KeyWindow?
@@ -82,16 +111,21 @@ public struct FocusReports: Sendable {
     }
 
     /// Call it right before the call that changes the key window, so no echo comes first.
-    /// `app` is Kosmos for `.noWindow`.
-    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: ContinuousClock.Instant, publicly: Bool = false) {
+    /// `app` is Kosmos for `.noWindow`. `keyRecord`: the call activates a background app.
+    public mutating func focusRequested(_ key: KeyWindow, app: Int32?, at stamp: ContinuousClock.Instant,
+                                        publicly: Bool = false, keyRecord: Bool = false) {
         if key != retried { retried = nil }
-        expected.append((key, app, stamp, publicly))
+        expected.append(Request(key: key, app: app, requested: stamp, publicly: publicly, activates: keyRecord))
     }
 
     /// A report from `app` that is no echo answers its public requests, since the public path
-    /// lets the app choose the window, and private ones stay until matched (docs/focus.md).
-    public mutating func publicRequestsAnswered(by app: Int32, receivedAt stamp: ContinuousClock.Instant) {
+    /// lets the app choose the window, and private ones stay until matched (docs/focus.md). A
+    /// key record's activation read then finds that choice, and consumes the record.
+    public mutating func answered(by app: Int32, receivedAt stamp: ContinuousClock.Instant) {
         expected.removeAll { $0.publicly && $0.app == app && $0.requested <= stamp }
+        for index in expected.indices where expected[index].app == app && expected[index].requested <= stamp {
+            expected[index].answered = true
+        }
     }
 
     /// The latest command wins over a user action received before it (tla/Kosmos.tla, Adopt
@@ -100,21 +134,33 @@ public struct FocusReports: Sendable {
         lastCommand.map { stamp < $0 } ?? false
     }
 
-    public func isEcho(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Bool {
-        echo(of: key, receivedAt: stamp) != nil
+    /// `activationOf`: the report is that app's activation read (tla/Kosmos.tla, Matches).
+    public func isEcho(_ key: KeyWindow, activationOf app: Int32? = nil, receivedAt stamp: ContinuousClock.Instant) -> Bool {
+        echo(of: key, activationOf: app, receivedAt: stamp) != nil
     }
 
-    private func echo(of key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Int? {
-        expected.firstIndex { $0.key == key && $0.requested <= stamp }
+    private func echo(of key: KeyWindow, activationOf app: Int32?, receivedAt stamp: ContinuousClock.Instant) -> Int? {
+        expected.firstIndex {
+            $0.requested <= stamp
+                && ($0.key == key || (app != nil && $0.activates && $0.app == app && stamp - $0.requested <= Self.readBound))
+        }
     }
 
     /// Consumes the expectation `key` answers and every one before it. Ceiling: an earlier
     /// echo after a later one reads as the user's choice (docs/focus.md, Deferred).
-    public mutating func consumeEcho(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant) -> Bool {
-        guard let index = echo(of: key, receivedAt: stamp) else { return false }
-        expected.removeFirst(index + 1)
+    public mutating func consumeEcho(_ key: KeyWindow, activationOf app: Int32? = nil,
+                                     receivedAt stamp: ContinuousClock.Instant) -> Echo {
+        guard let index = echo(of: key, activationOf: app, receivedAt: stamp) else { return .none }
         if key == retried { retried = nil }
-        return true
+        if expected[index].key != key, !expected[index].answered {
+            expected[index].activates = false
+            expected[index].waited = true
+            expected.removeFirst(index)
+            return .awaitsNamed
+        }
+        let waited = expected[index].waited
+        expected.removeFirst(index + 1)
+        return .named(waited: waited)
     }
 
     public mutating func forgetRequests() {
@@ -130,8 +176,9 @@ public struct FocusReports: Sendable {
 
     /// Call it for every report, before `classify`. `repeated`: it names the last key window.
     /// Ceiling: a Command-Tab's activation read can be lost as a miss (docs/focus.md, Deferred).
-    public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, receivedAt stamp: ContinuousClock.Instant) -> Miss {
-        guard repeated, let app, echo(of: key, receivedAt: stamp) == nil,
+    public mutating func miss(_ key: KeyWindow, app: Int32?, repeated: Bool, activationOf reader: Int32? = nil,
+                              receivedAt stamp: ContinuousClock.Instant) -> Miss {
+        guard repeated, let app, echo(of: key, activationOf: reader, receivedAt: stamp) == nil,
               let index = expected.firstIndex(where: { $0.app == app && $0.key != key && $0.requested <= stamp })
         else { return .none }
         let missed = expected.remove(at: index).key
@@ -145,10 +192,17 @@ public struct FocusReports: Sendable {
 
     /// `concealed` and `recovered` say whether only the user could reach the window.
     /// `keyLeft` is read only when the verdict needs it, as it can read WindowServer.
-    public mutating func classify(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant, onShownWorkspace: Bool,
-                                  concealed: Bool, recovered: Bool = false, miss: Miss = .none,
+    public mutating func classify(_ key: KeyWindow, activationOf app: Int32? = nil, receivedAt stamp: ContinuousClock.Instant,
+                                  onShownWorkspace: Bool, concealed: Bool, recovered: Bool = false, miss: Miss = .none,
                                   keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
-        if consumeEcho(key, receivedAt: stamp) { return .echo }
+        if consumeEcho(key, activationOf: app, receivedAt: stamp) != .none { return .echo }
+        return verdict(key, receivedAt: stamp, onShownWorkspace: onShownWorkspace, concealed: concealed,
+                       recovered: recovered, miss: miss, keyLeft: keyLeft())
+    }
+
+    /// `classify` for a report that consumed no echo.
+    public func verdict(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant, onShownWorkspace: Bool,
+                        concealed: Bool, recovered: Bool, miss: Miss, keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if isStale(stamp) { return .reassert }
         guard case .window(let id) = key else { return keyLeft() == .left ? .reassert : .ignore }
         switch miss {

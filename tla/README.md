@@ -1,6 +1,6 @@
 # TLA+ spec of the workspace switch
 
-The code implements changes 1 to 18 below, and the parts of changes 19 to 24 that
+The code implements changes 1 to 18 below, and the parts of changes 19 to 26 that
 [docs/focus.md](../docs/focus.md) describes; its Deferred list names the rules of those
 changes the code leaves out, change 21's drop of change 12's miss rule among them.
 
@@ -38,39 +38,40 @@ deletes its state directory when TLC exits.
 
 ## Results
 
-| Config | Inputs | Checks | Result | States | Depth |
-| --- | --- | --- | --- | --- | --- |
-| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 | 26 |
-| `user` | commands, clicks, Command-Tab, an opened hidden window | convergence, last command wins, last activation wins, recovery path | pass | 220,819 | 29 |
-| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 | 28 |
-| `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 | 28 |
-| `hover` | commands, clicks, Command-Tab, an opened hidden window, and hover | convergence, last command wins, last activation wins, recovery path | pass | 328,029 | 29 |
-| `hover-settles` | as `hover` | every disturbance settles (liveness) | pass | 328,029 | 29 |
-| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 | 32 |
-| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 6,716 | 8 |
-| `mixed` | commands, reveal first | no mixed frame | fails, expected | 90 | 6 |
-| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 65 | 6 |
-| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 | 37 |
-| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 | 37 |
-| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 948,393 | 14 |
-| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 996,698 | 14 |
-| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 13,917 | 7 |
-| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,282,596 | 21 |
-| `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 | 32 |
-| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 75,373 | 15 |
-| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 | 40 |
-| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 | 26 |
-| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 | 29 |
-| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 | 26 |
-| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 | 37 |
-| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 | 37 |
-| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 | 40 |
-| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 4,918 | 9 |
-| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 7,505 | 12 |
+| Config | Inputs | Checks | Result | States | Depth | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| `commands` | commands | convergence, last command wins, no blank frame, recovery path | pass | 11,548 | 26 | 2 s |
+| `user` | commands, clicks, Command-Tab, an opened hidden window | convergence, last command wins, last activation wins, recovery path | pass | 220,819 | 29 | 6 s |
+| `settles` | commands, clicks, Command-Tab | every disturbance settles (liveness) | pass | 104,031 | 28 | 8 s |
+| `no-coalesce` | commands, clicks, Command-Tab, without coalescing | convergence, last command wins, last activation wins | pass | 103,499 | 28 | 4 s |
+| `hover` | commands, clicks, Command-Tab, an opened hidden window, and hover | convergence, last command wins, last activation wins, recovery path | pass | 328,029 | 29 | 10 s |
+| `hover-settles` | as `hover` | every disturbance settles (liveness) | pass | 328,029 | 29 | 22 s |
+| `fallback` | commands; macOS re-keys after a hide | convergence, last command wins, settles | pass | 337,718 | 32 | 24 s |
+| `fallback-user` | all inputs; macOS re-keys after a hide | last activation wins | fails, expected | 5,844 | 6 | 1 s |
+| `mixed` | commands, reveal first | no mixed frame | fails, expected | 64 | 4 | 0 s |
+| `conceal-first` | commands, conceal first | no mixed frame, no blank frame | fails, expected | 50 | 4 | 0 s |
+| `leave` | all inputs, the key window leaving, with or without a report of the next and before or after macOS keys it, and returning | convergence, last command wins, last activation wins, keeps its workspace after a leave, recovery path | pass | 4,895,193 | 37 | 1 min 28 s |
+| `leave-settles` | as `leave` | every disturbance settles (liveness) | pass | 4,895,193 | 37 | 7 min 43 s |
+| `leave-follow` | all inputs and the key window leaving, following re-keys as before | keeps its workspace after a leave | fails, expected | 887,005 | 12 | 15 s |
+| `leave-nograce` | as `leave`, deciding each report at once as before | keeps its workspace after a leave | fails, expected | 961,098 | 12 | 16 s |
+| `quiet-unbounded` | as `leave`, waiting for a report of the next key window without a bound as before | convergence | fails, expected | 11,497 | 5 | 2 s |
+| `return-stale` | as `leave`, following returns received before a command as before | last command wins | fails, expected | 3,223,910 | 19 | 56 s |
+| `miss` | commands, clicks, Command-Tab, an opened hidden window, and a focus request that misses | convergence, last command wins, last activation wins, recovery path | pass | 304,965 | 32 | 8 s |
+| `miss-follow` | as `miss`, following a hidden window's report as before | last command wins | fails, expected | 74,720 | 15 | 3 s |
+| `miss-leave` | as `leave`, with an opened hidden window and a focus request that misses | as `leave` | pass | 7,761,228 | 40 | 2 min 22 s |
+| `displays-commands` | two displays; commands | as `commands`, no blank frame on either display | pass | 4,510 | 26 | 1 s |
+| `displays-user` | two displays; as `user` | as `user` | pass | 56,576 | 29 | 3 s |
+| `displays-settles` | two displays; as `settles` | every disturbance settles (liveness) | pass | 27,752 | 26 | 3 s |
+| `displays-leave` | two displays; as `leave` | as `leave`, each display keeping its workspace after a leave | pass | 2,008,597 | 37 | 36 s |
+| `displays-leave-settles` | two displays; as `leave` | every disturbance settles (liveness) | pass | 2,008,597 | 37 | 2 min 50 s |
+| `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 | 40 | 45 s |
+| `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 4,853 | 7 | 1 s |
+| `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 8,182 | 12 | 2 s |
 
-Every run in this file's tables used TLC with 8 workers on a 12 core Linux machine, on
-September 25, 2026. A failing run's state count depends on the order the workers take
-states in.
+Every run in this file's tables used TLC with 4 workers in a cloud session with 4 CPUs, on
+September 26, 2026; the numbers before came from 8 workers on a 12 core Linux machine. A
+failing run's state count depends on the order the workers take states in. The depths of
+passing runs come from the earlier runs, which found the same state counts.
 
 `mixed`, `conceal-first`, `fallback-user` and `displays-fallback` record trade-offs, and
 the others record the behaviour this model replaced:
@@ -142,7 +143,9 @@ after the change (`NoteDelay`), and the activation read, which runs on the app's
 and reads the app's focused window whenever it runs. The queue's 30 ms wait can run out for the busy app (`BusyApp`, app A
 unless named `busyb`). AXRaise alone keys a window inside the front app (`RaiseKeys`), and
 a raise in a background app is reported as a focus change (`RaiseReports`), both as
-`kosmos-probe keying` measured. Requests do not miss there, so the split configs run
+`kosmos-probe keying` measured. A key record can activate a background app with its last
+key window, and the app keys the named window a step later (`KeyOldFirst`), as Preview and
+Ghostty did live (change 25). Requests do not miss there, so the split configs run
 without misses and without the miss rule (change 21). In the `background` configs
 background apps also change their own focused window (`AllowBackground`). In the `notice`
 configs the main actor also notices an activation some time after it happens
@@ -150,44 +153,45 @@ configs the main actor also notices an activation some time after it happens
 `split-displays` runs it on two displays. The split configs also check that the key window
 is the front window of its app at rest (`FocusOnTop`).
 
-Each split run was stopped after 10 minutes. A run that finished gives its state count and
-the depth of its search. One that was stopped gives the states it had checked without a
-violation and the depth it had reached.
+A split run was stopped after 30 minutes, and then gives the states it had checked without a
+violation. The runs that finished took less than 20 minutes each.
 
-| Config | Inputs | Checks | Result | States | Depth |
+| Config | Inputs | Checks | Result | States | Time |
 | --- | --- | --- | --- | --- | --- |
-| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 990,973 | 60 |
-| `split-user` | commands, clicks, Command-Tab; app A busy | as `split-commands`, last activation wins | stopped, no violation | 43,423,158 | 45 |
-| `split-user-busyb` | as `split-user`, app B busy | as `split-user` | stopped, no violation | 45,253,366 | 45 |
-| `split-user-background` | as `split-user`, background apps changing their own focused window | as `split-user` | stopped, no violation | 44,248,643 | 45 |
-| `split-hover` | as `split-user`, and hover | as `split-user` | stopped, no violation | 44,305,537 | 39 |
-| `split-hover-settles` | as `split-hover` | every disturbance settles (liveness) | stopped, no violation in the liveness check at 4,903,909 states | 6,881,836 | 26 |
-| `split-open` | as `split-user`, and an opened hidden window | as `split-user` | stopped, no violation | 46,423,057 | 39 |
-| `split-displays` | two displays; as `split-open` | as `split-user` | stopped, no violation | 43,678,787 | 42 |
-| `split-leave` | as `split-user`, the key window leaving and returning as in `leave` | as `split-user`, keeps its workspace after a leave | stopped, no violation | 47,114,439 | 23 |
-| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 3,439,580 | 55 |
-| `split-user-background-notice` | as `split-user-background` with two inputs, activations noticed late | as `split-user` | pass | 3,440,679 | 55 |
-| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 4,376,652 | 55 |
+| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 3,284,762 | 1 min 23 s |
+| `split-user` | commands, clicks, Command-Tab; app A busy | as `split-commands`, last activation wins | stopped, no violation | 56,926,029 | 30 min |
+| `split-user-busyb` | as `split-user`, app B busy | as `split-user` | stopped, no violation | 75,422,911 | 30 min |
+| `split-user-background` | as `split-user`, background apps changing their own focused window | as `split-user` | stopped, no violation | 53,353,117 | 30 min |
+| `split-hover` | as `split-user`, and hover | as `split-user` | stopped, no violation | 75,492,459 | 30 min |
+| `split-hover-settles` | as `split-hover` | every disturbance settles (liveness) | stopped, no violation | 16,538,944 | 30 min |
+| `split-open` | as `split-user`, and an opened hidden window | as `split-user` | stopped, no violation | 83,771,017 | 30 min |
+| `split-displays` | two displays; as `split-open` | as `split-user` | stopped, no violation | 77,845,000 | 30 min |
+| `split-leave` | as `split-user`, the key window leaving and returning as in `leave` | as `split-user`, keeps its workspace after a leave | stopped, no violation | 70,622,472 | 30 min |
+| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 4,845,286 | 1 min 28 s |
+| `split-user-background-notice` | as `split-user-background` with two inputs, activations noticed late | as `split-user` | pass | 4,846,385 | 1 min 42 s |
+| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 5,892,013 | 2 min 11 s |
 
 Each of these runs one rule the implementation had, or one the spec had, and fails as
-expected (changes 17 to 23):
+expected (changes 17 to 26):
 
-| Config | Rule | Result | States | Depth |
-| --- | --- | --- | --- | --- |
-| `split-user-actcheck` | an activation read counts only while its app is front (`ActFrontCheck`) | fails last activation wins, expected | 83,823 | 12 |
-| `split-user-latenote` | a focus notification is stamped and checked when the worker delivers it (`LateNoteCheck`) | fails last activation wins, expected | 2,368,879 | 23 |
-| `split-user-timeout` | the worker gives up on a busy app's AXRaise, which still lands (`RaiseTimeout`) | fails last command wins, expected | 40,185,832 | 42 |
-| `split-user-bgraise` | the worker also raises a background app's window before the key record (`BackgroundRaise`) | fails last command wins, expected | 16,594,886 | 33 |
-| `split-user-d1be665` | robust's rules at d1be665 (`SplitRules`), which change 18 replaced | fails last activation wins, expected | 1,344,425 | 20 |
-| `split-user-background-nohold` | a notification from an app Kosmos activated is taken before that activation's read (`HoldNotes` off) | fails last activation wins, expected | 18,697,182 | 37 |
-| `split-user-reasserttakes` | with only activation reads followed, a report Kosmos reasserts over counts as the last one taken for the user's (`ReassertTakes`) | fails last activation wins, expected | 209,889 | 15 |
-| `split-user-notice-nocheck` | a late notice does not note that its app lost the front to Kosmos's activation (`NoticeCheck` off) | fails last activation wins, expected | 9,875 | 14 |
-| `split-user-lostclick` | the last activation wins, without exempting a click lost to a late callback (`HonorsLastClick`) | fails last click wins, expected | 2,256,738 | 24 |
-| `split-user-missrule` | the miss rule (`MissRule`) | fails last activation wins, expected | 1,916,528 | 23 |
-| `split-user-nopostraise` | no raise after a background app's key record (`PostRaise` off) | fails key window on top, expected | 278,630 | 16 |
-| `split-open-readfollows` | only activation reads follow into another workspace (`NoteFollows` off) | fails last activation wins, expected | 224,729 | 13 |
-| `split-open-postraisenone` | the raise after a key record records no echo (`PostRaiseEcho = "none"`) | fails last command wins, expected | 22,690,877 | 38 |
-| `split-open-postraisekept` | that raise's record stays until a report matches it (`PostRaiseEcho = "kept"`) | fails last activation wins, expected | 30,429,128 | 40 |
+| Config | Rule | Result | States | Depth | Time |
+| --- | --- | --- | --- | --- | --- |
+| `split-user-actcheck` | an activation read counts only while its app is front (`ActFrontCheck`) | fails last activation wins, expected | 83,245 | 12 | 4 s |
+| `split-user-latenote` | a focus notification is stamped and checked when the worker delivers it (`LateNoteCheck`) | fails last activation wins, expected | 2,031,994 | 22 | 39 s |
+| `split-user-timeout` | the worker gives up on a busy app's AXRaise, which still lands (`RaiseTimeout`) | fails last command wins, expected | 44,961,790 | 42 | 18 min 35 s |
+| `split-user-bgraise` | the worker also raises a background app's window before the key record (`BackgroundRaise`) | fails last command wins, expected | 18,592,961 | 33 | 6 min 56 s |
+| `split-user-d1be665` | robust's rules at d1be665 (`SplitRules`), which change 18 replaced | fails last activation wins, expected | 1,222,975 | 19 | 26 s |
+| `split-user-background-nohold` | a notification from an app Kosmos activated is taken before that activation's read (`HoldNotes` off) | fails last activation wins, expected | 17,676,474 | 35 | 6 min 36 s |
+| `split-user-reasserttakes` | with only activation reads followed, a report Kosmos reasserts over counts as the last one taken for the user's (`ReassertTakes`) | fails last activation wins, expected | 215,941 | 14 | 6 s |
+| `split-user-notice-nocheck` | a late notice does not note that its app lost the front to Kosmos's activation (`NoticeCheck` off) | fails last activation wins, expected | 12,238 | 14 | 2 s |
+| `split-user-lostclick` | the last activation wins, without exempting a click lost to a late callback (`HonorsLastClick`) | fails last click wins, expected | 1,992,699 | 22 | 38 s |
+| `split-user-missrule` | the miss rule (`MissRule`) | fails last activation wins, expected | 1,679,337 | 21 | 33 s |
+| `split-user-nopostraise` | no raise after a background app's key record (`PostRaise` off) | fails key window on top, expected | 391,944 | 16 | 9 s |
+| `split-open-readfollows` | only activation reads follow into another workspace (`NoteFollows` off) | fails last activation wins, expected | 285,749 | 13 | 8 s |
+| `split-open-postraisenone` | the raise after a key record records no echo (`PostRaiseEcho = "none"`) | fails last command wins, expected | 23,994,792 | 38 | 8 min 10 s |
+| `split-open-postraisekept` | that raise's record stays until a report matches it (`PostRaiseEcho = "kept"`) | fails last activation wins, expected | 32,447,645 | 40 | 11 min 35 s |
+| `split-user-readsbywindow` | with `KeyOldFirst`, an activation read matches a record of the window it reads, and no notification waits for it (`ReadsByWindow`, `HoldNotes` off), as the implementation had | fails convergence, expected | 11,032,435 | 29 | 3 min 52 s |
+| `split-user-helddrop` | a held report whose window is no longer the key window Kosmos last heard of when the grace ends is dropped (`HeldDrop`), as the implementation had | fails last activation wins, expected | 135,218 | 13 | 8 s |
 
 `RecoveryPath` holds by construction here, because the holding Space is recorded before
 the first hide. The recovery protocol needs its own spec.
@@ -505,3 +509,51 @@ change that removed it:
       before the click and recorded after it, and the click's callback ran after the record,
       so the click read as the raise's echo. The exemption of change 22 (`lastRaced`) now
       starts at the worker's read.
+25. **Activations that key the app's last key window first.** Live, a key record activated
+    Preview with its main window before Preview keyed the window the pointer entered, and
+    Ghostty with its last key window, concealed on another workspace, before the requested
+    one. The activation read ran between the two and found the first. Kosmos matched a
+    read by the window it named, so it adopted Preview's main window, and held Ghostty's
+    and followed it there when the grace ended (`split-user-readsbywindow`, which also
+    turns off `HoldNotes`, as Kosmos has none). The model now lets a key record activate a
+    background app with the window key when the app was last front, while that is still
+    the app's focused window, and key the named one a step later (`KeyOldFirst`). Change
+    19's rule takes the read for the key record's echo. That found five more:
+    - The read consumed the record, and the named window's notification then read as the
+      user's. After `workspace 2` and then `workspace 1`, the key record for w3 landed
+      between the two commands, and Kosmos followed w3 back to workspace 2
+      (`split-commands`, depth 32). A read of another window now leaves the record for the
+      named window's notification, unless a notification held for the read says the user
+      changed the window.
+    - A busy app's raise landed after Kosmos had keyed its empty workspace's window, so
+      the app's focused window was the raised one, and the key record of `workspace 2`
+      activated the app with its last key window, concealed on workspace 1. The app
+      notified that first key, and once the read found its window the notification held
+      for the read was taken for the user's change: Kosmos followed it to workspace 1
+      (`split-commands`, depth 54). An app fronted with no window brought forward keys its
+      last key window, and after a raise in the background the public path keyed another
+      window than the raised one in 9 of 9 trials ([docs/focus.md](../docs/focus.md)), but
+      no probe has shown which window a key record keys first when the two differ. The
+      model keys the last key window first only while it is the app's focused window, and
+      docs/focus.md names the ceiling.
+    - A key record's read that ran after Kosmos key-recorded the same app again found the
+      later record's first key, and took the notification held for the later record for
+      the user's change (`split-commands`, depth 54, over three commands). An app handles
+      key records in order, so the model's focus queue posts a key record to an app only
+      once the app has keyed the window the one before named.
+    - The activation read of a Command-Tab ran while an older key record to that app had
+      not yet keyed its named window, and found the user's window, which the named window
+      then replaced (`split-hover`, depth 32). That is change 19's race of Kosmos keying an
+      app again before its read runs, and its ghost (`lastAmb`) covers it now.
+    - The raise after the key record found the app's own focused window and skipped, and
+      the named window stayed behind its app's others (`FocusOnTop` failed `split-commands`
+      at depth 18). That is the ceiling [docs/focus.md](../docs/focus.md) names for that
+      raise, and the spec exempts it with a ghost (`lowTop`) until a window of that app
+      comes to its front.
+26. **Held reports after the key moved on.** From 6f54cda Kosmos dropped a held report whose
+    window was no longer the key window it last heard of when the grace ended, for
+    Ghostty's report of change 25. That was change 11's first counterexample again
+    (`split-user-helddrop`, `HeldDrop`): after `workspace 3` the user Command-Tabbed to w1
+    on workspace 1, Kosmos's older request keyed the empty workspace's window after it,
+    and its echo moved the key on, so the grace dropped the Command-Tab. Change 25 answers
+    Ghostty's report, and the drop is gone.
