@@ -95,9 +95,7 @@ extension Controller {
         var movePointer = bringsPointer
         if case .follow(id, let followPointer) = action {
             touch(id)
-            var follow = session.follow(id)
-            follow.frames.merge(plan.frames) { followed, _ in followed }
-            (plan, movePointer, action) = (follow, bringsPointer || followPointer, .none)
+            (plan, movePointer, action) = (session.follow(id), bringsPointer || followPointer, .none)
         }
         execute(plan, movePointer: movePointer, floatingCheck: floats, popping: atLaunch ? nil : id)
         run(action)
