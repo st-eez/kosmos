@@ -8,14 +8,20 @@ public struct BorderSettings: Equatable, Sendable {
     public var active: BorderColor?
     /// Fully transparent draws no border.
     public var inactive: BorderColor
+    /// A window flashes it when its app refuses its tile. Nil for the macOS system red, and
+    /// fully transparent for no flash.
+    public var warning: BorderColor?
 
-    public init(width: Double = 4, active: BorderColor? = nil, inactive: BorderColor = .clear) {
+    public init(width: Double = 4, active: BorderColor? = nil, inactive: BorderColor = .clear, warning: BorderColor? = nil) {
         self.width = width
         self.active = active
         self.inactive = inactive
+        self.warning = warning
     }
 
-    public func color(focused: Bool, accent: BorderColor) -> BorderColor? {
+    public func color(focused: Bool, flashing: Bool, accent: BorderColor, red: BorderColor) -> BorderColor? {
+        // A transparent warning leaves the window its own color.
+        if flashing, (warning ?? red).alpha > 0 { return warning ?? red }
         let color = focused ? active ?? accent : inactive
         return color.alpha > 0 ? color : nil
     }
@@ -97,16 +103,42 @@ extension Session {
     }
 
     /// `shown` gives where a window shows and its corner radius, or nil for one concealed or
-    /// ordered out.
-    public func borders(_ settings: BorderSettings, accent: BorderColor,
+    /// ordered out. `flashing` names the windows whose app just refused their tile.
+    public func borders(_ settings: BorderSettings, accent: BorderColor, red: BorderColor, flashing: Set<WindowID>,
                         shown: (WindowID) -> (frame: CGRect, radius: CGFloat)?) -> [WindowID: Border] {
         var borders: [WindowID: Border] = [:]
         for (window, focused) in bordered {
-            guard let color = settings.color(focused: focused, accent: accent), let target = shown(window),
+            guard let color = settings.color(focused: focused, flashing: flashing.contains(window), accent: accent, red: red),
+                  let target = shown(window),
                   let border = Border(around: target.frame, radius: target.radius, width: settings.width, color: color,
                                       displays: monitors) else { continue }
             borders[window] = border
         }
         return borders
+    }
+}
+
+extension Session {
+    /// Of the frames `written`, those of tiles on shown workspaces whose minimum is longer
+    /// than the tile on an axis along which the frame moves from `now`, where WindowServer has
+    /// the window: the app refuses its tile, and the border flashes (docs/borders.md).
+    public func spilling(_ written: [WindowID: CGRect], now: (WindowID) -> CGRect?) -> Set<WindowID> {
+        let minimums = minimums
+        var tiles: [String: [WindowID: CGRect]] = [:]
+        return Set(written.compactMap { window, target in
+            guard let minimum = minimums[window], let name = home[window], isShown(name),
+                  workspaces[name]!.fullscreenWindow == nil else { return nil }
+            if tiles[name] == nil {
+                let monitor = monitor(of: name)
+                tiles[name] = workspaces[name]!.tileFrames(in: monitor.area, gaps: monitor.gaps)
+            }
+            guard let tile = tiles[name]![window] else { return nil }
+            let was = now(window)
+            func refused(_ least: CGFloat, _ length: CGFloat, _ span: (CGRect) -> (CGFloat, CGFloat)) -> Bool {
+                least.rounded(.up) > length && was.map { span($0) != span(target) } != false
+            }
+            return refused(minimum.width, tile.width, { ($0.minX, $0.width) })
+                || refused(minimum.height, tile.height, { ($0.minY, $0.height) }) ? window : nil
+        })
     }
 }

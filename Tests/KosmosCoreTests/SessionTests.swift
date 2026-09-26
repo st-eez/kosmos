@@ -263,12 +263,14 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     var plan = s.add(2, minimum: CGSize(width: 1000, height: 0))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 890, height: 1035))
     #expect(plan.frames[2] == CGRect(x: 910, y: 35, width: 1000, height: 1035))
+    #expect(s.spilling(plan.frames) { _ in nil }.isEmpty)
     // 785, 10 and 1145 make 1940: the split stays equal, and Outlook goes 200 points past the
     // right edge.
     _ = s.remove(2)
     plan = s.add(2, minimum: CGSize(width: 1145, height: 0))
     #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 945, height: 1035))
     #expect(plan.frames[2] == CGRect(x: 965, y: 35, width: 1145, height: 1035))
+    #expect(s.spilling(plan.frames) { _ in nil } == [2])
 }
 
 @Test func aBalanceGivesEachWindowItsMinimumWhereTheyFit() {

@@ -21,7 +21,7 @@
   so the rest goes off screen, onto the display beside it if there is one. Between
   windows it keeps its near edge and overlaps the next window. A tile across the whole
   axis keeps its near edge. Kosmos writes the spilled frame, so the app takes a size it
-  accepts.
+  accepts, and its border flashes ([borders.md](borders.md)).
   - Open until the live test: whether macOS lets a write put a titled window's top above
     its display's top edge, as a window at the top edge spills. If it keeps the title bar
     on screen, the window overlaps the window below it instead, and the frame read back

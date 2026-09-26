@@ -78,7 +78,8 @@ pointer gets none of the drag's events.
   neighbour across the edge alone, as i3's resize with the mouse and Hyprland's two node
   splits do. It moves past the windows' minimums, and stops at the 5% floor `resize`
   keeps ([tree.md](tree.md)). An edge stopped at the floor follows the pointer back. A
-  window pushed below its minimum spills.
+  window pushed below its minimum spills, and its border does not flash during the drag
+  ([borders.md](borders.md)).
 - The right button on a floating window moves the edges at the corner nearest the press
   and keeps the others, never below the window's recorded minimum or 20 pt
   (`ModifierDrag.smallestSide`), Hyprland's `MIN_WINDOW_SIZE`.

@@ -6,6 +6,8 @@ private let blue = BorderColor(hex: "#7aa2f7")!
 private let steve = BorderSettings(width: 4, active: blue)
 /// macOS's blue accent in the light appearance.
 private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
+/// macOS's system red in the light appearance.
+private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
 
 @Test func colorsAreHexWithOptionalAlphaLast() {
     #expect(blue == BorderColor(red: 0x7A / 255, green: 0xA2 / 255, blue: 0xF7 / 255, alpha: 1))
@@ -82,10 +84,56 @@ private let accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     let frames: [WindowID: CGRect] = [1: CGRect(x: 10, y: 10, width: 300, height: 700), 2: CGRect(x: 320, y: 10, width: 300, height: 700)]
     // Window 3 is concealed or ordered out, so `shown` finds it nowhere.
     let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
-    #expect(Array(s.borders(steve, accent: accent, shown: shown).keys) == [2])
-    #expect(s.borders(BorderSettings(), accent: accent, shown: shown).mapValues(\.color) == [2: accent])
+    #expect(Array(s.borders(steve, accent: accent, red: red, flashing: [], shown: shown).keys) == [2])
+    #expect(s.borders(BorderSettings(), accent: accent, red: red, flashing: [], shown: shown).mapValues(\.color) == [2: accent])
     let both = BorderSettings(width: 4, active: blue, inactive: BorderColor(hex: "#414868")!)
-    let borders = s.borders(both, accent: accent, shown: shown)
+    let borders = s.borders(both, accent: accent, red: red, flashing: [], shown: shown)
     #expect(Set(borders.keys) == [1, 2] && borders[1]?.color == both.inactive && borders[2]?.color == blue)
     #expect(borders[2]?.ring == frames[2]!.insetBy(dx: -2, dy: -2))
+}
+
+@Test func aWindowWhoseAppRefusesItsTileFlashesTheWarningColor() {
+    var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
+    _ = s.add(1); _ = s.add(2)
+    s.adopt(2)
+    let frames: [WindowID: CGRect] = [1: CGRect(x: 0, y: 0, width: 500, height: 800), 2: CGRect(x: 500, y: 0, width: 500, height: 800)]
+    let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
+    // The inactive window, transparent otherwise, flashes the system red, and so does the focused one.
+    #expect(s.borders(steve, accent: accent, red: red, flashing: [1], shown: shown).mapValues(\.color) == [1: red, 2: blue])
+    #expect(s.borders(steve, accent: accent, red: red, flashing: [2], shown: shown).mapValues(\.color) == [2: red])
+    let pink = BorderColor(hex: "#f7768e")!
+    var themed = steve
+    themed.warning = pink
+    #expect(s.borders(themed, accent: accent, red: red, flashing: [1], shown: shown)[1]?.color == pink)
+    // A transparent warning leaves each window its own color.
+    themed.warning = .clear
+    #expect(s.borders(themed, accent: accent, red: red, flashing: [1, 2], shown: shown).mapValues(\.color) == [2: blue])
+}
+
+/// v[3 h[1 2]] on a 1000 by 800 display, with 2 held to 500 points tall.
+@Test func onlyAWindowWhoseTileMovesAlongTheAxisItRefusesFlashes() {
+    var s = Session(names: ["1"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
+    for window: WindowID in [1, 2, 3] {
+        _ = s.add(window)
+        s.adopt(window)
+    }
+    _ = s.perform(.move(.up))
+    let before = s.frames(of: "1")
+    #expect(before[2] == CGRect(x: 500, y: 400, width: 500, height: 400))
+    _ = s.constrain(2, to: CGSize(width: 0, height: 500))
+    let spilled = s.frames(of: "1")
+    #expect(spilled[2] == CGRect(x: 500, y: 400, width: 500, height: 500))
+    // Written where it showed at its tile, it refuses the tile and flashes.
+    #expect(s.spilling([2: spilled[2]!]) { before[$0] } == [2])
+    // Where it already shows, it has nothing new to refuse.
+    #expect(s.spilling([2: spilled[2]!]) { spilled[$0] }.isEmpty)
+    // A width resize moves it across, the axis its minimum leaves free.
+    s.adopt(1)
+    let resized = s.perform(.resize(.width, by: 100))!.frames
+    #expect(resized[2] == CGRect(x: 600, y: 400, width: 400, height: 500))
+    #expect(s.spilling([2: resized[2]!]) { spilled[$0] }.isEmpty)
+    // A height resize moves the edge it refuses.
+    let shorter = s.perform(.resize(.height, by: -100))!.frames
+    #expect(shorter[2] == CGRect(x: 600, y: 500, width: 400, height: 500))
+    #expect(s.spilling([2: shorter[2]!]) { resized[$0] } == [2])
 }

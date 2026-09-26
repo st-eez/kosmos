@@ -79,6 +79,9 @@ final class Controller {
         didSet { if borders != oldValue { updateBorders() } }
     }
     let borderWindows = Borders()
+    /// Windows whose app refused their tile, with the flashes of each under way
+    /// (docs/borders.md).
+    private var flashes: [WindowID: Int] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -207,7 +210,10 @@ final class Controller {
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping))
+        let written = writeFrames(plan.frames, sliding: motions(for: plan, popping: popping))
+        // Only here and never during a drag, so a drag's writes and the 100 ms retry never
+        // flash (docs/borders.md).
+        if !dragging { flash(session.spilling(written) { [inventory] in inventory.windows[$0]?.frame }) }
         if movePointer { centerPointer() }
         var show = plan.show, hide = plan.hide
         if needsResync && !(show.isEmpty && hide.isEmpty) {
@@ -281,8 +287,10 @@ final class Controller {
         writeFrames(targets)
     }
 
-    func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) {
-        guard !sessionLocked else { return }
+    /// The targets written, with those already in place left out.
+    @discardableResult
+    func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) -> [WindowID: CGRect] {
+        guard !sessionLocked else { return [:] }
         let writes = ledger.writes(for: targets)
         slides?.writing(Dictionary(uniqueKeysWithValues: writes.keys.map { ($0, targets[$0]!) }), sliding: sliding)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] }) {
@@ -292,6 +300,7 @@ final class Controller {
             }
             worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) }))
         }
+        return targets.filter { writes[$0.key] != nil }
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
@@ -423,7 +432,8 @@ final class Controller {
         guard managing, let borders else { return borderWindows.show([:]) }
         // One read of each slide, so a border's frame and alpha come from the same display frame.
         var sliding: [WindowID: (frame: CGRect, alpha: Double)] = [:]
-        let shown = session.borders(borders, accent: borderWindows.accent) { id in
+        let shown = session.borders(borders, accent: borderWindows.accent, red: borderWindows.red,
+                                    flashing: Set(flashes.keys)) { id in
             guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
             sliding[id] = slides?.shown(id)
             return (sliding[id]?.frame ?? row.frame, row.cornerRadius)
@@ -433,6 +443,17 @@ final class Controller {
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
         }, fullscreen: fullscreenDisplays)
+    }
+
+    /// Each border takes the warning color for 0.3 s, until the window's latest flash ends.
+    private func flash(_ windows: Set<WindowID>) {
+        guard !windows.isEmpty, borders != nil else { return }
+        for id in windows { flashes[id, default: 0] += 1 }
+        updateBorders()
+        after(.milliseconds(300)) { controller in
+            for id in windows { controller.flashes[id] = controller.flashes[id].flatMap { $0 > 1 ? $0 - 1 : nil } }
+            controller.updateBorders()
+        }
     }
 
     func appName(_ window: WindowID) -> String? {
