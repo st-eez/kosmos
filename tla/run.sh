@@ -8,7 +8,10 @@ if [[ ! -f $jar ]]; then
 fi
 cfg=${1%.cfg}.cfg
 shift
+# The handover- configs check Handover.tla, the rest Kosmos.tla.
+spec=MC.tla
+if [[ $cfg == handover* ]]; then spec=MCHandover.tla; fi
 meta=$(mktemp -d "${TMPDIR:-/tmp}/tlc-states.XXXXXX")
 trap 'rm -rf "$meta"' EXIT
 java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers "${TLC_WORKERS:-4}" -noGenerateSpecTE \
-    -metadir "$meta" -config "$cfg" "$@" MC.tla
+    -metadir "$meta" -config "$cfg" "$@" "$spec"
