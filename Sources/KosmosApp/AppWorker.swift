@@ -14,7 +14,7 @@ struct AXReport: Sendable {
         /// window report, but it can be Kosmos's echo.
         case backgroundFocus(WindowID?)
         case minimized(WindowID, Bool)
-        case framesApplied([(id: WindowID, target: CGRect, readBack: CGRect)])
+        case frameApplied(id: WindowID, target: CGRect, readBack: CGRect)
         /// Windows whose frame writes the worker dropped, as it knows no element for them.
         case framesDropped([WindowID])
         /// The app started, or answers again after a timeout: reads that failed can be made again.
@@ -285,13 +285,15 @@ actor AppWorker {
         guard !backoff.backedOff else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
-        var results: [(id: WindowID, target: CGRect, readBack: CGRect)] = []
-        var dropped: [WindowID] = []
+        // Each report goes at once, so a window's slide and a batch waiting for its write wait
+        // for none of the app's other writes.
+        let dropped = writes.keys.filter { elements[$0] == nil }
+        if !dropped.isEmpty {
+            log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
+            send(.framesDropped(dropped))
+        }
         for (id, entry) in writes {
-            guard let element = elements[id] else {
-                dropped.append(id)
-                continue
-            }
+            guard let element = elements[id] else { continue }
             let start = ContinuousClock.now
             switch entry.write {
             case .position(let origin):
@@ -321,13 +323,8 @@ actor AppWorker {
             }
             // script/bench-relayout.sh counts these lines.
             log.info("\(id) written, AX time \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 2)) ms")
-            results.append((id, entry.target, readBack))
+            send(.frameApplied(id: id, target: entry.target, readBack: readBack))
         }
-        if !dropped.isEmpty {
-            log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
-            send(.framesDropped(dropped))
-        }
-        if !results.isEmpty { send(.framesApplied(results)) }
     }
 
     private func set(_ element: AXUIElement, _ attribute: String, _ point: CGPoint) {

@@ -4,12 +4,15 @@ import os
 
 extension Controller {
     /// Judged as of `changedAt`, as the inventory applies a change after an off main read.
-    /// The key tiled window lifts only once it moved whole past TitleBarDrag.dragThreshold, so
-    /// a click that jitters the title bar does not lift it (docs/geometry.md, docs/displays.md).
-    func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?) {
+    /// `landed`: the change shows the newest write's read back, which WindowServer takes about
+    /// 9 ms after the worker reports it. The key tiled window lifts only once it moved whole
+    /// past TitleBarDrag.dragThreshold, so a click that jitters the title bar does not lift it
+    /// (docs/geometry.md, docs/displays.md).
+    func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?,
+                      landed: Bool) {
         guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
-        if let changedAt, ledger.isWriting(id, at: changedAt) {
+        if landed || changedAt.map({ ledger.isWriting(id, at: $0) }) == true {
             ledger.observeAfterConfirm(id, frame: frame)
             return
         }

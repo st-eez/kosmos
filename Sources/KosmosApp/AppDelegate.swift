@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The last second of changes has no write yet.
         controller?.writeLayout(wait: true)
         // Slides end first, so recovery finds the pool's Spaces empty.
-        controller?.endSlides()
+        controller?.endSlides("at quit")
         // Through Hiding when it exists, so batches still queued land first.
         let outcome = hiding?.recoverNow() ?? record.map { Recovery.run(file: $0) }
         if let outcome { log.notice("quit recovery: \(String(describing: outcome), privacy: .public)") }
@@ -191,6 +191,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reads the displays instead, as a sleeping Mac can report them gone (docs/displays.md).
     private func screenParametersChanged() {
         log.notice("screen parameters changed: \(NSScreen.screens.count) displays")
+        // A gone display's link stops firing, so its slides would hold their windows displaced
+        // until the change applies (docs/geometry.md).
+        controller?.endSlides("at a display change")
         displayChange?.cancel()
         let apply = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {

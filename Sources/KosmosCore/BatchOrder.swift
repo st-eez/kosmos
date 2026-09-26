@@ -27,6 +27,9 @@ public struct BatchOrder: Sendable {
     /// The first batch waiting.
     public var next: Batch? { isWaiting ? batches[sent] : nil }
 
+    /// Whether a batch not yet done, sent or waiting, conceals the window.
+    public func conceals(_ id: WindowID) -> Bool { conceals(batches[...], id) }
+
     /// Before the plan's writes, which wait for it.
     public mutating func add(show: [WindowID], hide: [WindowID]) -> Batch {
         lastNumber += 1

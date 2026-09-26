@@ -324,7 +324,9 @@ final class Controller {
             // Sent only now, so each lands concealed.
             self.sendWrites(self.order.done(batch.number))
             self.sendReadyBatches()
-            self.updateBorders()
+            // Last, as a border's AppKit calls wait on WindowServer while it applies the batch and
+            // would hold up the focus request (docs/borders.md).
+            defer { self.updateBorders() }
             signposter.endInterval("switch", interval)
             let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - context.received
             controllerLog.notice("""
@@ -397,13 +399,14 @@ final class Controller {
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
-    /// through here, and jump. `popping` pops only while still ordered out (docs/geometry.md).
+    /// through here, and jump. `popping` pops only while still ordered out. A window a batch not
+    /// yet done conceals would show above the desktop in its slide's Space (docs/geometry.md).
     private func motions(for plan: Session.Plan, popping: WindowID?) -> [WindowID: Slides.Motion] {
         guard animations, slides != nil else { return [:] }
         let show = Set(plan.show), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
         var motions: [WindowID: Slides.Motion] = [:]
-        for id in plan.frames.keys where session.isVisible(id) && !show.contains(id) && !hiding.isConcealed(id) && id != held
-            && !session.lifted.contains(id) && mouseMoved[id] == nil {
+        for id in plan.frames.keys where session.isVisible(id) && !show.contains(id) && !hiding.isConcealed(id)
+            && !order.conceals(id) && id != held && !session.lifted.contains(id) && mouseMoved[id] == nil {
             guard let name = session.workspace(of: id), let pid = owner[id], inventory.worker(pid)?.answers == true else { continue }
             let display = session.monitor(of: name).id
             guard !fullscreen.contains(display) else { continue }
@@ -437,8 +440,8 @@ final class Controller {
         return displays.subtracting([desktop])
     }
 
-    func endSlides() {
-        slides?.endAll("at quit")
+    func endSlides(_ why: String) {
+        slides?.endAll(why)
     }
 
     /// `retry`: it follows a miss, which the kill switch then counts once.
@@ -564,7 +567,7 @@ final class Controller {
         var sliding: [WindowID: (frame: CGRect, alpha: Double)] = [:]
         let shown = session.borders(borders, accent: borderWindows.accent, red: borderWindows.red,
                                     flashing: Set(flashes.keys)) { id in
-            guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
+            guard !hiding.isConcealed(id), !order.conceals(id), let row = inventory.windows[id], row.orderedIn else { return nil }
             sliding[id] = slides?.shown(id)
             return (sliding[id]?.frame ?? row.frame, row.cornerRadius)
         }

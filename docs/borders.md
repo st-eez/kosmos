@@ -58,11 +58,18 @@ state, and during a slide the frame the slide shows the window at.
 - A bordered window gets its border only while it is on screen: not concealed, as a
   switch's incoming windows are until the batch that reveals them confirms, and ordered
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks
-  it. A window that a batch still in flight conceals counts as concealed: after a switch
-  to workspace B and straight back to A, A's windows get their borders once the batch
-  that conceals them and the one that reveals them have both finished. The outgoing
-  workspace's borders go as Kosmos plans the switch, before its batch conceals the
-  windows, and the incoming ones come when the batch confirms, after the windows show.
+  it. A window that a batch not yet done conceals, sent or still waiting for writes,
+  counts as concealed: after a switch to workspace B and straight back to A, A's windows
+  get their borders once the batch that conceals them and the one that reveals them have
+  both finished. The outgoing workspace's borders go as Kosmos plans the switch, before
+  its batch conceals the windows, and the incoming ones come when the batch confirms,
+  after the windows show and after the switch's focus request. A failed batch, and a
+  switch a newer one replaced, make no focus request and show their borders all the same.
+  A border's AppKit calls wait on WindowServer while it applies the batch. With the border
+  shown before the focus request, the batch's completion took 5.0 ms at the median, 29 ms
+  at p90 and 136 ms at most in 164 revealing switches from the borders merge to September
+  26, 2026, against 0.019 ms at the median in 434 revealing switches before borders, and
+  the focus request waited for it (live log).
 - `width` is the ring's thickness in points, from the window's edge outward. JankyBorders'
   `width = 4` looks like Kosmos's `width = 2`. Before 2026-09-25 Kosmos also drew 1 point
   inside the edge, over the window, which Steve found too thick. The ring's inner
@@ -219,6 +226,8 @@ state, and during a slide the frame the slide shows the window at.
   layers moved, and nothing measurable for borders following change events. Kosmos's
   slide log gives its display link's callback time, which includes the borders.
 - Open until the live test:
+  - how much later than its window a border shows at a revealing switch, now that it
+    comes after the focus request;
   - whether a focus move between displays still shows the border at the last window's
     size (`kosmos-probe border-watch` with the border window's id);
   - whether the first focus on a display that comes back shows its border at an old frame
