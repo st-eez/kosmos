@@ -296,7 +296,7 @@ final class Controller {
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
-    /// through here, and jump (docs/geometry.md).
+    /// through here, and jump. `popping` pops only while still ordered out (docs/geometry.md).
     private func motions(for plan: Session.Plan, popping: WindowID?) -> [WindowID: Slides.Motion] {
         guard animations, slides != nil else { return [:] }
         let show = Set(plan.show), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
@@ -308,9 +308,13 @@ final class Controller {
             guard !fullscreen.contains(display) else { continue }
             // Where WindowServer has the window, read before the ledger takes the write as sent,
             // and unknown while a write of Kosmos's still moves it.
-            let from = ledger.isWriting(id) ? nil : inventory.windows[id]?.frame
+            var from = ledger.isWriting(id) ? nil : inventory.windows[id]?.frame
+            var pop = false
+            // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the
+            // read shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
+            if id == popping, let row = SkyLight.rows([id]).first { (from, pop) = (row.frame, !row.orderedIn) }
             if let from, let shownOn = self.display(under: from), fullscreen.contains(shownOn) { continue }
-            motions[id] = Slides.Motion(from: from, display: display, pop: id == popping)
+            motions[id] = Slides.Motion(from: from, display: display, pop: pop)
         }
         return motions
     }

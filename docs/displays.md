@@ -23,8 +23,10 @@
 - When the front app keyed the new window, as when the user launched or activated the app,
   and the rule's workspace is hidden, Kosmos shows that workspace on its display and
   focuses the window, as for a Command-Tab to a concealed window ([focus.md](focus.md)).
-  Hyprland's `workspace` window rule does the same: the window opens on that workspace and
-  Hyprland switches to it, unless the rule adds `silent` (Hyprland wiki, Window Rules).
+  When that report came before Kosmos placed the window, one switch places and shows it,
+  and the window is never concealed. Hyprland's `workspace` window rule does the same: the
+  window opens on that workspace and Hyprland switches to it, unless the rule adds
+  `silent` (Hyprland wiki, Window Rules).
   With `mouse-follows-focus` the pointer comes along
   ([focus-follows-mouse.md](focus-follows-mouse.md)). A window its app opens in the
   background changes no workspace. The ceiling: a launch by an agent or a script that

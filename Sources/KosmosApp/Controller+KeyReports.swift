@@ -37,7 +37,7 @@ extension Controller {
             note: { self.log($0) })
     }
 
-    private func run(_ action: KeyReportIntake.Action) {
+    func run(_ action: KeyReportIntake.Action) {
         switch action {
         case .none:
             break
