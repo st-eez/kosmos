@@ -177,7 +177,9 @@
     of five Activity Monitor reopens showed the window for 1 frame, then nothing for 1 or
     2 frames, then faded it in over about 0.4 s (screen recording, September 25, 2026). A
     reopen that waits the pairing window slides after the wait, the ceiling
-    [tree.md](tree.md) names.
+    [tree.md](tree.md) names. A hidden tab dragged out of its group shows for the pairing
+    window before it takes a place, so it slides from where it shows too
+    ([tree.md](tree.md)).
   - A window's border follows the frame the slide shows it at, at each display frame,
     from outside the animation Space ([borders.md](borders.md)).
   - A window slides only while Kosmos can conceal, with the guardian ready and every

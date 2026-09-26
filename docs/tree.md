@@ -248,10 +248,11 @@
     is still ordered in. A hidden member dragged out of its group takes a place of its own,
     parked at once when it is minimized, in native fullscreen or hidden with its app. It
     floats when a rule floats its app, and the workspace a rule names does not apply to it.
-    A window its app had closed and kept opens again as a new window, 250 ms late only
-    while another window of its app is ordered in at its frame (above). Merge All Windows
-    parks the merged windows that way, and selecting one's tab brings it to the group's
-    place.
+    It shows for the pairing window before it takes its place, so it slides from there as
+    a reopened window does ([geometry.md](geometry.md)). A window its app had closed and
+    kept opens again as a new window, 250 ms late only while another window of its app is
+    ordered in at its frame (above). Merge All Windows parks the merged windows that way,
+    and selecting one's tab brings it to the group's place.
   - Kosmos does not read the AXTabGroup of the selected tab. Frames tell the cases seen
     so far apart at no cost, and a false switch now needs two windows of one app with one
     frame, one leaving and one arriving within 250 ms. The AXTabs of the incoming window
