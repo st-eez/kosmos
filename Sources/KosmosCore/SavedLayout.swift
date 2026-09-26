@@ -129,6 +129,9 @@ extension Session {
         return true
     }
 
+    /// The windows the restored layout has that Kosmos has not admitted.
+    public var pendingWindows: [WindowID] { names.flatMap { workspaces[$0]!.pending.map(\.window) } }
+
     /// Where the restored layout puts `window`, until Kosmos admits it.
     public func savedWorkspace(of window: WindowID) -> String? {
         names.first { workspaces[$0]!.pending.contains { $0.window == window } }

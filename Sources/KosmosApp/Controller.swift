@@ -115,13 +115,15 @@ final class Controller {
     private func restoreLayout() {
         guard let windowServer, var saved = LayoutFile.load() else { return }
         let count = saved.windows.count
-        // A window that closed while Kosmos was down would hold its tile until the next write,
-        // and one ordered out, as minimized or closed and kept by its app since, until the
-        // tree changes.
-        let rows = Dictionary(SkyLight.rows(saved.windows.map(\.id)).map { ($0.id, $0) }) { first, _ in first }
-        saved.windows.removeAll { rows[$0.id] == nil }
-        for index in saved.windows.indices where rows[saved.windows[index].id]?.orderedIn == false {
-            saved.windows[index].parked = true
+        // A closed window would hold its tile until the next write, and one ordered out, as
+        // minimized since, until the tree changes. A failed read keeps every window.
+        if let open = Self.openRows(saved.windows.map(\.id)) {
+            saved.windows.removeAll { open[$0.id] == nil }
+            for index in saved.windows.indices where open[saved.windows[index].id]?.orderedIn == false {
+                saved.windows[index].parked = true
+            }
+        } else {
+            controllerLog.error("saved windows not read from WindowServer; each waits for its admission")
         }
         let applied = session.restore(saved, windowServer: windowServer)
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
@@ -521,18 +523,32 @@ final class Controller {
     }
 
     /// One write a second at most, a second after the first change since the last write, so
-    /// a crash loses at most that second, and a switch at most sets the timer (docs/tree.md).
+    /// a crash loses at most that second, and a switch at most sets the timer. The write drops
+    /// the pending windows that closed first (docs/tree.md).
     private func writeLayoutSoon() {
         guard windowServer != nil, !layoutWritePending else { return }
         layoutWritePending = true
         after(.seconds(1)) { controller in
-            // A saved window that closed before Kosmos admitted it gives up its tile.
-            if controller.inventory.swept {
-                let plan = controller.session.forgetPending { controller.inventory.windows[$0] == nil }
-                if !plan.isEmpty { controller.execute(plan) }
-            }
+            controller.dropClosedPending()
             controller.writeLayout()
         }
+    }
+
+    /// A saved window that closed before Kosmos admitted it gives its tile up.
+    private func dropClosedPending() {
+        let pending = session.pendingWindows
+        guard !pending.isEmpty, let open = Self.openRows(pending) else { return }
+        let plan = session.forgetPending { open[$0] == nil }
+        if !plan.isEmpty { execute(plan) }
+    }
+
+    /// The rows of the windows still open, leaving out one ordered out on no Space, as a window
+    /// its app closed and kept, which opens as a new window. Nil when the query fails, which
+    /// must not read as every window closed (docs/hiding.md).
+    private static func openRows(_ windows: [WindowID]) -> [WindowID: WindowRow]? {
+        guard let rows = SkyLight.readRows(windows) else { return nil }
+        let open = rows.filter { $0.orderedIn || SkyLight.spaces(of: $0.id).map { !$0.isEmpty } ?? true }
+        return Dictionary(open.map { ($0.id, $0) }) { first, _ in first }
     }
 
     /// `wait`: returns once the file is written, as at quit.

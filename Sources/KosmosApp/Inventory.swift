@@ -77,8 +77,7 @@ final class Inventory {
     /// Nil while no sweep runs. A sweep skips these, as its snapshot predates their events.
     private var touchedDuringSweep: Set<WindowID>?
     private var sweepAgain = false
-    /// The launch sweep is done.
-    private(set) var swept = false
+    private var swept = false
     private var presentAtStart: Set<WindowID> = []
     private var markedMissed: [WindowID: ContinuousClock.Instant] = [:]
     private static let lateBound: Duration = .seconds(1)

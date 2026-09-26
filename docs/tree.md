@@ -327,9 +327,12 @@
     (`Workspace.holdingPending`), so each window back takes the tile it already has, and no
     window on screen moves while the apps answer Accessibility one by one. The hold ends at
     the first change to the tree. A pending window that closed gives its tile up at the
-    next write, which drops the pending windows WindowServer no longer has. A window parked
-    at the save holds no tile, nor does one ordered out at the launch, as one minimized or
-    closed and kept by its app since.
+    next write, which reads the pending windows from WindowServer and drops each it no
+    longer has, or has ordered out on no Space, as a window its app closed and kept, which
+    opens as a new window. The launch reads the saved windows the same way. A failed read
+    drops none, as read for every window closed it would lose the file at the next write
+    (`SkyLight.readRows`, [hiding.md](hiding.md)). A window parked at the save holds no
+    tile, nor does one ordered out at the launch, as one minimized since.
   - A saved window keeps its saved workspace and floating over its rule. A rule places a
     new window, and the user may have moved this one since, as the second Ghostty from
     workspace 1, its rule's, to 8; a reload leaves placed windows alone the same way. Where

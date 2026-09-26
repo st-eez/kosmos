@@ -146,7 +146,7 @@ public struct Session: Sendable {
         for window in Set(learned.keys).union(constrained.keys) where home[window] == nil {
             problems.append("window \(window) with a minimum belongs to no workspace")
         }
-        let pending = names.flatMap { workspaces[$0]!.pending.map(\.window) }
+        let pending = pendingWindows
         for window in pending where home[window] != nil { problems.append("pending window \(window) belongs to a workspace") }
         if Set(pending).count != pending.count { problems.append("a window is pending on two workspaces") }
         return problems
