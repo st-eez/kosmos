@@ -65,9 +65,10 @@
   | alone, to a window its app placed on the panel 1718 pt wide | 10 of 10 at once |
 
   So no order lands in one pass. A frame write that moves the window to another display,
-  as the Controller judges from where WindowServer last had the window and the target, and
-  reads back more than 2 pt smaller than the target on an axis, writes the size again
-  every 2 ms while it reads back smaller, for up to 50 ms. The worker does so after the
+  as `Session.movesDisplay` judges from where WindowServer last had the window and the
+  target, and reads back more than 2 pt smaller than the target on an axis, writes the
+  size again every 2 ms while it reads back smaller, for up to 50 ms
+  (`FrameLedger.writesSizeAgain`). KosmosCore's tests cover both. The worker does so after the
   app's other writes of the same drain, so none of them waits, and the app has longer to
   take the move. It logs how many more sizes it wrote, the read back and the time, and a
   notice with the same when the window still reads back smaller at 50 ms. The ceiling:

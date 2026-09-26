@@ -18,6 +18,19 @@ import Testing
         #expect(s.monitor(of: "4").id == 2)
     }
 
+    /// The Ghostty window of September 26, 2026, from the built-in display's tile up to the
+    /// main panel's (docs/geometry.md).
+    @Test func aWriteMovesADisplayWhenTheTargetsCenterIsOnAnotherDisplayThanTheFrames() {
+        let s = Desk.session()
+        let builtIn = CGRect(x: 210, y: 1090, width: 1492, height: 962), panel = CGRect(x: 10, y: 10, width: 1900, height: 1060)
+        #expect(s.display(under: builtIn) == 3 && s.display(under: panel) == 2)
+        #expect(s.movesDisplay(from: builtIn, to: panel) && s.movesDisplay(from: panel, to: builtIn))
+        // Grown past the panel's bottom edge, its center still on the panel.
+        #expect(!s.movesDisplay(from: panel, to: CGRect(x: 10, y: 10, width: 1900, height: 1500)))
+        #expect(!s.movesDisplay(from: nil, to: panel))
+        #expect(s.movesDisplay(from: CGRect(x: 5000, y: 0, width: 800, height: 600), to: panel))
+    }
+
     @Test func aDisplayNoWorkspaceCanGoToShowsNone() {
         let s = Desk.session(["1": 2, "2": 2], names: ["1", "2"])
         #expect(s.shownWorkspaces == ["1"])

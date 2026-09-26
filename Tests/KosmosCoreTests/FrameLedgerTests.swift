@@ -204,3 +204,16 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     ledger.forget(1)
     #expect(!ledger.isLanding(1, at: t0))
 }
+
+/// The panel's tile held to the built-in display's width, 1718 of 1900 pt (docs/geometry.md).
+@Test func aWindowMovedToAnotherDisplayIsWrittenAgainWhileItReadsBackSmallerForUpTo50Ms() {
+    let target = CGRect(x: 10, y: 35, width: 1900, height: 1035)
+    let held = CGRect(x: 10, y: 35, width: 1718, height: 1035)
+    #expect(FrameLedger.writesSizeAgain(held, target: target, after: .zero))
+    #expect(FrameLedger.writesSizeAgain(held, target: target, after: .milliseconds(49)))
+    #expect(!FrameLedger.writesSizeAgain(held, target: target, after: FrameLedger.displayMoveBound))
+    // Within the slack it took the target, as larger it did.
+    #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1898, height: 1033), target: target, after: .zero))
+    #expect(FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1900, height: 1032), target: target, after: .zero))
+    #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1910, height: 1100), target: target, after: .zero))
+}

@@ -114,6 +114,19 @@ public struct Session: Sendable {
         monitors.first { $0.frame.contains(point) }.flatMap { shown[$0.id] }
     }
 
+    /// The display under the frame's center, nil for none.
+    public func display(under frame: CGRect) -> DisplayID? {
+        monitors.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?.id
+    }
+
+    /// Whether a write to `target` moves a window WindowServer has at `frame` onto another
+    /// display, where AppKit holds it to the old display's edge for a while
+    /// (FrameLedger.displayMoveBound). False with no frame known.
+    public func movesDisplay(from frame: CGRect?, to target: CGRect) -> Bool {
+        guard let frame else { return false }
+        return display(under: frame) != display(under: target)
+    }
+
     /// The broken invariants of the per-window state, empty when the session is sound.
     func validate() -> [String] {
         var problems: [String] = []

@@ -344,14 +344,12 @@ actor AppWorker {
         send(.frameApplied(id: id, target: entry.target, readBack: readBack))
     }
 
-    /// AppKit holds a window that grows onto another display to the old display's edge until
-    /// its app takes the move, 10 to 30 ms later, so the size is written again every 2 ms for
-    /// up to 50 ms, blocking the worker (docs/geometry.md). Nil when a read fails or the app is
-    /// backed off.
+    /// Writes the size again every 2 ms while `FrameLedger.writesSizeAgain` holds, blocking
+    /// the worker (docs/geometry.md). Nil when a read fails or the app is backed off.
     private func landSize(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
         let held = readBack.size, began = ContinuousClock.now
         var readBack = readBack, sets = 0
-        while readBack.isSmaller(than: target), ContinuousClock.now - began < .milliseconds(50) {
+        while FrameLedger.writesSizeAgain(readBack, target: target, after: ContinuousClock.now - began) {
             Thread.sleep(forTimeInterval: 0.002)
             set(element, kAXSizeAttribute, target.size)
             sets += 1
@@ -518,12 +516,5 @@ actor AppWorker {
     private nonisolated func deliver(_ report: AXReport) {
         let deliver = self.report
         onMain { deliver(report) }
-    }
-}
-
-private extension CGRect {
-    /// More than the ledger's slack smaller than `target` on an axis.
-    func isSmaller(than target: CGRect) -> Bool {
-        width < target.width - FrameLedger.slack || height < target.height - FrameLedger.slack
     }
 }

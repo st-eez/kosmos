@@ -25,6 +25,13 @@ public enum Fit: Equatable, Sendable {
     case minimum(CGSize)
 }
 
+extension CGRect {
+    /// More than the ledger's slack smaller than `target` on an axis.
+    public func isSmaller(than target: CGRect) -> Bool {
+        width < target.width - FrameLedger.slack || height < target.height - FrameLedger.slack
+    }
+}
+
 /// Decides which windows need a frame write (docs/geometry.md).
 public struct FrameLedger: Sendable {
     /// Apps round their size, so a window may read back this much larger than its target on
@@ -165,5 +172,17 @@ public struct FrameLedger: Sendable {
         landing[id] = nil
         refused[id] = nil
         refusedLarger[id] = nil
+    }
+}
+
+extension FrameLedger {
+    /// AppKit holds a window that grows onto another display to the old display's edge until
+    /// its app takes the move, 10 to 30 ms after the position write. So after a write that
+    /// moves a window there, the worker writes the size again every 2 ms while the window
+    /// reads back smaller, until this long after its first read back (docs/geometry.md).
+    public static let displayMoveBound: Duration = .milliseconds(50)
+
+    public static func writesSizeAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {
+        readBack.isSmaller(than: target) && elapsed < displayMoveBound
     }
 }
