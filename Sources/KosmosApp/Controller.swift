@@ -287,17 +287,9 @@ final class Controller {
                                         concealed: hiding.isConcealedOrConcealing,
                                         display: { inventory.windows[$0].flatMap { display(under: $0.frame) } })
         // Before the writes, which wait for the batches that conceal their windows.
-        var added: [Int] = []
-        func add(show: [WindowID], hide: [WindowID]) {
-            let number = order.add(show: show, hide: hide).number
-            switches[number] = Switch(received: received, fromCommand: fromCommand)
-            added.append(number)
-        }
-        if !entering.isEmpty { add(show: [], hide: entering) }
-        if !(show.isEmpty && hide.isEmpty) {
-            intake.forgetPlacedHidden(show)   // their workspace is shown
-            add(show: show + entering.filter { !show.contains($0) }, hide: hide)
-        }
+        let added = order.add(show: show, hide: hide, entering: entering).map(\.number)
+        for number in added { switches[number] = Switch(received: received, fromCommand: fromCommand) }
+        if !(show.isEmpty && hide.isEmpty) { intake.forgetPlacedHidden(show) }   // their workspace is shown
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
@@ -333,8 +325,8 @@ final class Controller {
         }
         order.ready(landing: landing).forEach(send)
         // Checked again when the first write holding the batch times out.
-        guard let next = order.next, let end = next.show.filter(landing).compactMap(ledger.landingEnds).min(),
-              recheckAt.map({ end < $0 }) ?? true else { return }
+        guard let end = order.recheck(landing: landing, ends: ledger.landingEnds), recheckAt.map({ end < $0 }) ?? true
+        else { return }
         recheckAt = end
         after(end - now) { controller in
             if controller.recheckAt == end { controller.recheckAt = nil }

@@ -54,7 +54,7 @@
   the wait as `held`. The wait leaves out a window shown already and one whose app is
   backed off. A write no row has shown counts as landed 1 s after it was sent, the
   Accessibility timeout, and the controller checks the batch again when the first write
-  holding it reaches that second. Of 1,835 slide landings from September 24 to 26, 2026,
+  holding it reaches that second (`BatchOrder.recheck`). Of 1,835 slide landings from September 24 to 26, 2026,
   the median was 32.8 ms, p90 80.8 ms, p99 250.7 ms and the longest 673.7 ms, and 7 never
   landed (live log). A concealed window's move posts the change event as a
   shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
@@ -64,7 +64,7 @@
 - A window on screen that the revealed workspace takes in on the display it shows on, as
   the one `move-node-to-workspace --focus-follows-window` moves or a followed rule window,
   is concealed at the command by a batch of its own, whose switch line shows nothing, and
-  revealed with the workspace once its write lands. Written at once, it had landed at its
+  revealed with the workspace once its write lands (`BatchOrder.add`, `entering`). Written at once, it had landed at its
   tile over the old workspace 1 or 2 frames before the rest. Into an empty workspace
   nothing is revealed around it, so the switch goes at once and the window slides there.
   One whose workspace is on another display is left out and lands there as before, 1 or
