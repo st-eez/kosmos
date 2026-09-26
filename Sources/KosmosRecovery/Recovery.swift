@@ -17,6 +17,9 @@ public enum Recovery {
         case windowServerUnknown
         /// `spaces` counts the Spaces read back as gone after their destroy.
         case restored(windows: Int, spaces: Int)
+        /// A Kosmos took the record over: `kept` windows stay concealed and recorded, and the
+        /// rest were restored.
+        case adopted(kept: Int, restored: Int, spaces: Int)
         /// Windows are left in a recorded Space or on no Space; the record is kept.
         case incomplete(remaining: Int)
 
@@ -24,14 +27,17 @@ public enum Recovery {
         public var isFinal: Bool {
             switch self {
             case .incomplete, .windowServerUnknown: false
-            case .nothingRecorded, .staleSession, .restored: true
+            case .nothingRecorded, .staleSession, .restored, .adopted: true
             }
         }
     }
 
     /// `keeping`: the running Kosmos keeps the Spaces windows slide in, recorded; after it
-    /// exits, and at its startup and quit, they go too.
-    public static func run(file: RecordFile, keepingAnimationSpaces keeping: Bool = false) -> Outcome {
+    /// exits, and at its startup and quit, they go too. `sparing`, for a Kosmos that takes the
+    /// record over, names the windows that stay concealed, given the concealed members of the
+    /// holding Spaces and the recorded windows (docs/hiding.md).
+    public static func run(file: RecordFile, keepingAnimationSpaces keeping: Bool = false,
+                           sparing: ((_ members: [UInt32], _ recorded: Set<UInt32>) -> Set<UInt32>)? = nil) -> Outcome {
         guard let record = file.read() else { return .nothingRecorded }
         guard let windowServer = ProcessIdentity.windowServer() else { return .windowServerUnknown }
         guard record.windowServer == windowServer else {
@@ -47,15 +53,20 @@ public enum Recovery {
             kosmos_space_set_alpha(space, 1)
         }
         let recorded = record.spaces + animation
-        let (members, gone) = settledMembers(recorded, of: record)
+        let (settled, gone) = settledMembers(recorded, of: record)
         let liveSpaces = recorded.filter { !gone.contains($0) }
+        let holding = Set(record.spaces)
+        let spared = sparing?(settled.filter { holding.contains($0.key) }.values.flatMap { $0 }, Set(record.windows.map(\.id))) ?? []
+        let members = settled.mapValues { $0.filter { !spared.contains($0) } }
+        let sparedSpaces = Set(settled.filter { $0.value.contains(where: spared.contains) }.keys)
         // One snapshot of the displays and one read of the rows, so a display change during
         // recovery cannot mix destinations.
         let displays = Displays.current()
-        let named = Set(members.values.joined()).union(record.windows.map(\.id))
+        let named = Set(members.values.joined()).union(record.windows.map(\.id)).subtracting(spared)
         let frames = Dictionary(SkyLight.rows(Array(named)).map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
-        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), alive: Set(frames.keys),
+        let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id).filter { !spared.contains($0) },
+                                     alive: Set(frames.keys),
                                      isOnAnySpace: { SkyLight.spaces(of: $0).map { !$0.isEmpty } },
                                      destination: { destination(for: frames[$0], original: original[$0], in: displays) })
 
@@ -74,7 +85,7 @@ public enum Recovery {
 
         let handled = Set(plan.adds.values.joined()).union(plan.removalsBySpace.values.joined())
         let after = SpaceMembers.read(liveSpaces, of: record)
-        let remaining = after.members.values.reduce(0) { $0 + $1.count }
+        let remaining = after.members.values.joined().filter { !spared.contains($0) }.count
         let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))
         let onNoSpace = { (window: UInt32) in alive.contains(window) && (SkyLight.spaces(of: window) ?? []).isEmpty }
         guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
@@ -85,20 +96,25 @@ public enum Recovery {
         }
         // A destroy is only sent, and one that leaves a Space holding another process's
         // windows is unconfirmed, so a barrier and a read show each Space gone or not.
-        for space in liveSpaces { kosmos_space_destroy(space) }
-        let left = liveSpaces.filter { space in
+        let destroying = liveSpaces.filter { !sparedSpaces.contains($0) }
+        for space in destroying { kosmos_space_destroy(space) }
+        let left = destroying.filter { space in
             _ = kosmos_barrier(space)
             return SkyLight.windows(in: space) != nil
         }
         if !left.isEmpty { recoveryLog.error("\(left.count) Spaces still exist after their destroy; keeping them in the record") }
-        if let kept = record.keptAfterRestore(left: Set(left), keepingAnimationSpaces: keeping) {
+        if let kept = record.keptAfterRestore(left: Set(left).union(sparedSpaces), keepingAnimationSpaces: keeping, sparing: spared) {
             file.publish(kept)
         } else {
             file.clear()
         }
-        let destroyed = liveSpaces.count - left.count
-        recoveryLog.notice("restored \(handled.count) windows, destroyed \(destroyed) Spaces")
-        return .restored(windows: handled.count, spaces: destroyed)
+        let destroyed = destroying.count - left.count
+        guard !spared.isEmpty else {
+            recoveryLog.notice("restored \(handled.count) windows, destroyed \(destroyed) Spaces")
+            return .restored(windows: handled.count, spaces: destroyed)
+        }
+        recoveryLog.notice("kept \(spared.count) windows concealed, restored \(handled.count), destroyed \(destroyed) Spaces")
+        return .adopted(kept: spared.count, restored: handled.count, spaces: destroyed)
     }
 
     /// An operation sent just before Kosmos died may still be landing, so the members are

@@ -156,3 +156,24 @@ private let kept = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2
     #expect(after?.spaces == [])
     #expect(after?.animationSpaces == [12, 13])
 }
+
+/// A Kosmos that takes the record over keeps the windows it spares, recorded, with the Space
+/// that holds them, and the rest goes as after any recovery.
+@Test func anAdoptionKeepsTheSparedWindowsAndTheirSpace() {
+    var handedOver = kept
+    handedOver.windows.append(.init(id: 2, owner: app, originalSpace: 5))
+    handedOver.handover = true
+    let after = handedOver.keptAfterRestore(left: [10], keepingAnimationSpaces: false, sparing: [2])
+    #expect(after?.windows.map(\.id) == [2])
+    #expect(after?.spaces == [10])
+    #expect(after?.animationSpaces == [])
+    #expect(after?.handover == false)
+}
+
+/// The handover ends at the first recovery, so a crash after it gets a crash's grace.
+@Test func anyRecoveryEndsTheHandover() {
+    var handedOver = kept
+    handedOver.handover = true
+    #expect(!handedOver.keptAfterIncomplete(gone: [], keepingAnimationSpaces: false).handover)
+    #expect(handedOver.keptAfterRestore(left: [9], keepingAnimationSpaces: false)?.handover == false)
+}
