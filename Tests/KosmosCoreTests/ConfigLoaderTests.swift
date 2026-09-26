@@ -59,11 +59,18 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(try #require(load("borders = false").config).borders == nil)
         let table = try #require(load("[borders]\nwidth = 2\ninactive = '#414868'").config)
         #expect(table.borders == BorderSettings(width: 2, active: nil, inactive: BorderColor(hex: "#414868")!))
+        let warning = try #require(load("[borders]\nwarning = '#f7768e'").config)
+        #expect(warning.borders == BorderSettings(warning: BorderColor(hex: "#f7768e")!))
+        #expect(try #require(load("borders = { warning = true }").config).borders == BorderSettings())
+        #expect(try #require(load("borders = { warning = false }").config).borders == BorderSettings(warning: .clear))
     }
 
     @Test func borderMistakes() {
         #expect(load("borders = { width = 0 }").diagnostics == ["3:21: error: borders.width: the width must be above 0"])
         #expect(load("borders = 'off'").diagnostics == ["3:11: error: borders: expected true, false or a table, found a string"])
+        #expect(load("borders = { warning = 0 }").diagnostics == [
+            "3:23: error: borders.warning: expected true, false or a color as '#rrggbb' or '#rrggbbaa', found an integer",
+        ])
         #expect(load("borders = { width = '4', active = '7aa2f7', inactive = '#4148', style = 'round' }").diagnostics == [
             "3:21: error: borders.width: expected a number, found a string",
             "3:35: error: borders.active: expected a color as '#rrggbb' or '#rrggbbaa', found '7aa2f7'",

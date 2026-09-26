@@ -221,7 +221,7 @@ extension Controller {
             if drag.floating {
                 writeDragFrame(drag, session.resized(drag, by: delta))
             } else if let plan = session.dragEdges(drag, by: delta) {
-                writeFrames(plan.frames)
+                flashSpills(plan.frames, written: writeFrames(plan.frames))
             }
         }
     }

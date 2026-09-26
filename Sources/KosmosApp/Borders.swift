@@ -29,6 +29,7 @@ final class Borders {
     /// A Space read can wait out a Space transition, so Space reads and moves run here.
     private let spaces = DispatchQueue(label: "kosmos.borders", qos: .userInitiated)
     private(set) var accent = Borders.readAccent()
+    private(set) var red = Borders.readRed()
     var onAccentChange: (@MainActor () -> Void)?
     private var appearance: NSKeyValueObservation?
 
@@ -44,20 +45,28 @@ final class Borders {
     }
 
     private func readAccentAgain() {
-        let next = Self.readAccent()
-        guard next != accent else { return }
-        accent = next
+        let next = (Self.readAccent(), Self.readRed())
+        guard next != (accent, red) else { return }
+        (accent, red) = next
         onAccentChange?()
     }
 
     private static func readAccent() -> BorderColor {
-        var accent = BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
+        read(.controlAccentColor, else: BorderColor(red: 0, green: 122 / 255, blue: 1, alpha: 1))
+    }
+
+    private static func readRed() -> BorderColor {
+        read(.systemRed, else: BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1))
+    }
+
+    private static func read(_ system: NSColor, else fallback: BorderColor) -> BorderColor {
+        var read = fallback
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
-            guard let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return }
-            accent = BorderColor(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent,
-                                 alpha: color.alphaComponent)
+            guard let color = system.usingColorSpace(.sRGB) else { return }
+            read = BorderColor(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent,
+                               alpha: color.alphaComponent)
         }
-        return accent
+        return read
     }
 
     /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).

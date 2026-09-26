@@ -432,48 +432,32 @@ import Testing
     #expect(after[2]!.width == before[2]!.width - 100)
 }
 
-@Test func resizeStopsAtOnePoint() {
+/// rift keeps each side of a split at 5% or more (docs/tree.md).
+@Test func resizeStopsAtAFloorOfFivePercent() {
     var workspace = Workspace("h[1 2]")
     #expect(workspace.resize(1, .width, by: 500, in: screen, gaps: Gaps()) == true)
-    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 1)
+    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 50)
     #expect(workspace.resize(1, .width, by: 100, in: screen, gaps: Gaps()) == false)
     #expect(workspace.resize(1, .width, by: -1500, in: screen, gaps: Gaps()) == true)
     let frames = workspace.frames(in: screen, gaps: Gaps())
-    #expect([1, 2].map { frames[$0]!.width } == [1, 999])
+    #expect([1, 2].map { frames[$0]!.width } == [50, 950])
 }
 
-@Test func resizeKeepsNestedWindowsAtOnePoint() {
+@Test func resizeKeepsANestedContainerAtTheFloor() {
     let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
     var workspace = Workspace("h[1 v[2 h[3 4]]]")
     #expect(workspace.resize(1, .width, by: 900, in: display, gaps: Gaps()) == true)
     let frames = workspace.frames(in: display, gaps: Gaps())
-    #expect([2, 3, 4].map { frames[$0]!.width } == [2, 1, 1])
+    // 87 points is the whole point at or past 5% of 1728.
+    #expect(frames[2]!.width == 87 && frames[3]!.width + frames[4]!.width == 87)
     #expect(workspace.resize(1, .width, by: 1, in: display, gaps: Gaps()) == false)
 }
 
-@Test func resizeStopsAtAMinimum() {
-    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
-    let minimums = [WindowID(2): CGSize(width: 740, height: 0)]
-    var workspace = Workspace("h[1 2]")
-    #expect(workspace.resize(1, .width, by: 200, in: display, gaps: Gaps(), minimums: minimums) == true)
-    var frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect([1, 2].map { frames[$0]!.width } == [988, 740])
-    #expect(workspace.resize(1, .width, by: 200, in: display, gaps: Gaps(), minimums: minimums) == false)
-    #expect(workspace.resize(2, .width, by: -50, in: display, gaps: Gaps(), minimums: minimums) == false)
-    #expect(workspace.resize(1, .width, by: -100, in: display, gaps: Gaps(), minimums: minimums) == true)
-    frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect([1, 2].map { frames[$0]!.width } == [888, 840])
-}
-
-@Test func resizeStopsAtANestedMinimumAcross() {
-    let display = CGRect(x: 0, y: 0, width: 1728, height: 1000)
-    let minimums = [WindowID(3): CGSize(width: 400, height: 0)]
-    var workspace = Workspace("h[1 v[2 h[3 4]]]")
-    #expect(workspace.resize(1, .width, by: 600, in: display, gaps: Gaps(), minimums: minimums) == true)
-    let frames = workspace.frames(in: display, gaps: Gaps(), minimums: minimums)
-    #expect(frames[3]!.width == 400)
-    #expect(frames[1]!.width > 864)
-    #expect(workspace.resize(1, .width, by: 1, in: display, gaps: Gaps(), minimums: minimums) == false)
+@Test func aWindowBelowTheFloorMayStayButNotShrink() {
+    let display = CGRect(x: 0, y: 0, width: 2000, height: 1000)
+    var workspace = Workspace("h[1:2 2:2 3:96]")
+    #expect(workspace.resize(3, .width, by: -100, in: display, gaps: Gaps()) == true)
+    #expect(workspace.resize(3, .width, by: 100, in: display, gaps: Gaps()) == false)
 }
 
 @Test func resizeNeedsSiblingsAlongDimension() {
@@ -490,17 +474,17 @@ import Testing
 @Test func movingAnEdgeTakesFromTheNeighbourNextToItAlone() {
     var workspace = Workspace("h[1 2 3]")
     let before = workspace.frames(in: screen, gaps: Gaps())
-    #expect(workspace.moveEdge(2, .right, by: 100, in: screen, gaps: Gaps(), minimums: [:]) == true)
+    #expect(workspace.moveEdge(2, .right, by: 100, in: screen, gaps: Gaps()) == true)
     var frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1] == before[1])
     #expect(frames[2]!.minX == before[2]!.minX && frames[2]!.maxX == before[2]!.maxX + 100)
     #expect(frames[3]!.maxX == before[3]!.maxX)
-    #expect(workspace.moveEdge(2, .left, by: -50, in: screen, gaps: Gaps(), minimums: [:]) == true)
+    #expect(workspace.moveEdge(2, .left, by: -50, in: screen, gaps: Gaps()) == true)
     frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1]!.maxX == before[1]!.maxX + 50 && frames[2]!.maxX == before[2]!.maxX + 100)
     // With two windows beyond it, only the one next to the edge gives the space.
     let middle = frames
-    #expect(workspace.moveEdge(3, .left, by: 50, in: screen, gaps: Gaps(), minimums: [:]) == true)
+    #expect(workspace.moveEdge(3, .left, by: 50, in: screen, gaps: Gaps()) == true)
     frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1] == middle[1] && frames[2]!.maxX == middle[2]!.maxX - 50 && frames[3]!.minX == middle[3]!.minX - 50)
 }
@@ -508,7 +492,7 @@ import Testing
 @Test func movingAnEdgeKeepsTheLengthsOfNestedNeighbors() {
     var workspace = Workspace("h[1 v[h[2 3] 4]]")
     let before = workspace.frames(in: screen, gaps: Gaps())
-    #expect(workspace.moveEdge(2, .left, by: 100, in: screen, gaps: Gaps(), minimums: [:]) == true)
+    #expect(workspace.moveEdge(2, .left, by: 100, in: screen, gaps: Gaps()) == true)
     let frames = workspace.frames(in: screen, gaps: Gaps())
     #expect(frames[1]!.width == before[1]!.width - 100)
     #expect(frames[2]!.minX == before[2]!.minX - 100 && frames[2]!.maxX == before[2]!.maxX)
@@ -518,19 +502,18 @@ import Testing
 
 @Test func anEdgeAtTheWorkspacesEdgeStays() {
     var workspace = Workspace("h[1 v[h[2 3] 4]]")
-    #expect(workspace.moveEdge(3, .right, by: 10, in: screen, gaps: Gaps(), minimums: [:]) == false)
-    #expect(workspace.moveEdge(4, .down, by: 10, in: screen, gaps: Gaps(), minimums: [:]) == false)
-    #expect(workspace.moveEdge(1, .up, by: 10, in: screen, gaps: Gaps(), minimums: [:]) == false)
+    #expect(workspace.moveEdge(3, .right, by: 10, in: screen, gaps: Gaps()) == false)
+    #expect(workspace.moveEdge(4, .down, by: 10, in: screen, gaps: Gaps()) == false)
+    #expect(workspace.moveEdge(1, .up, by: 10, in: screen, gaps: Gaps()) == false)
 }
 
-@Test func movingAnEdgeStopsAtTheLimits() {
+@Test func movingAnEdgeStopsAtTheFloor() {
     var workspace = Workspace("h[1 2]")
-    #expect(workspace.moveEdge(1, .right, by: 2000, in: screen, gaps: Gaps(), minimums: [:]) == true)
-    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 1)
-    #expect(workspace.moveEdge(1, .right, by: 10, in: screen, gaps: Gaps(), minimums: [:]) == false)
-    let minimums = [WindowID(1): CGSize(width: 300, height: 0)]
-    #expect(workspace.moveEdge(2, .left, by: 900, in: screen, gaps: Gaps(), minimums: minimums) == true)
-    #expect(workspace.frames(in: screen, gaps: Gaps())[1]!.width == 300)
+    #expect(workspace.moveEdge(1, .right, by: 2000, in: screen, gaps: Gaps()) == true)
+    #expect(workspace.frames(in: screen, gaps: Gaps())[2]!.width == 50)
+    #expect(workspace.moveEdge(1, .right, by: 10, in: screen, gaps: Gaps()) == false)
+    #expect(workspace.moveEdge(2, .left, by: 2000, in: screen, gaps: Gaps()) == true)
+    #expect(workspace.frames(in: screen, gaps: Gaps())[1]!.width == 50)
 }
 
 // MARK: Balance and flatten

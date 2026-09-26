@@ -29,6 +29,32 @@ state, and during a slide the frame the slide shows the window at.
   a hover or a key window report Kosmos adopts, before macOS's key change lands. A fully transparent color
   draws no border and makes no window, so with Steve's transparent `inactive` only the
   focused window has one.
+- A window whose app refuses its tile takes `warning` for 0.3 s, focused or not, so with
+  a transparent `inactive` the flash still shows. `warning` defaults to macOS's system
+  red, `NSColor.systemRed` in sRGB under Kosmos's appearance, read again when the accent
+  is, and `warning = true` keeps it. `warning = false` or a transparent `warning` leaves
+  each window its own color.
+  - A plan Kosmos carries out flashes each window that spills past its tile on an axis
+    ([tree.md](tree.md)) where the plan writes its frame to move along that axis from where
+    WindowServer last had it, or moves its tile along that axis from where the last plan
+    had it: a resize, a placement or a balance that leaves a window's tile shorter than its
+    minimum, or moves the tile it spills from. So a window whose frame stays as its tile
+    moves under it flashes too, as the top window of a column, which keeps its top edge,
+    does when the window below grows over it. A width resize leaves a window that spills
+    in height alone.
+  - Only a plan flashes, and never during a drag, so a modifier drag's writes, a lift's
+    reflow and the 100 ms retry after a refusal never do. A drag's plans and its edge moves
+    still record their tiles, so the plan after the drag does not flash for them. A window
+    that flashes again keeps `warning` until 0.3 s after its last flash.
+  - On September 25, 2026, Outlook, held to 1145 pt, covered 290 pt of Helium on Steve's
+    main panel, and each resize moved only Helium's edge, with nothing to say why (live
+    log).
+  - The ceiling: a minimum learned from refusals, where WindowServer holds none
+    ([geometry.md](geometry.md)), flashes only where the spill moves the window, as at the
+    left edge or where its center would leave its display. At the right edge, between
+    windows and down a column the app's refusal has already left the window where it
+    spills, so Kosmos has no frame to write. A flash at the refusal that records the
+    minimum would cover it.
 - A bordered window gets its border only while it is on screen: not concealed, as a
   switch's incoming windows are until the batch that reveals them confirms, and ordered
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks

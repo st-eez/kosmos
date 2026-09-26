@@ -29,12 +29,13 @@ public struct Insets: Equatable, Sendable {
 
 extension Workspace {
     /// `rect` is in Accessibility coordinates, where y grows down, so the first child of a
-    /// vertical container is on top. `minimums` bind as docs/tree.md says.
+    /// vertical container is on top. A window whose minimum is longer than its tile spills as
+    /// docs/tree.md says.
     func frames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
-        var frames = splitFrames(in: rect, gaps: gaps, minimums: minimums)
+        var frames = tileFrames(in: rect, gaps: gaps)
         let area = tilingRect(rect, gaps.outer)
         for (id, minimum) in minimums {
-            if let frame = frames[id] { frames[id] = grow(frame, to: minimum, within: area) }
+            if let tile = frames[id] { frames[id] = spill(tile, to: minimum, from: area, on: rect.standardized) }
         }
         if let fullscreenWindow { frames[fullscreenWindow] = rect.standardized }
         return frames
@@ -42,14 +43,9 @@ extension Workspace {
 
     /// The sizes the weights stand for, with no minimums and no fullscreen window.
     func tileFrames(in rect: CGRect, gaps: Gaps) -> [WindowID: CGRect] {
-        splitFrames(in: rect, gaps: gaps, minimums: [:])
-    }
-
-    private func splitFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         func place(_ container: Container, in rect: CGRect) {
-            let least = container.children.map { minimumLength(of: $0, along: container.orientation, minimums, gap: gaps.inner) }
-            for (child, frame) in zip(container.children, split(rect, container, gap: gaps.inner, minimums: least)) {
+            for (child, frame) in zip(container.children, split(rect, container, gap: gaps.inner)) {
                 switch child.kind {
                 case .window(let id): frames[id] = frame
                 case .container(let nested): place(nested, in: frame)
@@ -60,18 +56,85 @@ extension Workspace {
         return frames
     }
 
+    /// In the container holding `window` only `window` grows to its minimum, so the split the
+    /// user chose between the others stays. With `window` nil, every child of every container
+    /// grows to its own, parents first (docs/tree.md).
+    mutating func fit(_ window: WindowID?, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) {
+        guard !minimums.isEmpty else { return }
+        guard let window else {
+            for path in containerPaths(root) { fit(path[...], growing: nil, in: rect, gaps: gaps, minimums: minimums) }
+            return
+        }
+        guard let path = root.path(to: window) else { return }
+        fit(path.dropLast(), growing: path.last!, in: rect, gaps: gaps, minimums: minimums)
+    }
+
+    /// Where the minimums fit, the child at `growing`, or each child when nil, gets at least its
+    /// minimum, and the others keep their lengths down to theirs. The rest goes by weight, in
+    /// whole points, as rift's `solve_axis_lengths` does, and the weights take those lengths.
+    /// Each child keeps `leastShare` of the container, or the share it has when that is less,
+    /// the floor a resize keeps.
+    private mutating func fit(_ path: ArraySlice<Int>, growing: Int?, in rect: CGRect, gaps: Gaps,
+                              minimums: [WindowID: CGSize]) {
+        let container = root[path], usable = usableLength(of: path, in: rect, gaps: gaps)
+        let floor = (Self.leastShare * usable).rounded(.up)
+        let least: [CGFloat] = container.children.enumerated().map { index, child in
+            let minimum = minimumLength(of: child, along: container.orientation, minimums, floor: floor, gap: gaps.inner)
+            let length = child.weight * usable
+            return max(min(floor, length), growing == nil || growing == index ? minimum : min(minimum, length))
+        }
+        guard let lengths = fitted(container.children.map(\.weight), least, usable) else { return }
+        // Whole points, so the split's rounding puts each edge where the lengths do.
+        var total: CGFloat = 0, edge: CGFloat = 0
+        for (index, length) in lengths.enumerated() {
+            total += length
+            root[path].children[index].weight = total.rounded() - edge
+            edge = total.rounded()
+        }
+        root[path].normalize()
+    }
+
     /// The length of a container along its orientation as `frames` lays it out, less the
     /// gaps between its children.
     func usableLength(of path: ArraySlice<Int>, in rect: CGRect, gaps: Gaps) -> CGFloat {
         var area = tilingRect(rect, gaps.outer)
         for level in path.indices {
-            area = split(area, root[path[..<level]], gap: gaps.inner, minimums: [])[path[level]]
+            area = split(area, root[path[..<level]], gap: gaps.inner)[path[level]]
         }
         let container = root[path]
         let length = container.orientation == .horizontal ? area.width : area.height
         let count = container.children.count
         return length - innerGap(gaps.inner, count: count, length: length, orientation: container.orientation) * CGFloat(max(0, count - 1))
     }
+}
+
+/// The path of each container, parents first.
+private func containerPaths(_ container: Container, _ path: [Int] = []) -> [[Int]] {
+    [path] + container.children.indices.flatMap { index -> [[Int]] in
+        guard case .container(let nested) = container.children[index].kind else { return [] }
+        return containerPaths(nested, path + [index])
+    }
+}
+
+/// On each axis where the minimum is longer than the tile, the window takes it. Across, it keeps
+/// the tile's edge that faces the other windows: its right edge at the left of the area, else
+/// its left edge. Down, it keeps its top edge. On each axis more than half of it stays on
+/// `display` (docs/tree.md).
+private func spill(_ tile: CGRect, to minimum: CGSize, from area: CGRect, on display: CGRect) -> CGRect {
+    func kept(_ length: CGFloat) -> CGFloat { (length / 2).rounded(.down) + 1 }
+    var frame = tile
+    let width = minimum.width.rounded(.up), height = minimum.height.rounded(.up)
+    if width > tile.width {
+        let x = tile.minX <= area.minX && tile.maxX < area.maxX ? tile.maxX - width : tile.minX
+        frame.origin.x = min(max(x, display.minX + kept(width) - width), display.maxX - kept(width))
+        frame.size.width = width
+    }
+    if height > tile.height {
+        // macOS keeps a titled window's top on its display (docs/tree.md).
+        frame.origin.y = max(area.minY, min(tile.minY, display.maxY - kept(height)))
+        frame.size.height = height
+    }
+    return frame
 }
 
 /// Gaps shrink to leave each window this long (docs/tree.md).
@@ -108,7 +171,7 @@ private func innerGap(_ gap: CGFloat, count: Int, length: CGFloat, orientation: 
 
 /// Edges are rounded from cumulative lengths and the last child ends at the container's
 /// edge, so sizes add up, none is negative, and changing one weight moves only later edges.
-private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimums: [CGFloat]) -> [CGRect] {
+private func split(_ rect: CGRect, _ container: Container, gap: CGFloat) -> [CGRect] {
     let horizontal = container.orientation == .horizontal
     let start = horizontal ? rect.minX : rect.minY
     let length = horizontal ? rect.width : rect.height
@@ -116,12 +179,7 @@ private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimum
     let gap = innerGap(gap, count: count, length: length, orientation: container.orientation)
     let usable = length - gap * CGFloat(max(0, count - 1))
     var total = 0.0
-    let ends: [CGFloat]
-    if let lengths = fitted(container.children.map(\.weight), minimums, usable) {
-        ends = lengths.map { total += $0; return (start + total).rounded() }
-    } else {
-        ends = container.children.map { total += $0.weight; return (start + usable * total).rounded() }
-    }
+    let ends = container.children.map { total += $0.weight; return (start + usable * total).rounded() }
     var frames: [CGRect] = []
     var edge = start
     for index in container.children.indices {
@@ -138,7 +196,7 @@ private func split(_ rect: CGRect, _ container: Container, gap: CGFloat, minimum
 /// Each child at least its minimum and the rest by weight (docs/tree.md). Nil when no minimum
 /// binds, and when the minimums do not fit.
 private func fitted(_ weights: [Double], _ minimums: [CGFloat], _ usable: CGFloat) -> [CGFloat]? {
-    guard minimums.contains(where: { $0 > 0 }), minimums.reduce(0, +) <= usable else { return nil }
+    guard minimums.reduce(0, +) <= usable else { return nil }
     var bound: Set<Int> = []
     while true {
         let free = usable - bound.reduce(0) { $0 + minimums[$1] }
@@ -151,25 +209,18 @@ private func fitted(_ weights: [Double], _ minimums: [CGFloat], _ usable: CGFloa
     }
 }
 
-private func minimumLength(of node: Node, along orientation: Orientation, _ minimums: [WindowID: CGSize], gap: CGFloat) -> CGFloat {
-    guard !minimums.isEmpty else { return 0 }
+/// A container along the orientation counts `floor` for each child, at least the floor that
+/// child keeps in it.
+private func minimumLength(of node: Node, along orientation: Orientation, _ minimums: [WindowID: CGSize], floor: CGFloat,
+                           gap: CGFloat) -> CGFloat {
     switch node.kind {
     case .window(let id):
-        guard let size = minimums[id] else { return 0 }
-        return max(0, orientation == .horizontal ? size.width : size.height).rounded(.up)
+        let size = minimums[id] ?? .zero
+        return max(0, (orientation == .horizontal ? size.width : size.height).rounded(.up))
     case .container(let container):
-        let lengths = container.children.map { minimumLength(of: $0, along: orientation, minimums, gap: gap) }
+        let lengths = container.children.map { minimumLength(of: $0, along: orientation, minimums, floor: floor, gap: gap) }
         guard container.orientation == orientation else { return lengths.max() ?? 0 }
-        let total = lengths.reduce(0, +)
         // Gaps are whole points and only ever shrink from the configured one.
-        return total > 0 ? total + max(0, gap).rounded(.down) * CGFloat(lengths.count - 1) : 0
+        return lengths.reduce(0) { $0 + max($1, floor) } + max(0, gap).rounded(.down) * CGFloat(lengths.count - 1)
     }
-}
-
-private func grow(_ frame: CGRect, to minimum: CGSize, within area: CGRect) -> CGRect {
-    let width = min(max(frame.width, minimum.width.rounded(.up)), area.width)
-    let height = min(max(frame.height, minimum.height.rounded(.up)), area.height)
-    return CGRect(x: min(max(frame.minX, area.minX), area.maxX - width),
-                  y: min(max(frame.minY, area.minY), area.maxY - height),
-                  width: width, height: height)
 }

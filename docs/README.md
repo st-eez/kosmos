@@ -24,7 +24,8 @@ prefix.
   `KosmosCore/LeftButton.swift`, `KosmosCore/Slide.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
-  `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`.
+  `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`,
+  `kosmos-probe/Constraints.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
   Control.

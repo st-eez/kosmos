@@ -41,6 +41,8 @@ final class Inventory {
         case frameChange(window: WindowID, old: CGRect, new: CGRect, changedAt: ContinuousClock.Instant?)
         /// Its app raising a managed window leaves the window's border below it (docs/borders.md).
         case reordered(window: WindowID)
+        /// WindowServer holds a managed window to another minimum size (docs/geometry.md).
+        case minimumChange(window: WindowID, minimum: CGSize)
         case styleChange
     }
     var onEvent: (@MainActor (Event) -> Void)?
@@ -348,7 +350,7 @@ final class Inventory {
         })
         looks.readAsked()
         reads.async {
-            let rows = SkyLight.rows(Array(ids), cornerRadii: true)
+            let rows = SkyLight.rows(Array(ids), cornerRadii: true, minimums: true)
             onMain { self.applyReads(events, rows) }
         }
     }
@@ -418,6 +420,7 @@ final class Inventory {
             onEvent?(.frameChange(window: row.id, old: old.frame, new: row.frame, changedAt: changedAt))
         }
         if let old, old.level != row.level || old.cornerRadius != row.cornerRadius, isManaged(row.id) { onEvent?(.styleChange) }
+        if let old, old.minimum != row.minimum, isManaged(row.id) { onEvent?(.minimumChange(window: row.id, minimum: row.minimum)) }
         if old.map(isCandidate) != isCandidate(row) {
             if isCandidate(row) { readAX([row.id], pid: row.pid) }
             inventoryLog.info("""
@@ -521,7 +524,7 @@ final class Inventory {
         reads.async {
             let listed = SkyLight.allWindowIDs()
             let unlisted = Set(tracked).subtracting(listed)
-            let rows = SkyLight.rows(listed + unlisted, cornerRadii: true)
+            let rows = SkyLight.rows(listed + unlisted, cornerRadii: true, minimums: true)
             onMain { self.finishSweep(rows) }
         }
     }

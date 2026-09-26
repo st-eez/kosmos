@@ -3,7 +3,8 @@ import Testing
 @testable import KosmosCore
 
 /// After each random operation the workspace is sound, a failed operation changed nothing,
-/// a move moved the window, and the frames tile the area, each with its minimum when they fit.
+/// a move moved the window, the tiles tile the area, each window with a minimum longer than its
+/// tile spills to it, and a balance gives each window its minimum when they fit.
 @Test(arguments: 1...8 as ClosedRange<UInt64>)
 func randomOperationsKeepTheInvariants(seed: UInt64) {
     var random = SplitMix64(state: seed)
@@ -73,9 +74,21 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         case 26..<29:
             let dimension = [ResizeDimension.width, .height, .smart].randomElement(using: &random)!
             let amount = CGFloat(Int.random(in: -300...300, using: &random))
-            attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps, minimums: minimums) }
+            attempt { $0.resize(window, dimension, by: amount, in: screen, gaps: gaps) }
         case 29: attempt { $0.toggleFullscreen(window) }
-        case 30: workspace.balanceSizes()
+        case 30:
+            workspace.balanceSizes()
+            workspace.fit(nil, in: screen, gaps: gaps, minimums: minimums)
+            let floor = CGSize(width: (Workspace.leastShare * area.width).rounded(.up),
+                               height: (Workspace.leastShare * area.height).rounded(.up))
+            let least = leastSize(of: workspace.root, minimums, floor: floor, gap: gaps.inner)
+            if least.width <= area.width, least.height <= area.height {
+                let tiles = workspace.tileFrames(in: screen, gaps: gaps)
+                for (id, minimum) in minimums {
+                    guard let tile = tiles[id] else { continue }
+                    #expect(tile.width >= minimum.width.rounded(.up) && tile.height >= minimum.height.rounded(.up), "seed \(seed)")
+                }
+            }
         case 31: workspace.flattenWorkspaceTree()
         case 32:
             // A tab switch. The new tab inherits a tiled tab's minimum, as Session.replace gives it.
@@ -109,15 +122,20 @@ func randomOperationsKeepTheInvariants(seed: UInt64) {
         let frames = workspace.frames(in: screen, gaps: gaps, minimums: minimums)
         #expect(Set(frames.keys) == Set(workspace.root.windows), "seed \(seed)")
         guard workspace.fullscreenWindow == nil else { continue }
-        #expect(frames.values.allSatisfy { $0.width >= 0 && $0.height >= 0 && area.contains($0) }, "seed \(seed)")
-        #expect(tiles(workspace.tileFrames(in: screen, gaps: gaps)), "seed \(seed)")
-        let least = leastSize(of: workspace.root, minimums, gap: gaps.inner)
-        if least.width <= area.width, least.height <= area.height {
-            #expect(tiles(frames), "seed \(seed)")
-            for (id, minimum) in minimums {
-                guard let frame = frames[id] else { continue }
-                #expect(frame.width >= minimum.width && frame.height >= minimum.height, "seed \(seed)")
-            }
+        let tileFrames = workspace.tileFrames(in: screen, gaps: gaps)
+        #expect(tileFrames.values.allSatisfy { $0.width >= 0 && $0.height >= 0 && area.contains($0) }, "seed \(seed)")
+        #expect(tiles(tileFrames), "seed \(seed)")
+        // Each window is at least its minimum, with its center on the screen. Across, it keeps
+        // a tile edge, or has its center at the screen's edge; down, it keeps its top edge, or
+        // has its center at the screen's bottom edge.
+        for (id, frame) in frames {
+            let tile = tileFrames[id]!, minimum = minimums[id] ?? .zero
+            #expect(frame.width == max(tile.width, minimum.width.rounded(.up)), "seed \(seed)")
+            #expect(frame.height == max(tile.height, minimum.height.rounded(.up)), "seed \(seed)")
+            #expect(screen.contains(CGPoint(x: frame.midX, y: frame.midY)), "seed \(seed)")
+            #expect(frame.minX == tile.minX || frame.maxX == tile.maxX
+                        || [screen.minX, screen.maxX].contains { abs(frame.midX - $0) <= 1 }, "seed \(seed)")
+            #expect(frame.minY == tile.minY || frame.minY < tile.minY && screen.maxY - frame.midY <= 1, "seed \(seed)")
         }
     }
 }
@@ -148,7 +166,7 @@ func leavingAndReturningInAnyOrder(seed: UInt64) {
             case 6: workspace.resize(window, .smart, by: amount, in: screen, gaps: Gaps())
             case 7: workspace.swap(window, direction)
             case 8: workspace.layout(window, direction.orientation)
-            case 9: workspace.moveEdge(window, direction, by: amount, in: screen, gaps: Gaps(), minimums: [:])
+            case 9: workspace.moveEdge(window, direction, by: amount, in: screen, gaps: Gaps())
             case 10: workspace.balanceSizes()
             default: workspace.flattenWorkspaceTree()
             }
@@ -199,20 +217,21 @@ func tiles(_ frames: [WindowID: CGRect]) -> Bool {
     }
 }
 
-/// The least size that gives each window in the container its minimum.
-func leastSize(of container: Container, _ minimums: [WindowID: CGSize], gap: CGFloat) -> CGSize {
+/// The least size that gives each window in the container its minimum, and at least `floor`,
+/// which no container's floor for a child exceeds.
+func leastSize(of container: Container, _ minimums: [WindowID: CGSize], floor: CGSize, gap: CGFloat) -> CGSize {
     let sizes = container.children.map { child in
         switch child.kind {
         case .window(let id):
             let minimum = minimums[id] ?? .zero
-            return CGSize(width: minimum.width.rounded(.up), height: minimum.height.rounded(.up))
+            return CGSize(width: max(floor.width, minimum.width.rounded(.up)), height: max(floor.height, minimum.height.rounded(.up)))
         case .container(let nested):
-            return leastSize(of: nested, minimums, gap: gap)
+            return leastSize(of: nested, minimums, floor: floor, gap: gap)
         }
     }
     let gaps = gap.rounded(.down) * CGFloat(max(0, sizes.count - 1))
     let widths = sizes.reduce(0) { $0 + $1.width }, heights = sizes.reduce(0) { $0 + $1.height }
     return container.orientation == .horizontal
-        ? CGSize(width: widths > 0 ? widths + gaps : 0, height: sizes.map(\.height).max() ?? 0)
-        : CGSize(width: sizes.map(\.width).max() ?? 0, height: heights > 0 ? heights + gaps : 0)
+        ? CGSize(width: widths + gaps, height: sizes.map(\.height).max() ?? 0)
+        : CGSize(width: sizes.map(\.width).max() ?? 0, height: heights + gaps)
 }

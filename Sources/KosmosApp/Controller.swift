@@ -83,6 +83,12 @@ final class Controller {
         didSet { if borders != oldValue { updateBorders() } }
     }
     let borderWindows = Borders()
+    /// Windows whose app refused their tile, with the flashes of each under way
+    /// (docs/borders.md).
+    private var flashes: [WindowID: Int] = [:]
+    /// Each tile where the last plan left it, so a window whose tile moves under a frame it
+    /// keeps flashes too (docs/borders.md).
+    private var tiles: [WindowID: CGRect] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -230,7 +236,8 @@ final class Controller {
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
+        let written = writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
+        flashSpills(plan.frames, written: written)
         if movePointer { centerPointer() }
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(session.intent, fromCommand: fromCommand) }
@@ -334,13 +341,16 @@ final class Controller {
         writeFrames(targets)
     }
 
-    func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) {
-        guard !sessionLocked else { return }
+    /// The targets written, with those already in place left out.
+    @discardableResult
+    func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) -> [WindowID: CGRect] {
+        guard !sessionLocked else { return [:] }
         let entries = ledger.writes(for: targets).reduce(into: [WindowID: BatchOrder.Write]()) { entries, write in
             entries[write.key] = (write.value, targets[write.key]!)
         }
         slides?.writing(entries.mapValues(\.target), sliding: sliding)
         sendWrites(order.write(entries))
+        return entries.mapValues(\.target)
     }
 
     /// A write that goes to no worker, or comes while locked, is forgotten, so its target is
@@ -486,7 +496,8 @@ final class Controller {
         guard managing, let borders else { return borderWindows.show([:]) }
         // One read of each slide, so a border's frame and alpha come from the same display frame.
         var sliding: [WindowID: (frame: CGRect, alpha: Double)] = [:]
-        let shown = session.borders(borders, accent: borderWindows.accent) { id in
+        let shown = session.borders(borders, accent: borderWindows.accent, red: borderWindows.red,
+                                    flashing: Set(flashes.keys)) { id in
             guard !hiding.isConcealedOrConcealing(id), let row = inventory.windows[id], row.orderedIn else { return nil }
             sliding[id] = slides?.shown(id)
             return (sliding[id]?.frame ?? row.frame, row.cornerRadius)
@@ -496,6 +507,26 @@ final class Controller {
             result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                               alpha: slide?.alpha ?? 1, sliding: slide != nil)
         }, fullscreen: fullscreenDisplays)
+    }
+
+    /// Only plans come here, so the 100 ms retry never flashes, and a drag's plans record their
+    /// tiles and flash nothing (docs/borders.md).
+    func flashSpills(_ targets: [WindowID: CGRect], written: [WindowID: CGRect]) {
+        let spilling = session.spilling(targets, written: Set(written.keys), tiles: &tiles) { [inventory] in
+            inventory.windows[$0]?.frame
+        }
+        if !dragging { flash(spilling) }
+    }
+
+    /// Each border takes the warning color for 0.3 s, until the window's latest flash ends.
+    private func flash(_ windows: Set<WindowID>) {
+        guard !windows.isEmpty, borders != nil else { return }
+        for id in windows { flashes[id, default: 0] += 1 }
+        updateBorders()
+        after(.milliseconds(300)) { controller in
+            for id in windows { controller.flashes[id] = controller.flashes[id].flatMap { $0 > 1 ? $0 - 1 : nil } }
+            controller.updateBorders()
+        }
     }
 
     func appName(_ window: WindowID) -> String? {

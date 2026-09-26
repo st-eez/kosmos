@@ -76,8 +76,10 @@ pointer gets none of the drag's events.
   neither side moves nothing. Each edge goes where the pointer takes it from the tile's
   edge at the press, through `Workspace.moveEdge`, which takes the space from the
   neighbour across the edge alone, as i3's resize with the mouse and Hyprland's two node
-  splits do, and stops at the minimums `resize` keeps. An edge stopped at a limit follows
-  the pointer back.
+  splits do. It moves past the windows' minimums, and stops at the 5% floor `resize`
+  keeps ([tree.md](tree.md)). An edge stopped at the floor follows the pointer back. A
+  window pushed below its minimum spills, and its border does not flash during the drag
+  ([borders.md](borders.md)).
 - The right button on a floating window moves the edges at the corner nearest the press
   and keeps the others, never below the window's recorded minimum or 20 pt
   (`ModifierDrag.smallestSide`), Hyprland's `MIN_WINDOW_SIZE`.
@@ -124,8 +126,8 @@ pointer gets none of the drag's events.
   - Resizing tiles on a workspace with a fullscreen window, which resizes nothing: the
     fullscreen window covers them. Hyprland ends fullscreen once a drag passes its
     threshold; `toggleFullscreen` at the lift distance would do the same.
-  - A floating window's minimum before its app shows one. Shrunk past it by its left or
-    top edge, the window's right or bottom edge moves out, since the app keeps its size
-    and the position was written for the size asked. A minimum the ledger records clamps
-    it from then on.
+  - A floating window's minimum where WindowServer holds none, before its app shows one
+    ([geometry.md](geometry.md)). Shrunk past it by its left or top edge, the window's
+    right or bottom edge moves out, since the app keeps its size and the position was
+    written for the size asked. A minimum the ledger records clamps it from then on.
   - Omarchy's Super and scroll wheel bindings, which switch workspaces.

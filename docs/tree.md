@@ -10,16 +10,51 @@
     AeroSpace does, so the root's orientation is the one on screen.
 - The layout is a pure function of the tree, the display area, the gaps and the sizes
   windows refuse to go below ([geometry.md](geometry.md)). Frames have whole point edges,
-  and a fullscreen window gets the whole area. When a container's minimums fit, each
-  window gets at least its minimum and the rest goes by weight, as rift's
-  `solve_axis_lengths` does. The weights stay as the user set them, so they apply again
-  once a minimum stops binding. When the minimums do not fit, the container splits by
-  weight alone, and each window with a minimum takes it anyway, moved back inside the
-  tiling rectangle over its neighbours. Outer and inner gaps shrink as sway's do, to leave
-  each window 100 by 60 pt, sway's `MIN_SANE_W` and `MIN_SANE_H`
-  (include/sway/tree/node.h): the outer gaps on an axis in proportion, as
-  `workspace_add_gaps` does, and the inner gaps to whole points, as `apply_horiz_layout`
-  does (sway/tree/arrange.c).
+  and a fullscreen window gets the whole area. The weights alone split each container.
+  Outer and inner gaps shrink as sway's do, to leave each window 100 by 60 pt, sway's
+  `MIN_SANE_W` and `MIN_SANE_H` (include/sway/tree/node.h): the outer gaps on an axis in
+  proportion, as `workspace_add_gaps` does, and the inner gaps to whole points, as
+  `apply_horiz_layout` does (sway/tree/arrange.c).
+- A window whose minimum is longer than its tile on an axis spills to its minimum there.
+  Across, it keeps the tile's edge that faces the other windows: at the right edge of the
+  tiling rectangle its left edge, and at the left edge its right edge, so the rest goes
+  off screen; between windows its left edge, over the next window. A tile across the whole
+  width keeps its left edge. Down, it always keeps its top edge, over the window below or
+  off the bottom. macOS keeps a titled window's title bar on its display, so a top written
+  above it lands lower, differing from the target in position alone, which the ledger
+  takes as taken, and every plan for the workspace would write the window and flash it
+  again. Kosmos writes the spilled frame, so the app takes a size it accepts, and its
+  border flashes ([borders.md](borders.md)).
+  - On each axis the window keeps its center in its display's visible frame, moving in
+    over its neighbour as far as that takes, since with separate Spaces macOS shows a
+    window only on the display that holds most of it, and can move it to that display's
+    Space. At the 5% floor at the right of a 1920 pt panel with no gaps, Helium, held to
+    785 pt, would start at x = 1824, its center at 2216; it starts at 1527. Its top stays
+    at or below the tiling rectangle's, which wins for a window more than about twice as
+    tall as the room below that top.
+- Kosmos gives a window its minimum where it chooses a split itself: a new window's
+  placement, a window moved to another workspace or display or dropped after a drag, a
+  `move` into another container and `join-with`. Where it fits, the
+  window grows to its minimum in its container, and the others give the room by weight,
+  each keeping the larger of its own minimum and 5% of the container, the floor `resize`
+  keeps (below), or what it has when that is less. So a split the user squeezed past a
+  window's minimum stays: Steve chose full control of the split. `balance-sizes` and
+  `flatten-workspace-tree` grow every child of every container to its minimum, parents
+  first, each keeping 5%. The lengths go in whole points, as rift's `solve_axis_lengths` does
+  (layout_engine/systems/constraints.rs), and the weights take them. Where the minimums
+  do not fit, the weights stay and the windows spill; rift scales such minimums down in
+  proportion, and Steve asked for them only where they fit. A minimum Kosmos learns or
+  WindowServer changes later, a window returning to its place, a profile's merge, a `move`
+  within the window's container, which swaps places with the weights, `layout`, `swap` and
+  `resize` leave the split as it is. So a split comes back from two `move`s within a
+  container, and from two `layout` toggles of a window whose container is the root; a
+  toggle of a nested container splices it into its parent, as h[v[1 3] 2] becomes
+  h[1 3 2]. A merge's windows leave again by a proportional normalize, so a display
+  unplugged and plugged back in comes back to the split it had.
+  - On Steve's main panel, 1900 pt between the outer gaps, Helium is held to 785 pt and
+    Outlook to 1145. With the 10 pt gap between them that is 1940 pt, so Outlook opening
+    beside Helium splits the panel equally and goes 200 pt past its right edge. A window
+    held to 1000 pt would get its 1000 beside Helium, and Helium the other 890.
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
   A workspace with tiled or floating windows always has a focused one, as in i3.
@@ -37,11 +72,14 @@
   count, since a swap exchanges places in the tree.
 - `resize` takes the space from the window's siblings in proportion to their shares. For
   a dimension across the window's container, the nearest ancestor in a container along
-  the dimension resizes. It stops where it would take a window below its minimum, or
-  below one point without one, counting windows nested in a squeezed sibling, and a
-  window under its limit already may stay there. i3 refuses a resize past such a limit.
-  Stopping there does as much as the key press can, so repeated presses reach the limit
-  exactly, and the weights never ask for less than a window takes.
+  the dimension resizes. It moves the split past any window's minimum, and that window
+  spills (above). It stops where it would leave a child under 5% of its container, and a
+  child under 5% already may stay there. That is rift's floor for each side of a split
+  (`clamp(0.05, 0.95)` in layout_engine/systems/bsp.rs); yabai keeps 10% to 90%
+  (`clampf_range` in src/window_manager.c). Kosmos takes rift's, for the more control:
+  5% of the 1890 pt between the gaps on Steve's main panel is about 95 pt, near sway's
+  100 pt sane width. Stopping there does as much as the key press can, so repeated
+  presses reach the floor exactly.
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, as i3's `get_tree_next` does, then to the window over there.
   The sibling's windows at its edge facing the focused window are the first or last child
@@ -153,7 +191,7 @@
     as a minimized one does, and its focus moves on as [focus.md](focus.md) says for a
     window closed and kept. When the app orders it in again it opens as a new window does
     (`Session.reopen`): it leaves its parked place, joins the focused workspace or its
-    rule's, and keeps the minimum size Kosmos learned for it. To the user a closed window
+    rule's, and keeps the minimum size Kosmos learned for it ([geometry.md](geometry.md)). To the user a closed window
     is closed, and in Omarchy reopening makes a new window on the current workspace.
     Before this, Activity Monitor closed with Command-W on workspace 3 came back there
     when reopened from workspace 5 (live, September 25, 2026). It reopens at its order-in,
@@ -275,9 +313,10 @@
     in fullscreen, and returns to the place when the group leaves fullscreen. A claim
     passes a place on only to a holder with the switch's frame, so no window takes a
     fullscreen tab's parked place without its fullscreen frame.
-  - A tab inherits the minimum of the tab it replaces, since tabs share a size, so a
-    switch in a tight layout does not reflow to learn it again. A fullscreen tab's would
-    fill the display, so a fullscreen switch passes none.
+  - A tab inherits the minimum Kosmos learned for the tab it replaces, since tabs share a
+    size, so a switch in a tight layout does not reflow to learn it again. A fullscreen
+    tab's would fill the display, so a fullscreen switch passes none. The minimum
+    WindowServer holds the new tab to is its own.
   - macOS can report the new tab key before the switch pairs, when the tab has no place.
     Kosmos decides that report again once the tab takes its place, as a report of a placed
     window, with any miss found when it came: the kill switch counts it, and it can answer

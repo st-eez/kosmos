@@ -38,6 +38,11 @@ extern uint64_t SLSWindowIteratorGetAttributes(CFTypeRef iterator);
 extern CGRect SLSWindowIteratorGetBounds(CFTypeRef iterator);
 // The caller owns the array, despite the Get name (docs/borders.md).
 extern CFArrayRef SLSWindowIteratorGetCornerRadii(CFTypeRef iterator);
+// The smallest, largest and current size WindowServer holds the window to, as rift declares
+// them (src/sys/skylight.rs); the package read takes a window id (docs/geometry.md).
+extern CGError SLSWindowIteratorGetConstraints(CFTypeRef iterator, CGSize *minimum, CGSize *maximum, CGSize *current);
+extern CGError SLSPackagesGetWindowConstraints(SLSConnectionID cid, uint32_t window, CGSize *minimum, CGSize *maximum,
+                                               CGSize *current);
 
 // Moves windows of the caller's own to a Space (yabai's declaration). A border window of
 // Kosmos's moved to another display's Space was there when read back (kosmos-probe borders).
