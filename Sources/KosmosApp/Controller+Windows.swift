@@ -82,12 +82,21 @@ extension Controller {
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
         if focus == .adopt { session.adopt(id) }
+        // A report that keyed the window before it had a place follows it in this plan's switch,
+        // so its hidden workspace shows it without a conceal first (docs/focus.md).
+        var action = intake.placed(id, facts: reportFacts, reports: &reports, misses: &misses)
+        var movePointer = bringsPointer
+        if case .follow(id, let followPointer) = action {
+            touch(id)
+            var follow = session.follow(id)
+            follow.frames.merge(plan.frames) { followed, _ in followed }
+            (plan, movePointer, action) = (follow, bringsPointer || followPointer, .none)
+        }
         // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the read
         // shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
         let entering = atLaunch ? nil : SkyLight.rows([id]).first.map { (id, Entrance(orderedIn: $0.orderedIn, frame: $0.frame)) }
-        execute(plan, movePointer: bringsPointer, floatingCheck: floats, entering: entering)
-        // The follow's switch reveals the window the plan conceals.
-        windowPlaced(id)
+        execute(plan, movePointer: movePointer, floatingCheck: floats, entering: entering)
+        run(action)
     }
 
     private func forget(_ id: WindowID) {
