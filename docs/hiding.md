@@ -41,6 +41,53 @@
   that is not key, against 0.50 ms for the barrier, which also waits behind
   WindowManager.app. WindowServer applies a batch's operations in order, so a window
   seen out of the holding Space implies the add sent before its removal.
+- A batch reveals a window only once the window's frame write has landed, and every later
+  batch waits behind it (`BatchOrder`). A write lands once the worker's read back names its
+  frame and a row of the window from WindowServer shows that frame: the inventory reads the
+  row at each change event, and the controller checks the row it last read when the read
+  back comes, since WindowServer can take the frame first. The reveal used to go out at a
+  median of 0.5 ms (1,432 switches) while a write landed at 48 ms (p98 171 ms, 834 slide
+  landings), in the live logs of September 24 and 25, 2026, so each window a switch
+  revealed with a new frame showed at its old tile for about 5 frames, then jumped: every
+  window of the hidden workspace `move-node-to-workspace --focus-follows-window` enters,
+  and a followed rule window. The switch now shows late and whole, and its log line gives
+  the wait as `held`. The wait leaves out a window shown already and one whose app is
+  backed off. A write no row has shown counts as landed 1 s after it was sent, the
+  Accessibility timeout, and the controller checks the batch again when the first write
+  holding it reaches that second. A concealed window's move posts the change event as a
+  shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
+  one, each of a window's two concealed moves posted two change events 10 to 13 ms after
+  it, and the row showed the new frame without the holding Space's offset (September 25,
+  2026).
+- A window on screen that the revealed workspace takes in on the display it shows on, as
+  the one `move-node-to-workspace --focus-follows-window` moves or a followed rule window,
+  is concealed at the command by a batch of its own, whose switch line shows nothing, and
+  revealed with the workspace once its write lands. Written at once, it had landed at its
+  tile over the old workspace 1 or 2 frames before the rest. Into an empty workspace
+  nothing is revealed around it, so the switch goes at once and the window slides there.
+  One whose workspace is on another display is left out and lands there as before, 1 or
+  2 frames before the rest: concealed without being stripped, it would keep the ordinary
+  Space of the display it leaves, and whether its reveal then shows it on the other
+  display is open (below).
+- A window a batch conceals is written only once the batch is done, so its write lands
+  concealed. A batch the bridge queue sent late (p98 15.7 ms, 162 ms at most, in the same
+  switches) had let the reflow of the workspace it hid show before the conceal. A write
+  waits while any batch not yet done conceals its window, and a later write joins it, so
+  the app takes them in order. A batch that reveals a window whose write waits for an
+  earlier batch waits for that write to land. One whose write waits for a later batch
+  goes, and the write lands after that batch conceals the window.
+- A batch leaves out of its wait each window a later batch conceals again. So a switch
+  on to a third workspace during the wait, as alt-3 right after alt-shift-2 from 1, sends
+  both batches at once, and the windows of 2 show at their old tiles for the length of one
+  batch. A switch back to 1 waits for 1's reflow to land.
+- A plain switch's windows were laid out while hidden, so none has a write on its way and
+  its batch goes in its command's main actor turn, with no read and no timer. The added
+  work is a few lookups per window it shows, and its log line keeps its fields. The
+  ceiling: a switch that conceals none of the windows a batch waits for, as one on another
+  display, waits behind it. Letting a batch with no window in common go first would remove
+  that wait. The spec's bridge queue can run a switch's operations any time after its
+  command, which covers the wait, and the order of reveals and conceals is unchanged
+  ([tla/README.md](../tla/README.md)).
 - A batch's completion and the focus request after it run on the main actor, so work
   queued there delays both. Three reads had kept the main actor busy after a switch. Each
   app's activation policy is now read once ([inventory.md](inventory.md)), the departure of the window key
@@ -141,6 +188,11 @@
   returns nil for a failed query, where `SkyLight.rows` returns no rows. Read as every
   window gone, a failed query would leave a live window whose conceal failed on screen,
   and one whose reveal failed concealed, with no recovery.
+- Open until the desk: `move-node-to-workspace --focus-follows-window` to a hidden
+  workspace on another display, as alt-shift-N there. Whether a window concealed with the
+  ordinary Space of one display, then written onto another, shows there once revealed
+  ([displays.md](displays.md) lists the question) decides whether the batch that conceals
+  a window a switch takes in can cover such a move too.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until

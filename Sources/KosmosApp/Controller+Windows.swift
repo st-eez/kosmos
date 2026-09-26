@@ -21,6 +21,7 @@ extension Controller {
         case .fullscreenChange(let id, let entered, let spaceChangeBegan):
             fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
         case .frameChange(let id, let old, let frame, let changedAt):
+            if ledger.seen(id, frame: frame) { sendReadyBatches() }
             frameChanged(id, from: old, to: frame, changedAt: changedAt)
             updateBorders()
         case .reordered(let id):
@@ -292,10 +293,14 @@ extension Controller {
                     controllerLog.notice("minimum for \(result.id): \(asked, privacy: .public)")
                     execute(session.setMinimum(result.id, size))
                 }
+                // WindowServer can take the frame before the read back comes (docs/hiding.md).
+                if let row = inventory.windows[result.id] { ledger.seen(result.id, frame: row.frame) }
             }
+            sendReadyBatches()
         case .framesDropped(let ids):
             // Forgotten, so their targets are not pending for good and the next writes are whole.
             for id in ids { ledger.forget(id) }
+            sendReadyBatches()
         case .windowCreated, .windowDestroyed, .answering:
             break
         }

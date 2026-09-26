@@ -22,7 +22,11 @@ final class Controller {
     private var emptyWorkspaces: [DisplayID: EmptyWorkspaceWindow] = [:]
     private let focusQueue = FocusQueue()
     private let bar = BarPush()
-    private var switchGeneration = 0
+    /// Batches wait here for their windows' writes, and writes for their windows' conceals
+    /// (docs/hiding.md).
+    private var order = BatchOrder()
+    private var switches: [Int: Switch] = [:]
+    private var recheckAt: ContinuousClock.Instant?
     var owner: [WindowID: pid_t] = [:]
     /// Newest last.
     var recent: [WindowID] = []
@@ -204,73 +208,122 @@ final class Controller {
                          movePointer: Bool = false, floatingCheck: Bool = false, popping: WindowID? = nil) {
         slides?.keep({ self.session.isVisible($0) }, fullscreen: fullscreenDisplays)
         guard managing, !sessionLocked, !plan.isEmpty || floatingCheck else { return publishState() }
+        let resyncs = needsResync && !(plan.show.isEmpty && plan.hide.isEmpty)
+        let windows = resyncs ? session.resyncPlan(layingOutHidden: false) : plan
+        let (show, hide) = (windows.show, windows.hide)
+        if resyncs { needsResync = false }
+        let entering = session.entering(show: show, hide: hide, frames: plan.frames.keys,
+                                        concealed: hiding.isConcealedOrConcealing,
+                                        display: { inventory.windows[$0].flatMap { display(under: $0.frame) } })
+        // Before the writes, which wait for the batches that conceal their windows.
+        var added: [Int] = []
+        func add(show: [WindowID], hide: [WindowID]) {
+            let number = order.add(show: show, hide: hide).number
+            switches[number] = Switch(received: received, fromCommand: fromCommand)
+            added.append(number)
+        }
+        if !entering.isEmpty { add(show: [], hide: entering) }
+        if !(show.isEmpty && hide.isEmpty) {
+            intake.forgetPlacedHidden(show)   // their workspace is shown
+            add(show: show + entering.filter { !show.contains($0) }, hide: hide)
+        }
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping))
+        writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
         if movePointer { centerPointer() }
-        var show = plan.show, hide = plan.hide
-        if needsResync && !(show.isEmpty && hide.isEmpty) {
-            let resync = session.resyncPlan(layingOutHidden: false)
-            (show, hide) = (resync.show, resync.hide)
-            needsResync = false
-        }
         if show.isEmpty && hide.isEmpty {
             if plan.focus != nil { requestFocus(session.intent, fromCommand: fromCommand) }
             bringFloatingHome()
-        } else {
-            intake.forgetPlacedHidden(show)   // their workspace is shown
-            switchGeneration += 1
-            let generation = switchGeneration
-            let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
-            let submitted = ContinuousClock.now
-            // A window revealed with no ordinary Space goes to its display's (docs/hiding.md).
-            let displays = Dictionary(uniqueKeysWithValues: show.compactMap { id in
-                session.workspace(of: id).map { (id, session.monitor(of: $0).id) }
-            })
-            // The windows to conceal that lose their ordinary Space, by each app's window
-            // focused last (Session.stripped).
-            let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
-            hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
-                guard let self else { return }
-                self.intake.forgetPlacedHidden(hide)   // the conceal that placed them hidden is done
-                self.updateBorders()
-                signposter.endInterval("switch", interval)
-                let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - received
-                controllerLog.notice("""
-                    switch to \(self.session.focusedWorkspace, privacy: .public): \(show.count) shown, \(hide.count) hidden \
-                    (\(timing.stripped) stripped), \
-                    before bridge \((submitted - received).milliseconds, format: .fixed(precision: 3)) ms, bridge \(bridge.milliseconds, format: .fixed(precision: 3)) ms \
-                    (queued \(timing.queued.milliseconds, format: .fixed(precision: 3)), sent \(timing.sent.milliseconds, format: .fixed(precision: 3)), \
-                    confirmed \(timing.confirmed.milliseconds, format: .fixed(precision: 3)) \(timing.barrier.map { $0 ? "by barrier" : "by read" } ?? "without reads", privacy: .public), \
-                    recovered \(timing.recovered.milliseconds, format: .fixed(precision: 3)), back \(timing.returned.milliseconds, format: .fixed(precision: 3))), \
-                    total \(total.milliseconds, format: .fixed(precision: 3)) ms, \(String(describing: outcome), privacy: .public)
-                    """)
-                switch outcome {
-                case .confirmed: break
-                case .revealedOnly:
-                    controllerLog.error("guardian not ready: windows were revealed but not concealed")
-                    self.needsResync = true
-                case .failed:
-                    controllerLog.error("switch not confirmed; recovery ran")
-                    self.needsResync = true
-                    return
-                }
-                // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
-                guard generation == self.switchGeneration else { return }
-                self.requestFocus(self.session.intent, fromCommand: fromCommand)
-                // Only after the focus request. A stale switch's reveal is checked by the switch
-                // that replaced it.
-                self.bringFloatingHome()
-            }
         }
+        sendReadyBatches()
+        for number in added where switches[number] != nil { switches[number]!.held = .now }
         publishState()
     }
 
+    private struct Switch {
+        let received: ContinuousClock.Instant
+        let fromCommand: Bool
+        /// When the batch first waited for writes; nil for one sent in its command's turn.
+        var held: ContinuousClock.Instant?
+    }
+
+    /// A batch whose revealed windows' writes are still landing waits, with every batch after
+    /// it, until a row shows each write or the Accessibility timeout after it. A plain switch's
+    /// windows have none, so its batch goes at once (docs/hiding.md).
+    func sendReadyBatches() {
+        guard !sessionLocked, order.isWaiting else { return }
+        let now = ContinuousClock.now
+        func landing(_ id: WindowID) -> Bool {
+            // A backed off app's write waits for the app to answer again.
+            ledger.isLanding(id, at: now) && hiding.isConcealedOrConcealing(id)
+                && owner[id].flatMap(inventory.worker)?.answers != false
+        }
+        order.ready(landing: landing).forEach(send)
+        // Checked again when the first write holding the batch times out.
+        guard let next = order.next, let end = next.show.filter(landing).compactMap(ledger.landingEnds).min(),
+              recheckAt.map({ end < $0 }) ?? true else { return }
+        recheckAt = end
+        after(end - now) { controller in
+            if controller.recheckAt == end { controller.recheckAt = nil }
+            controller.sendReadyBatches()
+        }
+    }
+
+    private func send(_ batch: BatchOrder.Batch) {
+        let (show, hide) = (batch.show, batch.hide)
+        let context = switches.removeValue(forKey: batch.number)!
+        let interval = signposter.beginInterval("switch", id: signposter.makeSignpostID())
+        let submitted = ContinuousClock.now
+        // A window revealed with no ordinary Space goes to its display's (docs/hiding.md).
+        let displays = Dictionary(uniqueKeysWithValues: show.compactMap { id in
+            session.workspace(of: id).map { (id, session.monitor(of: $0).id) }
+        })
+        // The windows to conceal that lose their ordinary Space, by each app's window
+        // focused last (Session.stripped).
+        let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
+        hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
+            guard let self else { return }
+            self.intake.forgetPlacedHidden(hide)   // the conceal that placed them hidden is done
+            // Sent only now, so each lands concealed.
+            self.sendWrites(self.order.done(batch.number))
+            self.sendReadyBatches()
+            self.updateBorders()
+            signposter.endInterval("switch", interval)
+            let bridge = ContinuousClock.now - submitted, total = ContinuousClock.now - context.received
+            controllerLog.notice("""
+                switch to \(self.session.focusedWorkspace, privacy: .public): \(show.count) shown, \(hide.count) hidden \
+                (\(timing.stripped) stripped), \
+                before bridge \(((context.held ?? submitted) - context.received).milliseconds, format: .fixed(precision: 3)) ms, \
+                \(context.held.map { String(format: "held %.3f ms, ", (submitted - $0).milliseconds) } ?? "", privacy: .public)bridge \(bridge.milliseconds, format: .fixed(precision: 3)) ms \
+                (queued \(timing.queued.milliseconds, format: .fixed(precision: 3)), sent \(timing.sent.milliseconds, format: .fixed(precision: 3)), \
+                confirmed \(timing.confirmed.milliseconds, format: .fixed(precision: 3)) \(timing.barrier.map { $0 ? "by barrier" : "by read" } ?? "without reads", privacy: .public), \
+                recovered \(timing.recovered.milliseconds, format: .fixed(precision: 3)), back \(timing.returned.milliseconds, format: .fixed(precision: 3))), \
+                total \(total.milliseconds, format: .fixed(precision: 3)) ms, \(String(describing: outcome), privacy: .public)
+                """)
+            switch outcome {
+            case .confirmed: break
+            case .revealedOnly:
+                controllerLog.error("guardian not ready: windows were revealed but not concealed")
+                self.needsResync = true
+            case .failed:
+                controllerLog.error("switch not confirmed; recovery ran")
+                self.needsResync = true
+                return
+            }
+            // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
+            guard batch.number == self.order.lastNumber else { return }
+            self.requestFocus(self.session.intent, fromCommand: context.fromCommand)
+            // Only after the focus request. A stale switch's reveal is checked by the switch
+            // that replaced it.
+            self.bringFloatingHome()
+        }
+    }
+
     /// The read waits on WindowServer, so it runs only with a floating window shown, and
-    /// never before a switch's focus request. A concealed window reads as off every display
-    /// and waits for its reveal (docs/displays.md). A window the modifier drags goes where
-    /// the drag puts it, as WindowServer can lag its last write.
+    /// never before a switch's focus request. A concealed window's row gives its own frame,
+    /// so it goes home as a revealed one would (docs/displays.md). A window the modifier drags
+    /// goes where the drag puts it, as WindowServer can lag its last write.
     private func bringFloatingHome() {
         let windows = session.shownFloatingWindows.filter { $0 != modifierDrag?.grab.window }
         guard !windows.isEmpty else { return }
@@ -283,14 +336,24 @@ final class Controller {
 
     func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) {
         guard !sessionLocked else { return }
-        let writes = ledger.writes(for: targets)
-        slides?.writing(Dictionary(uniqueKeysWithValues: writes.keys.map { ($0, targets[$0]!) }), sliding: sliding)
+        let entries = ledger.writes(for: targets).reduce(into: [WindowID: BatchOrder.Write]()) { entries, write in
+            entries[write.key] = (write.value, targets[write.key]!)
+        }
+        slides?.writing(entries.mapValues(\.target), sliding: sliding)
+        sendWrites(order.write(entries))
+    }
+
+    /// A write that goes to no worker, or comes while locked, is forgotten, so its target is
+    /// not left pending.
+    private func sendWrites(_ writes: [WindowID: BatchOrder.Write]) {
+        let now = ContinuousClock.now
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] }) {
-            guard let worker = pid.flatMap(inventory.worker) else {
+            guard !sessionLocked, let worker = pid.flatMap(inventory.worker) else {
                 for (id, _) in group { ledger.forget(id) }
                 continue
             }
-            worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { ($0.key, (write: $0.value, target: targets[$0.key]!)) }))
+            for (id, entry) in group { ledger.sent(id, target: entry.target, at: now) }
+            worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { ($0.key, $0.value) }))
         }
     }
 

@@ -10,6 +10,12 @@
 //                                   can never be front, so it runs beside a live session.
 //   kosmos-probe holding            Who owns each window in a running Kosmos's holding Spaces.
 //                                   Read only.
+//   kosmos-probe concealed-move [onscreen]
+//                                   Whether a concealed window's moves post the change event
+//                                   the inventory reads its row at, and whether the row shows
+//                                   the new frame. An invisible window of its own moves twice,
+//                                   then twice in a holding Space. Its app can never be front,
+//                                   so it runs beside a live session.
 import AppKit
 import CKosmos
 import KosmosRecovery
@@ -40,6 +46,38 @@ import KosmosSkyLight
     window.ignoresMouseEvents = true
     window.orderFrontRegardless()
     print(window.windowNumber)
+    app.run()
+    exit(0)
+}
+
+/// Like `hidden-window`, or in a corner of the main display with onscreen. Each line on its
+/// standard input moves it 10 points right and makes it 1 point wider, and it prints the
+/// uptime of the move and the new frame.
+@MainActor func movingWindow(onscreen: Bool) -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let origin = onscreen ? NSScreen.main?.visibleFrame.origin ?? .zero : NSPoint(x: -4000, y: -4000)
+    let window = NSWindow(contentRect: NSRect(origin: origin, size: NSSize(width: 60, height: 60)),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    window.alphaValue = 0
+    window.ignoresMouseEvents = true
+    window.orderFrontRegardless()
+    print(window.windowNumber)
+    Thread.detachNewThread {
+        while readLine() != nil {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    var frame = window.frame
+                    frame.origin.x += 10
+                    frame.size.width += 1
+                    let at = uptime()
+                    window.setFrame(frame, display: false)
+                    print(String(format: "%.3f %.0f %.0f", at, frame.minX, frame.width))
+                }
+            }
+        }
+        exit(0)
+    }
     app.run()
     exit(0)
 }
@@ -212,4 +250,59 @@ func surviveKill() -> Never {
                   + "recorded \(recorded.contains(id)), owner owns a recorded window \(ownsRecorded)")
         }
     }
+}
+
+nonisolated(unsafe) var concealedMoveLines: [(at: Double, text: String)] = []
+
+/// Each move is asked 0.3 s after the last. A row counts for a move when its width is the
+/// move's, since WindowServer's y is flipped from AppKit's.
+@MainActor func concealedMove(onscreen: Bool) -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let start = uptime()
+    func note(_ text: String, at: Double = uptime()) { concealedMoveLines.append((at, text)) }
+    let child = Child(["moving-window"] + (onscreen ? ["onscreen"] : []))
+    let window = child.readWindows()[0]
+    var events = 0
+    SkyLight.subscribe { event in
+        guard case .changed(let id) = event, id == window else { return }
+        events += 1
+        let row = SkyLight.rows([window]).first.map { "x \(Int($0.frame.minX)) y \(Int($0.frame.minY)) width \(Int($0.frame.width))" }
+        note("change event, row \(row ?? "none")")
+    }
+    SkyLight.watch([window])
+    let space = kosmos_holding_create()
+    guard space != 0 else { print("holding Space not created"); child.terminate(); exit(1) }
+    var ids = [window]
+    child.onLines { line in
+        let fields = line.split(separator: " ")
+        guard fields.count == 3, let at = Double(fields[0]) else { return }
+        let text = "moved to AppKit x \(fields[1]) width \(fields[2])"
+        DispatchQueue.main.async { concealedMoveLines.append((at, text)) }
+    }
+    let steps: [@MainActor () -> Void] = [
+        { child.send("move") },
+        { child.send("move") },
+        {
+            kosmos_add_windows(space, &ids, 1, false)
+            note("concealed: barrier \(kosmos_barrier(space)), in the holding Space \(inSpace(window, space))")
+        },
+        { child.send("move") },
+        { child.send("move") },
+        {
+            kosmos_remove_windows(space, &ids, 1)
+            kosmos_space_destroy(space)
+            child.quit()
+            for line in concealedMoveLines.sorted(by: { $0.at < $1.at }) {
+                print(String(format: "%8.1f ms ", line.at - start) + line.text)
+            }
+            print("window \(window): \(events) change events for 4 moves, 2 of them concealed")
+            exit(0)
+        },
+    ]
+    for (index, step) in steps.enumerated() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 * Double(index + 1)) { MainActor.assumeIsolated { step() } }
+    }
+    app.run()
+    exit(0)
 }

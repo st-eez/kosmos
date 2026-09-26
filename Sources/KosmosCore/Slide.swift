@@ -67,7 +67,7 @@ public struct SlidingWindow: Sendable {
     public static let popWait = 0.25
     /// The Accessibility timeout: reads follow a write this long, and a slide that is over
     /// holds its window at its end this long for the write to land.
-    public static let landingWait = 1.0
+    public static let landingWait = AXBackoff.timeout / .seconds(1)
 
     public let space: SpaceID
     public let display: DisplayID

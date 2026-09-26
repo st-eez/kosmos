@@ -35,9 +35,8 @@ struct AXWindowInfo: Sendable {
 /// One app's Accessibility elements and observer, on a thread of the app's own, so a hung app
 /// blocks only itself. An app that waits out the timeout is backed off (docs/geometry.md).
 actor AppWorker {
-    /// Set system wide in `Apps.start`. With none set, macOS 27 waits 1.5 s on a hung app
-    /// (docs/overview.md, section 2).
-    static let timeout: Float = 1.0
+    /// Set system wide in `Apps.start`.
+    static let timeout = Float(AXBackoff.timeout / .seconds(1))
     /// A raise that outlasts this still counts as made and can still land (docs/focus.md).
     /// No measurement chose the 5 s.
     static let raiseTimeout: Float = 5.0
