@@ -7,8 +7,10 @@ struct Workspace: Sendable {
     /// that container.
     var root: Container
     var floating: [WindowID] = []
-    /// The tiled window that covers the whole display rectangle.
+    /// The tiled or floating window that covers the whole display rectangle.
     var fullscreenWindow: WindowID?
+    /// The frame a floating `fullscreenWindow` had before, which it goes back to (docs/tree.md).
+    var floatingFrame: CGRect?
     /// Oldest first.
     var parked: [Parked] = []
     /// For each window that left the tree to float or park, oldest first.
@@ -33,6 +35,8 @@ struct Parked: Sendable {
     let window: WindowID
     /// It returns to the floating list.
     let floating: Bool
+    /// A floating window that parked in fullscreen returns to the frame it had before it.
+    var frame: CGRect? = nil
 }
 
 /// A window of a saved layout until Kosmos admits it, as `SavedLayout.Window` gives it, with
@@ -42,6 +46,7 @@ struct Pending: Sendable {
     let floating: Bool
     let parked: Bool
     let fullscreen: Bool
+    let frame: CGRect?
     var stamp: UInt64?
     var hint: RestoreHint?
 }
@@ -94,12 +99,12 @@ extension Workspace {
     }
 
     /// Focus on another tiled window ends fullscreen, because macOS raises the focused window
-    /// over it.
+    /// over it. Another floating window comes up over it, as in Hyprland (docs/tree.md).
     mutating func focus(_ window: WindowID) {
         let tiled = root.path(to: window) != nil
         guard tiled || floating.contains(window) else { return }
         stamp(window)
-        if tiled, fullscreenWindow != window { fullscreenWindow = nil }
+        if tiled, fullscreenWindow != window { (fullscreenWindow, floatingFrame) = (nil, nil) }
         check()
     }
 
@@ -149,7 +154,7 @@ extension Workspace {
         }
         hints.removeAll { $0.window == window }
         stamps[window] = nil
-        if fullscreenWindow == window { fullscreenWindow = nil }
+        if fullscreenWindow == window { (fullscreenWindow, floatingFrame) = (nil, nil) }
         normalize()
         check()
         return true
@@ -165,7 +170,7 @@ extension Workspace {
         } else if let index = floating.firstIndex(of: old) {
             floating[index] = new
         } else if let index = parked.firstIndex(where: { $0.window == old }) {
-            parked[index] = Parked(window: new, floating: parked[index].floating)
+            parked[index] = Parked(window: new, floating: parked[index].floating, frame: parked[index].frame)
         } else {
             return false
         }
@@ -184,7 +189,8 @@ extension Workspace {
             parked.append(Parked(window: window, floating: false))
         } else if let index = floating.firstIndex(of: window) {
             floating.remove(at: index)
-            parked.append(Parked(window: window, floating: true))
+            parked.append(Parked(window: window, floating: true, frame: fullscreenWindow == window ? floatingFrame : nil))
+            if fullscreenWindow == window { (fullscreenWindow, floatingFrame) = (nil, nil) }
         } else {
             return false
         }
@@ -219,21 +225,22 @@ extension Workspace {
     }
 
     /// Puts a pending window back as its saved layout had it: at its place in the tree,
-    /// floating, or parked with its hint kept for its return (docs/tree.md). `rect` and `gaps`
-    /// are as for `unpark`. False when no window of that id is pending here.
+    /// floating, or parked with its hint and floating frame kept for its return (docs/tree.md).
+    /// `rect` and `gaps` are as for `unpark`. False when no window of that id is pending here.
     @discardableResult
     mutating func admit(_ window: WindowID, parked: Bool, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let index = pending.firstIndex(where: { $0.window == window }) else { return false }
         let entry = pending.remove(at: index)
         if let hint = entry.hint { hints.append(hint) }
         if parked {
-            self.parked.append(Parked(window: window, floating: entry.floating))
+            self.parked.append(Parked(window: window, floating: entry.floating, frame: entry.frame))
         } else if entry.floating {
             floating.append(window)
+            if entry.fullscreen, let frame = entry.frame { (fullscreenWindow, floatingFrame) = (window, frame) }
         } else {
             restore(window, in: rect, gaps: gaps)
             normalize()
-            if entry.fullscreen { fullscreenWindow = window }
+            if entry.fullscreen { (fullscreenWindow, floatingFrame) = (window, nil) }
         }
         // A workspace with a window has a focused one. Stamp 0 is older than any saved stamp,
         // so the saved focus wins once its window is back.
@@ -242,11 +249,12 @@ extension Workspace {
         return true
     }
 
-    /// `rect` and `gaps` are as for `unpark`.
+    /// `rect` and `gaps` are as for `unpark`. It ends the window's fullscreen, as `float` does.
     @discardableResult
     mutating func tile(_ window: WindowID, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let index = floating.firstIndex(of: window) else { return false }
         floating.remove(at: index)
+        if fullscreenWindow == window { (fullscreenWindow, floatingFrame) = (nil, nil) }
         restore(window, in: rect, gaps: gaps)
         normalize()
         check()
@@ -283,8 +291,14 @@ extension Workspace {
         for (window, count) in places where count > 1 {
             problems.append("window \(window) is in \(count) places")
         }
-        if let fullscreenWindow, root.path(to: fullscreenWindow) == nil {
-            problems.append("fullscreen window \(fullscreenWindow) is not tiled")
+        if let fullscreenWindow, root.path(to: fullscreenWindow) == nil, !floating.contains(fullscreenWindow) {
+            problems.append("fullscreen window \(fullscreenWindow) is neither tiled nor floating")
+        }
+        if (floatingFrame != nil) != (fullscreenWindow.map(floating.contains) == true) {
+            problems.append("the floating frame does not match fullscreen window \(fullscreenWindow ?? 0)")
+        }
+        for entry in parked where !entry.floating && entry.frame != nil {
+            problems.append("parked tiled window \(entry.window) has a floating frame")
         }
         for window in hints.map(\.window) where places[window] == nil || root.path(to: window) != nil {
             problems.append("window \(window) has a restore hint but is tiled or unknown")
@@ -445,10 +459,11 @@ extension Workspace {
         pair(window, with: roomiest, root[root.path(to: roomiest)!.dropLast()].orientation.opposite, first: false)
     }
 
-    /// The tiles as the screen shows them, with the pending windows holding theirs.
+    /// The tiles as the screen shows them, with the pending windows holding theirs, and a
+    /// floating fullscreen window's frame.
     func shownFrames(in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> [WindowID: CGRect] {
         let tiled = Set(root.windows)
-        return holdingPending.frames(in: rect, gaps: gaps, minimums: minimums).filter { tiled.contains($0.key) }
+        return holdingPending.frames(in: rect, gaps: gaps, minimums: minimums).filter { tiled.contains($0.key) || $0.key == fullscreenWindow }
     }
 
     /// The tree with each pending window that was tiled back at its place while its hint is

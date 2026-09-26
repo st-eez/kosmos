@@ -392,9 +392,10 @@ final class Controller {
     /// The read waits on WindowServer, so it runs only with a floating window shown, and
     /// never before a switch's focus request. A concealed window's row gives its own frame,
     /// so it goes home as a revealed one would (docs/displays.md). A window the modifier drags
-    /// goes where the drag puts it, as WindowServer can lag its last write.
+    /// goes where the drag puts it, and one a plan writes where the plan puts it, as
+    /// WindowServer can lag the last write.
     private func bringFloatingHome() {
-        let windows = session.shownFloatingWindows.filter { $0 != modifierDrag?.grab.window }
+        let windows = session.shownFloatingWindows.filter { $0 != modifierDrag?.grab.window && !ledger.isWriting($0) }
         guard !windows.isEmpty else { return }
         let start = ContinuousClock.now
         let frames = Dictionary(SkyLight.rows(windows).map { ($0.id, $0.frame) }) { first, _ in first }

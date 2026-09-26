@@ -10,7 +10,8 @@
     AeroSpace does, so the root's orientation is the one on screen.
 - The layout is a pure function of the tree, the display area, the gaps and the sizes
   windows refuse to go below ([geometry.md](geometry.md)). Frames have whole point edges,
-  and a fullscreen window gets the whole area. The weights alone split each container.
+  and a fullscreen window, tiled or floating, gets the whole area (below). The weights alone
+  split each container.
   Outer and inner gaps shrink as sway's do, to leave each window 100 by 60 pt, sway's
   `MIN_SANE_W` and `MIN_SANE_H` (include/sway/tree/node.h): the outer gaps on an axis in
   proportion, as `workspace_add_gaps` does, and the inner gaps to whole points, as
@@ -80,6 +81,57 @@
   5% of the 1890 pt between the gaps on Steve's main panel is about 95 pt, near sway's
   100 pt sane width. Stopping there does as much as the key press can, so repeated
   presses reach the floor exactly.
+- `fullscreen` gives the focused window the display's area, tiled or floating, and a second
+  `fullscreen` gives it back its place. One window of a workspace covers the area at a time,
+  so `fullscreen` on another window moves it there. The area leaves out the menu bar and the
+  Dock; Hyprland's covers the whole monitor. Before this, `fullscreen` on a floating window
+  did nothing, where Hyprland's covers the monitor as it does for a tile and gives the
+  window back its floating box on the way out: `setWindowFullscreenModeInternal` calls
+  `CDefaultFloatingAlgorithm::recenter`, which sets the box that algorithm last gave the
+  window (src/managers/fullscreen/FullscreenController.cpp, Hyprland main at e368c13).
+  - Kosmos keeps no floating frames, as WindowServer has them, so the workspace keeps the
+    one frame its floating fullscreen window had before (`Workspace.floatingFrame`), as the
+    inventory last read it when the command ran. A floating window the inventory has no
+    frame for stays out of fullscreen. Parked since, the window keeps the frame on its
+    parked place (`Parked.frame`).
+  - Fullscreen ends for a floating window where it ends for a tiled one, and the window goes
+    back to that frame: at a second `fullscreen` or one on another window, a focus on a tile
+    of its workspace, by a command, a click, Command-Tab or a new window keyed, a move to
+    another workspace or display, and a park: a minimize, a hide or native fullscreen. A
+    parked window goes back to the frame as it returns. `layout floating tiling` tiles it,
+    and a close leaves nothing to put back. Another floating window focused comes up over
+    it, and it stays in fullscreen, as Hyprland brings a floating window to the top over a
+    fullscreen one (`onFullscreenWorkspaceFocusWindow` in src/desktop/state/FocusState.cpp).
+    A switch to another workspace and back keeps it, and so does a display change, on the
+    display its workspace moves to.
+  - A focus that ends a fullscreen, tiled or floating, lays the workspace out at once. Before
+    this, Kosmos adopting a key window macOS reported, as at Command-Tab to another tile,
+    ended a tiled window's fullscreen and wrote no frame until the next plan, so that window
+    kept the display under the one raised.
+  - The frame goes back on its workspace's display: as it was where its center is on that
+    display, else moved there as the floating check moves a window
+    ([displays.md](displays.md)), or into the area from off every display. So a window that
+    went fullscreen on a display since unplugged comes back on the display its workspace
+    moved to.
+  - A drag ends it where the drag puts it: a move of the window by more than 10 pt
+    (`TitleBarDrag.dragThreshold`), or a resize by more than that on an axis, by the title
+    bar, an edge or a modifier drag. A tiled fullscreen window lifts out the same way
+    ([displays.md](displays.md)). A modifier drag carries the window at its frame from
+    before, centered on the pointer, as Hyprland's `updateDragWindow` does with
+    `binds:drag_center_window` at its default, which Omarchy keeps
+    (src/layout/supplementary/DragController.cpp).
+  - Kosmos keeps its tiled rules where Hyprland differs. Hyprland's `movetoworkspace` takes
+    the window out of fullscreen and puts it back in on the workspace it moves to
+    (`CGlobalWindowController::moveWindowToWorkspace`), and Omarchy sets
+    `misc:on_focus_under_fullscreen` to 1, so a tile focused under a fullscreen window
+    takes the fullscreen over (default/hypr/looknfeel.lua in basecamp/omarchy at e1614f2).
+    Kosmos ends fullscreen at both, for tiled and floating windows alike.
+  - Left out: a profile that merges away a workspace with a floating window in fullscreen,
+    or parked from it, writes no frame, since the resync after a profile change writes none
+    for floating windows. The window in fullscreen keeps the display's size on the workspace
+    it joins, and goes back in fullscreen when a profile lists its workspace again; the
+    parked one returns where macOS puts it. Carrying the frames from `Session.reconfigure`
+    into that resync would cover both.
 - `focus` in a direction goes up the tree to the nearest container along the direction
   with a sibling on that side, as i3's `get_tree_next` does, then to the window over there.
   The sibling's windows at its edge facing the focused window are the first or last child
@@ -292,11 +344,12 @@
   each install.
   - Kosmos writes `layout.json` beside the recovery record, in
     `~/Library/Application Support/Kosmos` (`SavedLayout`, `LayoutFile`). It holds each
-    window's id and workspace, whether it floats, waits parked or covers its display, its
-    focus stamp and its restore hint, then the workspace each display shows and the focused
-    workspace and window. A tiled window's hint is taken as any hint is, with the fresh
-    hints put back, and a floating or parked window keeps the one it has. A window its app
-    closed and kept is left out, as it opens as a new window when its app shows it again.
+    window's id and workspace, whether it floats, waits parked or covers its display, a
+    floating window's frame from before fullscreen, its focus stamp and its restore hint,
+    then the workspace each display shows and the focused workspace and window. A tiled
+    window's hint is taken as any hint is, with the fresh hints put back, and a floating or
+    parked window keeps the one it has. A window its app closed and kept is left out, as it
+    opens as a new window when its app shows it again.
   - WindowServer numbers the windows, so their ids hold across a restart of Kosmos. The
     file names its WindowServer by pid and start time, as the recovery record does
     ([hiding.md](hiding.md)), and Kosmos leaves out a file from another one, as after a
@@ -319,10 +372,15 @@
     workspaces.
   - As Kosmos admits a pending window, it goes back to its workspace as the file has it
     (`Workspace.admit`). A tiled window returns to its place by its hint, as a returning
-    window does, with no minimum fitted. A floating one floats, and a parked one keeps its
-    hint for its return. The hints were taken with each other put back, so the windows come
-    back to the same places and sizes in any order, and one that never comes back leaves
-    its share to the windows it stood among, as a close does.
+    window does, with no minimum fitted. A floating one floats, a floating one in fullscreen
+    covers its display again with its frame from before kept, and a parked one keeps its
+    hint, and its frame from before fullscreen, for its return. The file can garble a frame
+    too: one with no area is left out, and a floating window saved in fullscreen without a
+    frame comes back floating where it is. A window saved parked from fullscreen that is back
+    on screen at the launch stays where macOS put it, as nothing writes its frame then. The
+    hints were taken with each other put back, so the windows come back to the same places
+    and sizes in any order, and one that never comes back leaves its share to the windows it
+    stood among, as a close does.
     A window the file lacks goes where it would at any launch, and its insert makes the
     pending hints stale, so the windows after it return as with a stale hint, beside the
     windows they stood among.

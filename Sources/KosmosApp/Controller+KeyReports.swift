@@ -45,13 +45,13 @@ extension Controller {
         case .requestFocus(let retry):
             requestFocus(session.intent, retry: retry)
         case .adopt(let window, let bringsPointer):
-            session.adopt(window)
+            let plan = session.adopt(window)
             touch(window)
             // A new generation, so a request still queued cannot key its window after the
             // user's choice (tla/Kosmos.tla, Adopt).
             requestFocus(.window(window))
             if bringsPointer { centerPointer() }
-            publishState()
+            execute(plan)
         case .follow(let window, let bringsPointer):
             touch(window)
             execute(session.follow(window), movePointer: bringsPointer)

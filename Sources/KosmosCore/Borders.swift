@@ -95,7 +95,9 @@ extension Session {
         for name in shownWorkspaces {
             let workspace = workspaces[name]!
             let tiles = workspace.fullscreenWindow == nil ? workspace.root.windows : []
-            for window in tiles + workspace.floating { bordered[window] = window == focused }
+            for window in tiles + workspace.floating where window != workspace.fullscreenWindow {
+                bordered[window] = window == focused
+            }
         }
         for window in lifted { bordered[window] = true }
         return bordered

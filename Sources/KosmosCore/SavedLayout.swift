@@ -18,6 +18,9 @@ public struct SavedLayout: Codable, Equatable, Sendable {
         public var parked: Bool
         /// It covers its workspace's display rectangle (`fullscreen`).
         public var fullscreen: Bool
+        /// A floating window's frame from before fullscreen, while it covers its display or
+        /// waits parked since. It goes back there (docs/tree.md).
+        public var frame: CGRect?
         /// Its latest focus on its workspace's clock, an order only.
         public var stamp: UInt64?
         /// Its restore hint's levels: where it stands in the tree, or stood before it floated
@@ -41,22 +44,27 @@ extension Session {
         var windows: [SavedLayout.Window] = []
         for name in names {
             let workspace = workspaces[name]!
-            func saved(_ window: WindowID, floating: Bool, parked: Bool = false, fullscreen: Bool = false, stamp: UInt64?,
-                       hint: RestoreHint?) -> SavedLayout.Window {
+            func saved(_ window: WindowID, floating: Bool, parked: Bool = false, fullscreen: Bool = false, frame: CGRect? = nil,
+                       stamp: UInt64?, hint: RestoreHint?) -> SavedLayout.Window {
                 SavedLayout.Window(window: window, workspace: name, floating: floating, parked: parked, fullscreen: fullscreen,
-                                   stamp: stamp, levels: hint?.levels,
+                                   frame: frame, stamp: stamp, levels: hint?.levels,
                                    stale: hint.map { $0.edits != workspace.edits } ?? false)
             }
             func hint(_ window: WindowID) -> RestoreHint? { workspace.hints.first { $0.window == window } }
             windows += workspace.pending.map {
-                saved($0.window, floating: $0.floating, parked: $0.parked, fullscreen: $0.fullscreen, stamp: $0.stamp, hint: $0.hint)
+                saved($0.window, floating: $0.floating, parked: $0.parked, fullscreen: $0.fullscreen, frame: $0.frame, stamp: $0.stamp,
+                      hint: $0.hint)
             }
             windows += workspace.root.windows.map {
                 saved($0, floating: false, fullscreen: workspace.fullscreenWindow == $0, stamp: workspace.stamps[$0], hint: workspace.hint(for: $0))
             }
-            windows += workspace.floating.map { saved($0, floating: true, stamp: workspace.stamps[$0], hint: hint($0)) }
+            windows += workspace.floating.map {
+                saved($0, floating: true, fullscreen: workspace.fullscreenWindow == $0,
+                      frame: workspace.fullscreenWindow == $0 ? workspace.floatingFrame : nil, stamp: workspace.stamps[$0], hint: hint($0))
+            }
             windows += workspace.parked.filter { parkReasons[$0.window] != .closedByApp }.map {
-                saved($0.window, floating: $0.floating, parked: true, stamp: workspace.stamps[$0.window], hint: hint($0.window))
+                saved($0.window, floating: $0.floating, parked: true, frame: $0.frame, stamp: workspace.stamps[$0.window],
+                      hint: hint($0.window))
             }
         }
         return SavedLayout(shown: monitors.compactMap { monitor in shown[monitor.id].map { SavedLayout.Shown(display: monitor.id, workspace: $0) } },
@@ -115,12 +123,13 @@ extension Session {
     /// Admits a window the restored layout has on `name`. It returns to its place with no fit,
     /// as a returning window does, and Kosmos asks to focus it again when it was focused.
     mutating func admitSaved(_ window: WindowID, to name: String, minimum: CGSize, parked reason: ParkReason?) -> Plan {
-        let monitor = monitor(of: name)
+        let monitor = monitor(of: name), before = framesBeforeFullscreen
         workspaces[name]!.admit(window, parked: reason != nil, in: monitor.area, gaps: monitor.gaps)
         home[window] = name
         if minimum != .zero { constrained[window] = minimum }
         if let reason { parkReasons[window] = reason }
-        var plan = Plan(frames: frames(of: name))
+        // A window back in fullscreen ends another's.
+        var plan = Plan(frames: frames(of: name).merging(backFromFullscreen(since: before)) { $1 })
         if reason == nil, !isShown(name) { plan.hide = [window] }
         if savedFocus == window {
             savedFocus = nil
@@ -140,10 +149,14 @@ extension RestoreHint.Level {
 }
 
 extension SavedLayout.Window {
-    /// Nil for a tiled window with no sound hint. `edits` is its workspace's.
+    /// Nil for a tiled window with no sound hint. `edits` is its workspace's. A floating frame
+    /// with no area goes, and a fullscreen floating window without one comes back out of
+    /// fullscreen where it is.
     func pending(edits: Int) -> Pending? {
         guard levels?.allSatisfy(\.isSound) != false, floating || levels != nil else { return nil }
         let hint = levels.map { RestoreHint(window: window, levels: $0, edits: stale ? edits - 1 : edits) }
-        return Pending(window: window, floating: floating, parked: parked, fullscreen: fullscreen, stamp: stamp, hint: hint)
+        let frame = floating ? frame.flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil } : nil
+        return Pending(window: window, floating: floating, parked: parked, fullscreen: fullscreen, frame: frame, stamp: stamp,
+                       hint: hint)
     }
 }

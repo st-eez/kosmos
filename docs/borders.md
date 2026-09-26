@@ -22,7 +22,8 @@ state, and during a slide the frame the slide shows the window at.
 - KosmosCore's `Session.bordered` names the windows that get a border: the tiled and
   floating windows of the shown workspaces, none of them parked (minimized, hidden with its
   app, in native fullscreen, or closed and kept by its app), and no tile of a workspace
-  with a Kosmos fullscreen window, the fullscreen window included. A tiled window the user
+  with a Kosmos fullscreen window, nor the fullscreen window, tiled or floating. The other
+  floating windows keep theirs, as they come up over it. A tiled window the user
   holds lifted by its title bar is parked, and keeps its border ([displays.md](displays.md)).
 - The window with the focus, `Session.focused`, takes `active`, or the accent color, and
   every other window `inactive`. The color changes with the model's focus: at a command,

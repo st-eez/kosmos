@@ -95,7 +95,7 @@ extension Controller {
             controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts, reports: reports)
-        if focus == .adopt { session.adopt(id) }
+        if focus == .adopt { plan.frames.merge(session.adopt(id).frames) { $1 } }
         // A report that keyed the window before it had a place follows it in this plan's switch,
         // so its hidden workspace shows it without a conceal first (docs/focus.md).
         var action = intake.placed(id, facts: reportFacts, reports: &reports, misses: &misses)
