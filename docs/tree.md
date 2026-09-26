@@ -285,6 +285,68 @@
     notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
     later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
   - A `summon` command brings a window to the current workspace on purpose.
+- Kosmos keeps its layout across its own restarts: an install, a crash or a relaunch.
+  Before this, quit recovery showed every concealed window and each window at launch joined
+  the workspace its display showed, so ChatGPT and Claude on workspace 2, Spotify on 6 and a
+  second Ghostty on 8 landed on the shown workspaces, and a script put the layout back after
+  each install.
+  - Kosmos writes `layout.json` beside the recovery record, in
+    `~/Library/Application Support/Kosmos` (`SavedLayout`, `LayoutFile`). It holds each
+    window's id and workspace, whether it floats, waits parked or covers its display, its
+    focus stamp and its restore hint, then the workspace each display shows and the focused
+    workspace and window. A tiled window's hint is taken as any hint is, with the fresh
+    hints put back, and a floating or parked window keeps the one it has. A window its app
+    closed and kept is left out, as it opens as a new window when its app shows it again.
+  - WindowServer numbers the windows, so their ids hold across a restart of Kosmos. The
+    file names its WindowServer by pid and start time, as the recovery record does
+    ([hiding.md](hiding.md)), and Kosmos leaves out a file from another one, as after a
+    logout or a restart of the Mac, whose ids name other windows. It leaves out a place
+    the file garbles too, as a slot index out of range or a weight that is no positive
+    number, since the tree's operations trust a hint's numbers, and takes the focus stamps
+    as an order only, so none runs a workspace's clock over.
+  - A change of the model asks for a write a second later, and the changes in that second
+    share it, so a crash loses at most that second. The quit writes once more. A write
+    replaces the file by a rename, and one that would change nothing is skipped. A switch
+    at most sets the timer. Building the layout on the main actor took 21 µs for 22 windows
+    in a release build, and the JSON encoding, 155 µs, and the write, 0.3 ms, run on a
+    utility queue (September 26, 2026).
+  - At launch, before the inventory admits any window, Kosmos reads the file and keeps the
+    windows WindowServer still has. Each display shows its saved workspace again where the
+    profile lets it, the saved focused workspace takes the focus, and the rest goes as at a
+    display change ([displays.md](displays.md)). The windows wait pending on their
+    workspaces.
+  - As Kosmos admits a pending window, it goes back to its workspace as the file has it
+    (`Workspace.admit`). A tiled window returns to its place by its hint, as a returning
+    window does, with no minimum fitted. A floating one floats, and a parked one keeps its
+    hint for its return. The hints were taken with each other put back, so the windows come back to the same places and sizes in any order, and one
+    that never comes back leaves its share to the windows it stood among, as a close does.
+    A window the file lacks goes where it would at any launch, and its insert makes the
+    pending hints stale, so the windows after it return as with a stale hint, beside the
+    windows they stood among.
+  - Until then each pending window that was tiled holds its tile
+    (`Workspace.holdingPending`), so each window back takes the tile it already has, and no
+    window on screen moves while the apps answer Accessibility one by one. The hold ends at
+    the first change to the tree. A pending window that closed gives its tile up at the
+    next write, which drops the pending windows WindowServer no longer has. A window parked
+    at the save holds no tile, nor does one ordered out at the launch, as one minimized or
+    closed and kept by its app since.
+  - A saved window keeps its saved workspace and floating over its rule. A rule places a
+    new window, and the user may have moved this one since, as the second Ghostty from
+    workspace 1, its rule's, to 8; a reload leaves placed windows alone the same way. Where
+    the profile disagrees, the profile wins: a display shows only a workspace the profile
+    lets it show, and the windows of a saved workspace the profile leaves out go where they
+    would at any launch.
+  - The window focused at the save is asked for again when it comes back, if it is then
+    the focused workspace's most recently focused window. A window keyed and adopted since
+    the launch is more recent, so it keeps the focus.
+  - The windows of hidden workspaces show from the quit until Kosmos admits them again,
+    about a second at an install ([inventory.md](inventory.md)).
+  - Left out: the workspaces a profile merged away with the windows that came from them,
+    the minimums Kosmos learned ([geometry.md](geometry.md)), and the workspace
+    `workspace-back-and-forth` returns to. So after a restart under a profile that leaves a
+    saved workspace out, its windows go where they would at any launch, and a later profile
+    that lists the workspace does not bring them back. Saving `mergedAway` and `mergedFrom`
+    would.
 - Native tabs share one place. AppKit orders a deselected tab's window out: it keeps its
   id and leaves every Space (`kosmos-probe tabs`), and WindowServer tags it as it tags a
   window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325

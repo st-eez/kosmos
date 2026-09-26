@@ -79,17 +79,18 @@ extension Controller {
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
         let floats = rule?.float == true, workspace = arrival == .detached ? nil : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero
-        let placed: Session.Plan? = arrival == .reopened ? session.reopen(id, to: workspace, floating: floats, minimum: minimum)
-                                                         : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum)
+        let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id), minimized: inventory.isMinimized(id),
+                                            appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true)
+        let saved = session.savedWorkspace(of: id)
+        let placed: Session.Plan? = arrival == .reopened
+            ? session.reopen(id, to: workspace, floating: floats, minimum: minimum, parked: reason)
+            : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason)
         guard var plan = placed else { return }
-        if floats, let frame = inventory.windows[id]?.frame {
+        let floating = session.isFloating(id)
+        if let saved {
+            controllerLog.info("\(id) back on \(saved, privacy: .public) as the saved layout had it\(floating ? ", floating" : "", privacy: .public)")
+        } else if floating, let frame = inventory.windows[id]?.frame {
             controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
-        }
-        if let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id),
-                                               minimized: inventory.isMinimized(id),
-                                               appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true) {
-            plan.frames = session.park([id], because: reason).frames
-            plan.hide.removeAll { $0 == id }
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts, reports: reports)
         if focus == .adopt { session.adopt(id) }
@@ -101,7 +102,7 @@ extension Controller {
             touch(id)
             (plan, movePointer, action) = (session.follow(id), bringsPointer || followPointer, .none)
         }
-        execute(plan, movePointer: movePointer, floatingCheck: floats, popping: atLaunch ? nil : id)
+        execute(plan, movePointer: movePointer, floatingCheck: floating, popping: atLaunch ? nil : id)
         run(action)
     }
 

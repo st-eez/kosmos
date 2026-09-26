@@ -47,10 +47,11 @@ prefix.
   `KosmosCore/Departures.swift`, `KosmosCore/ConcealHistory.swift`,
   `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
-  minimize, a hide or native fullscreen, and native tabs.
+  minimize, a hide or native fullscreen, the layout kept across restarts, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
   `KosmosCore/TreeCommands.swift`, `KosmosCore/Layout.swift`, `KosmosCore/Session.swift`,
-  `KosmosCore/Tabs.swift`, `KosmosApp/Controller+Windows.swift`, `kosmos-probe/Tree.swift`.
+  `KosmosCore/Tabs.swift`, `KosmosCore/SavedLayout.swift`, `KosmosApp/LayoutFile.swift`,
+  `KosmosApp/Controller+Windows.swift`, `kosmos-probe/Tree.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
   shows Secure Input and its holder.
   Code: `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,

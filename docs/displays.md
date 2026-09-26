@@ -19,7 +19,10 @@
   than the one it was laid out for is laid out as it is shown.
 - A new window joins the workspace a rule names, else the focused workspace. A window that
   was there when Kosmos launched joins the workspace shown on the display under its
-  center, so each keeps its display. AeroSpace does the same (MacWindow.swift).
+  center, so each keeps its display. AeroSpace does the same (MacWindow.swift). A window
+  the saved layout has goes back to its saved workspace instead of either, and at launch
+  each display shows the workspace it showed at the save, where the profile lets it
+  ([tree.md](tree.md)).
 - When the front app keyed the new window, as when the user launched or activated the app,
   and the rule's workspace is hidden, Kosmos shows that workspace on its display and
   focuses the window, as for a Command-Tab to a concealed window ([focus.md](focus.md)).
@@ -38,8 +41,8 @@
   its workspace is shown, and a follow during the sweep would change the workspace a
   display shows while the sweep still places windows by the display under them, so where
   a window lands would depend on the order apps answer Accessibility. The cost: after a
-  relaunch, a key window that a rule puts on a hidden workspace is concealed, and Kosmos
-  keys the focused workspace's window.
+  relaunch, a key window that a rule or the saved layout puts on a hidden workspace is
+  concealed, and Kosmos keys the focused workspace's window.
 - A window a rule floats joins its workspace's floating windows and never the tree, so it
   keeps the frame its app gave it and no tile moves, on a hidden workspace and at launch
   too. Kosmos logs that frame at admission. A new Finder window on the left panel had come

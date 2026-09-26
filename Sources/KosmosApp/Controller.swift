@@ -89,12 +89,18 @@ final class Controller {
     /// Each tile where the last plan left it, so a window whose tile moves under a frame it
     /// keeps flashes too (docs/borders.md).
     private var tiles: [WindowID: CGRect] = [:]
+    /// Nil while observing only, as the layout is another window manager's, or when the
+    /// WindowServer is unread (docs/tree.md).
+    private let windowServer: SavedLayout.Process?
+    private var layoutWritePending = false
+    private var layoutWritten: SavedLayout?
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
         session = Session(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays)
+        windowServer = managing ? LayoutFile.windowServer() : nil
         rules = setup.rules
         profile = setup.profile
         self.barDisplays = barDisplays
@@ -102,6 +108,28 @@ final class Controller {
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         watchLeftButton()
         for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
+        restoreLayout()
+    }
+
+    /// Before the inventory admits any window (docs/tree.md).
+    private func restoreLayout() {
+        guard let windowServer, var saved = LayoutFile.load() else { return }
+        let count = saved.windows.count
+        // A window that closed while Kosmos was down would hold its tile until the next write,
+        // and one ordered out, as minimized or closed and kept by its app since, until the
+        // tree changes.
+        let rows = Dictionary(SkyLight.rows(saved.windows.map(\.id)).map { ($0.id, $0) }) { first, _ in first }
+        saved.windows.removeAll { rows[$0.id] == nil }
+        for index in saved.windows.indices where rows[saved.windows[index].id]?.orderedIn == false {
+            saved.windows[index].parked = true
+        }
+        let applied = session.restore(saved, windowServer: windowServer)
+        let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
+        controllerLog.notice("""
+            saved layout \(applied ? "restored" : "left out, from another WindowServer or version", privacy: .public): \
+            \(saved.windows.count) of its \(count) windows open, workspace on each display \
+            \(shown.joined(separator: ", "), privacy: .public), focused \(self.session.focusedWorkspace, privacy: .public)
+            """)
     }
 
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
@@ -481,13 +509,40 @@ final class Controller {
         windows.max { (recent.lastIndex(of: $0) ?? -1) < (recent.lastIndex(of: $1) ?? -1) }
     }
 
-    /// Every change of the model ends here, so the drag tap's windows and the borders follow it.
+    /// Every change of the model ends here, so the drag tap's windows, the borders and the saved
+    /// layout follow it.
     func publishState() {
         let data = stateJSON()
         bar.publish(data)
         publish?(data)
         dragTap?.setWindows(draggable)
         updateBorders()
+        writeLayoutSoon()
+    }
+
+    /// One write a second at most, a second after the first change since the last write, so
+    /// a crash loses at most that second, and a switch at most sets the timer (docs/tree.md).
+    private func writeLayoutSoon() {
+        guard windowServer != nil, !layoutWritePending else { return }
+        layoutWritePending = true
+        after(.seconds(1)) { controller in
+            // A saved window that closed before Kosmos admitted it gives up its tile.
+            if controller.inventory.swept {
+                let plan = controller.session.forgetPending { controller.inventory.windows[$0] == nil }
+                if !plan.isEmpty { controller.execute(plan) }
+            }
+            controller.writeLayout()
+        }
+    }
+
+    /// `wait`: returns once the file is written, as at quit.
+    func writeLayout(wait: Bool = false) {
+        layoutWritePending = false
+        guard let windowServer else { return }
+        let layout = session.savedLayout(windowServer: windowServer)
+        guard layout != layoutWritten else { return }
+        layoutWritten = layout
+        LayoutFile.write(layout, wait: wait)
     }
 
     /// A locked session keeps its borders until the resync after the unlock (docs/borders.md).

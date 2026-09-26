@@ -133,4 +133,21 @@
   windows some process has read from the list before, and a search that finds nothing
   took 0.4 to 0.8 s (`kosmos-probe ax-search` at 174c067, since removed), so Kosmos leaves
   the case to the next Space change. Launches behind a fullscreen Space often enough to
-  matter would call for it.
+  matter would call for it. A window the saved layout has holds its tile there until then,
+  unless the tree changes first ([tree.md](tree.md)).
+- At launch the saved layout puts each window it has back on its workspace as the sweep's
+  window is admitted ([tree.md](tree.md)). A window of a hidden workspace is concealed by a
+  batch of its own before any frame is written to it, so it never takes a tile of the shown
+  workspace, and the shown workspace's windows keep their tiles. Quit recovery, and the
+  guardian's after a crash, shows every concealed window before the next Kosmos starts,
+  though ([hiding.md](hiding.md)), and each stays at its tile on its workspace's display,
+  over the shown workspace, until the next Kosmos admits and conceals it. At the install of
+  September 26, 2026, 00:46, the old Kosmos's quit recovery ended at 16.900, the new one
+  started at 17.670, and its first conceals at admission, of windows a rule puts on hidden
+  workspaces, completed at 17.909 and 17.947: about a second, 0.77 s of it between the two
+  processes (live log). The ceiling: a restart shows the hidden workspaces' windows for
+  that second, and after a crash until launchd starts Kosmos again. The upgrade path is a
+  restart that keeps them concealed: a quit that a launch follows, as `script/install.sh`'s,
+  leaves the record to it, the next Kosmos takes the holding Space and its windows into its
+  ledger in place of startup recovery, and the guardian still restores them when no Kosmos
+  comes back.
