@@ -278,7 +278,7 @@ actor AppWorker {
 
     func setFrames(_ writes: [WindowID: FrameEntry]) {
         queuedWrites.merge(writes) { queued, new in
-            (new.write.replacing(queued.write, target: new.target), new.target, new.movesDisplay || queued.movesDisplay)
+            (new.write.replacing(queued.write, target: new.target), new.target, new.movesDisplay)
         }
         guard !drainScheduled else { return }
         drainScheduled = true
@@ -297,6 +297,7 @@ actor AppWorker {
             log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
             send(.framesDropped(dropped))
         }
+        var clamped: [(id: WindowID, entry: FrameEntry, element: AXUIElement, readBack: CGRect, spent: Duration)] = []
         for (id, entry) in writes {
             guard let element = elements[id] else { continue }
             let start = ContinuousClock.now
@@ -327,21 +328,33 @@ actor AppWorker {
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
             if case .frame(let target) = entry.write, entry.movesDisplay, readBack.isSmaller(than: target) {
-                guard let landed = landSize(id, element, target, readBack: readBack) else {
-                    queuedWrites[id] = entry
-                    continue
-                }
-                readBack = landed
+                clamped.append((id, entry, element, readBack, ContinuousClock.now - start))
+                continue
             }
-            // script/bench-relayout.sh counts these lines.
-            log.info("\(id) written, AX time \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 2)) ms")
-            send(.frameApplied(id: id, target: entry.target, readBack: readBack))
+            report(id, entry, readBack: readBack, spent: ContinuousClock.now - start)
         }
+        // Last, so none of the app's other writes waits for them, and the app has longer to
+        // take the move (docs/geometry.md).
+        for window in clamped {
+            let start = ContinuousClock.now
+            guard let readBack = landSize(window.id, window.element, window.entry.target, readBack: window.readBack) else {
+                queuedWrites[window.id] = window.entry
+                continue
+            }
+            report(window.id, window.entry, readBack: readBack, spent: window.spent + (ContinuousClock.now - start))
+        }
+    }
+
+    private func report(_ id: WindowID, _ entry: FrameEntry, readBack: CGRect, spent: Duration) {
+        // script/bench-relayout.sh counts these lines.
+        log.info("\(id) written, AX time \(spent.milliseconds, format: .fixed(precision: 2)) ms")
+        send(.frameApplied(id: id, target: entry.target, readBack: readBack))
     }
 
     /// AppKit holds a window that grows onto another display to the old display's edge until
     /// its app takes the move, 10 to 30 ms later, so the size is written again every 2 ms for
-    /// up to 50 ms, blocking the worker (docs/geometry.md). Nil when a read fails.
+    /// up to 50 ms, blocking the worker (docs/geometry.md). Nil when a read fails or the app is
+    /// backed off.
     private func landSize(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
         let held = readBack.size, began = ContinuousClock.now
         var readBack = readBack, sets = 0
@@ -356,7 +369,7 @@ actor AppWorker {
         if readBack.isSmaller(than: target) {
             log.notice("\(id) moved to another display kept \(Int(readBack.width))x\(Int(readBack.height)) of \(asked, privacy: .public) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
         } else {
-            log.info("\(id) moved to another display was held to \(Int(held.width))x\(Int(held.height)); took \(asked, privacy: .public) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
+            log.info("\(id) moved to another display was held to \(Int(held.width))x\(Int(held.height)) of \(asked, privacy: .public); read back \(Int(readBack.width))x\(Int(readBack.height)) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
         }
         return readBack
     }

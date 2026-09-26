@@ -65,12 +65,23 @@
   So no order lands in one pass. A frame write that moves the window to another display,
   as the Controller judges from where WindowServer last had the window and the target, and
   reads back more than 2 pt smaller than the target on an axis, writes the size again
-  every 2 ms while it reads back smaller, for up to 50 ms. It logs the sizes it wrote and
-  the time when the target lands, and a notice when it gives up. The ceiling: the app's
-  worker blocks up to 50 ms on such a move, so the app's other writes and focus requests
-  wait, and a window its app holds smaller, by rounding its size down or by a maximum
-  size, blocks it the whole 50 ms at each move to another display. Remembering each
-  window that still read back smaller after the wait would spare it the next ones.
+  every 2 ms while it reads back smaller, for up to 50 ms. The worker does so after the
+  app's other writes of the same drain, so none of them waits, and the app has longer to
+  take the move. It logs how many more sizes it wrote, the read back and the time, and a
+  notice with the same when the window still reads back smaller at 50 ms. The ceiling:
+  the app's worker blocks up to 50 ms for each such window, one after another, as when a
+  display change moves several of the app's windows. The app's writes that come
+  meanwhile wait, and so does a reveal that waits for them. The focus queue waits up to
+  30 ms for the worker before it keys a window of the app while the app is in the
+  background, and every focus request queued behind it waits too; with the app in front,
+  its raise lands after the wait. A window its app holds smaller, by rounding its size
+  down or by a maximum size, blocks the worker the whole 50 ms at each move to another
+  display, and remembering each window that still read back smaller would spare it the
+  next ones. A window still smaller at 50 ms keeps that size until its target changes,
+  as the ledger takes it for the app's rounding. A give-up the log measures for a window
+  its app does not hold smaller would call for the ledger's fallback: the worker marks the
+  give-up in its report, and the ledger takes it as a first refusal, which the 100 ms
+  retry writes again.
 - Each window's minimum size comes first from WindowServer. The inventory's reads of
   window rows take the size WindowServer holds each window to
   (`SLSWindowIteratorGetConstraints`), and for a row at level 0 with no parent that holds
