@@ -9,7 +9,7 @@ jar=tla2tools.jar
 workers=$(nproc)
 mkdir -p results
 table=results/$name.md
-{ echo "# TLC $name: $(git rev-parse --short HEAD), $workers workers, cap ${cap} min, $(nproc) CPUs"; echo
+[[ -f $table ]] || { echo "# TLC $name: $(git rev-parse --short HEAD), $workers workers, cap ${cap} min, $(nproc) CPUs"; echo
   echo "| config | result | distinct states | depth | time |"; echo "|---|---|---|---|---|"; } > "$table"
 for c in "$@"; do
     c=${c%.cfg}; out=results/$c.out
@@ -26,8 +26,9 @@ for c in "$@"; do
     states=$(grep -oE '[0-9,]+ distinct states found' "$out" | tail -1 | cut -d' ' -f1)
     depth=$(grep -oE '^State [0-9]+:' "$out" | tail -1 | grep -oE '[0-9]+')
     echo "| $c | $result | ${states:-?} | ${depth:--} | ${secs}s |" >> "$table"
+    # Push after each config, so a cut-off session keeps what it finished.
+    git add results
+    git -c user.name="Kosmos TLC cloud" -c user.email="tlc@users.noreply.github.com" \
+        commit -qm "TLC results: $name, $c" && git push -q origin "HEAD:claude/tlc-$name"
 done
 cat "$table"
-git add results
-git -c user.name="Kosmos TLC cloud" -c user.email="tlc@users.noreply.github.com" \
-    commit -qm "TLC results: $name" && git push -q origin "HEAD:claude/tlc-$name" && echo "pushed claude/tlc-$name"
