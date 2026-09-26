@@ -1,7 +1,9 @@
-// Restores concealed windows when Kosmos exits, however it exits.
+// Restores concealed windows when Kosmos exits, however it exits, unless a Kosmos that
+// starts right after it takes them over.
 //
-//   kosmos-guardian watch <pid>   Wait for Kosmos to exit, then run recovery. Prints "R"
-//                                 once the exit watch is armed; Kosmos hides nothing before.
+//   kosmos-guardian watch <pid>   Wait for Kosmos to exit and for a Kosmos to follow, then
+//                                 run recovery. Prints "R" once the exit watch is armed;
+//                                 Kosmos hides nothing before.
 //   kosmos-guardian recover       Run recovery now, for use by hand, and print each
 //                                 attempt's outcome.
 import AppKit
@@ -34,8 +36,29 @@ func watch(_ pid: Int32) -> Never {
         while kevent(queue, nil, 0, &fired, 1, nil) < 0 && errno == EINTR {}
     }
     log.notice("Kosmos \(pid) exited")
+    awaitSuccessor()
     // Kosmos closed the pipe once it read "R", so a print would raise SIGPIPE.
     recover(printing: false)
+}
+
+/// A Kosmos that takes the instance lock within the grace takes the record over, so the
+/// windows of hidden workspaces stay concealed (docs/hiding.md). launchd spawned Kosmos 25 ms
+/// after a `kill -9`, 20 launches were past the lock 85 to 269 ms after their spawn, and
+/// script/install.sh spawned Kosmos 0.5 to 2.0 s after the quit (live logs, September 25 and
+/// 26, 2026). The lock is held only for a moment, as a starting Kosmos tries it every 50 ms.
+func awaitSuccessor() {
+    guard let record = RecordFile.peek(KosmosFiles.record), record.windowServer == ProcessIdentity.windowServer() else { return }
+    let deadline = ContinuousClock.now + (record.handover ? .seconds(10) : .seconds(2))
+    while ContinuousClock.now < deadline {
+        let free: Bool
+        do { free = try FileLock(KosmosFiles.lock) != nil } catch { return }
+        guard free else {
+            log.notice("a Kosmos took the lock; leaving the record to it")
+            exit(0)
+        }
+        usleep(50_000)
+    }
+    log.notice("no Kosmos took the record \(record.handover ? "handed over" : "left at a crash", privacy: .public) in time; recovering")
 }
 
 /// Retries for about 30 s, freeing the lock a starting Kosmos waits 3 s for (docs/overview.md).

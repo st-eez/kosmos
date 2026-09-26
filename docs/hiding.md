@@ -152,22 +152,81 @@
   sets each to identity and alpha 1, takes every window out of it, since each came in
   through Kosmos (`SpaceMembers.concealed`), then destroys it with the holding Spaces and
   reads it back. The running Kosmos's recoveries, after a failed batch and when the
-  guardian keeps dying (`restoreAll`), leave them to it, recorded; the quit, the guardian
-  and the startup recovery destroy them.
-- Quit recovery, and the guardian's after a crash, shows every concealed window before the
-  next Kosmos starts, so at a restart each window of a hidden workspace shows at its tile
-  on its workspace's display, over the shown workspace, until the next Kosmos admits it
-  from the saved layout and conceals it again ([tree.md](tree.md),
-  [inventory.md](inventory.md)). At the install of September 26, 2026, the old Kosmos's
-  quit recovery ended at 00:46:16.900, the new one started at 00:46:17.670, and its first
-  conceals at admission, of windows a rule puts on hidden workspaces, completed at
-  00:46:17.909 and 00:46:17.947: about a second, 0.77 s of it between the two processes
-  (live log). The ceiling: a restart shows the hidden workspaces' windows for that second,
-  and after a crash until launchd starts Kosmos again. The upgrade path is a restart that
-  keeps them concealed: a quit that a launch follows, as `script/install.sh`'s, leaves the
-  record to it, the next Kosmos takes the holding Space and its windows into its ledger in
-  place of startup recovery, and the guardian still restores them when no Kosmos comes
-  back.
+  guardian keeps dying (`restoreAll`), leave them to it, recorded; the quit, the guardian,
+  the startup recovery and the adoption at a restart destroy them.
+- Kosmos keeps the hidden workspaces' windows concealed across a restart. Before this, quit
+  recovery, and the guardian's after a crash, showed every concealed window before the next
+  Kosmos started, and each window of a hidden workspace showed at its tile over the shown
+  workspace until the next Kosmos admitted it from the saved layout and concealed it again
+  ([tree.md](tree.md), [inventory.md](inventory.md)). At the install of September 26, 2026,
+  the old Kosmos's quit recovery ended at 00:46:16.900, the new one started at
+  00:46:17.670, and its first conceals at admission completed at 00:46:17.909 and
+  00:46:17.947: about a second, 0.77 s of it between the two processes (live log).
+  - A planned restart hands the record over. `kosmos handover [record version]` arms the
+    next quit, and `script/install.sh` sends it before its SIGTERM, with the version that
+    `Kosmos record-version` prints in the build that starts next: the staged copy, or the
+    previous copy at `--rollback`. An armed quit writes the layout, ends the slides and
+    lets the queued batches land, then marks the record handed over and exits with every
+    concealed window still in its holding Space. A plain quit, an uninstall and a
+    `launchctl kickstart -k` restore the windows as before. Kosmos has no relaunch of its
+    own; `kosmos handover && launchctl kickstart -k gui/$(id -u)/io.github.st-eez.kosmos`
+    restarts it by hand with the windows kept.
+  - Kosmos refuses the arm when the next build reads another record version, and the
+    install then quits it with recovery; so does a Kosmos that predates the command, which
+    answers that it does not know it. A build takes a record it cannot decode for none, so
+    handing one over would leave its windows concealed with no record to restore them
+    (`handover-ungated`, [tla/README.md](../tla/README.md)). The mark follows the list of
+    Spaces windows slide in, where a version 1 reader stops, so the version stays 1. The ceiling:
+    a build swapped in without `script/install.sh` and then a crash leave the record to a
+    build that may not read it.
+  - Once its Kosmos exits and leaves a record, the guardian gives the next Kosmos a grace:
+    10 s after a quit that handed the record over and 2 s after a crash. It tries the
+    instance lock every 50 ms and lets it go at once, and when a Kosmos holds it, the
+    guardian leaves the record to that Kosmos. When the grace ends with none, it recovers
+    as before. launchd spawned Kosmos 25 ms after the `kill -9` of 02:08:37.751 on
+    September 26, 2026, and 20 launches on September 25 and 26 were past the lock 85 to
+    269 ms after their spawn. `script/install.sh` spawned the new Kosmos 0.5 to 2.0 s after
+    the old one quit in 18 installs, a time that includes its wait for the guardian, which
+    it now skips after a handover (live logs). launchd starts a Kosmos again at once only
+    after a run of 30 s or more (`ThrottleInterval`), so after a crash at launch, or with
+    Launch at Login off, the windows show 2 s after the exit, and after a handover whose
+    next Kosmos never starts, 10 s after. Each Kosmos starts its guardian before it takes
+    the lock, so a Kosmos that dies after taking the lock still has one.
+  - A Kosmos that starts with Accessibility granted and manages windows takes the record
+    over in place of startup recovery, once the saved layout is restored and before the
+    inventory admits any window (`Controller.adopt`). Recovery runs with the windows it
+    spares (`Recovery.run`, `sparing`). The settled members of the holding Spaces are read
+    with `SkyLight.readRows`, and a recorded member that is ordered in stays concealed when
+    its admission will conceal it: the saved layout puts it on a hidden workspace, or the
+    layout lacks it and its rule names a hidden one (`Adoption`,
+    `Session.concealsAtAdmission`). A window that stands on a kept one, as its sheet, stays
+    with it. The rest come back as recovery brings them: windows of shown workspaces,
+    windows ordered out, which park at admission, and windows with no row. A failed row
+    query keeps nothing, since it cannot tell a closed window. The Spaces windows slide in
+    are emptied and destroyed, and so is each holding Space left with no kept window. The
+    record keeps the kept windows and their Spaces, without the mark, and the ledger comes
+    back from those Spaces' members, as after an incomplete recovery. Without Accessibility,
+    or while another window manager runs, startup recovery runs as before.
+  - A kept window's admission to its hidden workspace finds it in the ledger, so its batch
+    only confirms it. A concealed window whose admission plan does not hide it is revealed
+    with that plan, as one whose workspace a switch showed before its admission, or one
+    that parks (`handover-noreveal`). A kept window that no admission places within 5 s of
+    the adoption, as one whose app never answers, is revealed where it is
+    (`handover-nobackstop`); every window of the launch of 02:08:38 was admitted within
+    68 ms of its start.
+  - A conceal after the adoption goes into the kept holding Space, by the rule above.
+    Whether a holding Space keeps its transform and alpha once the Kosmos that made it
+    exits, and takes a window another process adds, is unconfirmed. The guardian's
+    recoveries show that it outlives its maker, and that another process can read its
+    members, take windows out and destroy it (the `kill -9` above: 3 windows restored, 9
+    Spaces destroyed). `kosmos-probe handover` checks the rest. If the add fails, the
+    first batch that conceals into the kept Space fails its confirmation, and recovery
+    destroys the Space.
+  - Border windows are Kosmos's own, so they close with it, and a concealed window has
+    none, so the next Kosmos draws them as it manages its windows
+    ([borders.md](borders.md)).
+  - [tla/Handover.tla](../tla/Handover.tla) models the restart
+    ([tla/README.md](../tla/README.md)).
 - A window that closes leaves the ledger and the record once its concealing Space no
   longer lists it. The record's slot holds about 168 windows, 165 with the 8 Spaces
   windows slide in, and filled with closed ones it would stop every conceal. A window

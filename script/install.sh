@@ -6,8 +6,9 @@
 #
 # The copy an install replaces becomes Kosmos-previous, without the .app extension, so
 # LaunchServices never registers it, and --rollback swaps the two. ~/.local/bin/kosmos links
-# to the CLI inside the app. A Kosmos running from the app quits first, which restores its
-# hidden windows, and starts again afterwards.
+# to the CLI inside the app. A Kosmos running from the app quits first and starts again
+# afterwards. It leaves its hidden windows concealed for the next build to take over, or
+# restores them when that build reads another recovery record version, or at --uninstall.
 set -euo pipefail
 
 usage="usage: script/install.sh [--dry-run] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]"
@@ -61,15 +62,27 @@ wait_for_exit() {
     return 1
 }
 
-# SIGTERM quits Kosmos through AppKit, which restores its hidden windows. The guardian retries
-# an incomplete recovery for about 30 s after Kosmos exits (docs/overview.md).
+# SIGTERM quits Kosmos through AppKit. A Kosmos that `kosmos handover` armed leaves its hidden
+# windows concealed, and its guardian waits 10 s for the next Kosmos to take them over; any
+# other restores them, and the guardian retries an incomplete recovery for about 30 s after
+# Kosmos exits (docs/hiding.md, docs/overview.md).
 was_running=false
+handed_over=false
 stop_kosmos() {
-    local pids guardians
+    local pids guardians version next=$stage
     # -c keeps out other processes that map the file, such as lldb, sample or ReportCrash.
     pids=$(lsof -t -a -d txt -c Kosmos "$app/Contents/MacOS/Kosmos" 2>/dev/null || true)
     if [[ -z $pids ]]; then return; fi
     was_running=true
+    if [[ $mode == rollback ]]; then next=$previous; fi
+    # A Kosmos that predates handovers, or writes another version, refuses, and quits as before.
+    if [[ $mode != uninstall && -x $cli ]] && version=$("$next/Contents/MacOS/Kosmos" record-version 2>/dev/null); then
+        if $dry_run; then
+            run "$cli" handover "$version"
+        elif "$cli" handover "$version" > /dev/null 2>&1; then
+            handed_over=true
+        fi
+    fi
     run kill -TERM $pids 2>/dev/null || true
     if $dry_run; then return; fi
     guardians=$(lsof -t -a -d txt -c kosmos-guardian "$app/Contents/Helpers/kosmos-guardian" 2>/dev/null || true)
@@ -77,7 +90,8 @@ stop_kosmos() {
         echo "Kosmos did not quit within 10 s; nothing was changed." >&2
         exit 1
     fi
-    if ! wait_for_exit 350 $guardians; then
+    # The guardian of a Kosmos that handed over waits for the one started below.
+    if ! $handed_over && ! wait_for_exit 350 $guardians; then
         echo "kosmos-guardian was still restoring hidden windows 35 s after Kosmos quit; nothing was changed." >&2
         exit 1
     fi

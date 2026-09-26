@@ -71,6 +71,7 @@ extension Controller {
     /// and a minimized or fullscreen one returns on its own, not when its app unhides. A
     /// reopened window opens as a new window does (docs/tree.md).
     private func place(_ id: WindowID, pid: pid_t, _ arrival: Arrival) {
+        adoption.admitted(id)
         let app = inventory.appIdentity(pid)
         let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
         // A window there at launch joins the workspace of the display under it; a later one
@@ -102,6 +103,9 @@ extension Controller {
             touch(id)
             (plan, movePointer, action) = (session.follow(id), bringsPointer || followPointer, .none)
         }
+        // A window already concealed, as one taken over at launch, shows unless its plan hides
+        // it: its workspace is shown, or it parks (docs/hiding.md).
+        if hiding.isConcealed(id), !plan.hide.contains(id), !plan.show.contains(id) { plan.show.append(id) }
         execute(plan, movePointer: movePointer, floatingCheck: floating, popping: atLaunch ? nil : id)
         run(action)
     }

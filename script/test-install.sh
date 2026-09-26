@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks script/install.sh in a temporary directory: install three times, roll back twice,
-# uninstall, fail an install after it quit a running Kosmos, then uninstall while a guardian
-# outlives Kosmos. It builds and signs as install.sh does, and leaves /Applications and
+# uninstall, fail an install after it quit a running Kosmos, uninstall while a guardian
+# outlives Kosmos, then install over a Kosmos that hands its hidden windows over. It builds
+# and signs as install.sh does, and leaves /Applications and
 # ~/.local/bin alone. install.sh handles launch at login only for /Applications, so the
 # registration is never read or changed.
 #
@@ -64,10 +65,7 @@ fi
 
 # The guardian retries an incomplete recovery for about 30 s after Kosmos quits, and install.sh
 # waits for it. A stub guardian outlives the stub Kosmos by 12 s, past the 10 s Kosmos gets.
-rm -rf "$apps"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers"
-printf '#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n' | cc -x c -o "$app/Contents/MacOS/Kosmos" -
-cc -x c -o "$app/Contents/Helpers/kosmos-guardian" - <<'STUB'
+cc -x c -o "$root/guardian" - <<'STUB'
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -77,8 +75,31 @@ int main(int argc, char **argv) {
     return 0;
 }
 STUB
+stub_kosmos() {
+    rm -rf "$apps"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers"
+    printf '#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n' | cc -x c -o "$app/Contents/MacOS/Kosmos" -
+    cp "$root/guardian" "$app/Contents/Helpers/kosmos-guardian"
+}
+stub_kosmos
 kosmos=$("$app/Contents/MacOS/Kosmos" > /dev/null 2>&1 & echo $!)
 guardian=$("$app/Contents/Helpers/kosmos-guardian" "$kosmos" > /dev/null 2>&1 & echo $!)
 script/install.sh "${flags[@]}" --uninstall > /dev/null || fail "an uninstall did not wait for the guardian"
 ! kill -0 "$guardian" 2>/dev/null || fail "an uninstall finished while the guardian ran"
-echo "install, rollback, uninstall, restart after a failure and the wait for the guardian passed"
+
+# A Kosmos armed with the next build's record version leaves its hidden windows to that
+# build, and its guardian waits for it, so the install goes on without waiting. A stub CLI
+# records the request; it never reaches the socket of a Kosmos that is running.
+stub_kosmos
+printf '#!/bin/sh\necho "$@" > "%s"\n' "$root/handover" > "$app/Contents/Helpers/kosmos"
+chmod +x "$app/Contents/Helpers/kosmos"
+rm -f "$root/opened"
+kosmos=$("$app/Contents/MacOS/Kosmos" > /dev/null 2>&1 & echo $!)
+guardian=$("$app/Contents/Helpers/kosmos-guardian" "$kosmos" > /dev/null 2>&1 & echo $!)
+PATH=$root/fake:$PATH script/install.sh "${flags[@]}" > /dev/null || fail "an install over a Kosmos that handed over failed"
+[[ $(cat "$root/handover" 2>/dev/null) == "handover $("$app/Contents/MacOS/Kosmos" record-version)" ]] ||
+    fail "the install did not arm Kosmos with the next build's record version"
+kill -0 "$guardian" 2>/dev/null || fail "the install waited for the guardian of a Kosmos that handed over"
+kill "$guardian"
+[[ $(cat "$root/opened" 2>/dev/null) == "$app" ]] || fail "the install did not start Kosmos after the handover"
+echo "install, rollback, uninstall, restart after a failure, the wait for the guardian and the handover passed"
