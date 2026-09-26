@@ -143,6 +143,22 @@ public struct FrameLedger: Sendable {
         isWriting(id) || confirmedAt[id].map { stamp < $0 } == true
     }
 
+    /// Whose a frame change of the window is (docs/geometry.md).
+    public enum Change: Equatable, Sendable {
+        /// A write is in flight, whose read back comes next.
+        case writing
+        /// Kosmos's own write: the change shows the newest write's read back (`landed`), or
+        /// came before the last confirm, at `changedAt`, nil for a frame read with no event.
+        case written
+        /// The user's move or resize, or the app's.
+        case other
+    }
+
+    public func change(of id: WindowID, changedAt: ContinuousClock.Instant?, landed: Bool) -> Change {
+        if isWriting(id) { return .writing }
+        return landed || changedAt.map { isWriting(id, at: $0) } == true ? .written : .other
+    }
+
     public mutating func forget(_ id: WindowID) {
         confirmed[id] = nil
         pending[id] = nil

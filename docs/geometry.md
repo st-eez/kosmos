@@ -191,7 +191,8 @@
   would tell them apart. The write's change still records its row when it differs from
   the frame confirmed: the row applies after the confirm and can hold the app's next step,
   as of a live resize, whose own event then finds no difference. The pointer for the
-  resize border check is read as the change applies.
+  resize border check is read as the change applies. `FrameLedger.change` tells a write's
+  change from the user's, and KosmosCore's tests cover it.
 - Every AX call times out after 1 s, set once for the whole process, so elements copied
   out of an app's attributes, which do not take their app element's timeout (as paneru
   found), are covered too. Reads use the same 1 s. Each app's calls run

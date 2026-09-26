@@ -12,6 +12,16 @@ public enum TitleBarDrag {
         return pointer.x <= frame.minX + reach || pointer.x >= frame.maxX - reach
             || pointer.y >= frame.maxY - reach || pointer.y < frame.minY
     }
+
+    /// A tiled window's change during a press, from `before`, its frame at the press's first
+    /// change. A resize never lifts it, and a press that resized it stays a resize to its end,
+    /// as WindowServer can apply a resize by the left or top edge as a move first. `resizing`:
+    /// the press resized it before, or the pointer is on a resize border. The key window
+    /// lifts once it moved whole past `dragThreshold` (docs/displays.md).
+    public static func change(from before: CGRect, to frame: CGRect, resizing: Bool) -> (resized: Bool, lifts: Bool) {
+        let resized = resizing || frame.size != before.size
+        return (resized, !resized && hypot(frame.minX - before.minX, frame.minY - before.minY) > dragThreshold)
+    }
 }
 
 extension Session {

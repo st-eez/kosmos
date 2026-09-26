@@ -10,11 +10,12 @@ extension Controller {
     /// (docs/geometry.md, docs/displays.md).
     func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?,
                       landed: Bool) {
-        guard managing, !sessionLocked, !ledger.isWriting(id), !hiding.isConcealed(id),
+        guard managing, !sessionLocked, !hiding.isConcealed(id),
               let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
-        if landed || changedAt.map({ ledger.isWriting(id, at: $0) }) == true {
-            ledger.observeAfterConfirm(id, frame: frame)
-            return
+        switch ledger.change(of: id, changedAt: changedAt, landed: landed) {
+        case .writing: return
+        case .written: return ledger.observeAfterConfirm(id, frame: frame)
+        case .other: break
         }
         let button = changedAt.map { leftButton.state(at: $0) } ?? .up
         // The user moves or resizes it, unless the change is its own write landing after the
@@ -48,13 +49,11 @@ extension Controller {
         }
         let press = mouseMoved[id]
         let before = press?.before ?? old
-        // WindowServer can apply a resize by the left or top edge as a move first, so the
-        // pointer on a resize border marks one too. Read here, as reading it as each event
-        // came would read it at every change event a switch posts.
+        // The pointer is read here, as reading it as each event came would read it at every
+        // change event a switch posts.
         let onBorder = press == nil && CGEvent(source: nil).map { TitleBarDrag.onResizeBorder($0.location, of: frame) } == true
-        let resized = press?.resized == true || onBorder || frame.size != before.size
-        if !resized, key == .window(id), hypot(frame.minX - before.minX, frame.minY - before.minY) > TitleBarDrag.dragThreshold,
-           let plan = session.lift(id) {
+        let (resized, lifts) = TitleBarDrag.change(from: before, to: frame, resizing: press?.resized == true || onBorder)
+        if lifts, key == .window(id), let plan = session.lift(id) {
             mouseMoved[id] = nil
             controllerLog.info("\(id) lifted from workspace \(name, privacy: .public)")
             execute(plan)

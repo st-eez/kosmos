@@ -136,6 +136,20 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.isWriting(1, at: t0 + .milliseconds(1)))
 }
 
+@Test func aChangeIsKosmossWriteWhileItIsInFlightOnceItLandsOrBeforeItsConfirm() {
+    var ledger = FrameLedger()
+    #expect(ledger.change(of: 1, changedAt: t0, landed: false) == .other)
+    _ = ledger.writes(for: [1: a])
+    #expect(ledger.change(of: 1, changedAt: t0, landed: false) == .writing)
+    #expect(ledger.change(of: 1, changedAt: nil, landed: true) == .writing)
+    ledger.confirm(1, target: a, readBack: a, at: t0 + .milliseconds(2))
+    #expect(ledger.change(of: 1, changedAt: t0 + .milliseconds(1), landed: false) == .written)
+    #expect(ledger.change(of: 1, changedAt: t0 + .milliseconds(3), landed: true) == .written)
+    // The user's, after the confirm, or read with no event, as at a sweep.
+    #expect(ledger.change(of: 1, changedAt: t0 + .milliseconds(3), landed: false) == .other)
+    #expect(ledger.change(of: 1, changedAt: nil, landed: false) == .other)
+}
+
 @Test func theWritesChangeAppliedAfterTheConfirmRecordsALaterFrame() {
     var ledger = FrameLedger()
     _ = ledger.writes(for: [1: a])
