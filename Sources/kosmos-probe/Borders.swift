@@ -2,8 +2,12 @@
 //
 //   kosmos-probe borders            A border window set up as Kosmos's, around windows of a
 //                                   child app: how it stacks, raises, hit tests and joins
-//                                   Spaces, each target's corner radius, and what reading the
-//                                   radii costs.
+//                                   Spaces, which window the window list puts topmost inside
+//                                   the target and on the ring, and the ring's color on screen,
+//                                   at rest and while the target slides in an animation Space
+//                                   of the probe's, each target's corner radius, and what
+//                                   reading the radii costs. A crash mid-slide leaves that
+//                                   Space, empty.
 //   kosmos-probe border-space       Where a border window lands when it moves, ordered out,
 //                                   to a Space its display does not show, as Kosmos moves one
 //                                   over a native fullscreen Space, with its frame set before
@@ -20,6 +24,7 @@ import AppKit
 import CKosmos
 import KosmosCore
 import KosmosSkyLight
+@preconcurrency import ScreenCaptureKit
 
 extension NSScreen {
     var displayID: CGDirectDisplayID {
@@ -129,6 +134,42 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     NSRect(x: frame.minX, y: NSScreen.screens[0].frame.height - frame.maxY, width: frame.width, height: frame.height)
 }
 
+/// The sRGB color of the pixel at `point`, in CoreGraphics' coordinates, in a capture of
+/// `windows` alone on the built-in display, or nil when the capture fails.
+@MainActor func capturedColor(at point: CGPoint, of windows: [UInt32]) -> String? {
+    let screen = builtInScreen()
+    let done = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var content: SCShareableContent?
+    SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { result, _ in
+        content = result
+        done.signal()
+    }
+    done.wait()
+    guard let content, let display = content.displays.first(where: { $0.displayID == screen.displayID }) else { return nil }
+    let bounds = CGDisplayBounds(screen.displayID), scale = Int(screen.backingScaleFactor)
+    let configuration = SCStreamConfiguration()
+    configuration.sourceRect = CGRect(x: point.x - bounds.minX - 4, y: point.y - bounds.minY - 4, width: 8, height: 8)
+    configuration.width = 8 * scale
+    configuration.height = 8 * scale
+    configuration.showsCursor = false
+    let filter = SCContentFilter(display: display, including: content.windows.filter { windows.contains($0.windowID) })
+    nonisolated(unsafe) var image: CGImage?
+    SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { result, _ in
+        image = result
+        done.signal()
+    }
+    done.wait()
+    // The pixel at the capture's center is the one at the point.
+    guard let pixel = image?.cropping(to: CGRect(x: 4 * scale, y: 4 * scale, width: 1, height: 1)),
+          let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+          let data = context.data else { return nil }
+    context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let rgb = data.assumingMemoryBound(to: UInt8.self)
+    return String(format: "#%02x%02x%02x", rgb[0], rgb[1], rgb[2])
+}
+
 /// Runs the app's event loop for `seconds`, which delivers SkyLight's notifications too.
 @MainActor func pumpEvents(_ seconds: Double) {
     let deadline = Date(timeIntervalSinceNow: seconds)
@@ -171,6 +212,14 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     // Rows and corner radii of the child's titled windows, and what reading the radii adds
     // to a read of the rows, the two reads alternating.
     let rows = Dictionary(SkyLight.rows([t, c], cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    // In one run on 2026-09-26 the child's windows landed on the main display.
+    guard let targetFrame = rows[t]?.frame, NSScreen.screens.contains(where: {
+        CGDisplayIsBuiltin($0.displayID) != 0 && CGDisplayBounds($0.displayID).contains(targetFrame)
+    }) else {
+        print("T is not on the built-in display: \(rows[t].map { String(describing: $0.frame) } ?? "no row")")
+        targets.quit()
+        exit(1)
+    }
     let radius = rows[t]?.cornerRadius ?? 0
     for id in [t, c] {
         print("\(id == t ? "T" : "C"): level \(rows[id]?.level ?? -1), frame \(rows[id].map { String(describing: $0.frame) } ?? "?"), corner radius \(rows[id]?.cornerRadius ?? -1)")
@@ -200,7 +249,7 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
         return stepEvents.isEmpty ? "no events" : "events " + stepEvents.map { "\($0.id) for \($0.window == t ? "T" : $0.window == c ? "C" : String($0.window))" }.joined(separator: ", ")
     }
 
-    // The border, ordered directly above T.
+    // The border, ordered directly below T.
     let border = ProbeBorder()
     let frame = appKitRect(rows[t]!.frame)
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
@@ -208,11 +257,11 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     border.place(around: frame, radius: radius, color: color)
     let placed = elapsed(start)
     start = .now
-    border.window.order(.above, relativeTo: Int(t))
-    print(String(format: "place %.3f ms, order above T %.3f ms", placed, elapsed(start)))
+    border.window.order(.below, relativeTo: Int(t))
+    print(String(format: "place %.3f ms, order below T %.3f ms", placed, elapsed(start)))
     wait(0.2)
     let b = border.id
-    stacking("ordered above T", border: b)
+    stacking("ordered below T", border: b)
     print("  \(events())")
     targets.send("front \(c)")
     wait(0.2)
@@ -222,22 +271,90 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     wait(0.2)
     stacking("after the child orders T front", border: b)
     print("  \(events())")
-    border.window.order(.above, relativeTo: Int(t))
+    border.window.order(.below, relativeTo: Int(t))
     wait(0.2)
-    stacking("B ordered above T again", border: b)
+    stacking("B ordered below T again", border: b)
     print("  \(events())")
     var orders: [Double] = []
     for _ in 0..<100 {
         start = .now
-        border.window.order(.above, relativeTo: Int(t))
+        border.window.order(.below, relativeTo: Int(t))
         orders.append(elapsed(start))
     }
     wait(0.2)
-    print(String(format: "100 more orders above T: %.3f ms median, %.3f ms at most; ", percentile(orders, 0.5), orders.max()!) + events())
+    print(String(format: "100 more orders below T: %.3f ms median, %.3f ms at most; ", percentile(orders, 0.5), orders.max()!) + events())
 
     // Hit test 1 pt outside T's left edge, under the ring.
     let hit = UInt32(NSWindow.windowNumber(at: NSPoint(x: frame.minX - 1, y: frame.midY), belowWindowWithWindowNumber: 0))
     print("hit test outside T under the ring: \(hit == b ? "B" : hit == t ? "T" : String(hit))")
+
+    // A tool that hit tests through the window list, as Claude's computer use does, takes the
+    // first window whose bounds hold the point. The ring's color is read at the middle of its
+    // width, where T's shadow would dim it, from a capture of the probe's and the child's
+    // windows alone.
+    func topmost(at point: CGPoint) -> String {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        for info in list {
+            guard let id = info[kCGWindowNumber as String] as? UInt32, let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                  let bounds = (info[kCGWindowBounds as String] as? NSDictionary).flatMap({ CGRect(dictionaryRepresentation: $0) }),
+                  bounds.contains(point) else { continue }
+            return "\(name(id, pid, b)) at layer \(info[kCGWindowLayer as String] as? Int ?? 0)"
+        }
+        return "no window"
+    }
+    func look(_ label: String, at shown: CGRect) {
+        let left = CGPoint(x: shown.minX - 1, y: shown.midY), bottom = CGPoint(x: shown.midX, y: shown.maxY + 1)
+        print("\(label): topmost inside T \(topmost(at: CGPoint(x: shown.midX, y: shown.midY))), on the ring \(topmost(at: left)); "
+              + "the ring at T's left edge \(capturedColor(at: left, of: [b, t, c]) ?? "unread"), "
+              + "at its bottom edge \(capturedColor(at: bottom, of: [b, t, c]) ?? "unread"), drawn #7aa2f7")
+    }
+    look("B below T", at: rows[t]!.frame)
+    wait(0.5)
+    print("  \(events())")
+    border.window.order(.above, relativeTo: Int(t))
+    wait(0.2)
+    look("B above T", at: rows[t]!.frame)
+    border.window.order(.below, relativeTo: Int(t))
+    wait(0.5)
+    print("  \(events())")
+
+    // T slides as Kosmos slides it: it joins a Space one level above the desktop Space's, whose
+    // transform shows it 60 points right, and B covers the display with its ring around where
+    // T shows. Then B is ordered below T again, as at an 808 mid-slide.
+    let slideSpace = kosmos_float_space_create(1)
+    if slideSpace != 0 {
+        var ids = [t]
+        kosmos_add_windows(slideSpace, &ids, 1, false)
+        // A translation of -60 in x shows the window 60 points right (docs/geometry.md).
+        kosmos_space_set_transform(slideSpace, CGAffineTransform(translationX: -60, y: 0))
+        _ = kosmos_barrier(slideSpace)
+        let screen = builtInScreen().frame, shownFrame = rows[t]!.frame.offsetBy(dx: 60, dy: 0)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        border.window.setFrame(screen, display: false)
+        border.ring.frame = appKitRect(shownFrame).insetBy(dx: -2, dy: -2).offsetBy(dx: -screen.minX, dy: -screen.minY)
+        CATransaction.commit()
+        wait(0.2)
+        stacking("T sliding, B covering the display", border: b)
+        print("  \(events())")
+        look("T sliding", at: shownFrame)
+        wait(0.5)
+        print("  \(events())")
+        print("T sliding: topmost where T is and no longer shows \(topmost(at: CGPoint(x: frame.minX + 20, y: rows[t]!.frame.midY)))")
+        border.window.order(.below, relativeTo: Int(t))
+        wait(0.2)
+        stacking("B ordered below sliding T", border: b)
+        print("  \(events())")
+        kosmos_space_set_transform(slideSpace, .identity)
+        kosmos_remove_windows(slideSpace, &ids, 1)
+        kosmos_space_destroy(slideSpace)
+        border.place(around: frame, radius: radius, color: color)
+        wait(0.2)
+        stacking("T's slide over", border: b)
+        print("  \(events())")
+    } else {
+        print("no animation Space")
+    }
 
     // Spaces as the border is ordered out and in.
     func spaces(_ window: UInt32) -> [UInt64] { SkyLight.spaces(of: window) ?? [] }
@@ -245,24 +362,24 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
     border.window.orderOut(nil)
     wait(0.1)
     print("B's ordered out \(spaces(b))")
-    border.window.order(.above, relativeTo: Int(t))
+    border.window.order(.below, relativeTo: Int(t))
     wait(0.1)
     print("B's ordered in again \(spaces(b))")
 
     // Whether a border moved to another display's Space comes back to T's when it is ordered
-    // above T. The border stays at the bottom left of the built-in display, so nothing shows
+    // below T. The border stays at the bottom left of the built-in display, so nothing shows
     // on the other display.
     if let other = Displays.current().displays.compactMap(\.currentSpace).first(where: { !spaces(t).contains($0) }) {
         SLSMoveWindowsToManagedSpace(SLSMainConnectionID(), [b] as CFArray, other)
         wait(0.1)
         print("B moved to another display's Space \(other): \(spaces(b))")
-        border.window.order(.above, relativeTo: Int(t))
+        border.window.order(.below, relativeTo: Int(t))
         wait(0.1)
-        print("then ordered above T: \(spaces(b))")
+        print("then ordered below T: \(spaces(b))")
         border.window.orderOut(nil)
-        border.window.order(.above, relativeTo: Int(t))
+        border.window.order(.below, relativeTo: Int(t))
         wait(0.1)
-        print("then ordered out and above T again: \(spaces(b))")
+        print("then ordered out and below T again: \(spaces(b))")
         border.place(around: frame.offsetBy(dx: 10, dy: 0), radius: radius, color: color)
         wait(0.1)
         print("then moved 10 pt: \(spaces(b))")
@@ -457,7 +574,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
 
 /// T, a window of the probe's, sits in S, an ordinary Space its display does not show. Each
 /// case makes a border at the display's bottom left corner, runs its steps, orders the border
-/// above T as Kosmos does, and reads the border's Spaces at once and 0.1 s later.
+/// below T as Kosmos does, and reads the border's Spaces at once and 0.1 s later.
 @MainActor func borderSpace() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
@@ -514,7 +631,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
             }
         }
         steps.forEach(perform)
-        border.window.order(.above, relativeTo: t.windowNumber)
+        border.window.order(.below, relativeTo: t.windowNumber)
         let atOnce = spaces(border.window)
         wait(0.1)
         let later = spaces(border.window)
@@ -528,7 +645,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
             case .pause: "0.1 s"
             }
         }
-        let label = steps.map(names).joined(separator: ", ") + ", ordered above T"
+        let label = steps.map(names).joined(separator: ", ") + ", ordered below T"
             + (after.isEmpty ? "" : ", then " + after.map(names).joined(separator: ", "))
         func verdict(_ read: [UInt64]) -> String { read == [other] ? "in S" : read == [current] ? "in the Space shown" : "\(read)" }
         print("\(label): at once \(verdict(atOnce)), 0.1 s later \(verdict(later))"
@@ -632,7 +749,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     run("relayouts, no border of the probe's")
     for (id, border) in borders {
         border.place(around: appKitRect(rows[id]!.frame), radius: radii[id] ?? 0, color: color)
-        border.window.order(.above, relativeTo: Int(id))
+        border.window.order(.below, relativeTo: Int(id))
     }
     // Where the windows are now.
     for row in SkyLight.rows(windows) {

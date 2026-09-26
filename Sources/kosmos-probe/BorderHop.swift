@@ -81,7 +81,7 @@ final class WindowSampler: @unchecked Sendable {
     func border(for target: UInt32) -> ProbeBorder { perDisplay && target == b ? borders[1] : borders[0] }
     func show(_ probe: ProbeBorder, around target: UInt32) {
         probe.place(around: appKitRect(rows[target]!.frame), radius: rows[target]!.cornerRadius, width: width, color: color)
-        probe.window.order(.above, relativeTo: Int(target))
+        probe.window.order(.below, relativeTo: Int(target))
     }
     // Kosmos's pin: on another queue, a move to the target's Space when the border is in none
     // of the target's.
