@@ -25,7 +25,7 @@ prefix.
   `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
   `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`,
-  `kosmos-probe/Constraints.swift`.
+  `kosmos-probe/Constraints.swift`, `kosmos-probe/DisplayClamp.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, the handover
   across a restart, and Mission Control.

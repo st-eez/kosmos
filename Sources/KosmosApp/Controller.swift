@@ -425,8 +425,17 @@ final class Controller {
                 continue
             }
             for (id, entry) in group { ledger.sent(id, target: entry.target, at: now) }
-            worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { ($0.key, $0.value) }))
+            worker.enqueueFrames(Dictionary(uniqueKeysWithValues: group.map { id, entry in
+                (id, (entry.write, entry.target, movesDisplay(id, to: entry.target)))
+            }))
         }
+    }
+
+    /// From where WindowServer last had the window: AppKit holds a window that grows onto
+    /// another display to the old display's edge for a while (docs/geometry.md).
+    private func movesDisplay(_ id: WindowID, to target: CGRect) -> Bool {
+        guard let frame = inventory.windows[id]?.frame else { return false }
+        return display(under: frame) != display(under: target)
     }
 
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
