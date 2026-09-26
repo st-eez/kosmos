@@ -115,12 +115,20 @@ public enum SkyLight {
         return ids ?? []
     }
 
-    /// Windows that no longer exist are left out. The radii add about 1 µs to a read of 2
-    /// windows, so only the inventory reads them (docs/borders.md).
+    /// Windows that no longer exist are left out, and a failed query reads as every window
+    /// gone. The radii add about 1 µs to a read of 2 windows, so only the inventory reads them
+    /// (docs/borders.md).
     public static func rows(_ ids: [UInt32], cornerRadii: Bool = false) -> [WindowRow] {
-        guard !ids.isEmpty, let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return [] }
+        readRows(ids, cornerRadii: cornerRadii) ?? []
+    }
+
+    /// Nil when the query fails, for a caller that must not take that for every window gone
+    /// (docs/hiding.md).
+    public static func readRows(_ ids: [UInt32], cornerRadii: Bool = false) -> [WindowRow]? {
+        guard !ids.isEmpty else { return [] }
+        guard let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return nil }
         defer { query.release() }
-        guard let iterator = SLSWindowQueryResultCopyWindows(query.takeUnretainedValue()) else { return [] }
+        guard let iterator = SLSWindowQueryResultCopyWindows(query.takeUnretainedValue()) else { return nil }
         defer { iterator.release() }
         let it = iterator.takeUnretainedValue()
         var rows: [WindowRow] = []

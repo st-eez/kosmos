@@ -209,10 +209,10 @@ private final class HidingStore: @unchecked Sendable {
             confirmed = batch.isDone(members: members())
         }
         if !confirmed {
-            // A window that closed or was ordered out after its row read leaves the batch
-            // (docs/hiding.md).
+            // A window that closed or was ordered out after its row read leaves the batch; a
+            // failed row query leaves every window in, so recovery runs (docs/hiding.md).
             guard kosmos_barrier(any), let (kept, left) = batch.confirmed(members: members(), orderedIn: { failed in
-                Set(SkyLight.rows(Array(failed)).filter(\.orderedIn).map(\.id))
+                SkyLight.readRows(Array(failed)).map { Set($0.filter(\.orderedIn).map(\.id)) } ?? failed
             }) else { return (false, sent, true, batch.strip.count) }
             if !left.isEmpty {
                 // Their conceal never landed.

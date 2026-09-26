@@ -134,9 +134,11 @@
   read it, and the batch is confirmed without them: a window it concealed stays out of the
   ledger, one it revealed stays in, and the log names them. A failed window still ordered
   in fails the batch, and recovery runs. KosmosCore's tests cover the rule
-  (`ConcealLedger.Batch.confirmed`). The ceiling above holds here too: a failed row query
-  reads as every window gone, so a live window whose conceal failed stays on screen until
-  its workspace is shown and hidden again, and the same upgrade covers it.
+  (`ConcealLedger.Batch.confirmed`). A failed row query counts every failed window as
+  ordered in, so recovery runs: this read takes its rows from `SkyLight.readRows`, which
+  returns nil for a failed query, where `SkyLight.rows` returns no rows. Read as every
+  window gone, a failed query would leave a live window whose conceal failed on screen,
+  and one whose reveal failed concealed, with no recovery.
 - Open item: stripping is decided as each window is concealed. When an app's most
   recently used window later moves to another display, or its focus moves to a window on
   another display, the app's windows concealed before keep the membership they had until
