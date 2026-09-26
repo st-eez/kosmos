@@ -58,9 +58,10 @@ state, and during a slide the frame the slide shows the window at.
 - A bordered window gets its border only while it is on screen: not concealed, as a
   switch's incoming windows are until the batch that reveals them confirms, and ordered
   in, so the border goes as soon as WindowServer orders a window out, before Kosmos parks
-  it. A window that a batch still in flight conceals counts as concealed: after a switch
-  to workspace B and straight back to A, A's windows get their borders once the batch
-  that conceals them and the one that reveals them have both finished. The outgoing
+  it. A window that a batch not yet done conceals, sent or still waiting for writes,
+  counts as concealed: after a switch to workspace B and straight back to A, A's windows
+  get their borders once the batch that conceals them and the one that reveals them have
+  both finished. The outgoing
   workspace's borders go as Kosmos plans the switch, before its batch conceals the
   windows, and the incoming ones come when the batch confirms, after the windows show
   and after the switch's focus request. A border's AppKit calls wait on WindowServer

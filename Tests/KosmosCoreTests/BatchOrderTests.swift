@@ -130,3 +130,16 @@ private func write(_ frame: CGRect) -> BatchOrder.Write { (.frame(frame), frame)
     released = order.done(reveal.number)
     #expect(released[1]?.target == a)
 }
+
+@Test func aWindowCountsAsConcealedFromItsBatchsAddToItsEnd() {
+    var order = BatchOrder()
+    let waiting = order.add(show: [1], hide: [2])
+    // Waiting for window 1's write, the batch already counts for window 2.
+    #expect(order.ready { $0 == 1 }.isEmpty)
+    #expect(order.conceals(2))
+    #expect(!order.conceals(1))
+    #expect(order.ready { _ in false } == [waiting])
+    #expect(order.conceals(2))
+    _ = order.done(waiting.number)
+    #expect(!order.conceals(2))
+}
