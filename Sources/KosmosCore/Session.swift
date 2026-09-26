@@ -378,16 +378,21 @@ public struct Session: Sendable {
                   let name = resolve(target), name != source else { return nil }
             return move(window, from: source, to: name, follow: follow)
         case .focus(let direction, let boundaries) where boundaries != .workspace:
-            return performOnFocused(command, frame: frame)
-                ?? perform(.focusMonitor(.direction(direction), wrapAround: boundaries == .allMonitorsWrapping))
+            if let plan = performOnFocused(command, frame: frame) { return plan }
+            guard let name = workspace(on: .direction(direction), wrapAround: boundaries == .allMonitorsWrapping) else { return nil }
+            let here = monitor(of: focusedWorkspace), there = monitor(of: name)
+            let source = focused.flatMap {
+                workspaces[focusedWorkspace]!.onScreen(frame, in: here.area, gaps: here.gaps, minimums: minimums)[$0]
+            }
+            workspaces[name]!.enter(direction, from: source, frame: frame, in: there.area, gaps: there.gaps, minimums: minimums)
+            return focusShown(name)
         case .move(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command) { return plan }
             guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
             return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
                                               wrapAround: boundaries == .allMonitorsWrapping))
         case .focusMonitor(let target, let wrap):
-            guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrap),
-                  let name = shown[monitor.id], name != focusedWorkspace else { return nil }
+            guard let name = workspace(on: target, wrapAround: wrap) else { return nil }
             return focusShown(name)
         case .moveNodeToMonitor(let target, let follow, let wrap, let chosen):
             guard let window = chosen ?? focused, let source = home[window], !isParked(window),
@@ -414,7 +419,7 @@ public struct Session: Sendable {
         case .move(let direction, let boundaries):
             guard workspace.move(window, direction, implicitContainer: boundaries == .workspace) else { return nil }
         case .swap(let direction):
-            guard workspace.swap(window, direction) else { return nil }
+            guard workspace.swap(window, direction, in: display, gaps: gaps, minimums: minimums) else { return nil }
         case .joinWith(let direction):
             guard workspace.joinWith(window, direction) else { return nil }
         case .layout(.orientation(let orientation)):
@@ -462,6 +467,14 @@ public struct Session: Sendable {
             let step = target == .next ? 1 : -1
             return cycle[(index + step + cycle.count) % cycle.count]
         }
+    }
+
+    /// The workspace shown on the display `target` names from the focused one. Nil for the
+    /// focused workspace.
+    private func workspace(on target: Command.MonitorTarget, wrapAround: Bool) -> String? {
+        guard let monitor = Monitor.resolve(target, from: monitor(of: focusedWorkspace), in: monitors, wrapAround: wrapAround),
+              let name = shown[monitor.id], name != focusedWorkspace else { return nil }
+        return name
     }
 
     mutating func reach(_ name: String) -> Plan {
