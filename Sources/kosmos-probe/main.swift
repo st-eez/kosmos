@@ -11,6 +11,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("destroyed-space", "destroyed-space", { _ in destroyedSpace() }),
     ("reveal", "reveal", { _ in reveal() }),
     ("holding", "holding", { _ in holding() }),
+    ("handover", "handover", { _ in handover() }),
     ("concealed-move", "concealed-move [onscreen]", { concealedMove(onscreen: $0.contains("onscreen")) }),
     ("fullscreen", "fullscreen [dry]", { fullscreen(dry: $0.contains("dry")) }),
     ("departures", "departures", { _ in departures() }),
@@ -41,6 +42,10 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     }),
     ("panel", nil, { _ in showPanel() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),
+    ("handover-creator", nil, { arguments in
+        guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
+        handoverCreator(window, kill: arguments.contains("kill"))
+    }),
     ("moving-window", nil, { movingWindow(onscreen: $0.contains("onscreen")) }),
     ("level-window", nil, { levelWindow(onscreen: $0.contains("onscreen"), opaque: $0.contains("opaque")) }),
     ("fullscreen-window", nil, { fullscreenWindow(dry: $0.contains("dry")) }),

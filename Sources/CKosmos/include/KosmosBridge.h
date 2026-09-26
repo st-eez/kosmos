@@ -27,6 +27,8 @@ void kosmos_add_windows(uint64_t space, const uint32_t *windows, size_t count, b
 void kosmos_remove_windows(uint64_t space, const uint32_t *windows, size_t count);
 // A bridged read of the Space's alpha; false when the read fails.
 bool kosmos_barrier(uint64_t space);
+// Bridged reads of the Space's transform and alpha; false when either fails.
+bool kosmos_space_read(uint64_t space, CGAffineTransform *transform, float *alpha);
 // NULL when the query fails.
 CFArrayRef kosmos_space_windows(uint64_t space) CF_RETURNS_RETAINED;
 // Auxiliary Spaces, such as the holding Space, are not listed.
