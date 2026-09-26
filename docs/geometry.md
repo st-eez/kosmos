@@ -409,6 +409,48 @@
     Kosmos's log, and its CPU is its app's main process, without the helper processes that
     draw it. The summary records each app's AXEnhancedUserInterface (`kosmos-probe eui`),
     which makes Chrome and Firefox animate Accessibility moves themselves.
+  - `script/bench-frames.sh` measures what the screen shows, frame by frame, for the
+    actions Steve uses: workspace switches, to and from an empty workspace too,
+    `move-node-to-workspace --focus-follows-window` into a hidden workspace with windows,
+    focus moves, resize, balance, join, flatten, move and fullscreen relayouts, a new
+    window, a close, and a window ordered out and in again. `kosmos-probe bench-frames` records the built-in
+    display with ScreenCaptureKit at its refresh rate, in sRGB, at 2 points a pixel, below
+    the menu bar and the notch. It runs as the terminal's child and uses the terminal's
+    Screen Recording permission: it checks it with `CGPreflightScreenCaptureAccess` and
+    exits without it, since asking would prompt. Frames stay in memory until the step's
+    figures are written (KosmosBench, tested on synthetic frames in KosmosBenchTests).
+    - The stub paints each window one color of a palette, with no shadow, title or open
+      animation, so a frame's pixels say which window each shows. A window of Steve's
+      given by id is what the stub windows, the wallpaper and their rings leave.
+    - A step runs from the frame before its command until nothing has changed for 0.4 s, at
+      least 0.6 s after the send, and ends with no change after 1.5 s or cut off at 4 s. A
+      pixel differs when a channel differs by more than 24 levels, and a frame with fewer
+      than 8 pixels that differ from the last kept one is dropped, so each kept frame is a
+      change and a gap between kept frames is refreshes that showed nothing new.
+    - Latency is from the send to the first changed frame, and includes the CLI's launch.
+      Frames and span count the changed frames from the first to the last.
+    - A sliding window's place in each frame is how far along the line from its start to
+      its end its pixels fit best, since a slide mixes origin and size by one eased
+      fraction; other windows' pixels count neither way, as they pass over and under it.
+      The slide's start is where the samples put it on the easing curve. A stall is a
+      window still for more than 1.5 refreshes while the easing moves it 2 pixels a refresh
+      or more; a jump is a frame that takes it further than the easing by 10% of its way
+      or 8 pixels, and a backward move one that takes it back.
+    - A flash in a slide is pixels that match neither the state before nor after, outside
+      every sliding window's fitted frame and the wallpaper its path uncovers. In a switch
+      or a focus move, any frame between the states counts: a flash when pixels match
+      neither, `partial` when part of the screen has changed and part not, as a border
+      that moves a frame after the windows, and `revert` when the screen shows the state
+      before again. Inside a window that stays put, what its app draws is left out, as the
+      stub's title bar buttons, which change with its key state.
+    - The ceilings: a stray window drawn inside a sliding window's frame is taken for one
+      it passes; a pop gives no position until it is nearly opaque; a frame the capture
+      drops shows as a stall, and a capture held to 60 Hz would show every slide stalled,
+      so the summary gives the median time between frames in slides, 8.3 ms at 120 Hz.
+      Whether ScreenCaptureKit shows a Space's transform as the screen does is unmeasured;
+      a slide recorded in about 45 frames settles it. The run leaves out drags and key
+      presses, since it sends no input, the hotkey path, pops of windows ordered out when
+      Kosmos places them, which the stub's windows never are, and other displays.
   - Open until the live test: `kill -9` of Kosmos mid-slide and mid-pop, after which the
     guardian's recovery should show the window at its own frame and alpha 1, out of the
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next

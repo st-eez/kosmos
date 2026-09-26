@@ -25,7 +25,8 @@ prefix.
   `KosmosCore/LeftButton.swift`, `KosmosCore/Session.swift`, `KosmosCore/Slide.swift`,
   `KosmosApp/AppWorker.swift`, `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
-  `script/bench-relayout.sh`, `kosmos-probe/Bench.swift`, `kosmos-probe/AXTimeout.swift`,
+  `script/bench-relayout.sh`, `script/bench-frames.sh`, `KosmosBench/`, `kosmos-probe/Bench.swift`,
+  `kosmos-probe/Frames.swift`, `kosmos-probe/AXTimeout.swift`,
   `kosmos-probe/Constraints.swift`, `kosmos-probe/DisplayClamp.swift`,
   `kosmos-probe/SlideSync.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their

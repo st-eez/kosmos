@@ -24,9 +24,14 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("displays", "displays", { _ in displays() }),
     ("secure-input", "secure-input", { _ in secureInput() }),
     ("mission-control", "mission-control [seconds]", { missionControl(seconds: $0.first.flatMap(Double.init) ?? 120) }),
-    ("bench-windows", "bench-windows <count> [display]", { arguments in
+    ("bench-windows", "bench-windows <count> [display] [--colors]", { arguments in
         guard let count = arguments.first.flatMap(Int.init) else { usage() }
-        benchWindows(count, on: arguments.dropFirst().first)
+        let rest = arguments.dropFirst().filter { $0 != "--colors" }
+        benchWindows(count, on: rest.first, colors: arguments.contains("--colors"))
+    }),
+    ("bench-frames", "bench-frames <directory> [real]", { arguments in
+        guard let directory = arguments.first else { usage() }
+        benchFrames(directory, real: arguments.dropFirst().first == "real")
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
     ("borders", "borders", { _ in borders() }),
