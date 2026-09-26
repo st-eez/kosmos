@@ -23,6 +23,9 @@ final class Borders {
     /// A border window keeps to one display: moved to another display's Space before its new
     /// frame lands, it showed there at its old frame (docs/borders.md).
     private var spare: [DisplayID: [BorderWindow]] = [:]
+    /// Borders on a display that may show a native fullscreen Space, ordered out until their
+    /// Space move is sent, with what to show then (docs/borders.md).
+    private var waiting: [WindowID: Shown] = [:]
     /// A Space read can wait out a Space transition, so Space reads and moves run here.
     private let spaces = DispatchQueue(label: "kosmos.borders", qos: .userInitiated)
     private(set) var accent = Borders.readAccent()
@@ -62,6 +65,7 @@ final class Borders {
         for (target, window) in windows where shown[target]?.border.display != window.display {
             window.orderOut(nil)
             windows[target] = nil
+            waiting[target] = nil
             spare[window.display, default: []].append(window)
         }
         for (target, next) in shown {
@@ -69,30 +73,39 @@ final class Borders {
             let window = windows[target], fresh = window == nil
             let border = window ?? spare[display]?.popLast() ?? BorderWindow(display: display, frame: next.border.displayFrame)
             windows[target] = border
+            // Ordered in there before its move, it would draw on the fullscreen app, and a frame
+            // set before the move might take it back to the fullscreen Space (docs/borders.md).
+            if fresh, fullscreen.contains(display) {
+                waiting[target] = next
+                pin(border, to: target, thenShow: true)
+                continue
+            }
+            if waiting[target] != nil {
+                waiting[target] = next
+                continue
+            }
             // Setting another level can move the border within the stacking order.
             let leveled = border.level.rawValue != Int(next.level)
             border.show(next)
             if fresh {
-                // Ordered in there before its move, it would draw on the fullscreen app.
-                let waits = fullscreen.contains(display)
-                if !waits { border.order(.above, relativeTo: Int(target)) }
-                pin(border, to: target, orderingIn: waits)
-            } else if leveled, border.isVisible {
+                border.order(.above, relativeTo: Int(target))
+                pin(border, to: target, thenShow: false)
+            } else if leveled {
                 border.order(.above, relativeTo: Int(target))
             }
         }
     }
 
-    /// A raise of the target leaves its border below it (kosmos-probe borders). A border waiting
-    /// for its Space move is ordered in above its target after it.
+    /// A raise of the target leaves its border below it (kosmos-probe borders). A waiting
+    /// border is ordered above its target when it shows.
     func raise(_ target: WindowID) {
-        guard let border = windows[target], border.isVisible else { return }
-        border.order(.above, relativeTo: Int(target))
+        guard waiting[target] == nil else { return }
+        windows[target]?.order(.above, relativeTo: Int(target))
     }
 
     /// A border joins its display's current Space, maybe another app's fullscreen one, so it
     /// moves to its target's ordinary Space on its own display, or stays (docs/borders.md).
-    private func pin(_ window: BorderWindow, to target: WindowID, orderingIn: Bool) {
+    private func pin(_ window: BorderWindow, to target: WindowID, thenShow: Bool) {
         let border = WindowID(window.windowNumber), display = window.display
         spaces.async {
             let ordinary = Displays.current().ordinarySpaces(on: display)
@@ -102,10 +115,11 @@ final class Borders {
                 SLSMoveWindowsToManagedSpace(SkyLight.connection, [border] as CFArray, space)
                 bordersLog.info("border \(border) of \(target) moved from Spaces \(borderSpaces, privacy: .public) to \(space)")
             }
-            guard orderingIn else { return }
+            guard thenShow else { return }
             onMain {
                 // Unless the border went back to its pool meanwhile.
-                guard self.windows[target] === window else { return }
+                guard self.windows[target] === window, let next = self.waiting.removeValue(forKey: target) else { return }
+                window.show(next)
                 window.order(.above, relativeTo: Int(target))
             }
         }
@@ -136,8 +150,8 @@ private final class BorderWindow: NSWindow {
         view.wantsLayer = true
         contentView = view
         view.layer?.addSublayer(ring)
-        // A window moved before its first order-in joined its display's current Space at that
-        // order-in (kosmos-probe borders), so a border is ordered in once while it draws nothing.
+        // A new window framed, moved and then ordered in joined its display's current Space
+        // (kosmos-probe borders), so a border is ordered in once while it draws nothing.
         orderFrontRegardless()
         orderOut(nil)
     }
