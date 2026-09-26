@@ -300,13 +300,14 @@
   - WindowServer numbers the windows, so their ids hold across a restart of Kosmos. The
     file names its WindowServer by pid and start time, as the recovery record does
     ([hiding.md](hiding.md)), and Kosmos leaves out a file from another one, as after a
-    logout or a restart of the Mac, whose ids name other windows. It leaves out a place
-    the file garbles too, as a slot index out of range or a weight that is no positive
-    number, since the tree's operations trust a hint's numbers, and takes the focus stamps
-    as an order only, so none runs a workspace's clock over.
+    logout or a restart of the Mac, whose ids name other windows. It leaves out a hint the
+    file garbles too, as a slot index out of range, a weight outside 1e-6 to 1 or a level
+    whose weights do not sum to 1, since placing a window divides by its siblings' weights,
+    and takes the focus stamps as an order only, so none runs a workspace's clock over.
   - A change of the model asks for a write a second later, and the changes in that second
-    share it, so a crash loses at most that second. The quit writes once more. A write
-    replaces the file by a rename, and one that would change nothing is skipped. A switch
+    share it, so a crash loses at most that second. The quit writes once more and waits for
+    it. A write replaces the file by a rename, one that would change nothing is skipped,
+    and one that failed is tried again at the next. A switch
     at most sets the timer. Building the layout on the main actor took 21 µs for 22 windows,
     and the JSON encoding, 155 µs, and the write, 0.3 ms, run on a utility queue (a
     benchmark test under `swift test -c release` on the development Mac, not kept,
