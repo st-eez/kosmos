@@ -300,9 +300,12 @@
     and a Terminal window leaving fullscreen that paired with another's toolbar windows,
     have no times for their halves.
     Kosmos now logs each candidate window's order change at info level, and says when a
-    switch pairs after its deselected tab parked as closed and kept. A day of Ghostty and
-    Finder tabs settles it, and the log goes then; until then the pairing window stays
-    250 ms.
+    switch pairs after its deselected tab parked as closed and kept. From September 25,
+    2026, 14:19 to September 26, 17:31 the log held 803 order changes and no Ghostty or
+    Finder tab switch, so use alone does not settle it. A deliberate run does: 20 Ghostty
+    tab switches, 20 Command-T and 20 Command-W, the same in Finder, with the gap between
+    each switch's halves read from that log line. The gaps set the pairing window, and the
+    log line goes then; until then the pairing window stays 250 ms.
   - A minimize and a hide have reports of their own, taken to come before the order-out:
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize
