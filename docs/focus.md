@@ -119,7 +119,10 @@
     the named window's report comes first, it is the record's echo and leaves the hold, and
     the read of that window after it is a report of its own and replaces it. A held report
     whose grace ends while the session is locked is dropped, as the resync after the unlock
-    requests the intent again. Every held report logs its outcome. A Command-Tab after that
+    requests the intent again. Every held report logs its outcome. From September 24 to
+    26, 2026, 4 held reports found the key window before them left, its evidence 2, 23, 43
+    and 70 ms after the held report, and 183 found it stayed, each followed about 105 ms
+    late (live log). A Command-Tab after that
     report follows as usual, 100 ms late. This happened live: Command-H on the only window
     of workspace 2 took Kosmos to workspace 1, where macOS keyed Ghostty. From 6f54cda to
     change 26 Kosmos also dropped a held report whose window was no longer the key window

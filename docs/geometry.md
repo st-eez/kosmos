@@ -25,7 +25,9 @@
   probe window showed no such zone at a bottom edge with no display below, nor at a right
   edge another display adjoins. So a window left more than 2 pt taller than a frame write
   asked is written again through a height 40 pt shorter, then the target's, and only a
-  window still taller refused the height.
+  window still taller refused the height. From September 24 to 26, 2026 the live log had
+  14 such writes: 2 took the target, from 1045 and 1080 pt to 1035, and 12 were windows
+  that hold their height, at 588, 1080 and 1084 pt.
 - AppKit holds a window that grows onto another display to the old display's edge until
   its app has taken the move, 10 to 30 ms after the position write. On 2026-09-26 a
   Ghostty window moved from the built-in display up to the 1920 pt main panel above it

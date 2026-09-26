@@ -43,7 +43,8 @@ func watch(_ pid: Int32) -> Never {
 
 /// A Kosmos that names itself in the lock file within the grace takes the record over, so the
 /// windows of hidden workspaces stay concealed. Any other holder of the lock, as a probe, takes
-/// nothing over. The grace covers a crash restart and an install (docs/hiding.md).
+/// nothing over. The grace covers a crash restart and an install, whose take-overs came 371
+/// to 903 ms after the exit (docs/hiding.md).
 func awaitSuccessor(of exited: Int32) {
     guard let record = RecordFile.peek(KosmosFiles.record), record.windowServer == ProcessIdentity.windowServer() else { return }
     let deadline = ContinuousClock.now + .seconds(5)

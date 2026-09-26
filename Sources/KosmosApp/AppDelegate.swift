@@ -179,7 +179,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Response()
     }
 
-    /// script/install.sh sends its SIGTERM right after the arm.
+    /// script/install.sh sends its SIGTERM right after the arm, 2 to 7 ms after it at three
+    /// installs (docs/hiding.md).
     private static let armLife: Duration = .seconds(5)
 
     private func listBindings() -> Response {

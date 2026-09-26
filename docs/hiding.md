@@ -54,7 +54,9 @@
   the wait as `held`. The wait leaves out a window shown already and one whose app is
   backed off. A write no row has shown counts as landed 1 s after it was sent, the
   Accessibility timeout, and the controller checks the batch again when the first write
-  holding it reaches that second. A concealed window's move posts the change event as a
+  holding it reaches that second. Of 1,835 slide landings from September 24 to 26, 2026,
+  the median was 32.8 ms, p90 80.8 ms, p99 250.7 ms and the longest 673.7 ms, and 7 never
+  landed (live log). A concealed window's move posts the change event as a
   shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
   one, each of a window's two concealed moves posted two change events 10 to 13 ms after
   it, and the row showed the new frame without the holding Space's offset (September 25,
@@ -178,11 +180,12 @@
     `KosmosRecordVersion` gets no arm. A build that cannot decode the record finds nothing
     recorded, so handing one over would leave its windows concealed with no record to
     restore them (`handover-ungated`, [tla/README.md](../tla/README.md)). The arm lapses
-    after 5 s, time enough for `script/install.sh`'s SIGTERM, so an arm whose quit never
-    came, as after a `launchctl kickstart` that failed or an install that stopped, cannot
-    hand a later quit to another build (`handover-noexpiry`). The armed quit hands over only
-    while the guardian is ready, as no other process would restore the windows should no
-    Kosmos follow (`handover-unready`). The ceiling: a build swapped in without
+    after 5 s, time enough for `script/install.sh`'s SIGTERM, which came 2, 6 and 7 ms
+    after the arm at the three handovers of September 26, 2026 (live log). So an arm whose
+    quit never came, as after a `launchctl kickstart` that failed or an install that
+    stopped, cannot hand a later quit to another build (`handover-noexpiry`). The armed
+    quit hands over only while the guardian is ready, as no other process would restore
+    the windows should no Kosmos follow (`handover-unready`). The ceiling: a build swapped in without
     `script/install.sh` and then a crash leave the record to a build that may not read it.
   - A Kosmos names itself in the lock file, by its pid and start time, once it takes the
     record over: after its guardian reports ready, or after its startup recovery. Once its
@@ -201,10 +204,11 @@
     spawn (live logs). The wait for the guardian's ready report comes on top, 1 s at most.
     `script/install.sh` spawned the new Kosmos 0.5 to 2.0 s after the old one quit in 18
     installs, a time that includes its wait for the guardian, which it skips after a
-    handover. The install's time from the quit to the new Kosmos naming itself is to be
-    measured at the first install that hands over. The old guardian logs
-    "Kosmos <pid> exited" at the quit, then "Kosmos <pid> took the record over; leaving it",
-    or "no Kosmos took the record over within 5 s; recovering" when the grace ran out;
+    handover. At the three installs of September 26, 2026 that handed over, the old
+    guardian saw the new Kosmos named 371, 903 and 901 ms after the old one exited (live
+    log). The old guardian logs "Kosmos <pid> exited" at the quit, then
+    "Kosmos <pid> took the record over; leaving it", or "no Kosmos took the record over
+    within 5 s; recovering" when the grace ran out;
     `log show --last 10m --predicate 'subsystem == "io.github.st-eez.kosmos" AND category == "guardian"'`
     lists both with their times. Should that time come near 5 s, the grace has to grow.
     launchd starts a Kosmos again at once only after a run of 30 s or more
