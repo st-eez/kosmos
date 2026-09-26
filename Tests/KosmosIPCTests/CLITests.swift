@@ -14,22 +14,16 @@ import Testing
         var stderr: String
     }
 
-    static func start(_ args: [String], socketPath: String, stdout: FileHandle, stderr: FileHandle) throws -> Process {
+    static func run(_ args: [String], socketPath: String) throws -> Output {
+        let stdout = Pipe()
+        let stderr = Pipe()
         let process = Process()
         process.executableURL = executable
         process.arguments = args
         process.environment = ["KOSMOS_SOCKET": socketPath]
-        process.standardOutput = stdout
-        process.standardError = stderr
+        process.standardOutput = stdout.fileHandleForWriting
+        process.standardError = stderr.fileHandleForWriting
         try process.run()
-        return process
-    }
-
-    static func run(_ args: [String], socketPath: String) throws -> Output {
-        let stdout = Pipe()
-        let stderr = Pipe()
-        let process = try start(args, socketPath: socketPath, stdout: stdout.fileHandleForWriting,
-                                stderr: stderr.fileHandleForWriting)
         try stdout.fileHandleForWriting.close()
         try stderr.fileHandleForWriting.close()
         let out = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
@@ -55,24 +49,5 @@ import Testing
         #expect(try Self.run(["ping"], socketPath: path) == Output(
             status: 1, stdout: "", stderr: "kosmos: Kosmos is not running (nothing is listening at \(path))\n"
         ))
-    }
-
-    @Test func subscribePrintsOneLinePerFrameUntilKosmosStops() async throws {
-        let test = try TestServer()
-        defer { test.stop() }
-        let outputPath = test.directory + "/out"
-        FileManager.default.createFile(atPath: outputPath, contents: nil)
-        let output = try FileHandle(forWritingTo: URL(filePath: outputPath))
-        let lines = { (try? String(contentsOfFile: outputPath, encoding: .utf8)) ?? "" }
-
-        test.server.publish(Array(#"{"seq":1}"#.utf8))
-        let process = try Self.start(["subscribe"], socketPath: test.socketPath, stdout: output,
-                                     stderr: FileHandle.standardError)
-        try await waitUntil { lines() == "{\"seq\":1}\n" }
-        test.server.publish(Array(#"{"seq":2}"#.utf8))
-        try await waitUntil { lines() == "{\"seq\":1}\n{\"seq\":2}\n" }
-        test.server.stop()
-        process.waitUntilExit()
-        #expect(process.terminationStatus == 0)
     }
 }

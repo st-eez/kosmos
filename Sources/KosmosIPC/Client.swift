@@ -5,26 +5,11 @@ public enum IPCClient {
     private static let timeout = Duration.seconds(5)
 
     public static func send(_ args: [String], socketPath: String) throws(IPCError) -> Response {
-        try exchange(.command(args), socketPath: socketPath).response
-    }
-
-    /// Returns Kosmos's refusal at once, else its success response once the stream ends. The
-    /// timeout covers only the first response.
-    public static func subscribe(socketPath: String, onFrame: ([UInt8]) -> Void) throws(IPCError) -> Response {
-        let (connection, response) = try exchange(.subscribe, socketPath: socketPath)
-        guard response.exitCode == 0 else { return response }
-        while let body = try connection.readFrame(deadline: nil) { onFrame(body) }
-        return response
-    }
-
-    private static func exchange(
-        _ request: Request, socketPath: String
-    ) throws(IPCError) -> (connection: ClientConnection, response: Response) {
         let deadline = ContinuousClock.now + timeout
         let connection = try ClientConnection(socketPath: socketPath)
-        try connection.write(frame(request.encoded), deadline: deadline)
+        try connection.write(frame(Request(args: args).encoded), deadline: deadline)
         guard let body = try connection.readFrame(deadline: deadline) else { throw IPCError.closed }
-        return (connection, try Response(decoding: body))
+        return try Response(decoding: body)
     }
 }
 
@@ -71,8 +56,8 @@ final class ClientConnection {
         }
     }
 
-    /// Nil when the server closes between frames. A nil deadline waits indefinitely.
-    func readFrame(deadline: ContinuousClock.Instant?) throws(IPCError) -> [UInt8]? {
+    /// Nil when the server closes between frames.
+    func readFrame(deadline: ContinuousClock.Instant) throws(IPCError) -> [UInt8]? {
         var buffer = [UInt8](repeating: 0, count: 64 << 10)
         while true {
             if let body = try decoder.next() { return body }
@@ -90,15 +75,12 @@ final class ClientConnection {
         }
     }
 
-    private func wait(for events: Int16, deadline: ContinuousClock.Instant?) throws(IPCError) {
+    private func wait(for events: Int16, deadline: ContinuousClock.Instant) throws(IPCError) {
         var descriptor = pollfd(fd: fd, events: events, revents: 0)
         while true {
-            var timeout: Int32 = -1
-            if let deadline {
-                let remaining = deadline - .now
-                guard remaining > .zero else { throw IPCError.timedOut }
-                timeout = Int32(min((remaining / .milliseconds(1)).rounded(.up), Double(Int32.max)))
-            }
+            let remaining = deadline - .now
+            guard remaining > .zero else { throw IPCError.timedOut }
+            let timeout = Int32(min((remaining / .milliseconds(1)).rounded(.up), Double(Int32.max)))
             let ready = poll(&descriptor, 1, timeout)
             if ready > 0 { return }
             if ready < 0 && errno != EINTR { throw IPCError.system("poll", errno) }

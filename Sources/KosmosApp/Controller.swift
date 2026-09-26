@@ -70,7 +70,6 @@ final class Controller {
     var dragging: Bool { !session.lifted.isEmpty || modifierDrag != nil }
     private(set) var profile: String?
     private var barDisplays: [DisplayID: BarSnapshot.Display]
-    var publish: (@MainActor (Data) -> Void)?
     var onFocusProblem: (@MainActor (String?) -> Void)?
     /// While locked, Kosmos writes no frames, hides nothing, requests no focus and takes no
     /// command; resync catches up (docs/inventory.md).
@@ -565,9 +564,7 @@ final class Controller {
     /// Every change of the model ends here, so the drag tap's windows, the borders and the saved
     /// layout follow it.
     func publishState() {
-        let data = stateJSON()
-        bar.publish(data)
-        publish?(data)
+        bar.publish(stateJSON())
         dragTap?.setWindows(draggable)
         updateBorders()
         writeLayoutSoon()

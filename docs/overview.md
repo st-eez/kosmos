@@ -55,7 +55,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Empty workspace | Key an invisible window of Kosmos's own | Nothing, which leaves keystrokes going to the hidden window. Finder with no window brought forward, which keys a concealed Finder window |
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
-| IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, a CLI that avoids AppKit (1.4 ms launch), and `subscribe` streams of full snapshots | A CLI that links AppKit (about 15 ms launch) |
+| IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, and a CLI that avoids AppKit (1.4 ms launch) | A CLI that links AppKit (about 15 ms launch) |
 | Bar | Each state snapshot goes to SketchyBar's Mach port as one event, and the bar never queries | Shell hooks on every switch |
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
@@ -87,7 +87,8 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | One AX worker per app (an actor with a custom executor on the app's run loop) | That app's AX elements, frame writes and reads, the raise that keys a window of the front app, and the raise after a key record. Its observer runs on a second thread, which stamps each focus notification and checks the front process in its callback | Touch the model directly |
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | The bridged Space operations of hiding and recovery, the reads that confirm them, the barrier read, and creating the Spaces windows slide in | Run past its time budget |
-| IPC queue | Socket I/O, subscriber outboxes, Mach sends to the bar | Block the main actor |
+| IPC queue | Socket I/O | Block the main actor |
+| Bar queue (`kosmos.bar`), serial | The Mach sends of snapshots to SketchyBar and their retry | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
 | Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
 | Slide queue (`kosmos.slide`), serial | The reads of sliding windows' rows until their writes land, and the Space transform sent for each new frame they find | Change the model |
@@ -140,7 +141,7 @@ queue sends its batches, to other Spaces.
    still current, the focus queue fronts the target, or Kosmos's own invisible window for an
    empty workspace, and reads back the key window. The main actor shows the incoming
    windows' borders after the focus request ([borders.md](borders.md)).
-5. The main actor publishes one bar snapshot and one `subscribe` frame.
+5. The main actor publishes one bar snapshot.
 
 A switch launches no process, writes no file and leaves the status item alone. Everything
 Kosmos causes (a hide, a reveal, a frame write, a focus request) is recorded as an
@@ -207,6 +208,9 @@ window title matchers, marks, persistence across restarts of any state but the l
 
 - a `summon` command, to bring a window to the current workspace on purpose;
 - hooks that launch programs at a reload or a profile change;
+- a `subscribe` stream of snapshots on the socket, for scripts and bars, which the first
+  design had before SketchyBar's Mach event took its place; a bar that cannot take that
+  event would call for it;
 - work counts: each command counting its AX calls, SkyLight calls, main actor jobs and
   status item writes for tests to assert, as counts are deterministic where milliseconds
   are noisy, with instructions retired per switch, from the CPU counters, as the lab

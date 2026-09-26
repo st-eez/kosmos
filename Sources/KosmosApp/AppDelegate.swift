@@ -395,7 +395,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, setup: setup,
                                     barDisplays: ConfigFile.barDisplays(displays), managing: managing)
-        controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
         controller.onFocusProblem = { [weak self] problem in
             self?.focusProblem = problem
             self?.updateProblems()

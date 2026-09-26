@@ -87,7 +87,7 @@ import Testing
 
 @Suite struct MessageTests {
     @Test func roundTripsRequestsAndResponses() throws {
-        for request in [Request.command(["workspace", "3 4", ""]), .command([]), .subscribe] {
+        for request in [Request(args: ["workspace", "3 4", ""]), Request(args: [])] {
             #expect(try Request(decoding: request.encoded) == request)
         }
         let response = Response(exitCode: -1, stdout: "a\nb", stderr: "é")
@@ -100,7 +100,7 @@ import Testing
             (#"{"args":["ping"]}"#, .malformed("the request has no protocol version")),
             (#"{"protocol":2,"args":["ping"]}"#, .protocolMismatch(client: 2)),
             (#"{"protocol":1,"args":[1]}"#, .malformed("args must be strings")),
-            (#"{"protocol":1,"subscribe":false}"#, .malformed("the request has neither args nor subscribe")),
+            (#"{"protocol":1,"subscribe":true}"#, .malformed("the request has no args")),
         ]
         for (text, error) in cases {
             #expect(throws: error) { try Request(decoding: Array(text.utf8)) }
