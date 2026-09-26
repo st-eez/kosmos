@@ -47,12 +47,14 @@
 (* which can still show the window for a moment after macOS keyed the next *)
 (* one, as after a hide. A report that Kosmos would follow waits a short   *)
 (* grace for that evidence. If the window left, Kosmos keeps its workspace *)
-(* and focuses it again; if not, it follows. The departure reaches Kosmos  *)
-(* separately, before or after the report. Kosmos never fronts a window    *)
-(* that left, which would unminimize it or unhide its app: if the report   *)
-(* comes first while its focus is that window, the departure focuses the   *)
-(* workspace's next window, or Kosmos's own window. A closed focus is      *)
-(* replaced at once.                                                       *)
+(* and focuses it again; if not, it follows. HeldDrop runs the             *)
+(* implementation's rule that dropped a held report whose window was no    *)
+(* longer the key window Kosmos last heard of, for a config that fails as  *)
+(* expected. The departure reaches Kosmos separately, before or after the  *)
+(* report. Kosmos never fronts a window that left, which would unminimize  *)
+(* it or unhide its app: if the report comes first while its focus is that *)
+(* window, the departure focuses the workspace's next window, or Kosmos's  *)
+(* own window. A closed focus is replaced at once.                         *)
 (*                                                                         *)
 (* A window that did not close can return: it is unminimized, its app      *)
 (* unhides, or it leaves native fullscreen. macOS keys it, and its return  *)
@@ -179,8 +181,10 @@ CONSTANTS
     KeyOldFirst,    \* with SplitQueue, a key record can activate a background app with the window
                     \* key when the app was last front, while that is still its focused window, and
                     \* key the named window a step later (live)
-    ReadsByWindow   \* with SplitQueue, an activation read matches a record of the window it
+    ReadsByWindow,  \* with SplitQueue, an activation read matches a record of the window it
                     \* reads, as a notification does (the implementation before change 25)
+    HeldDrop        \* a held report whose window is no longer the key window Kosmos last heard
+                    \* of when the grace ends is dropped (the implementation from 6f54cda)
 
 ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ AllowLeave \in BOOLEAN /\ FollowRekeys \in BOOLEAN
 ASSUME AllowReturn \in BOOLEAN /\ FollowStale \in BOOLEAN /\ Grace \in BOOLEAN
@@ -192,6 +196,7 @@ ASSUME BackgroundRaise \in BOOLEAN /\ LateNoteCheck \in BOOLEAN /\ RaiseTimeout 
 ASSUME NoteDelay \in BOOLEAN /\ NoticeDelay \in BOOLEAN /\ HoldNotes \in BOOLEAN /\ NoticeCheck \in BOOLEAN
 ASSUME NoteFollows \in BOOLEAN /\ ReassertTakes \in BOOLEAN /\ PostRaise \in BOOLEAN
 ASSUME PostRaiseEcho \in {"none", "kept", "done"} /\ KeyOldFirst \in BOOLEAN /\ ReadsByWindow \in BOOLEAN
+ASSUME HeldDrop \in BOOLEAN
 
 \* No workspace window is key: Kosmos keyed its own window for an empty workspace, or macOS
 \* left no key window after a departure. Both report no window.
@@ -1040,11 +1045,13 @@ OrderOut ==
 
 \* The grace ends and the held report is decided. The grace outlasts
 \* WindowServer's delay: the window key before the report is reported gone by
-\* then if it left.
+\* then if it left. With HeldDrop a report whose window is no longer the key window
+\* Kosmos last heard of is dropped instead.
 Expire ==
     /\ s.held # <<>>
     /\ s.held[1].prev \notin s.lag
-    /\ s' = Adopt([s EXCEPT !.held = <<>>], s.held[1], TRUE, FALSE)
+    /\ s' = IF HeldDrop /\ s.held[1].w # s.seenKey THEN [s EXCEPT !.held = <<>>]
+            ELSE Adopt([s EXCEPT !.held = <<>>], s.held[1], TRUE, FALSE)
     /\ UNCHANGED history
 
 \* Reports of key changes that have not reached the main actor's queue: observer

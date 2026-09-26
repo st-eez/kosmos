@@ -1,6 +1,6 @@
 # TLA+ spec of the workspace switch
 
-The code implements changes 1 to 18 below, and the parts of changes 19 to 25 that
+The code implements changes 1 to 18 below, and the parts of changes 19 to 26 that
 [docs/focus.md](../docs/focus.md) describes; its Deferred list names the rules of those
 changes the code leaves out, change 21's drop of change 12's miss rule among them.
 
@@ -172,7 +172,7 @@ violation and the depth it had reached.
 | `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 4,376,652 | 55 |
 
 Each of these runs one rule the implementation had, or one the spec had, and fails as
-expected (changes 17 to 25):
+expected (changes 17 to 26):
 
 | Config | Rule | Result | States | Depth |
 | --- | --- | --- | --- | --- |
@@ -191,6 +191,7 @@ expected (changes 17 to 25):
 | `split-open-postraisenone` | the raise after a key record records no echo (`PostRaiseEcho = "none"`) | fails last command wins, expected | 22,690,877 | 38 |
 | `split-open-postraisekept` | that raise's record stays until a report matches it (`PostRaiseEcho = "kept"`) | fails last activation wins, expected | 30,429,128 | 40 |
 | `split-user-readsbywindow` | with `KeyOldFirst`, an activation read matches a record of the window it reads, and no notification waits for it (`ReadsByWindow`, `HoldNotes` off), as the implementation had | fails convergence, expected | 9,814,646 | 29 |
+| `split-user-helddrop` | a held report whose window is no longer the key window Kosmos last heard of when the grace ends is dropped (`HeldDrop`), as the implementation had | fails last activation wins, expected | 115,124 | 14 |
 
 `RecoveryPath` holds by construction here, because the holding Space is recorded before
 the first hide. The recovery protocol needs its own spec.
@@ -549,3 +550,10 @@ change that removed it:
       at depth 18). That is the ceiling [docs/focus.md](../docs/focus.md) names for that
       raise, and the spec exempts it with a ghost (`lowTop`) until a window of that app
       comes to its front.
+26. **Held reports after the key moved on.** From 6f54cda Kosmos dropped a held report whose
+    window was no longer the key window it last heard of when the grace ended, for
+    Ghostty's report of change 25. That was change 11's first counterexample again
+    (`split-user-helddrop`, `HeldDrop`): after `workspace 3` the user Command-Tabbed to w1
+    on workspace 1, Kosmos's older request keyed the empty workspace's window after it,
+    and its echo moved the key on, so the grace dropped the Command-Tab. Change 25 answers
+    Ghostty's report, and the drop is gone.
