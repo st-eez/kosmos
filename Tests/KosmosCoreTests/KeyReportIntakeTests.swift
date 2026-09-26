@@ -228,6 +228,20 @@ private struct Replay {
     }
 }
 
+@Test func theNamedWindowsReportAfterAReadThatWaitedRequestsANewerIntentAgain() {
+    // The pointer key-recorded Preview's window 12, and Preview came front with 11. The
+    // pointer went back onto 11, which the focus queue skipped as key already, and the read
+    // found 11 and waited for 12's report (tla/Kosmos.tla, ObserveSplit).
+    var replay = Replay(windows: [1: ("1", helium), 11: ("1", preview), 12: ("1", preview)])
+    _ = replay.heard(.window(1), from: helium, at: -100)
+    replay.command(at: 0)
+    replay.requested(.window(12), app: preview, at: 2, keyRecord: true)
+    replay.command(at: 8)
+    replay.intent = .window(11)
+    #expect(replay.heard(.window(11), from: preview, at: 10, read: true) == .none)
+    #expect(replay.heard(.window(12), from: preview, at: 20) == .requestFocus(retry: false))
+}
+
 @Test func aHeldReportIsDecidedByWhetherTheKeyWindowBeforeItLeft() {   // change 11
     // Live: Command-H on the only window of workspace 2 took Kosmos to workspace 1, where
     // macOS keyed Ghostty before WindowServer ordered the hidden app's window out.
@@ -607,7 +621,7 @@ private struct Replay {
     _ = replay.heard(.window(2), from: helium, at: -100)
     replay.requested(.window(3), app: ghostty, at: 0)
     let echo = replay.reports.consumeEcho(.window(3), receivedAt: ms(20))
-    #expect(echo)
+    #expect(echo == .named(waited: false))
     #expect(replay.intake.key == .window(2))
     replay.pickedAway = true
     #expect(replay.heard(.window(3), from: ghostty, at: 30) == .hold(1))

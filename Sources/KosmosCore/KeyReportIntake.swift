@@ -140,16 +140,16 @@ public struct KeyReportIntake: Sendable {
     /// otherwise ignored (docs/focus.md). `activationRead`: the app's activation read.
     public func heardInBackground(_ reported: KeyWindow, from reporter: Int32, receivedAt stamp: ContinuousClock.Instant,
                                   activationRead: Bool, intent: KeyWindow, reports: inout FocusReports) -> Action {
-        let reader = activationRead ? reporter : nil
-        let awaitsNamed = reader.map { reports.awaitsNamed(reported, activationOf: $0, receivedAt: stamp) } ?? false
-        guard reports.consumeEcho(reported, activationOf: reader, receivedAt: stamp) else { return .none }
-        return Self.afterEcho(of: reported, read: activationRead, awaitsNamed: awaitsNamed, intent: intent)
+        let echo = reports.consumeEcho(reported, activationOf: activationRead ? reporter : nil, receivedAt: stamp)
+        return Self.afterEcho(echo, of: reported, read: activationRead, intent: intent)
     }
 
-    /// A read that consumed its key record can land after a newer intent, as a busy app's
-    /// late raise does: the intent is requested again (tla/Kosmos.tla, ObserveSplit).
-    private static func afterEcho(of key: KeyWindow, read: Bool, awaitsNamed: Bool, intent: KeyWindow) -> Action {
-        read && !awaitsNamed && key != intent ? .requestFocus(retry: false) : .none
+    /// A read that consumed its key record, or the named window's report after a read that
+    /// waited, can land after a newer intent, as a busy app's late raise does: the intent is
+    /// requested again (tla/Kosmos.tla, ObserveSplit).
+    private static func afterEcho(_ echo: Echo, of key: KeyWindow, read: Bool, intent: KeyWindow) -> Action {
+        guard case .named(let waited) = echo, read || waited, key != intent else { return .none }
+        return .requestFocus(retry: false)
     }
 
     /// A report of the front app's key window. `activationRead`: the app's activation read.
@@ -188,7 +188,7 @@ public struct KeyReportIntake: Sendable {
             // Kosmos keyed a native fullscreen window, as for hover focus: this is its echo.
             if facts.isParked(id) {
                 let named = reports.isEcho(reported, receivedAt: stamp)
-                if reports.consumeEcho(reported, activationOf: reader, receivedAt: stamp) {
+                if reports.consumeEcho(reported, activationOf: reader, receivedAt: stamp) != .none {
                     misses.reported(reported, pid: reporter, receivedAt: stamp, echo: named)
                 }
             }
@@ -315,11 +315,12 @@ public struct KeyReportIntake: Sendable {
     private mutating func decide(_ report: Report, keyLeft: @autoclosure () -> Departure, facts: Facts,
                                  reports: inout FocusReports) -> Action {
         let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
-        let awaitsNamed = report.activationOf.map { reports.awaitsNamed(report.key, activationOf: $0, receivedAt: report.received) } ?? false
-        let verdict = reports.classify(report.key, activationOf: report.activationOf, receivedAt: report.received,
-                                       onShownWorkspace: id.flatMap(facts.workspace).map(facts.isShown) ?? false,
-                                       concealed: report.concealed, recovered: facts.recovered, miss: report.miss,
-                                       keyLeft: keyLeft())
+        let echo = reports.consumeEcho(report.key, activationOf: report.activationOf, receivedAt: report.received)
+        let verdict = echo != .none ? .echo
+            : reports.verdict(report.key, receivedAt: report.received,
+                              onShownWorkspace: id.flatMap(facts.workspace).map(facts.isShown) ?? false,
+                              concealed: report.concealed, recovered: facts.recovered, miss: report.miss,
+                              keyLeft: keyLeft())
         facts.note(.verdict(report.key, verdict, activationRead: report.activationRead))
         if id != nil, verdict != .echo {
             unplaced = nil
@@ -327,7 +328,7 @@ public struct KeyReportIntake: Sendable {
         }
         switch verdict {
         case .echo:
-            return Self.afterEcho(of: report.key, read: report.activationRead, awaitsNamed: awaitsNamed, intent: facts.intent)
+            return Self.afterEcho(echo, of: report.key, read: report.activationRead, intent: facts.intent)
         case .ignore:
             // macOS or an app fronted an app with no key window on an empty workspace: the
             // empty workspace keys its window again, so Cmd-Q reaches no app. After a click, a

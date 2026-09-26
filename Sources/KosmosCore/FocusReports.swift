@@ -3,6 +3,17 @@ public enum KeyWindow: Hashable, Sendable {
     case noWindow
 }
 
+/// What a report consumed of Kosmos's focus requests (docs/focus.md; tla/Kosmos.tla, ObserveSplit).
+public enum Echo: Equatable, Sendable {
+    case none
+    /// The record of a request. `waited`: a key record's activation read that found another
+    /// window left it for this report of the window it named.
+    case named(waited: Bool)
+    /// A key record's activation read that ran before the app keyed the named window after
+    /// its own: the record waits for that window's report.
+    case awaitsNamed
+}
+
 /// What to do with a key window report (docs/focus.md; tla/Kosmos.tla, Adopt).
 public enum ReportVerdict: Equatable, Sendable {
     /// Kosmos's own request coming back.
@@ -79,6 +90,8 @@ public struct FocusReports: Sendable {
         var activates: Bool
         /// A report of the app that was no echo came since.
         var answered = false
+        /// Its activation read found another window, and left it for the named window's report.
+        var waited = false
     }
 
     private var expected: [Request] = []
@@ -125,29 +138,21 @@ public struct FocusReports: Sendable {
         expected.firstIndex { $0.requested <= stamp && ($0.key == key || (app != nil && $0.activates && $0.app == app)) }
     }
 
-    /// The read ran before its app keyed the window the key record named, after the app's
-    /// own, and that window's report is the echo (docs/focus.md).
-    public func awaitsNamed(_ key: KeyWindow, activationOf app: Int32, receivedAt stamp: ContinuousClock.Instant) -> Bool {
-        echo(of: key, activationOf: app, receivedAt: stamp).map { awaitsNamed(key, at: $0) } ?? false
-    }
-
-    private func awaitsNamed(_ key: KeyWindow, at index: Int) -> Bool {
-        expected[index].key != key && !expected[index].answered
-    }
-
     /// Consumes the expectation `key` answers and every one before it. Ceiling: an earlier
     /// echo after a later one reads as the user's choice (docs/focus.md, Deferred).
     public mutating func consumeEcho(_ key: KeyWindow, activationOf app: Int32? = nil,
-                                     receivedAt stamp: ContinuousClock.Instant) -> Bool {
-        guard let index = echo(of: key, activationOf: app, receivedAt: stamp) else { return false }
-        if awaitsNamed(key, at: index) {
-            expected[index].activates = false
-            expected.removeFirst(index)
-        } else {
-            expected.removeFirst(index + 1)
-        }
+                                     receivedAt stamp: ContinuousClock.Instant) -> Echo {
+        guard let index = echo(of: key, activationOf: app, receivedAt: stamp) else { return .none }
         if key == retried { retried = nil }
-        return true
+        if expected[index].key != key, !expected[index].answered {
+            expected[index].activates = false
+            expected[index].waited = true
+            expected.removeFirst(index)
+            return .awaitsNamed
+        }
+        let waited = expected[index].waited
+        expected.removeFirst(index + 1)
+        return .named(waited: waited)
     }
 
     public mutating func forgetRequests() {
@@ -182,7 +187,14 @@ public struct FocusReports: Sendable {
     public mutating func classify(_ key: KeyWindow, activationOf app: Int32? = nil, receivedAt stamp: ContinuousClock.Instant,
                                   onShownWorkspace: Bool, concealed: Bool, recovered: Bool = false, miss: Miss = .none,
                                   keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
-        if consumeEcho(key, activationOf: app, receivedAt: stamp) { return .echo }
+        if consumeEcho(key, activationOf: app, receivedAt: stamp) != .none { return .echo }
+        return verdict(key, receivedAt: stamp, onShownWorkspace: onShownWorkspace, concealed: concealed,
+                       recovered: recovered, miss: miss, keyLeft: keyLeft())
+    }
+
+    /// `classify` for a report that consumed no echo.
+    public func verdict(_ key: KeyWindow, receivedAt stamp: ContinuousClock.Instant, onShownWorkspace: Bool,
+                        concealed: Bool, recovered: Bool, miss: Miss, keyLeft: @autoclosure () -> Departure) -> ReportVerdict {
         if isStale(stamp) { return .reassert }
         guard case .window(let id) = key else { return keyLeft() == .left ? .reassert : .ignore }
         switch miss {

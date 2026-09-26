@@ -254,7 +254,7 @@ import Testing
     reports.focusRequested(.window(1), app: nil, at: t0 + .milliseconds(10))
     let other = reports.consumeEcho(.window(2), receivedAt: t0 + .milliseconds(11))
     let echo = reports.consumeEcho(.window(1), receivedAt: t0 + .milliseconds(12))
-    #expect(!other && echo)
+    #expect(other == .none && echo == .named(waited: false))
     #expect(reports.classify(.window(1), receivedAt: t0 + .milliseconds(13), onShownWorkspace: true, concealed: false, keyLeft: .stayed) == .adopt(1))
 }
 
@@ -264,7 +264,7 @@ import Testing
     #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: t0 + .milliseconds(11)) == .retry)
     reports.focusRequested(.window(1), app: 7, at: t0 + .milliseconds(12))
     let echo = reports.consumeEcho(.window(1), receivedAt: t0 + .milliseconds(13))
-    #expect(echo)
+    #expect(echo == .named(waited: false))
     reports.focusRequested(.window(1), app: 7, at: t0 + .milliseconds(20))
     #expect(reports.miss(.window(2), app: 7, repeated: true, receivedAt: t0 + .milliseconds(21)) == .retry)
 }
