@@ -13,6 +13,11 @@ public struct KeyReportIntake: Sendable {
         /// Its app keyed it as Kosmos admitted it after launch, so following or adopting it
         /// brings the pointer (docs/focus-follows-mouse.md).
         var admitted = false
+        /// The app's activation read, not its focused window notification (docs/focus.md).
+        var activationRead = false
+
+        /// The app whose activation read it is.
+        var activationOf: Int32? { activationRead ? reporter : nil }
     }
 
     public enum Action: Equatable, Sendable {
@@ -31,13 +36,13 @@ public struct KeyReportIntake: Sendable {
     /// What the log says of a report.
     public enum Note: Equatable, Sendable {
         case missed(KeyWindow, Miss)
-        case verdict(KeyWindow, ReportVerdict)
+        case verdict(KeyWindow, ReportVerdict, activationRead: Bool)
         /// A report of a window ended the held one.
         case replaced(held: Report, by: KeyWindow)
         /// At the grace's end the held report's window had no place or was parked.
         case heldWindowLeft(Report)
-        /// At the grace's end another window was key.
-        case heldMovedOn(Report, key: KeyWindow?)
+        /// At the grace's end the session was locked.
+        case heldWhileLocked(Report)
         /// At the grace's end, whether the key window before the held report left. `at`: the
         /// grace's end, before the read of whether it left.
         case heldDecided(Report, previous: WindowID, left: Bool, at: ContinuousClock.Instant)
@@ -106,7 +111,8 @@ public struct KeyReportIntake: Sendable {
     private let ownApp: Int32
     private var keyHistory = KeyHistory()
     /// The last key report of a window with no place, or parked as closed and kept, decided
-    /// when the window takes a place (docs/focus.md).
+    /// when the window takes a place. A report that would end a held one ends it too
+    /// (docs/focus.md).
     private var unplaced: Report?
     /// Admitted on a shown workspace before their apps keyed them (AdmissionFocus.awaitKey).
     /// A report within `keyAfterAdmission` brings the pointer (docs/focus-follows-mouse.md).
@@ -130,9 +136,27 @@ public struct KeyReportIntake: Sendable {
     /// queue checks as the request runs.
     public var key: KeyWindow? { keyHistory.key }
 
-    /// A report of the front app's key window.
+    /// A report from an app that is not the front process consumes an echo it matches and is
+    /// otherwise ignored (docs/focus.md). `activationRead`: the app's activation read.
+    public func heardInBackground(_ reported: KeyWindow, from reporter: Int32, receivedAt stamp: ContinuousClock.Instant,
+                                  activationRead: Bool, intent: KeyWindow, reports: inout FocusReports) -> Action {
+        let reader = activationRead ? reporter : nil
+        let awaitsNamed = reader.map { reports.awaitsNamed(reported, activationOf: $0, receivedAt: stamp) } ?? false
+        guard reports.consumeEcho(reported, activationOf: reader, receivedAt: stamp) else { return .none }
+        return Self.afterEcho(of: reported, read: activationRead, awaitsNamed: awaitsNamed, intent: intent)
+    }
+
+    /// A read that consumed its key record can land after a newer intent, as a busy app's
+    /// late raise does: the intent is requested again (tla/Kosmos.tla, ObserveSplit).
+    private static func afterEcho(of key: KeyWindow, read: Bool, awaitsNamed: Bool, intent: KeyWindow) -> Action {
+        read && !awaitsNamed && key != intent ? .requestFocus(retry: false) : .none
+    }
+
+    /// A report of the front app's key window. `activationRead`: the app's activation read.
     public mutating func heard(_ reported: KeyWindow, from reporter: Int32, receivedAt stamp: ContinuousClock.Instant,
-                               facts: Facts, reports: inout FocusReports, misses: inout FocusMisses) -> Action {
+                               activationRead: Bool, facts: Facts, reports: inout FocusReports,
+                               misses: inout FocusMisses) -> Action {
+        let reader = activationRead ? reporter : nil
         let id: WindowID? = if case .window(let window) = reported { window } else { nil }
         let repeated = key == reported
         let previous: WindowID? = if case .window(let window)? = keyHistory.heard(reported), window != id { window } else { nil }
@@ -141,33 +165,42 @@ public struct KeyReportIntake: Sendable {
         let keyedAfterAdmission = id.flatMap { admittedUnkeyed.removeValue(forKey: $0) } != nil
         // The report a departure waited for, unless it is Kosmos's echo: a window keyed
         // during a minimize's animation leaves macOS nothing to key when it ends.
-        if let previous, awaitingKey?.window == previous, !reports.isEcho(reported, receivedAt: stamp) {
+        if let previous, awaitingKey?.window == previous, !reports.isEcho(reported, activationOf: reader, receivedAt: stamp) {
             awaitingKey = nil
         }
-        let miss = reports.miss(reported, app: id.flatMap(facts.app), repeated: repeated, receivedAt: stamp)
+        let miss = reports.miss(reported, app: id.flatMap(facts.app), repeated: repeated, activationOf: reader,
+                                receivedAt: stamp)
         if miss != .none { facts.note(.missed(reported, miss)) }
         // An unmanaged window's focus is its own, and a parked one is key in its fullscreen
         // Space or just before it returns. A window with no place, or closed and kept, is
         // decided when it takes one.
         if let id, facts.workspace(id) == nil || facts.isParked(id) {
-            unplaced = facts.workspace(id) == nil || facts.closedByApp(id)
-                ? Report(key: reported, received: stamp, reporter: reporter, previous: previous, concealed: false, miss: miss)
-                : nil
+            if facts.workspace(id) == nil || facts.closedByApp(id) {
+                unplaced = Report(key: reported, received: stamp, reporter: reporter, previous: previous, concealed: false,
+                                  miss: miss, activationRead: activationRead)
+            }
             // Kosmos keyed a native fullscreen window, as for hover focus: this is its echo.
-            if facts.isParked(id), reports.consumeEcho(reported, receivedAt: stamp) {
-                misses.reported(reported, pid: reporter, receivedAt: stamp, echo: true)
+            if facts.isParked(id) {
+                let named = reports.isEcho(reported, receivedAt: stamp)
+                if reports.consumeEcho(reported, activationOf: reader, receivedAt: stamp) {
+                    misses.reported(reported, pid: reporter, receivedAt: stamp, echo: named)
+                }
             }
             return .none
         }
-        unplaced = nil
-        if held.holds(reported, repeated: repeated) { return .none }
+        // A repeat of the held window still consumes its echo, so the named window's report
+        // after a key record's first key is held is no echo, and ends the hold (docs/focus.md).
+        if held.holds(reported, repeated: repeated) {
+            _ = reports.consumeEcho(reported, activationOf: reader, receivedAt: stamp)
+            return .none
+        }
         // Whether the key window before this report just left the screen is read only when
         // the verdict needs it, as the read can wait on a switch's Space transaction.
         // Concealment is judged at the stamp (docs/focus.md; tla/README.md, change 22).
         let placed = id.flatMap { placedHidden.removeValue(forKey: $0) }
         let report = Report(key: reported, received: stamp, reporter: reporter, previous: previous,
                             concealed: placed != nil || id.map { facts.wasConcealed($0, stamp) } ?? false,
-                            miss: miss, admitted: keyedAfterAdmission || placed == .admitted)
+                            miss: miss, admitted: keyedAfterAdmission || placed == .admitted, activationRead: activationRead)
         return decidePlaced(report,
                             keyLeft: placed != nil ? .stayed : previous.map { facts.leftScreen($0) ? .left : .unknown } ?? .stayed,
                             facts: facts, reports: &reports, misses: &misses)
@@ -176,8 +209,9 @@ public struct KeyReportIntake: Sendable {
     /// Admits `window`. The report its app keyed it by before it had a place waits for
     /// `placed` when Kosmos follows it to a hidden workspace, and is dropped otherwise.
     public mutating func admit(_ window: WindowID, atLaunch: Bool, at now: ContinuousClock.Instant,
-                               facts: Facts) -> (focus: AdmissionFocus, bringsPointer: Bool) {
-        let focus = AdmissionFocus.decide(keyed: key == .window(window),
+                               facts: Facts, reports: FocusReports) -> (focus: AdmissionFocus, bringsPointer: Bool) {
+        let keyed = unplaced.map { $0.key == .window(window) && !reports.isStale($0.received) } ?? false
+        let focus = AdmissionFocus.decide(keyed: keyed,
                                           shown: facts.workspace(window).map(facts.isShown) == true,
                                           parked: facts.isParked(window), atLaunch: atLaunch, locked: facts.locked)
         switch focus {
@@ -222,14 +256,13 @@ public struct KeyReportIntake: Sendable {
     /// came before the first word of its departure.
     public mutating func expire(_ number: Int, facts: Facts, reports: inout FocusReports) -> Action {
         guard let report = held.expire(number) else { return .none }
-        if case .window(let id) = report.key, facts.workspace(id) == nil || facts.isParked(id) {
-            facts.note(.heldWindowLeft(report))
+        // The resync after the unlock requests the intent again.
+        if facts.locked {
+            facts.note(.heldWhileLocked(report))
             return .none
         }
-        // A later report moved the key window on, as Kosmos's own echo does when an app it
-        // activated keys its last key window first and then the requested one.
-        if report.key != key {
-            facts.note(.heldMovedOn(report, key: key))
+        if case .window(let id) = report.key, facts.workspace(id) == nil || facts.isParked(id) {
+            facts.note(.heldWindowLeft(report))
             return .none
         }
         guard let previous = report.previous else { return .none }
@@ -261,9 +294,13 @@ public struct KeyReportIntake: Sendable {
 
     private mutating func decidePlaced(_ report: Report, keyLeft: @autoclosure () -> Departure, facts: Facts,
                                        reports: inout FocusReports, misses: inout FocusMisses) -> Action {
-        let echo = reports.isEcho(report.key, receivedAt: report.received)
-        misses.reported(report.key, pid: report.reporter, receivedAt: report.received, echo: echo)
-        if !echo { reports.publicRequestsAnswered(by: report.reporter, receivedAt: report.received) }
+        // A read of another window than its key record named leaves the kill switch waiting
+        // for that window's report.
+        misses.reported(report.key, pid: report.reporter, receivedAt: report.received,
+                        echo: reports.isEcho(report.key, receivedAt: report.received))
+        if !reports.isEcho(report.key, activationOf: report.activationOf, receivedAt: report.received) {
+            reports.answered(by: report.reporter, receivedAt: report.received)
+        }
         return decide(report, keyLeft: keyLeft(), facts: facts, reports: &reports)
     }
 
@@ -272,15 +309,19 @@ public struct KeyReportIntake: Sendable {
     private mutating func decide(_ report: Report, keyLeft: @autoclosure () -> Departure, facts: Facts,
                                  reports: inout FocusReports) -> Action {
         let id: WindowID? = if case .window(let window) = report.key { window } else { nil }
-        let verdict = reports.classify(report.key, receivedAt: report.received,
+        let awaitsNamed = report.activationOf.map { reports.awaitsNamed(report.key, activationOf: $0, receivedAt: report.received) } ?? false
+        let verdict = reports.classify(report.key, activationOf: report.activationOf, receivedAt: report.received,
                                        onShownWorkspace: id.flatMap(facts.workspace).map(facts.isShown) ?? false,
                                        concealed: report.concealed, recovered: facts.recovered, miss: report.miss,
                                        keyLeft: keyLeft())
-        facts.note(.verdict(report.key, verdict))
-        if id != nil, verdict != .echo, let ended = held.end() { facts.note(.replaced(held: ended, by: report.key)) }
+        facts.note(.verdict(report.key, verdict, activationRead: report.activationRead))
+        if id != nil, verdict != .echo {
+            unplaced = nil
+            if let ended = held.end() { facts.note(.replaced(held: ended, by: report.key)) }
+        }
         switch verdict {
         case .echo:
-            return .none
+            return Self.afterEcho(of: report.key, read: report.activationRead, awaitsNamed: awaitsNamed, intent: facts.intent)
         case .ignore:
             // macOS or an app fronted an app with no key window on an empty workspace: the
             // empty workspace keys its window again, so Cmd-Q reaches no app. After a click, a

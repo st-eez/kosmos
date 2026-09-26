@@ -88,7 +88,7 @@ extension Controller {
             plan.frames = session.park([id], because: reason).frames
             plan.hide.removeAll { $0 == id }
         }
-        let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts)
+        let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts, reports: reports)
         if focus == .adopt { session.adopt(id) }
         // A report that keyed the window before it had a place follows it in this plan's switch,
         // so its hidden workspace shows it without a conceal first (docs/focus.md).
