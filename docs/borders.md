@@ -97,18 +97,17 @@ state, and during a slide the frame the slide shows the window at.
 - The border is ordered directly below its window with `NSWindow.order(_:relativeTo:)`,
   which takes another app's window, so the window is topmost over its whole frame and a
   window over it covers its border too. The ring lies outside the window's edge, where the
-  window never covers it. Until 2026-09-26 Kosmos ordered the border above its window, and
-  a tool that hit tests through the window list, taking the first window whose bounds hold
-  a point, as Claude's computer use does, found the border window over the focused
-  window's whole frame and refused to click there. In `kosmos-probe borders`, in each of
-  three runs on 2026-09-26, the window list showed the border right below the child app's
-  window, under the child's other window that covered it. At a point inside the child's
-  window, the first window in the list whose bounds held it was that window, and the
-  border when the border was ordered above; on the ring it was the border. A capture of
-  the probe's windows showed the ring's own color at the middle of its width beside the
-  window's left and bottom edges, with the border below the window and with it above. The
-  child's window is never key, so its shadow is an inactive window's. When the child
-  raised its window, WindowServer posted 808 (reordered) and 815 for it and left the
+  window's content never covers it; its shadow does (below). Until 2026-09-26 Kosmos
+  ordered the border above its window, and a tool that hit tests through the window list,
+  taking the first window whose bounds hold a point, as Claude's computer use does, found
+  the border window over the focused window's whole frame and refused to click there. In
+  `kosmos-probe borders`, in each of three runs on 2026-09-26, the window list showed the
+  border right below the child app's window, under the child's other window that covered
+  it. At a point inside the child's window, the first window in the list whose bounds held
+  it was that window, and on the ring the border. A capture of the probe's windows showed
+  the ring's own color at the middle of its width beside the window's left and bottom
+  edges. The child's window is never key, so its shadow is an inactive window's. When the
+  child raised its window, WindowServer posted 808 (reordered) and 815 for it and left the
   border under the other window the raise put the target over. So at each 808 for a
   managed window the inventory sends `.reordered`, and Kosmos orders that window's border
   below it again: 0.010 to 0.021 ms at the median over 100 orders. Ordering the border
@@ -120,43 +119,43 @@ state, and during a slide the frame the slide shows the window at.
   window a mouse down at a point would hit, named the target at a point 1 point outside
   its edge, under the ring and in the target's resize margin. So clicks and resizes by the
   edge reach the window.
-- A border is in its window's Space. In the probe, a new border window joined the current
-  Space of its display, kept its Space while ordered out and in, and stayed in another
-  display's Space after it was ordered below its target again; moving it 10 points put it
-  back in its own display's current Space. A display's current Space can be another app's
-  native fullscreen Space, so whenever a border window is shown for another window,
-  Kosmos reads its Spaces and its target's off the main thread, since a read can wait out
-  a Space transition, and moves the border to its target's ordinary Space with
-  `SLSMoveWindowsToManagedSpace` when it is in none of them. Ordered in first, a border
-  over a fullscreen Space drew on the app until the move landed. Ordered in only after the
-  reads and the move, which take a hop to their queue and one back, every border blinked
-  as the focus moved, since each focus move takes the border window from its display's pool
-  for the newly focused window. So Kosmos orders a border in at once, and holds it ordered
-  out until its move is sent only on a display that may show a native fullscreen Space, as
-  slides judge it ([geometry.md](geometry.md)): a display that holds a window parked in
-  native fullscreen, unless it holds the key window while no fullscreen Space shows. The
-  ceiling: a fullscreen Space of an app Kosmos does not manage goes unseen, and a border
-  shown on its display draws on the app until the move lands. Reading each display's
-  current Space would tell. On such a display the border also gets its frame only after
-  the move is sent, as Kosmos orders it in, since a frame set before the move might take
-  it back to the Space its display shows, as moving it 10 points took it back from another
-  display's Space (above). In `kosmos-probe borders` on 2026-09-25, a border ordered in
-  before, then ordered out, moved to another display's Space and ordered above its target,
-  was in the Space it was moved to, and the first direct read after the move showed it
-  there. A new window framed, moved and then ordered in for the first time was in its
-  display's current Space, so its first order-in, or its frame set before the move, took
-  it there. So each border window is ordered in and out once as it is made, 1 by 1 point
-  at its display's bottom left corner, while it draws nothing. Untested: whether a frame
-  set while a border is ordered out takes it back to the Space its display shows.
-  `kosmos-probe border-space` settles it with its case "ordered in and out, framed, moved
-  to S, ordered below T", and its other cases say whether a frame set after the move does
-  too and whether a window needs its first order-in before a move. It needs a second
+- A border is in its window's Space. In the probe on 2026-09-26, a new border window
+  joined the current Space of its display, kept its Space while ordered out and in, and
+  stayed in another display's Space after it was ordered below its target again; moving it
+  10 points put it back in its own display's current Space. A display's current Space can
+  be another app's native fullscreen Space, so whenever a border window is shown for
+  another window, Kosmos reads its Spaces and its target's off the main thread, since a
+  read can wait out a Space transition, and moves the border to its target's ordinary
+  Space with `SLSMoveWindowsToManagedSpace` when it is in none of them. Ordered in first,
+  a border over a fullscreen Space drew on the app until the move landed. Ordered in only
+  after the reads and the move, which take a hop to their queue and one back, every border
+  blinked as the focus moved, since each focus move takes the border window from its
+  display's pool for the newly focused window. So Kosmos orders a border in at once, and
+  holds it ordered out until its move is sent only on a display that may show a native
+  fullscreen Space, as slides judge it ([geometry.md](geometry.md)): a display that holds
+  a window parked in native fullscreen, unless it holds the key window while no fullscreen
+  Space shows. The ceiling: a fullscreen Space of an app Kosmos does not manage goes
+  unseen, and a border shown on its display draws on the app until the move lands. Reading
+  each display's current Space would tell. On such a display the border also gets its
+  frame only after the move is sent, as Kosmos orders it in, since a frame set before the
+  move might take it back to the Space its display shows, as moving it 10 points took it
+  back from another display's Space (above). In `kosmos-probe borders` on 2026-09-25, a
+  border ordered in before, then ordered out, moved to another display's Space and ordered
+  above its target, was in the Space it was moved to, and the first direct read after the
+  move showed it there. A new window framed, moved and then ordered in for the first time
+  was in its display's current Space, so its first order-in, or its frame set before the
+  move, took it there. So each border window is ordered in and out once as it is made, 1
+  by 1 point at its display's bottom left corner, while it draws nothing. Untested:
+  whether a frame set while a border is ordered out takes it back to the Space its display
+  shows. `kosmos-probe border-space` settles it with its case "ordered in and out, framed,
+  moved to S, ordered below T", and its other cases say whether a frame set after the move
+  does too and whether a window needs its first order-in before a move. It needs a second
   ordinary Space on the built-in display or the leftmost one, and Steve keeps one Space on
-  each display. A border moved to another display's Space was there when read back. The target's Spaces can include the
-  holding Space or a slide's animation Space, whose transform would draw the border too,
-  so Kosmos chooses from the ordinary Spaces of the border's own display alone, and leaves
-  the border where it is when the target has none there, as during a drag or a slide
-  across displays.
+  each display. A border moved to another display's Space was there when read back. The
+  target's Spaces can include the holding Space or a slide's animation Space, whose
+  transform would draw the border too, so Kosmos chooses from the ordinary Spaces of the
+  border's own display alone, and leaves the border where it is when the target has none
+  there, as during a drag or a slide across displays.
 - A border window keeps to one display, and a window that moves to another display takes
   a border window of that display's. Before 2026-09-25 one pool served every display, so
   Steve's one border window moved between displays with the focus, and Kosmos moved it to
