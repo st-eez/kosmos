@@ -186,6 +186,16 @@ bool kosmos_barrier(uint64_t space) {
     } @catch (NSException *exception) { return false; }
 }
 
+bool kosmos_space_read(uint64_t space, CGAffineTransform *transform, float *alpha) {
+    @try {
+        if (!readTransform(space, transform)) return false;
+        id value = readAlpha(space);
+        if (![value respondsToSelector:@selector(floatValue)]) return false;
+        *alpha = [value floatValue];
+        return true;
+    } @catch (NSException *exception) { return false; }
+}
+
 CFArrayRef kosmos_space_windows(uint64_t space) {
     uint64_t setTags = 0, clearTags = 0;
     return SLSCopyWindowsWithOptionsAndTags(SLSMainConnectionID(), 0, (__bridge CFArrayRef)@[@(space)], 7,

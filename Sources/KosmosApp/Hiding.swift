@@ -146,6 +146,24 @@ final class Hiding {
         let store = self.store
         return bridge.sync { store.recover(keepingAnimationSpaces: false) }
     }
+
+    /// Takes over the record the Kosmos before this one left, in place of startup recovery,
+    /// before any window is admitted (docs/hiding.md).
+    func adopt() -> (Recovery.Outcome, Adoption) {
+        let store = self.store
+        let (outcome, adoption, concealed) = bridge.sync {
+            let (outcome, adoption) = store.adopt()
+            return (outcome, adoption, store.concealed)
+        }
+        self.concealed = concealed
+        report(outcome)
+        return (outcome, adoption)
+    }
+
+    /// Lets the queued batches land and leaves the record to the Kosmos that starts next.
+    func handOver() {
+        bridge.sync {}
+    }
 }
 
 /// Used only on the bridge queue.
@@ -350,8 +368,9 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     @discardableResult
-    func recover(keepingAnimationSpaces keeping: Bool) -> Recovery.Outcome {
-        let outcome = Recovery.run(file: record, keepingAnimationSpaces: keeping)
+    func recover(keepingAnimationSpaces keeping: Bool,
+                 sparing: ((_ members: [WindowID], _ recorded: Set<WindowID>) -> Set<WindowID>)? = nil) -> Recovery.Outcome {
+        let outcome = Recovery.run(file: record, keepingAnimationSpaces: keeping, sparing: sparing)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
         history.withLock { $0.forgetAll() }   // recovery's reveals are not in the history
         loaded = false
@@ -360,6 +379,21 @@ private final class HidingStore: @unchecked Sendable {
             ledger = ConcealLedger()
         }
         return outcome
+    }
+
+    /// The ledger comes back from the Spaces' members, as after an incomplete recovery. A failed
+    /// row query keeps nothing concealed, as it could not tell a closed window.
+    func adopt() -> (Recovery.Outcome, Adoption) {
+        var adoption = Adoption()
+        let outcome = recover(keepingAnimationSpaces: false) { members, recorded in
+            guard let rows = SkyLight.readRows(members) else {
+                hidingLog.error("the concealed windows' rows could not be read; restoring every one")
+                return []
+            }
+            adoption = Adoption(members: rows.map { .init(id: $0.id, parent: $0.parent, orderedIn: $0.orderedIn) }, recorded: recorded)
+            return adoption.windows
+        }
+        return (outcome, adoption)
     }
 
     /// kosmos_window_spaces leaves out the holding Space. A fullscreen Space counts too: an add

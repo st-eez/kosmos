@@ -28,4 +28,28 @@ public final class FileLock {
     }
 
     deinit { close(fd) }
+
+    /// Writes `holder` into the file. A Kosmos names itself once it takes the recovery record
+    /// over, and a guardian leaves the record only to a live Kosmos named there (docs/hiding.md).
+    public func name(_ holder: ProcessIdentity) {
+        let text = Array("\(holder.pid) \(holder.start)\n".utf8)
+        _ = ftruncate(fd, 0)
+        _ = pwrite(fd, text, text.count, 0)
+    }
+
+    /// The process last named in the lock file at `url`, which may have exited since.
+    static func holder(_ url: URL) -> ProcessIdentity? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let fields = text.split(whereSeparator: \.isWhitespace)
+        guard fields.count == 2, let pid = Int32(fields[0]), let start = UInt64(fields[1]) else { return nil }
+        return ProcessIdentity(pid: pid, start: start)
+    }
+
+    /// The live Kosmos named in the lock file at `url`, which holds the lock and has taken the
+    /// record over, for a guardian to leave the record to. `exited`, the Kosmos the guardian
+    /// watched, still reads as alive until it is reaped.
+    public static func successor(at url: URL, excluding exited: Int32?) -> ProcessIdentity? {
+        guard let holder = holder(url), holder.pid != exited, ProcessIdentity.of(holder.pid) == holder else { return nil }
+        return holder
+    }
 }

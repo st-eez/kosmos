@@ -42,15 +42,28 @@ public struct SpaceMembers: Equatable, Sendable {
             guard let row = read[window] else { return true }
             return row.owner.map(apps.contains) == true
         })
-        // A sheet can have sheets of its own.
-        var children: [UInt32]
-        repeat {
-            children = others.filter { !concealed.contains($0) && read[$0].map { concealed.contains($0.parent) } == true }
-            concealed.formUnion(children)
-        } while !children.isEmpty
+        concealed.formUnion(sheets(of: concealed, parents: read.mapValues(\.parent)).values.joined())
         return members.reduce(into: [:]) { kept, entry in
             kept[entry.key] = animation.contains(entry.key) ? entry.value : entry.value.filter(concealed.contains)
         }
+    }
+
+    /// Each root with the windows that stand on it through their parents, 0 for none. A sheet
+    /// can have sheets of its own.
+    static func sheets(of roots: Set<UInt32>, parents: [UInt32: UInt32]) -> [UInt32: Set<UInt32>] {
+        var sheets = Dictionary(uniqueKeysWithValues: roots.map { ($0, Set<UInt32>()) })
+        for window in parents.keys where !roots.contains(window) {
+            var seen: Set<UInt32> = []
+            var current = window
+            while let parent = parents[current], parent != 0, seen.insert(current).inserted {
+                if roots.contains(parent) {
+                    sheets[parent]!.insert(window)
+                    break
+                }
+                current = parent
+            }
+        }
+        return sheets
     }
 
     private static func rows(_ windows: [UInt32]) -> [UInt32: Row] {

@@ -97,7 +97,9 @@ public struct RecoveryRecord: Equatable, Sendable {
     }
 
     static let magic: UInt32 = 0x4b4f534d   // "KOSM"
-    static let version: UInt32 = 1
+    /// script/bundle.sh copies this line's value into Info.plist as KosmosRecordVersion. A
+    /// Kosmos hands the record over only to a build that reads this version (`kosmos handover`).
+    public static let version: UInt32 = 1
 
     /// The decoder's limits. `encoded()` keeps to them, so every record written reads back;
     /// windows fill a slot at about 168, long before maxWindows.

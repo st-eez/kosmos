@@ -13,6 +13,8 @@ final class Guardian {
     var onUnavailable: (@MainActor () -> Void)?
     private var exitSource: DispatchSourceProcess?
     private var recentExits: [ContinuousClock.Instant] = []
+    /// Signaled once the guardian spawned last arms its exit watch.
+    private var armed: DispatchSemaphore?
 
     private var helper: URL {
         let bundled = Bundle.main.bundleURL.appending(path: "Contents/Helpers/kosmos-guardian")
@@ -22,6 +24,13 @@ final class Guardian {
     }
 
     func start() { spawn() }
+
+    /// Waits on the main thread, where the guardian's report arrives only once the launch
+    /// returns, for up to `timeout`.
+    func awaitReady(_ timeout: DispatchTimeInterval) -> Bool {
+        if !isReady, armed?.wait(timeout: .now() + timeout) == .success { isReady = true }
+        return isReady
+    }
 
     private func spawn() {
         var fds: [Int32] = [0, 0]
@@ -62,11 +71,14 @@ final class Guardian {
         exitSource = source
 
         let readFD = fds[0]
+        let armed = DispatchSemaphore(value: 0)
+        self.armed = armed
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var poller = pollfd(fd: readFD, events: Int16(POLLIN), revents: 0)
             var byte: UInt8 = 0
             let ready = poll(&poller, 1, 5000) == 1 && read(readFD, &byte, 1) == 1 && byte == UInt8(ascii: "R")
             close(readFD)
+            if ready { armed.signal() }
             onMain {
                 guard let self, self.exitSource === source else { return }
                 self.isReady = ready
@@ -86,6 +98,7 @@ final class Guardian {
 
     private func failed() {
         isReady = false
+        armed = nil
         let now = ContinuousClock.now
         recentExits = recentExits.filter { now - $0 < .seconds(10) } + [now]
         guard recentExits.count <= 3 else {
