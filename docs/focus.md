@@ -187,7 +187,10 @@
   through the main queue, right before its own call that changes the key window, never at
   the request and never for the other side's call (tla/README.md, changes 16 and 18).
   The queue checks the generation, reads whether the target's app is front, hands the app's
-  worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
+  worker one job, and waits for it at most 30 ms. No measurement chose the 30 ms. When
+  the wait runs out, the key record goes before the worker's job, the order the wait is
+  for. Each wait logs its length at info level, and a notice when it runs out, so the log
+  can size the wait, or show it is needed only while a job of the app is queued.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so
     the worker keys it and the queue posts no key record. The worker ends a stale request,
     and one whose front app already has the target focused; then, just before the raise,

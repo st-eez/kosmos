@@ -94,8 +94,9 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Pool check queue (`kosmos.slide.pool`), serial | The barrier and the read that show a slide's window out of its Space before the Space goes back to the pool | Change the pool, which the main actor holds |
 | Border queue (`kosmos.borders`), serial | The reads of a border's Spaces and its window's, and the move of the border to its window's Space on Kosmos's own connection ([borders.md](borders.md)) | Set a border's frame or order, which the main actor does |
 
-The main actor waits on a worker only with a deadline of about 30 ms. A slow app finishes
-on its own and never delays another app.
+The main actor never waits on a worker: each call from it to one is an `await` in a
+`Task`. Only the focus queue waits on a worker, for up to 30 ms ([focus.md](focus.md)). A
+slow app's job finishes on its own.
 
 The main actor makes these synchronous reads of other processes. Of them, a switch reads
 only the pointer's location before it sends its batch, with mouse follows focus on. What is
