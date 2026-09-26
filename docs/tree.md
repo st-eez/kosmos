@@ -145,11 +145,12 @@
     too, as the tab that a window's first Command-T deselects might. Another window of the
     app ordered in at the tab's frame gives no reason to wait. Its order-in applied before
     the look, so it paired then and its claim holds the place, or it never pairs. The case
-    left is an incoming tab Kosmos has not read by the look, as a first Command-T's new tab
-    or a tab not seen since launch, whose events come in a later main queue turn. Kosmos
-    logged order changes at debug level, and the live logs of September 23 to 25 kept info
-    level, so their five pairings, four Terminal tab switches and a Terminal window leaving
-    fullscreen that paired with another's toolbar windows, have no times for their halves.
+    left, which the pairing log settles, is an incoming tab still unknown at the look, as a
+    first Command-T's new tab or a tab not seen since launch, whose events come in a later
+    main queue turn. Kosmos logged order changes at debug level, and the live logs of
+    September 23 to 25 kept info level, so their five pairings, four Terminal tab switches
+    and a Terminal window leaving fullscreen that paired with another's toolbar windows,
+    have no times for their halves.
     Kosmos now logs each candidate window's order change at info level, and says when a
     switch pairs after its deselected tab parked as closed and kept. A day of Ghostty and
     Finder tabs settles it, and the log goes then; until then the pairing window stays

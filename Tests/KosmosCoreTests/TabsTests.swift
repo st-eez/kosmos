@@ -229,3 +229,14 @@ private func judged(_ out: ContinuousClock.Instant, claimed: Bool = false, sibli
     #expect(tabs.admitting(7) == .takes(2))
     #expect(judged(t0, claimed: tabs.isClaimed(2)) == t0)
 }
+
+@Test func aClosedTabsPlaceWaitsForTheTabThatClaimsIt() {
+    // The selected tab 2 closes after its next tab 7 came in, before Kosmos admitted 7. The
+    // destroy is judged at once, with no Space event, as a look is.
+    var tabs = TabGroups()
+    #expect(tabs.switched(from: 2, to: 7, admitted: false, placed: placed, sharesFrame: { _ in true }) == .pending)
+    #expect(ClosedAndKept.hold(orderedOut: t0, claimed: tabs.isClaimed(2), sibling: false, spacesChanged: nil, at: t0)
+            == .seconds(1))
+    #expect(ClosedAndKept.hold(orderedOut: t0, claimed: false, sibling: true, spacesChanged: nil, at: t0) == TabSwitches.window)
+    #expect(ClosedAndKept.hold(orderedOut: t0, claimed: false, sibling: false, spacesChanged: nil, at: t0) == nil)
+}
