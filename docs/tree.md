@@ -350,7 +350,7 @@
     the focused workspace's most recently focused window. A window keyed and adopted since
     the launch is more recent, so it keeps the focus.
   - The windows of hidden workspaces stay concealed across an install, which hands the
-    record over, and across a crash that launchd follows within 2 s. After any other quit
+    record over, and across a crash that launchd follows within 5 s. After any other quit
     they show until Kosmos admits them again ([hiding.md](hiding.md)).
   - Left out: the workspaces a profile merged away with the windows that came from them,
     the minimums Kosmos learned ([geometry.md](geometry.md)), and the workspace

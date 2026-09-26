@@ -31,7 +31,7 @@ prefix.
   across a restart, and Mission Control.
   Code: `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`,
   `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosCore/BatchOrder.swift`,
-  `KosmosCore/FrameLedger.swift`, `KosmosCore/Adoption.swift`, `KosmosApp/Controller.swift`,
+  `KosmosCore/FrameLedger.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosRecovery/`, `KosmosSkyLight/Displays.swift`,
   `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`, `kosmos-probe/Handover.swift`,
   `kosmos-probe/MissionControl.swift`, `script/install.sh`, `tla/Handover.tla`.

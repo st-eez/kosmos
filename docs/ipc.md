@@ -11,8 +11,8 @@
   response.
 - The queries `ping`, `version`, `state`, `list-workspaces`, `list-windows` and
   `list-bindings` change nothing (`Query`). `handover [record version]`, which
-  `script/install.sh` sends, arms the next quit to leave the hidden windows to the Kosmos
-  that starts next ([hiding.md](hiding.md)). Any other request is a command
+  `script/install.sh` sends, arms a quit within 5 s to leave the hidden windows to the
+  Kosmos that starts next ([hiding.md](hiding.md)). Any other request is a command
   (`Command.parse`).
 - A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
   SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar applies

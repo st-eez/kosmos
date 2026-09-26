@@ -4,8 +4,9 @@
 //                                   conceals and reveals have landed.
 //   kosmos-probe destroyed-space    What a destroyed Space's members read as.
 //   kosmos-probe survive-kill       Conceals a panel with the guardian armed, then kills
-//                                   itself. Check that the panel is back, the Space gone and
-//                                   the record clear. Quit Kosmos first.
+//                                   itself. Check, once the guardian's 5 s grace has passed,
+//                                   that the panel is back, the Space gone and the record
+//                                   clear. Quit Kosmos first.
 //   kosmos-probe reveal             Where an exclusive add and a removal put a window. Its app
 //                                   can never be front, so it runs beside a live session.
 //   kosmos-probe holding            Who owns each window in a running Kosmos's holding Spaces.

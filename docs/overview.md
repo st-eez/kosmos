@@ -68,15 +68,15 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 
 - **Kosmos.app**, an agent app (LSUIElement) launched at login by a LaunchAgent with
   `KeepAlive`, so a crash restarts it.
-- **kosmos-guardian**, a separate executable in the bundle, spawned in its own process group
-  before Kosmos takes the instance lock. It watches Kosmos with `NOTE_EXIT` and restores
-  hidden windows when Kosmos dies, unless a Kosmos takes the lock within the grace it gives:
-  2 s after a crash, and 10 s after a quit that handed the record over. That Kosmos takes the
-  concealed windows over ([hiding.md](hiding.md)). An incomplete recovery runs again every
+- **kosmos-guardian**, a separate executable in the bundle, spawned in its own process group.
+  It watches Kosmos with `NOTE_EXIT` and restores hidden windows when Kosmos dies, unless
+  within 5 s a Kosmos names itself in the lock file to take the concealed windows over
+  ([hiding.md](hiding.md)). An incomplete recovery runs again every
   2 s for about 30 s, since without launch at login no other recovery comes until Kosmos
   starts again. The guardian releases the instance lock between attempts, because a
-  starting Kosmos waits only 3 s for it, and leaves recovery to a Kosmos that took it.
-  Kosmos watches the guardian and respawns it, and hides windows only while it is alive.
+  starting Kosmos waits only 3 s for it, and leaves recovery to a Kosmos named in the lock
+  file. Kosmos watches the guardian and respawns it, and hides windows only while it is
+  alive.
 - **kosmos**, the CLI, a client without AppKit for scripts and status bar clicks.
 
 ### 4.2 Threads and queues
