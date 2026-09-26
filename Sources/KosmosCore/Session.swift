@@ -579,6 +579,23 @@ public struct Session: Sendable {
         return plan
     }
 
+    /// The windows on screen that a batch's reveal takes in, as the one
+    /// move-node-to-workspace --focus-follows-window moves or a followed rule window. Each would
+    /// land at its tile before the reveal, so a batch of its own conceals it first. One that
+    /// `display` does not show on its workspace's display is left out: concealed, it keeps the
+    /// ordinary Space of the display it leaves, and whether its reveal shows it on the other is
+    /// open (docs/hiding.md). `concealed`: Hiding has or is sending the window's conceal.
+    public func entering(show: [WindowID], hide: [WindowID], frames: some Collection<WindowID>,
+                         concealed: (WindowID) -> Bool, display: (WindowID) -> DisplayID?) -> [WindowID] {
+        let revealed = Set(show.filter(concealed).compactMap { home[$0] })
+        guard !revealed.isEmpty else { return [] }
+        return frames.filter { id in
+            guard let name = home[id], revealed.contains(name), !hide.contains(id), !concealed(id), isVisible(id)
+            else { return false }
+            return display(id) == monitor(of: name).id
+        }
+    }
+
     /// The windows of `hide` that lose their ordinary Space as they are concealed
     /// (docs/displays.md).
     public func stripped(_ hide: [WindowID], latest: (WindowID) -> WindowID?) -> Set<WindowID> {
@@ -593,7 +610,7 @@ public struct Session: Sendable {
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
     /// Targets for the shown workspaces' floating windows on a display showing another workspace
-    /// (docs/displays.md). A concealed window's center is on no display, so it stays.
+    /// (docs/displays.md). A window whose center is on no display stays.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {

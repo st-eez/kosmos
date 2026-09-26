@@ -46,7 +46,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     // At a display's edge the ring is cut there too.
     let edge = Border(around: CGRect(x: 0, y: 0, width: 500, height: 300), radius: 16, width: 4, color: blue, displays: [left])!
     #expect(edge.frame == CGRect(x: 0, y: 0, width: 502, height: 302))
-    // Concealed windows read far off every display.
+    // A window off every display has no border.
     #expect(Border(around: CGRect(x: 100_000, y: 100_000, width: 500, height: 300), radius: 16, width: 4, color: blue,
                    displays: [left, right]) == nil)
 }

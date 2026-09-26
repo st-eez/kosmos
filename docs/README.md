@@ -30,7 +30,8 @@ prefix.
   confirmation, which concealed windows keep their ordinary Space, recovery, and Mission
   Control.
   Code: `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`,
-  `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosRecovery/`,
+  `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosCore/BatchOrder.swift`,
+  `KosmosCore/FrameLedger.swift`, `KosmosApp/Controller.swift`, `KosmosRecovery/`,
   `KosmosSkyLight/Displays.swift`, `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`,
   `kosmos-probe/MissionControl.swift`.
 - [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, the

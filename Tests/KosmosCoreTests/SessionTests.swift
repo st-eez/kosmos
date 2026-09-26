@@ -578,3 +578,30 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.minimums[7] == CGSize(width: 700, height: 0) && s.minimums[2] == nil)
     #expect(plan.frames[7] == before[2])
 }
+
+@Test func aWindowOnScreenThatARevealedWorkspaceTakesInEntersIt() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    _ = s.add(3, to: "2")
+    // Workspace 2's window is concealed; the moved window is on screen.
+    let concealed: (WindowID) -> Bool = { s.workspace(of: $0) == "2" && $0 != 2 && $0 != 4 }
+    let shown: (WindowID) -> DisplayID? = { _ in s.monitors[0].id }
+    var probe = s
+    let follow = probe.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: true, window: 2))!
+    #expect(probe.entering(show: follow.show, hide: follow.hide, frames: follow.frames.keys, concealed: concealed, display: shown) == [2])
+    // Into an empty workspace, and without following, nothing is revealed around it.
+    probe = s
+    let empty = probe.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: true, window: 2))!
+    #expect(probe.entering(show: empty.show, hide: empty.hide, frames: empty.frames.keys, concealed: concealed, display: shown).isEmpty)
+    probe = s
+    let stay = probe.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 2))!
+    #expect(probe.entering(show: stay.show, hide: stay.hide, frames: stay.frames.keys, concealed: concealed, display: shown).isEmpty)
+    // A plain switch reveals only concealed windows.
+    probe = s
+    let plain = probe.perform(.workspace(.named("2")))!
+    #expect(probe.entering(show: plain.show, hide: plain.hide, frames: plain.frames.keys, concealed: concealed, display: shown).isEmpty)
+    // A rule window opened on screen for workspace 2 and followed there.
+    _ = s.add(4, to: "2")
+    let rule = s.follow(4)
+    #expect(s.entering(show: rule.show, hide: rule.hide, frames: rule.frames.keys, concealed: concealed, display: shown) == [4])
+}

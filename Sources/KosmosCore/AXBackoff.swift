@@ -1,6 +1,10 @@
 /// Whether an app's Accessibility worker calls the app, and whether it asks the app every
 /// 0.5 s if it answers again (docs/geometry.md).
 public struct AXBackoff: Sendable {
+    /// Every Accessibility call's, set once for the whole process. With none set, macOS 27
+    /// waits 1.5 s on a hung app (docs/overview.md, section 2).
+    public static let timeout: Duration = .seconds(1)
+
     /// When a call first waited out the timeout, or nil while calls go to the app.
     public private(set) var since: ContinuousClock.Instant?
     public private(set) var asking = false
