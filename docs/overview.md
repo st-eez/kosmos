@@ -56,7 +56,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
 | IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, and a CLI that avoids AppKit (1.4 ms launch) | A CLI that links AppKit (about 15 ms launch) |
-| Bar | Each state snapshot goes to SketchyBar's Mach port as one event, and the bar never queries | Shell hooks on every switch |
+| Bar | Each state snapshot goes to SketchyBar's Mach port as one event | Shell hooks on every switch |
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
 | Modifier drags | An active event tap for the left and right buttons at the annotated session location, each event decided on the tap's thread from WindowServer's hit test | `NSEvent` global monitors, which cannot keep an event from the app. A hit test of the model's frames, which knows no stacking order and would take a click on a panel over a tile |
@@ -95,7 +95,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Pool check queue (`kosmos.slide.pool`), serial | The barrier and the read that show a slide's window out of its Space before the Space goes back to the pool | Change the pool, which the main actor holds |
 | Border queue (`kosmos.borders`), serial | The reads of a border's Spaces and its window's, and the move of the border to its window's Space on Kosmos's own connection ([borders.md](borders.md)) | Set a border's frame or order, which the main actor does |
 
-The main actor never waits on a worker: each call from it to one is an `await` in a
+The main actor never waits on a worker, as each call from it to one is an `await` in a
 `Task`. Only the focus queue waits on a worker, for up to 30 ms ([focus.md](focus.md)). A
 slow app's job finishes on its own.
 

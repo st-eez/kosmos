@@ -61,11 +61,9 @@ public actor IPCServer {
     }
 
     private final class Connection {
-        enum State { case awaitingRequest, handling, replying }
-
         let io: DispatchIO
         var decoder = FrameDecoder()
-        var state = State.awaitingRequest
+        var awaitingRequest = true
 
         init(io: DispatchIO) {
             self.io = io
@@ -119,7 +117,7 @@ public actor IPCServer {
 
     private func received(_ data: DispatchData?, done: Bool, from id: Int) {
         guard let connection = connections[id] else { return }
-        if let data, connection.state == .awaitingRequest {
+        if let data, connection.awaitingRequest {
             connection.decoder.append(data)
             do {
                 if let body = try connection.decoder.next() { handle(body, from: connection, id: id) }
@@ -128,7 +126,7 @@ public actor IPCServer {
             }
         }
         // A client that closes its end while its command runs still gets the response.
-        if done && connection.state == .awaitingRequest {
+        if done && connection.awaitingRequest {
             disconnect(id)
         }
     }
@@ -136,7 +134,7 @@ public actor IPCServer {
     private func handle(_ body: [UInt8], from connection: Connection, id: Int) {
         do {
             let request = try Request(decoding: body)
-            connection.state = .handling
+            connection.awaitingRequest = false
             Task {
                 let response = await handler(request.args)
                 reply(response, to: id)
@@ -146,10 +144,9 @@ public actor IPCServer {
         }
     }
 
-    /// The one frame a connection gets; the connection closes once it is written.
     private func reply(_ response: Response, to id: Int) {
         guard let connection = connections[id] else { return }
-        connection.state = .replying
+        connection.awaitingRequest = false
         let data = frame(response.encoded).withUnsafeBytes { DispatchData(bytes: $0) }
         connection.io.write(offset: 0, data: data, queue: queue) { [weak self] done, _, _ in
             guard done else { return }
@@ -158,7 +155,7 @@ public actor IPCServer {
     }
 
     private func requestDeadlinePassed(for id: Int) {
-        if connections[id]?.state == .awaitingRequest { disconnect(id) }
+        if connections[id]?.awaitingRequest == true { disconnect(id) }
     }
 
     private func disconnect(_ id: Int) {

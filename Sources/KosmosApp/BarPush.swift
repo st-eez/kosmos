@@ -12,8 +12,8 @@ final class BarPush: Sendable {
 
     private let queue = DispatchQueue(label: "kosmos.bar", qos: .utility)
     private let pending = Mutex<Data?>(nil)
-    /// Sends that failed since the last one that went. The log names the first of a streak
-    /// and its end, so a Mac without SketchyBar logs once.
+    /// The log names the first failed send of a streak and its end, so a Mac without
+    /// SketchyBar logs once.
     private let failures = Mutex(0)
 
     func publish(_ snapshot: Data) {

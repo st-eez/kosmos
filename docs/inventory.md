@@ -46,20 +46,22 @@
   so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
   windows the lock held back: one that arrived while locked, and one destroyed while
   locked or whose app exited then. An event handled after a sweep, for a change its
-  snapshot already had, came late and still counts: of the 32 windows sweeps counted from
+  snapshot already had, came late and still counts. Of the 32 windows sweeps counted from
   September 24 to 26, 2026, 28 had their event within 1 s after the sweep, which Kosmos
   logged then (live log), so a count most often marks a late event. The 3 s sweep this
   replaced found and lost none on 2026-09-24, over a day of use and live tests.
+  It counted none of its corrections, which it logged only at debug or info level.
 - A read of window rows or of the window list can fail, as during a Space transition, and
   `SkyLight.rows` and `SkyLight.allWindowIDs` then return nil, so no caller takes the
   failure for every window gone. A sweep whose read fails changes nothing, and a failed
   read for events leaves each window they name as it was; each logs a notice. The ceiling:
-  after an unlock whose sweep read fails, the windows the lock held back wait for the
-  next sweep, at the next Space change; sweeping again after a delay would close it. A
-  read of one window that fails leaves it as the inventory has it, ordered in or not. No
-  failed read shows in the live log of September 24 to 26, 2026; the one mass loss, 23
-  windows at 23:22:08 on September 25, was real closes whose events came 3 to 5 ms late.
-  It counted none of its corrections, which it logged only at debug or info level.
+  a failed first sweep at launch leaves every window unmanaged, and a failed sweep after
+  an unlock leaves the windows the lock held back waiting, each until the next sweep, at
+  the next Space change or regular app launch. Sweeping again after a delay would close
+  both. A read of one window that fails leaves it as the inventory has it, ordered in or
+  not. No failed read shows in the live log of September 24 to 26, 2026; the one mass
+  loss, 23 windows at 23:22:08 on September 25, was real closes whose events came 3 to
+  5 ms late.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
   other app's window came or went. In three runs while other apps' windows came and went,
@@ -94,7 +96,7 @@
   (`CGSessionCopyCurrentDictionary`) gives the state at launch, as alt-tab seeds it, and is
   read every 5 s while locked, so a missed unlock cannot stop Kosmos for good. Unlocked,
   the dictionary on this Mac has no `CGSSessionScreenIsLocked` key, and a missing key
-  reads as unlocked. While locked it had the key: from September 24 to 26, 2026 all 128
+  reads as unlocked. While locked it had the key. From September 24 to 26, 2026 all 128
   reads while locked had `CGSSessionScreenIsLocked=1`, and none read as an unlock (live
   log), so the 5 s read does not undo a lock. loginwindow
   coming to the front, which AeroSpace and rift also watch, is no lock signal. It also

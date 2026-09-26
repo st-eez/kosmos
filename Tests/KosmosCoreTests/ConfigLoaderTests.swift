@@ -279,7 +279,7 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         ])
     }
 
-    /// A config written for binding modes fails, rather than loading with no bindings.
+    /// A config written for binding modes fails to load, with an error that names `[binding]`.
     @Test func aModeTableNamesTheBindingTable() {
         let result = load("[mode.main.binding]\nalt-h = 'focus left'")
         #expect(result.config == nil)

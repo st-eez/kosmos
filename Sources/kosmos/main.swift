@@ -5,7 +5,7 @@ import KosmosIPC
 let socketPath = getenv("KOSMOS_SOCKET").map { String(cString: $0) } ?? kosmosSocketPath()
 let args = Array(CommandLine.arguments.dropFirst())
 
-guard let command = args.first else {
+guard !args.isEmpty else {
     fputs("usage: kosmos <command> [args...]\n", stderr)
     exit(2)
 }

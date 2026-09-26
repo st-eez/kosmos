@@ -3,8 +3,8 @@
 - A reload parses and validates the whole file, then applies it in one step. Each
   binding's command is parsed then, so a bad command is an error in the file. Any error
   keeps the running config, and a bad file at login falls back to the last good config.
-- The bindings are one table, `[binding]`. Kosmos has no binding modes, as AeroSpace's
-  `[mode.main.binding]` and `mode` command give: no config of Steve's defined a second
+- The bindings are one table, `[binding]`. Kosmos has no binding modes, which AeroSpace's
+  `[mode.main.binding]` and `mode` command give; no config of Steve's defined a second
   mode. A `[mode.*]` table left from one is an error naming `[binding]`, since a load that
   took it for no bindings would leave every key unbound.
 - Display profiles are built in and matched by monitor name or serial. The first profile

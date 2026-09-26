@@ -14,12 +14,13 @@
   (`Command.parse`).
 - A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
   SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar asks Kosmos
-  for a snapshot only when it starts, with `kosmos state` ([integrations.md](integrations.md)).
+  for a snapshot with `kosmos state` only when it starts and after a wake
+  ([integrations.md](integrations.md)).
   A bar reads the snapshot's `version` first: a new version may rename or remove fields,
   and new fields can appear in any version.
 - A send that fails is tried once more 250 ms later, with the newest snapshot: the zero
   timeout fails while the bar's message queue is full, and a restarting bar has no port
-  yet. No failure has been seen, as failures logged at debug level, which the live log
+  yet. No failure has been seen, as failures were logged at debug level, which the live log
   of September 24 to 26, 2026 did not keep. The first failure of a streak logs at notice
   level, and so does the send that ends it, with the streak's length and whether a retry
   sent it, so a Mac without SketchyBar logs once. The retry goes unless that log shows a
