@@ -7,9 +7,9 @@
   same WindowServer display list: 1 when it is the only active display, else one more than
   its place in the managed display list, and 0 when the list lacks it (`display_arrangement`
   in SketchyBar 2.24.0's src/display.c). A workspace's display is the one [displays.md](displays.md) lays it
-  out on. The bar runs no command on a switch. A bar that starts
-  after Kosmos runs `kosmos state` once for the current snapshot, and clicking a workspace
-  runs `kosmos workspace <name>`.
+  out on. The bar runs no command on a switch. A bar that starts after Kosmos runs
+  `kosmos state` once for the current snapshot, and again after a wake (`system_woke`),
+  and clicking a workspace runs `kosmos workspace <name>`.
 - **Borders (JankyBorders).** Kosmos draws borders of its own by default
   ([borders.md](borders.md)), in place of JankyBorders, so stop JankyBorders, or set
   `borders = false` to keep it. Beside Kosmos, JankyBorders works while its inactive
@@ -23,9 +23,8 @@
 - **Launchers and cheat sheets.** `kosmos list-bindings` asks the running Kosmos for the
   bindings it has loaded, so a launcher's keybinding list reads them instead of keeping its
   own copy, as the Raycast keybinds extension in Steve's dotfiles does. It prints one JSON
-  array of objects with four strings: `mode`; `key`, as the config writes it, such as
-  `alt-shift-left`; `description`; and `category`. Mode main comes first, then the other
-  modes by name, each in file order.
+  array of objects with three strings, in file order: `key`, as the config writes it,
+  such as `alt-shift-left`; `description`; and `category`.
   - KosmosCore writes the description and the category from the parsed command
     (`Command.summary` and `Command.category`), so the config holds no descriptions:
     `focus --boundaries all-monitors-outer-frame left` is "Focus left, across monitors" in

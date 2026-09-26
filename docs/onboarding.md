@@ -5,8 +5,8 @@
   Accessibility missing, Secure Input on, and problems (config errors, hotkeys that could
   not be registered, and hiding that stopped).
   - Nothing inside a switch writes to it, though a Secure Input change can swap its image
-    right after one ([hotkeys.md](hotkeys.md)). No test checks that yet; the work counts in [overview.md, section 6](overview.md#6-verification)
-    are meant to.
+    right after one ([hotkeys.md](hotkeys.md)). No test checks that; the work counts left
+    out of the first version ([overview.md, section 8](overview.md#8-left-out-of-the-first-version)) would.
   - Kosmos keeps running when the user removes the item.
 - Onboarding is a setup window, headed by the app icon, listing each permission Kosmos waits
   for, with a checkmark once granted or a button to its pane in System Settings:

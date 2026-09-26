@@ -35,6 +35,17 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.workspace(of: 7) == "3")
 }
 
+/// A window taken over concealed at launch is revealed unless its plan hides it: on a shown
+/// workspace, and parked at its admission. On a hidden workspace it stays concealed
+/// (docs/hiding.md).
+@Test func aConcealedWindowIsRevealedUnlessItsPlanHidesIt() {
+    var session = Desk.session()
+    #expect(session.add(1, to: "1", concealed: true).show == [1])
+    #expect(session.add(2, to: "2", concealed: true).hide == [2])
+    let parked = session.add(3, to: "2", parked: .minimized, concealed: true)
+    #expect(parked.show == [3] && parked.hide.isEmpty)
+}
+
 @Test func aWindowARuleFloatsKeepsTheFrameItsAppGaveIt() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
@@ -549,6 +560,13 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     plan = s.reopen(2, to: nil, floating: false)
     #expect(s.workspace(of: 2) == "1" && plan?.show == [2] && plan?.hide == [])
     #expect(plan?.frames[1] != nil && plan?.frames[2] != nil)
+    // Concealed, and minimized as it opens again on a hidden workspace, it is revealed, as a
+    // window taken over that parks at its admission is.
+    _ = s.park([2], because: .closedByApp)
+    _ = s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 1))
+    _ = s.park([1], because: .closedByApp)
+    plan = s.reopen(1, to: "3", floating: false, parked: .minimized)
+    #expect(s.isParked(1) && plan?.show == [1] && plan?.hide == [])
 }
 
 // MARK: Native tabs (docs/tree.md)

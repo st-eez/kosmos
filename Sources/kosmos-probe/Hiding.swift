@@ -198,7 +198,7 @@ func surviveKill() -> Never {
     func state(_ step: String) -> (ordinary: [UInt64], held: Bool) {
         _ = kosmos_barrier(space)
         let ordinary = SkyLight.spaces(of: window) ?? [], held = inSpace(window, space)
-        let orderedIn = SkyLight.rows([window]).first.map { "\($0.orderedIn)" } ?? "no row"
+        let orderedIn = SkyLight.rows([window])?.first.map { "\($0.orderedIn)" } ?? "no row"
         print("\(step): ordinary Spaces \(ordinary), in holding \(held), ordered in \(orderedIn)")
         return (ordinary, held)
     }
@@ -235,7 +235,7 @@ func surviveKill() -> Never {
             continue
         }
         print("Space \(space): \(members.count) members")
-        let rows = Dictionary(SkyLight.rows(members).map { ($0.id, $0) }) { first, _ in first }
+        let rows = Dictionary((SkyLight.rows(members) ?? []).map { ($0.id, $0) }) { first, _ in first }
         for id in members.sorted() {
             guard let row = rows[id] else {
                 print("  \(id): no row, recorded \(recorded.contains(id))")
@@ -265,10 +265,10 @@ nonisolated(unsafe) var concealedMoveLines: [(at: Double, text: String)] = []
     let child = Child(["moving-window"] + (onscreen ? ["onscreen"] : []))
     let window = child.readWindows()[0]
     var events = 0
-    SkyLight.subscribe { event in
+    SkyLight.subscribe { event, _ in
         guard case .changed(let id) = event, id == window else { return }
         events += 1
-        let row = SkyLight.rows([window]).first.map { "x \(Int($0.frame.minX)) y \(Int($0.frame.minY)) width \(Int($0.frame.width))" }
+        let row = SkyLight.rows([window])?.first.map { "x \(Int($0.frame.minX)) y \(Int($0.frame.minY)) width \(Int($0.frame.width))" }
         note("change event, row \(row ?? "none")")
     }
     SkyLight.watch([window])

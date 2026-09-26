@@ -12,7 +12,17 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: t0 + .milliseconds(3)).map { [$0.old, $0.new] } == [1, 2])
     // The other order, as when the selected tab closes first.
     #expect(tabs.ordered(2, in: false, frame: tile, app: 100, at: t0 + .seconds(1)) == nil)
-    #expect(tabs.ordered(3, in: true, frame: tile, app: 100, at: t0 + .seconds(1) + .milliseconds(40)).map { [$0.old, $0.new] } == [2, 3])
+    #expect(tabs.ordered(3, in: true, frame: tile, app: 100, at: t0 + .seconds(1) + .milliseconds(4)).map { [$0.old, $0.new] } == [2, 3])
+}
+
+/// Each half carries the stamp of its WindowServer event, so a job on the main actor that
+/// holds the second half's read back 20 ms parts nothing (docs/tree.md).
+@Test func halvesStampedApartPairHoweverLateTheyApply() async throws {
+    var tabs = TabSwitches()
+    let first = ContinuousClock.now
+    #expect(tabs.ordered(1, in: false, frame: tile, app: 100, at: first) == nil)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(tabs.ordered(2, in: true, frame: tile, app: 100, at: first + .milliseconds(1)).map { [$0.old, $0.new] } == [1, 2])
 }
 
 @Test func windowsThatComeAndGoApartAreNotATabSwitch() {
@@ -23,8 +33,8 @@ private let tile = CGRect(x: 869, y: 37, width: 849, height: 1070)
     #expect(tabs.ordered(3, in: true, frame: tile, app: 200, at: t0 + .milliseconds(320)) == nil)    // the same window back
     #expect(tabs.ordered(4, in: true, frame: tile, app: 100, at: t0 + .milliseconds(330)) == nil)    // two in: no switch
     // The latest change pairs, and once paired the next change starts afresh.
-    #expect(tabs.ordered(5, in: false, frame: tile, app: 100, at: t0 + .milliseconds(340)).map { [$0.old, $0.new] } == [5, 4])
-    #expect(tabs.ordered(6, in: true, frame: tile, app: 100, at: t0 + .milliseconds(350)) == nil)
+    #expect(tabs.ordered(5, in: false, frame: tile, app: 100, at: t0 + .milliseconds(335)).map { [$0.old, $0.new] } == [5, 4])
+    #expect(tabs.ordered(6, in: true, frame: tile, app: 100, at: t0 + .milliseconds(340)) == nil)
 }
 
 private let display = CGRect(x: 0, y: 0, width: 1728, height: 1117)
@@ -32,15 +42,16 @@ private let toolbar = CGRect(x: 0, y: 0, width: 1728, height: 52)
 
 @Test func aFullscreenExitAndItsToolbarWindowsAreNoTabSwitch() {
     var tabs = TabSwitches()
-    // Terminal restores 91833 into fullscreen, and its toolbar window 91834 comes in.
+    // Terminal restores 91833 into fullscreen, and its toolbar window 91834 comes in. Each
+    // change comes within the pairing window of the one before, so only frames tell them apart.
     #expect(tabs.ordered(91833, in: false, frame: display, app: 100, at: t0) == nil)
-    #expect(tabs.ordered(91834, in: true, frame: toolbar, app: 100, at: t0 + .milliseconds(100)) == nil)
+    #expect(tabs.ordered(91834, in: true, frame: toolbar, app: 100, at: t0 + .milliseconds(5)) == nil)
     // 91857 leaves fullscreen: its toolbar window 91858 goes, it comes back as a tile, and
-    // 91833's toolbar window 91834 goes too, within 250 ms of it.
+    // 91833's toolbar window 91834 goes too.
     let exit = t0 + .seconds(20)
     #expect(tabs.ordered(91858, in: false, frame: toolbar, app: 100, at: exit) == nil)
-    #expect(tabs.ordered(91857, in: true, frame: tile, app: 100, at: exit + .milliseconds(400)) == nil)
-    #expect(tabs.ordered(91834, in: false, frame: toolbar, app: 100, at: exit + .milliseconds(554)) == nil)
+    #expect(tabs.ordered(91857, in: true, frame: tile, app: 100, at: exit + .milliseconds(4)) == nil)
+    #expect(tabs.ordered(91834, in: false, frame: toolbar, app: 100, at: exit + .milliseconds(8)) == nil)
 }
 
 @Test func aTabSwitchPairsAcrossAChangeOfAnotherFrame() {
@@ -53,7 +64,7 @@ private let toolbar = CGRect(x: 0, y: 0, width: 1728, height: 52)
     // A window closing and another opening at once, cascaded from it, is no switch.
     let later = t0 + .seconds(1)
     #expect(tabs.ordered(7, in: false, frame: tile, app: 100, at: later) == nil)
-    #expect(tabs.ordered(8, in: true, frame: tile.offsetBy(dx: 22, dy: 22), app: 100, at: later + .milliseconds(30)) == nil)
+    #expect(tabs.ordered(8, in: true, frame: tile.offsetBy(dx: 22, dy: 22), app: 100, at: later + .milliseconds(3)) == nil)
 }
 
 private func change(_ window: WindowID, _ orderedIn: Bool, _ ms: Int) -> HeldOrder.Change {

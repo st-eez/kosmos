@@ -1,4 +1,5 @@
 import Foundation
+import zlib
 
 /// Two slots in a file mapped shared, never synced, since the page cache keeps the record when
 /// the process dies (docs/hiding.md).
@@ -8,11 +9,9 @@ public final class RecordFile {
     static let headerSize = 16
     public static var capacity: Int { slotSize - headerSize }
 
-    public let url: URL
     private let memory: UnsafeMutableRawPointer
 
     public init(url: URL) throws {
-        self.url = url
         let fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }
@@ -53,10 +52,8 @@ public final class RecordFile {
         var length = UInt32(payload.count).littleEndian
         payload.withUnsafeBytes { (base + Self.headerSize).copyMemory(from: $0.baseAddress!, byteCount: payload.count) }
         (base + 12).storeBytes(of: length, as: UInt32.self)
-        var crc = CRC32()
-        withUnsafeBytes(of: &length) { crc.update($0) }
-        crc.update(payload)
-        (base + 8).storeBytes(of: crc.value.littleEndian, as: UInt32.self)
+        let crc = payload.withUnsafeBytes { payload in withUnsafeBytes(of: &length) { Self.crc32($0, payload) } }
+        (base + 8).storeBytes(of: crc.littleEndian, as: UInt32.self)
         base.storeBytes(of: generation.littleEndian, as: UInt64.self)
         return true
     }
@@ -73,28 +70,16 @@ public final class RecordFile {
         let length = Int(UInt32(littleEndian: rawLength))
         guard generation != 0, length <= capacity else { return nil }
         let payload = [UInt8](UnsafeRawBufferPointer(start: base + headerSize, count: length))
-        var crc = CRC32()
-        withUnsafeBytes(of: rawLength) { crc.update($0) }
-        crc.update(payload)
-        guard crc.value == storedCRC else { return nil }
+        let crc = payload.withUnsafeBytes { payload in withUnsafeBytes(of: rawLength) { crc32($0, payload) } }
+        guard crc == storedCRC else { return nil }
         return (generation, payload)
     }
-}
 
-/// CRC-32 (IEEE), enough to reject a slot torn by a crash mid-publish.
-struct CRC32 {
-    private static let table: [UInt32] = (0..<256).map { n in
-        var c = UInt32(n)
-        for _ in 0..<8 { c = c & 1 != 0 ? 0xEDB8_8320 ^ (c >> 1) : c >> 1 }
-        return c
+    /// CRC-32 (IEEE) of the buffers in turn, enough to reject a slot torn by a crash mid-publish.
+    static func crc32(_ buffers: UnsafeRawBufferPointer...) -> UInt32 {
+        UInt32(buffers.reduce(uLong(0)) { crc, bytes in
+            guard let base = bytes.baseAddress else { return crc }
+            return zlib.crc32(crc, base.assumingMemoryBound(to: Bytef.self), uInt(bytes.count))
+        })
     }
-
-    private var state: UInt32 = 0xFFFF_FFFF
-    var value: UInt32 { state ^ 0xFFFF_FFFF }
-
-    mutating func update(_ bytes: some Sequence<UInt8>) {
-        for byte in bytes { state = Self.table[Int((state ^ UInt32(byte)) & 0xFF)] ^ (state >> 8) }
-    }
-
-    mutating func update(_ buffer: UnsafeRawBufferPointer) { update(buffer.lazy.map { $0 }) }
 }

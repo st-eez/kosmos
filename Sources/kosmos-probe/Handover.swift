@@ -42,7 +42,7 @@ import KosmosSkyLight
             var transform = CGAffineTransform.identity, alpha: Float = -1
             let read = kosmos_space_read(space, &transform, &alpha)
             let hides = read && transform.tx == 100_000 && transform.ty == 100_000 && alpha == 0
-            let rows = Dictionary(SkyLight.rows([concealed, added]).map { ($0.id, $0.orderedIn) }) { first, _ in first }
+            let rows = Dictionary((SkyLight.rows([concealed, added]) ?? []).map { ($0.id, $0.orderedIn) }) { first, _ in first }
             print("  \(step): members \(members.map { "\($0.sorted())" } ?? "nil (gone or unread)"), "
                   + (read ? "transform \(transform.tx), \(transform.ty), alpha \(alpha)" : "transform and alpha unread")
                   + ", \(concealed) ordered in \(rows[concealed].map { "\($0)" } ?? "no row"), ordinary Spaces "

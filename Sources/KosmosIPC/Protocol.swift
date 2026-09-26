@@ -51,19 +51,13 @@ public enum IPCError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-enum Request: Equatable {
-    case command([String])
-    case subscribe
+struct Request: Equatable {
+    var args: [String]
 }
 
 extension Request {
     var encoded: [UInt8] {
-        switch self {
-        case .command(let args):
-            JSON.object(["protocol": .int(protocolVersion), "args": .array(args.map(JSON.string))]).encoded
-        case .subscribe:
-            JSON.object(["protocol": .int(protocolVersion), "subscribe": .bool(true)]).encoded
-        }
+        JSON.object(["protocol": .int(protocolVersion), "args": .array(args.map(JSON.string))]).encoded
     }
 
     init(decoding body: [UInt8]) throws(IPCError) {
@@ -74,15 +68,10 @@ extension Request {
             throw IPCError.malformed("the request has no protocol version")
         }
         guard version == protocolVersion else { throw IPCError.protocolMismatch(client: version) }
-        if case .array(let items) = members["args"] {
-            self = .command(try items.map { item throws(IPCError) in
-                guard case .string(let arg) = item else { throw IPCError.malformed("args must be strings") }
-                return arg
-            })
-        } else if members["subscribe"] == .bool(true) {
-            self = .subscribe
-        } else {
-            throw IPCError.malformed("the request has neither args nor subscribe")
+        guard case .array(let items) = members["args"] else { throw IPCError.malformed("the request has no args") }
+        args = try items.map { item throws(IPCError) in
+            guard case .string(let arg) = item else { throw IPCError.malformed("args must be strings") }
+            return arg
         }
     }
 }

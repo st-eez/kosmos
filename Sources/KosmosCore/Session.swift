@@ -84,10 +84,6 @@ public struct Session: Sendable {
         check()
     }
 
-    public init(names: [String], display: CGRect, gaps: Gaps = Gaps()) {
-        self.init(names: names, monitors: [Monitor(id: 1, frame: display, gaps: gaps)])
-    }
-
     public func workspace(of window: WindowID) -> String? { home[window] }
 
     public var focused: WindowID? { workspaces[focusedWorkspace]!.focusedWindow }
@@ -207,13 +203,16 @@ public struct Session: Sendable {
 
     /// `point` is the window's center (docs/displays.md), and `minimum` the one WindowServer
     /// reads for it. A window the restored layout has goes back to its place there, whatever
-    /// `name` and `floating` say (docs/tree.md). With a `reason`, the window waits parked.
+    /// `name` and `floating` say (docs/tree.md). With a `reason`, the window waits parked. A
+    /// `concealed` window, as one taken over at launch, is revealed unless the plan hides it:
+    /// its workspace is shown, or it parks (docs/hiding.md).
     public mutating func add(_ window: WindowID, to name: String? = nil, at point: CGPoint? = nil,
-                             floating: Bool = false, minimum: CGSize = .zero, parked reason: ParkReason? = nil) -> Plan {
+                             floating: Bool = false, minimum: CGSize = .zero, parked reason: ParkReason? = nil,
+                             concealed: Bool = false) -> Plan {
         defer { check() }
         guard home[window] == nil else { return Plan() }
         if let saved = savedWorkspace(of: window) {
-            return admitSaved(window, to: saved, minimum: minimum, parked: reason)
+            return admitSaved(window, to: saved, minimum: minimum, parked: reason, concealed: concealed)
         }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if minimum != .zero { constrained[window] = minimum }
@@ -222,11 +221,8 @@ public struct Session: Sendable {
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
         var plan = Plan(frames: frames(of: target))
-        if let reason {
-            plan.frames = park([window], because: reason).frames
-        } else if !isShown(target) {
-            plan.hide = [window]
-        }
+        if let reason { plan.frames = park([window], because: reason).frames }
+        if reason == nil, !isShown(target) { plan.hide = [window] } else if concealed { plan.show = [window] }
         return plan
     }
 
@@ -338,9 +334,7 @@ public struct Session: Sendable {
         let concealed = parkedConcealed.contains(window), kept = learned[window]
         _ = remove(window)
         learned[window] = kept
-        var plan = add(window, to: name, floating: floating, minimum: minimum, parked: reason)
-        if concealed, isShown(home[window]!) { plan.show = [window] }
-        return plan
+        return add(window, to: name, floating: floating, minimum: minimum, parked: reason, concealed: concealed)
     }
 
     /// Nil for a managed `keyed` window that did not hide with the app: a minimized one follows
@@ -507,7 +501,7 @@ public struct Session: Sendable {
         case .flattenWorkspaceTree:
             workspace.flattenWorkspaceTree()
             fitMinimums(nil)
-        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .mode, .focusMonitor,
+        case .workspace, .workspaceBackAndForth, .moveNodeToWorkspace, .reloadConfig, .focusMonitor,
              .moveNodeToMonitor, .profile, .focusFollowsMouse:
             return nil
         }

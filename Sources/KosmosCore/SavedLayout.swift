@@ -123,7 +123,8 @@ extension Session {
 
     /// Admits a window the restored layout has on `name`. It returns to its place with no fit,
     /// as a returning window does, and Kosmos asks to focus it again when it was focused.
-    mutating func admitSaved(_ window: WindowID, to name: String, minimum: CGSize, parked reason: ParkReason?) -> Plan {
+    mutating func admitSaved(_ window: WindowID, to name: String, minimum: CGSize, parked reason: ParkReason?,
+                             concealed: Bool) -> Plan {
         let monitor = monitor(of: name), before = framesBeforeFullscreen
         workspaces[name]!.admit(window, parked: reason != nil, in: monitor.area, gaps: monitor.gaps)
         home[window] = name
@@ -131,7 +132,7 @@ extension Session {
         if let reason { parkReasons[window] = reason }
         // A window back in fullscreen ends another's.
         var plan = Plan(frames: frames(of: name).merging(backFromFullscreen(since: before)) { $1 })
-        if reason == nil, !isShown(name) { plan.hide = [window] }
+        if reason == nil, !isShown(name) { plan.hide = [window] } else if concealed { plan.show = [window] }
         if savedFocus == window {
             savedFocus = nil
             if focused == window { plan.focus = intent }

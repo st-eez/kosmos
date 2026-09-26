@@ -13,7 +13,7 @@ extension Command {
         case .layout, .fullscreen, .joinWith, .flattenWorkspaceTree: "Layout"
         case .resize, .balanceSizes: "Resize"
         case .profile: "Profile"
-        case .reloadConfig, .mode, .focusFollowsMouse: "Other"
+        case .reloadConfig, .focusFollowsMouse: "Other"
         }
     }
 
@@ -50,8 +50,6 @@ extension Command {
             "Flatten the workspace tree"
         case .reloadConfig:
             "Reload the config"
-        case .mode(let name):
-            "Switch to mode \(name)"
         case .focusMonitor(let target, let wrap):
             "Focus \(Self.name(target))\(wrap ? ", wrapping around" : "")"
         case .moveNodeToMonitor(let target, let follow, let wrap, _):

@@ -1,7 +1,6 @@
 import CoreGraphics
 
-/// Sent whole on every change, so the bar never queries. A bar reads `version` first
-/// (docs/ipc.md).
+/// Sent whole on every change. A bar reads `version` first (docs/ipc.md).
 public struct BarSnapshot: Codable, Equatable, Sendable {
     public struct Display: Codable, Equatable, Sendable {
         /// SketchyBar's number for the display, the value an item's `display` property takes.

@@ -86,7 +86,8 @@ extension Controller {
         let saved = session.savedWorkspace(of: id)
         let placed: Session.Plan? = arrival == .reopened
             ? session.reopen(id, to: workspace, floating: floats, minimum: minimum, parked: reason)
-            : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason)
+            : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason,
+                          concealed: hiding.isConcealed(id))
         guard var plan = placed else { return }
         let floating = session.isFloating(id)
         if let saved {
@@ -104,9 +105,6 @@ extension Controller {
             touch(id)
             (plan, movePointer, action) = (session.follow(id), bringsPointer || followPointer, .none)
         }
-        // A window already concealed, as one taken over at launch, shows unless its plan hides
-        // it: its workspace is shown, or it parks (docs/hiding.md).
-        if hiding.isConcealed(id), !plan.hide.contains(id), !plan.show.contains(id) { plan.show.append(id) }
         execute(plan, movePointer: movePointer, floatingCheck: floating, popping: atLaunch ? nil : id)
         run(action)
     }
@@ -138,8 +136,6 @@ extension Controller {
     /// as only that window's order-out can still pair, and otherwise it reopens now
     /// (docs/tree.md).
     private func orderChanged(_ id: WindowID, pid: pid_t, _ orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant) {
-        // Measures the tab pairing window; remove once a day of Ghostty and Finder tabs sets it (docs/tree.md).
-        controllerLog.info("\(id) ordered \(orderedIn ? "in" : "out", privacy: .public), app \(self.inventory.appIdentity(pid).name ?? String(pid), privacy: .public)")
         if let change = tabSwitches.ordered(id, in: orderedIn, frame: frame, app: pid, at: at),
            tabSwitched(from: change.old, to: change.new, frame: frame) {
             return
@@ -147,7 +143,7 @@ extension Controller {
         let closed = session.parkReason(of: id) == .closedByApp
         guard orderedIn, tabs.hidden.contains(id) || closed else { return }
         // Ceiling: a window that waits and is no tab switch stays at its old place for the
-        // pairing window, then slides; measuring the pairing window sets the wait (docs/tree.md).
+        // pairing window, then slides (docs/tree.md).
         if closed, !inventory.hasOrderedInWindow(pid, at: frame, besides: id) {
             return reopen(id, pid: pid)
         }
@@ -291,11 +287,17 @@ extension Controller {
                 ledger.forgetLargerReadBack(id)
             }
             slides?.confirmed(id, target: target, readBack: readBack)
-            switch ledger.confirm(id, target: target, readBack: readBack, at: .now) {
+            let fit = ledger.confirm(id, target: target, readBack: readBack, at: .now)
+            if let retried = retries.removeValue(forKey: id) {
+                let outcome = retried != target ? "superseded by a newer target" : fit == .took ? "landed" : "refused again"
+                controllerLog.notice("\(id) retry \(outcome, privacy: .public): \(asked, privacy: .public)")
+            }
+            switch fit {
             case .took:
                 break
             case .refused:
                 controllerLog.info("\(id) \(asked, privacy: .public); its tile is written again")
+                retries[id] = target
                 after(.milliseconds(100)) { $0.writeTileAgain(id) }
             case .minimum(let size):
                 controllerLog.notice("minimum for \(id): \(asked, privacy: .public)")
@@ -316,7 +318,15 @@ extension Controller {
     /// 100 ms after a first larger read back, as the window's next change event can come
     /// inside a live resize step still queued (docs/geometry.md).
     private func writeTileAgain(_ id: WindowID) {
-        guard mouseMoved[id] == nil, let name = session.workspace(of: id), session.isShown(name) else { return }
+        guard mouseMoved[id] == nil, let name = session.workspace(of: id), session.isShown(name) else {
+            if retries.removeValue(forKey: id) != nil { controllerLog.notice("\(id) retry dropped: held by the mouse, hidden or gone") }
+            return
+        }
         writeFrames(session.frames(of: name))
+        // With no write in flight, the window took its tile since, or has none.
+        if retries[id] != nil, !ledger.isWriting(id) {
+            retries[id] = nil
+            controllerLog.notice("\(id) retry wrote nothing")
+        }
     }
 }

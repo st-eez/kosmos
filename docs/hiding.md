@@ -54,7 +54,9 @@
   the wait as `held`. The wait leaves out a window shown already and one whose app is
   backed off. A write no row has shown counts as landed 1 s after it was sent, the
   Accessibility timeout, and the controller checks the batch again when the first write
-  holding it reaches that second. A concealed window's move posts the change event as a
+  holding it reaches that second. Of 1,835 slide landings from September 24 to 26, 2026,
+  the median was 32.8 ms, p90 80.8 ms, p99 250.7 ms and the longest 673.7 ms, and 7 never
+  landed (live log). A concealed window's move posts the change event as a
   shown window's does: in `kosmos-probe concealed-move`, off every display and on the main
   one, each of a window's two concealed moves posted two change events 10 to 13 ms after
   it, and the row showed the new frame without the holding Space's offset (September 25,
@@ -134,7 +136,11 @@
   regardless, because a closed window's Spaces read as none, so recovery adds it, and that
   add never lands. A window whose Spaces do not read stays where it is and keeps the record
   too, since a removal could leave it on no Space and an add could take it off its own.
-  Every step can safely run twice.
+  A failed read of the windows' rows, for which `SkyLight.rows` returns nil, leaves the
+  recovery incomplete with the record kept. Read as no window alive before the plan, it
+  would take every window out of its Space whether or not its add landed, and read after
+  the removals, it cannot tell a closed window from one left on no Space. Every step can
+  safely run twice.
 - Recovery leaves in its Space a window of another process that is neither a child of a
   concealed window nor unread, such as a JankyBorders border window (below), and so does
   the ledger rebuilt after an incomplete recovery. Whether a destroy takes away a Space
@@ -178,11 +184,12 @@
     `KosmosRecordVersion` gets no arm. A build that cannot decode the record finds nothing
     recorded, so handing one over would leave its windows concealed with no record to
     restore them (`handover-ungated`, [tla/README.md](../tla/README.md)). The arm lapses
-    after 5 s, time enough for `script/install.sh`'s SIGTERM, so an arm whose quit never
-    came, as after a `launchctl kickstart` that failed or an install that stopped, cannot
-    hand a later quit to another build (`handover-noexpiry`). The armed quit hands over only
-    while the guardian is ready, as no other process would restore the windows should no
-    Kosmos follow (`handover-unready`). The ceiling: a build swapped in without
+    after 5 s, time enough for `script/install.sh`'s SIGTERM, which came 2, 6 and 7 ms
+    after the arm at the three handovers of September 26, 2026 (live log). So an arm whose
+    quit never came, as after a `launchctl kickstart` that failed or an install that
+    stopped, cannot hand a later quit to another build (`handover-noexpiry`). The armed
+    quit hands over only while the guardian is ready, as no other process would restore
+    the windows should no Kosmos follow (`handover-unready`). The ceiling: a build swapped in without
     `script/install.sh` and then a crash leave the record to a build that may not read it.
   - A Kosmos names itself in the lock file, by its pid and start time, once it takes the
     record over: after its guardian reports ready, or after its startup recovery. Once its
@@ -201,10 +208,11 @@
     spawn (live logs). The wait for the guardian's ready report comes on top, 1 s at most.
     `script/install.sh` spawned the new Kosmos 0.5 to 2.0 s after the old one quit in 18
     installs, a time that includes its wait for the guardian, which it skips after a
-    handover. The install's time from the quit to the new Kosmos naming itself is to be
-    measured at the first install that hands over. The old guardian logs
-    "Kosmos <pid> exited" at the quit, then "Kosmos <pid> took the record over; leaving it",
-    or "no Kosmos took the record over within 5 s; recovering" when the grace ran out;
+    handover. At the three installs of September 26, 2026 that handed over, the old
+    guardian saw the new Kosmos named 371, 903 and 901 ms after the old one exited (live
+    log). The old guardian logs "Kosmos <pid> exited" at the quit, then
+    "Kosmos <pid> took the record over; leaving it", or "no Kosmos took the record over
+    within 5 s; recovering" when the grace ran out;
     `log show --last 10m --predicate 'subsystem == "io.github.st-eez.kosmos" AND category == "guardian"'`
     lists both with their times. Should that time come near 5 s, the grace has to grow.
     launchd starts a Kosmos again at once only after a run of 30 s or more
@@ -216,7 +224,7 @@
     guardian's ready report, which the main thread would read only after the launch, and
     runs startup recovery when none comes. Recovery runs with the windows it spares
     (`Recovery.run`, `sparing`). The settled members of the holding Spaces are read with
-    `SkyLight.readRows`, and each recorded member that is ordered in stays concealed, with
+    `SkyLight.rows`, and each recorded member that is ordered in stays concealed, with
     the windows that stand on it, as its sheets (`Adoption`). The quit wrote the layout
     after the batches landed, so nearly all of them belong to hidden workspaces, and
     admission reveals the others. The rest come back as recovery brings them: windows
@@ -229,7 +237,11 @@
   - A kept window's admission to its hidden workspace finds it in the ledger, so its batch
     only confirms it. A concealed window whose admission plan does not hide it is revealed
     with that plan: one of a shown workspace, one whose workspace a switch showed before
-    its admission, or one that parks (`handover-noreveal`). A kept window that no admission
+    its admission, or one that parks (`handover-noreveal`). `Session.add` plans that reveal
+    from its `concealed` input, for a window taken over and for one its app closed and
+    kept while concealed that opens again, and KosmosCore's tests cover it. A window placed
+    a second time, which `add` leaves as it is, stays as it is. The Controller's check that
+    this replaced had revealed it, even on a hidden workspace. A kept window that no admission
     places within 5 s of the adoption, as one whose app never answers, is revealed where it
     is (`handover-nobackstop`); every window of the launch of 02:08:38 was admitted within
     68 ms of its start. A window whose app answers after the 5 s shows over the shown
@@ -252,7 +264,8 @@
   still listed stays recorded, as one that only stopped being managed or that a failed
   read took for closed, so recovery restores it. A window the ledger does not hold leaves
   once its row is gone or it has a Space: recovery restores one alive on no Space. A failed
-  row query counts as neither (`SkyLight.readRows`).
+  row query, for which `SkyLight.rows` returns nil, counts as neither, and the conceal
+  that needed the room does not go.
 - A batch leaves out each window to hide that WindowServer no longer lists, and each
   window new to the record whose process is gone, as a closed tab whose place waits for
   the next tab ([tree.md](tree.md)) or a window of an app that quit before the inventory
@@ -260,9 +273,8 @@
   one new to the record stops the batch before it sends anything, and a recorded one fails
   its confirmation, since no Space lists a closed window. Either way recovery then shows
   every concealed window, as it did when a switch hid two windows of the bench stub that
-  had just quit (live log, September 25, 2026). The batch reads the rows through
-  `SkyLight.readRows`, which returns nil for a failed query, where `SkyLight.rows`, as
-  the inventory reads rows, returns none. A failed query leaves no window out, so a
+  had just quit (live log, September 25, 2026). `SkyLight.rows` returns nil for a failed
+  query, and a failed query leaves no window out, so a
   window new to the record, whose owner the query would have named, stops the batch and
   recovery runs. Read as every window gone, it would leave the windows to hide on screen
   until their workspace was shown and hidden again.
@@ -276,9 +288,8 @@
   ledger, one it revealed stays in, and the log names them. A failed window still ordered
   in fails the batch, and recovery runs. KosmosCore's tests cover the rule
   (`ConcealLedger.Batch.confirmed`). A failed row query counts every failed window as
-  ordered in, so recovery runs: this read takes its rows from `SkyLight.readRows`, which
-  returns nil for a failed query, where `SkyLight.rows` returns no rows. Read as every
-  window gone, a failed query would leave a live window whose conceal failed on screen,
+  ordered in, so recovery runs, as `SkyLight.rows` returns nil for a failed query. Read as
+  every window gone, a failed query would leave a live window whose conceal failed on screen,
   and one whose reveal failed concealed, with no recovery.
 - Open until the desk: `move-node-to-workspace --focus-follows-window` to a hidden
   workspace on another display, as alt-shift-N there. Whether a window concealed with the

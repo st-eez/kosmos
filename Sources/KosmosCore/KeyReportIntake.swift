@@ -102,7 +102,8 @@ public struct KeyReportIntake: Sendable {
     }
 
     /// How long a report waits to learn whether the key window before it left: WindowServer
-    /// ordered a hidden app's window out 17 ms after the hide (docs/tree.md). Every follow
+    /// ordered a hidden app's window out 17 ms after the hide (docs/tree.md), and the live
+    /// log's departures came 2 to 70 ms after the held report (docs/focus.md). Every follow
     /// of a Command-Tab waits this long.
     public static let grace: Duration = .milliseconds(100)
 

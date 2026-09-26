@@ -5,26 +5,13 @@ import KosmosIPC
 let socketPath = getenv("KOSMOS_SOCKET").map { String(cString: $0) } ?? kosmosSocketPath()
 let args = Array(CommandLine.arguments.dropFirst())
 
-guard let command = args.first else {
+guard !args.isEmpty else {
     fputs("usage: kosmos <command> [args...]\n", stderr)
     exit(2)
 }
 
 do throws(IPCError) {
-    let response: Response
-    if command == "subscribe" {
-        guard args.count == 1 else {
-            fputs("usage: kosmos subscribe\n", stderr)
-            exit(2)
-        }
-        response = try IPCClient.subscribe(socketPath: socketPath) { body in
-            fwrite(body, 1, body.count, stdout)
-            fputc(0x0A, stdout)
-            fflush(stdout)
-        }
-    } else {
-        response = try IPCClient.send(args, socketPath: socketPath)
-    }
+    let response = try IPCClient.send(args, socketPath: socketPath)
     // fputs and the typed error avoid print and "\(error)", whose runtime type checks cost
     // about half a millisecond on first use.
     if !response.stdout.isEmpty { fputs(response.stdout + "\n", stdout) }

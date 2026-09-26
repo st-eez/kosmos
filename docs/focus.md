@@ -119,7 +119,10 @@
     the named window's report comes first, it is the record's echo and leaves the hold, and
     the read of that window after it is a report of its own and replaces it. A held report
     whose grace ends while the session is locked is dropped, as the resync after the unlock
-    requests the intent again. Every held report logs its outcome. A Command-Tab after that
+    requests the intent again. Every held report logs its outcome. From September 24 to
+    26, 2026, 4 held reports found the key window before them left, its evidence 2, 23, 43
+    and 70 ms after the held report, and 183 found it stayed, each followed about 105 ms
+    late (live log). A Command-Tab after that
     report follows as usual, 100 ms late. This happened live: Command-H on the only window
     of workspace 2 took Kosmos to workspace 1, where macOS keyed Ghostty. From 6f54cda to
     change 26 Kosmos also dropped a held report whose window was no longer the key window
@@ -187,7 +190,10 @@
   through the main queue, right before its own call that changes the key window, never at
   the request and never for the other side's call (tla/README.md, changes 16 and 18).
   The queue checks the generation, reads whether the target's app is front, hands the app's
-  worker one job, and waits for it at most 30 ms, as the main actor waits on a worker.
+  worker one job, and waits for it at most 30 ms. No measurement chose the 30 ms. When
+  the wait runs out, the key record goes before the worker's job, the order the wait is
+  for. Each wait logs its length at info level, and a notice when it runs out, so the log
+  can size the wait, or show it is needed only while a job of the app is queued.
   - Inside the front app the key record changes nothing and only AXRaise keys a window, so
     the worker keys it and the queue posts no key record. The worker ends a stale request,
     and one whose front app already has the target focused; then, just before the raise,
@@ -308,12 +314,16 @@
   after the key record, which leaves another app's window where it sits in its app's
   stacking order ([overview.md, section 2](overview.md#2-what-the-fork-measured)). yabai and alt-tab raise after the record too. A hung app
   holds only its own worker.
-- The worker waits for the app to perform the raise, for up to 5 s. A raise it stopped
-  waiting for still lands when the app gets to it: in TLC it keyed a concealed window after
-  a newer command, and Kosmos followed it there (tla/README.md, change 19,
-  `split-user-timeout`). A raise that outlasts the 5 s counts as made, so its echo is
-  still recognized, and its app is backed off ([geometry.md](geometry.md)). Only a raise
-  the app refuses or fails at once is dropped. No measurement chose the 5 s.
+- The worker waits for the app to perform the raise, for up to the 1 s timeout of every
+  Accessibility call. A raise it stopped waiting for still lands when the app gets to it:
+  in TLC it keyed a concealed window after a newer command, and Kosmos followed it there
+  (tla/README.md, change 19, `split-user-timeout`). A raise that waits out the timeout
+  counts as made, so its echo is still recognized, and its app is backed off
+  ([geometry.md](geometry.md)). Only a raise the app refuses or fails at once is dropped.
+  AXRaise took 0.30 to 1.02 ms at the median and 3.70 ms at most, in runs of 120 raises
+  ([overview.md, section 2](overview.md#2-what-the-fork-measured)), and the live log of
+  September 24 to 26, 2026 has no raise that waited out the 5 s the worker allowed before,
+  which held a hung app's worker, with its frame writes and reads, five times as long.
 - While the path is off, and for a request whose SkyLight call fails, focus takes the
   public path on the app's worker: make the window the app's main window, raise it, then
   activate the app. Each step can wait out the timeout on a slow app, so each first checks

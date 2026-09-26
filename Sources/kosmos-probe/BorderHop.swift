@@ -71,7 +71,7 @@ final class WindowSampler: @unchecked Sendable {
     }
     pumpEvents(0.5)
     func spaces(_ window: UInt32) -> [UInt64] { SkyLight.spaces(of: window) ?? [] }
-    let rows = Dictionary(SkyLight.rows([a, b], cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    let rows = Dictionary((SkyLight.rows([a, b], cornerRadii: true) ?? []).map { ($0.id, $0) }) { first, _ in first }
     print("A \(a) on the built-in display, Spaces \(spaces(a)); B \(b) on \(other.localizedName), Spaces \(spaces(b))")
     let color = CGColor(srgbRed: 0x7a / 255, green: 0xa2 / 255, blue: 0xf7 / 255, alpha: 1)
     let width: CGFloat = 2

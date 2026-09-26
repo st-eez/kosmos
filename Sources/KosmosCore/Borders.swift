@@ -3,21 +3,16 @@ import CoreGraphics
 /// The config's `borders` (docs/borders.md).
 public struct BorderSettings: Equatable, Sendable {
     /// In points, the ring's thickness outside the window's edge (docs/borders.md).
-    public var width: Double
+    public var width: Double = 2
     /// Nil for the macOS accent color.
     public var active: BorderColor?
     /// Fully transparent draws no border.
-    public var inactive: BorderColor
+    public var inactive: BorderColor = .clear
     /// A window flashes it when its app refuses its tile. Nil for the macOS system red, and
     /// fully transparent for no flash.
     public var warning: BorderColor?
 
-    public init(width: Double = 2, active: BorderColor? = nil, inactive: BorderColor = .clear, warning: BorderColor? = nil) {
-        self.width = width
-        self.active = active
-        self.inactive = inactive
-        self.warning = warning
-    }
+    public init() {}
 
     public func color(focused: Bool, flashing: Bool, accent: BorderColor, red: BorderColor) -> BorderColor? {
         // A transparent warning leaves the window its own color.

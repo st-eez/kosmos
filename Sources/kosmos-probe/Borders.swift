@@ -211,7 +211,7 @@ func targetLayout(_ n: Int, count: Int, in area: NSRect) -> [NSRect] {
 
     // Rows and corner radii of the child's titled windows, and what reading the radii adds
     // to a read of the rows, the two reads alternating.
-    let rows = Dictionary(SkyLight.rows([t, c], cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    let rows = Dictionary((SkyLight.rows([t, c], cornerRadii: true) ?? []).map { ($0.id, $0) }) { first, _ in first }
     // In one run on 2026-09-26 the child's windows landed on the main display.
     guard let targetFrame = rows[t]?.frame, NSScreen.screens.contains(where: {
         CGDisplayIsBuiltin($0.displayID) != 0 && CGDisplayBounds($0.displayID).contains(targetFrame)
@@ -563,7 +563,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
 
     private func flush() {
         let began = CACurrentMediaTime()
-        for row in SkyLight.rows(Array(pending)) {
+        for row in SkyLight.rows(Array(pending)) ?? [] {
             borders[row.id]?.place(around: appKitRect(row.frame), radius: radii[row.id] ?? 0, color: color)
         }
         pending = []
@@ -690,7 +690,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
     print("\(relayouts) relayouts of 4 windows, \(interval) s apart; JankyBorders \(janky.map { "runs, pid \($0)" } ?? "is not running")")
     wait(0.5)
 
-    let rows = Dictionary(SkyLight.rows(windows, cornerRadii: true).map { ($0.id, $0) }) { first, _ in first }
+    let rows = Dictionary((SkyLight.rows(windows, cornerRadii: true) ?? []).map { ($0.id, $0) }) { first, _ in first }
     let radii = rows.mapValues(\.cornerRadius)
     let borders = Dictionary(uniqueKeysWithValues: windows.map { ($0, ProbeBorder()) })
     let follower = Follower(borders: borders, radii: radii, color: color)
@@ -752,7 +752,7 @@ nonisolated(unsafe) var stepEvents: [(id: UInt32, window: UInt32)] = []
         border.window.order(.below, relativeTo: Int(id))
     }
     // Where the windows are now.
-    for row in SkyLight.rows(windows) {
+    for row in SkyLight.rows(windows) ?? [] {
         borders[row.id]?.place(around: appKitRect(row.frame), radius: radii[row.id] ?? 0, color: color)
     }
     follower.on = true

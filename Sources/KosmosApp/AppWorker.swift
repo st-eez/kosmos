@@ -30,7 +30,6 @@ struct AXReport: Sendable {
 }
 
 struct AXWindowInfo: Sendable {
-    let role: String?
     let subrole: String?
     var minimized: Bool
 }
@@ -40,9 +39,6 @@ struct AXWindowInfo: Sendable {
 actor AppWorker {
     /// Set system wide in `Apps.start`.
     static let timeout = Float(AXBackoff.timeout / .seconds(1))
-    /// A raise that outlasts this still counts as made and can still land (docs/focus.md).
-    /// No measurement chose the 5 s.
-    static let raiseTimeout: Float = 5.0
 
     let pid: pid_t
     private let name: String
@@ -145,8 +141,7 @@ actor AppWorker {
     private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
-            return AXWindowInfo(role: try copy(element, kAXRoleAttribute) as? String,
-                                subrole: try copy(element, kAXSubroleAttribute) as? String,
+            return AXWindowInfo(subrole: try copy(element, kAXSubroleAttribute) as? String,
                                 minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false)
         } catch {
             return nil
@@ -259,17 +254,15 @@ actor AppWorker {
     }
 
     /// False when no raise can land: the app refused it or failed at once, or no call was made.
-    /// A raise that timed out can still land, and counts as made.
+    /// A raise that timed out can still land, and counts as made (docs/focus.md).
     @discardableResult
     private func raiseWindow(_ id: WindowID) -> Bool {
         guard let element = elements[id] else { return false }
-        AXUIElementSetMessagingTimeout(element, Self.raiseTimeout)
-        defer { AXUIElementSetMessagingTimeout(element, 0) }   // back to the system wide timeout
         let start = ContinuousClock.now
         let error = ax { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
-        let waitedOut = error == .cannotComplete && ContinuousClock.now - start > .seconds(Double(Self.raiseTimeout) / 2)
+        let waitedOut = error == .cannotComplete && ContinuousClock.now - start > .seconds(Double(Self.timeout) / 2)
         if waitedOut {
-            log.error("\(self.name, privacy: .public) did not perform the raise of \(id) in \(Self.raiseTimeout, format: .fixed(precision: 1)) s; it can still land")
+            log.error("\(self.name, privacy: .public) did not perform the raise of \(id) in \(Self.timeout, format: .fixed(precision: 1)) s; it can still land")
         } else if error != .success, !backoff.backedOff {
             log.error("pid \(self.pid) raise \(id) failed: \(error.rawValue)")
         }

@@ -15,7 +15,6 @@ public actor IPCServer {
     private let listener: any DispatchSourceRead
     private var connections: [Int: Connection] = [:]
     private var nextID = 0
-    private var lastFrame: DispatchData?
     private var stopped = false
 
     public nonisolated var unownedExecutor: UnownedSerialExecutor {
@@ -56,27 +55,15 @@ public actor IPCServer {
         listener.activate()
     }
 
-    /// One JSON value without newlines, since `kosmos subscribe` prints each frame as a line. A
-    /// subscriber still receiving a frame gets only the newest one after it.
-    public nonisolated func publish(_ payload: [UInt8]) {
-        let data = frameData(payload)
-        queue.async { self.assumeIsolated { $0.broadcast(data) } }
-    }
-
     /// Waits only for the server's queue, which never blocks on a client.
     public nonisolated func stop() {
         queue.sync { self.assumeIsolated { $0.shutDown() } }
     }
 
     private final class Connection {
-        enum State { case awaitingRequest, handling, replying, subscribed }
-
         let io: DispatchIO
         var decoder = FrameDecoder()
-        var state = State.awaitingRequest
-        /// The channel gets one frame at a time; a newer frame replaces the one waiting.
-        var writing = false
-        var waiting: DispatchData?
+        var awaitingRequest = true
 
         init(io: DispatchIO) {
             self.io = io
@@ -130,7 +117,7 @@ public actor IPCServer {
 
     private func received(_ data: DispatchData?, done: Bool, from id: Int) {
         guard let connection = connections[id] else { return }
-        if let data, connection.state == .awaitingRequest {
+        if let data, connection.awaitingRequest {
             connection.decoder.append(data)
             do {
                 if let body = try connection.decoder.next() { handle(body, from: connection, id: id) }
@@ -139,24 +126,18 @@ public actor IPCServer {
             }
         }
         // A client that closes its end while its command runs still gets the response.
-        if done && (connection.state == .awaitingRequest || connection.state == .subscribed) {
+        if done && connection.awaitingRequest {
             disconnect(id)
         }
     }
 
     private func handle(_ body: [UInt8], from connection: Connection, id: Int) {
         do {
-            switch try Request(decoding: body) {
-            case .command(let args):
-                connection.state = .handling
-                Task {
-                    let response = await handler(args)
-                    reply(response, to: id)
-                }
-            case .subscribe:
-                connection.state = .subscribed
-                send(frameData(Response().encoded), to: id)
-                if let lastFrame { send(lastFrame, to: id) }
+            let request = try Request(decoding: body)
+            connection.awaitingRequest = false
+            Task {
+                let response = await handler(request.args)
+                reply(response, to: id)
             }
         } catch {
             reply(Response(error), to: id)
@@ -165,51 +146,16 @@ public actor IPCServer {
 
     private func reply(_ response: Response, to id: Int) {
         guard let connection = connections[id] else { return }
-        connection.state = .replying
-        send(frameData(response.encoded), to: id)
-    }
-
-    private func broadcast(_ frame: DispatchData) {
-        lastFrame = frame
-        for (id, connection) in connections where connection.state == .subscribed {
-            send(frame, to: id)
-        }
-    }
-
-    /// Only a subscriber gets a frame during a write, since the subscribe response is its first,
-    /// and each of its frames is a full snapshot, so it replaces any frame waiting.
-    private func send(_ frame: DispatchData, to id: Int) {
-        guard let connection = connections[id] else { return }
-        if connection.writing {
-            connection.waiting = frame
-        } else {
-            write(frame, to: connection, id: id)
-        }
-    }
-
-    private func write(_ frame: DispatchData, to connection: Connection, id: Int) {
-        connection.writing = true
-        connection.io.write(offset: 0, data: frame, queue: queue) { [weak self] done, _, error in
+        connection.awaitingRequest = false
+        let data = frame(response.encoded).withUnsafeBytes { DispatchData(bytes: $0) }
+        connection.io.write(offset: 0, data: data, queue: queue) { [weak self] done, _, _ in
             guard done else { return }
-            self?.assumeIsolated { $0.wrote(to: id, error: error) }
-        }
-    }
-
-    private func wrote(to id: Int, error: Int32) {
-        guard let connection = connections[id] else { return }
-        connection.writing = false
-        if error != 0 {
-            disconnect(id)
-        } else if let frame = connection.waiting {
-            connection.waiting = nil
-            write(frame, to: connection, id: id)
-        } else if connection.state == .replying {
-            disconnect(id)
+            self?.assumeIsolated { $0.disconnect(id) }
         }
     }
 
     private func requestDeadlinePassed(for id: Int) {
-        if connections[id]?.state == .awaitingRequest { disconnect(id) }
+        if connections[id]?.awaitingRequest == true { disconnect(id) }
     }
 
     private func disconnect(_ id: Int) {
@@ -224,11 +170,6 @@ public actor IPCServer {
         for id in connections.keys { disconnect(id) }
         unlink(socketPath)
     }
-}
-
-/// Copied once into dispatch data that every write of it shares.
-private func frameData(_ body: [UInt8]) -> DispatchData {
-    frame(body).withUnsafeBytes { DispatchData(bytes: $0) }
 }
 
 private func secureDirectory(of socketPath: String) throws(IPCError) {

@@ -53,8 +53,6 @@ public enum Command: Equatable, Sendable {
     case balanceSizes
     case flattenWorkspaceTree
     case reloadConfig
-    /// Switches the hotkeys to another binding mode from the config.
-    case mode(String)
     case focusMonitor(MonitorTarget, wrapAround: Bool)
     /// Moves the focused window, or the window given with `--window-id`, to the workspace
     /// the display shows.
@@ -147,7 +145,6 @@ public enum Command: Equatable, Sendable {
         case "balance-sizes": return rest.isEmpty ? .success(.balanceSizes) : usage
         case "flatten-workspace-tree": return rest.isEmpty ? .success(.flattenWorkspaceTree) : usage
         case "reload-config": return rest.isEmpty ? .success(.reloadConfig) : usage
-        case "mode": return rest.count == 1 ? .success(.mode(rest[0])) : usage
         case "profile": return rest.count == 1 && !rest[0].hasPrefix("-") ? .success(.profile(rest[0])) : usage
         case "focus-monitor", "move-node-to-monitor":
             let movesNode = name == "move-node-to-monitor"

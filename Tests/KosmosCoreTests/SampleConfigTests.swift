@@ -21,8 +21,7 @@ import Testing
     @Test func loadsWithoutDiagnostics() throws {
         let config = try config()
         // AeroSpace's 64 bindings.
-        #expect(config.modes.keys.sorted() == ["main"])
-        #expect(config.modes["main"]?.count == 64)
+        #expect(config.bindings.count == 64)
         #expect(config.focusFollowsMouse.enabled)
         #expect(config.focusFollowsMouse.ignoreApps == ["Google Chrome for Testing"])
         #expect(config.rules.count == 18)

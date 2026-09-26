@@ -14,9 +14,8 @@ public enum WindowServerEvent: Sendable {
     case reordered(UInt32)
     case spaceMembership(UInt32)
     case spacesChanged     // a Space was created or destroyed, or the active Space changed
-    case frontAppChanged
 
-    public static let ids: [UInt32] = [804, 806, 807, 808, 811, 815, 816, 1325, 1326, 1327, 1328, 1401, 1508]
+    public static let ids: [UInt32] = [804, 806, 807, 808, 811, 815, 816, 1325, 1326, 1327, 1328, 1401]
 
     public init?(id: UInt32, payload: UnsafeRawBufferPointer) {
         func u32(at offset: Int) -> UInt32? {
@@ -30,7 +29,6 @@ public enum WindowServerEvent: Sendable {
         // A 64 bit Space id, then the window id.
         case 1325, 1326: guard let w = u32(at: 8) else { return nil }; self = .spaceMembership(w)
         case 1327, 1328, 1401: self = .spacesChanged
-        case 1508: self = .frontAppChanged
         default: return nil
         }
     }
@@ -38,7 +36,7 @@ public enum WindowServerEvent: Sendable {
     public var window: UInt32? {
         switch self {
         case .created(let id), .destroyed(let id), .changed(let id), .reordered(let id), .spaceMembership(let id): id
-        case .spacesChanged, .frontAppChanged: nil
+        case .spacesChanged: nil
         }
     }
 }
@@ -69,14 +67,16 @@ public enum SkyLight {
         return missing
     }()
 
-    /// Delivers every event on the main queue in the order WindowServer sent it. Call once.
-    public static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) {
+    /// Delivers every event on the main queue in the order WindowServer sent it, stamped as its
+    /// callback ran, before the hop, so a job on the main queue delays no stamp
+    /// (docs/tree.md). Call once.
+    public static func subscribe(_ handler: @escaping @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void) {
         let sink = Unmanaged.passRetained(EventSink(handler)).toOpaque()   // lives for the process
         for id in WindowServerEvent.ids {
             let result = SLSRegisterConnectionNotifyProc(connection, { id, data, length, context, _ in
                 let payload = UnsafeRawBufferPointer(start: data, count: data == nil ? 0 : length)
                 guard let context, let event = WindowServerEvent(id: id, payload: payload) else { return }
-                Unmanaged<EventSink>.fromOpaque(context).takeUnretainedValue().send(event)
+                Unmanaged<EventSink>.fromOpaque(context).takeUnretainedValue().send(event, at: .now)
             }, id, sink)
             if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
         }
@@ -109,25 +109,21 @@ public enum SkyLight {
     /// exists (`kosmos-probe destroyed-space`).
     public static func windows(in space: UInt64) -> [UInt32]? { kosmos_space_windows(space) as? [UInt32] }
 
-    /// It can block during a Space transition, so call it off the main thread.
-    public static func allWindowIDs() -> [UInt32] {
+    /// Nil when the read fails, which each caller must not take for no window
+    /// (docs/inventory.md). It can block during a Space transition, so call it off the main
+    /// thread.
+    public static func allWindowIDs() -> [UInt32]? {
         let spaces = Displays.current().allSpaces
         var setTags: UInt64 = 0, clearTags: UInt64 = 0
-        let ids = SLSCopyWindowsWithOptionsAndTags(connection, 0, spaces as CFArray, 0x7, &setTags, &clearTags)?
+        return SLSCopyWindowsWithOptionsAndTags(connection, 0, spaces as CFArray, 0x7, &setTags, &clearTags)?
             .takeRetainedValue() as? [UInt32]
-        return ids ?? []
     }
 
-    /// Windows that no longer exist are left out, and a failed query reads as every window
-    /// gone. The radii add about 1 µs to a read of 2 windows, and the minimums add 8 to 10 µs to
-    /// a read of 50, so only the inventory reads them (docs/borders.md, docs/geometry.md).
-    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow] {
-        readRows(ids, cornerRadii: cornerRadii, minimums: minimums) ?? []
-    }
-
-    /// Nil when the query fails, for a caller that must not take that for every window gone
-    /// (docs/hiding.md).
-    public static func readRows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow]? {
+    /// Windows that no longer exist are left out. Nil when the query fails, which each caller
+    /// must not take for every window gone (docs/inventory.md). The radii add about 1 µs to a
+    /// read of 2 windows, and the minimums add 8 to 10 µs to a read of 50, so only the
+    /// inventory reads them (docs/borders.md, docs/geometry.md).
+    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow]? {
         guard !ids.isEmpty else { return [] }
         guard let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return nil }
         defer { query.release() }
@@ -163,13 +159,13 @@ public enum SkyLight {
 @MainActor private var secureInputChanged: (@MainActor () -> Void)?
 
 private final class EventSink: Sendable {
-    private let handler: @MainActor (WindowServerEvent) -> Void
+    private let handler: @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void
 
-    init(_ handler: @escaping @MainActor (WindowServerEvent) -> Void) { self.handler = handler }
+    init(_ handler: @escaping @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void) { self.handler = handler }
 
     /// Callbacks arrive on whichever thread read the message, so every event goes through
     /// the main queue to keep one order.
-    func send(_ event: WindowServerEvent) {
-        DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event) } }
+    func send(_ event: WindowServerEvent, at stamp: ContinuousClock.Instant) {
+        DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event, stamp) } }
     }
 }

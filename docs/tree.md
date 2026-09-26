@@ -266,15 +266,15 @@
     closed with Command-W on workspace 5 and reopened on workspace 6, showed at its
     workspace 5 tile for about 270 ms after its order-in, where its app ordered it in
     (live log, September 25, 2026). The ceiling: a window that waits and is no tab switch
-    stays at its old place for the 250 ms, then slides. A selected tab is already at its
-    place. The wait is the pairing window, which the open question below sets. The reopen
+    stays at its old place for the 10 ms pairing window, then slides. A selected tab is
+    already at its place. The reopen
     slides the window from where its app showed it to its place
     ([geometry.md](geometry.md)). Kosmos takes a managed
     window ordered out for none of the other reasons as closed and kept, and looks at it
     as soon as the read that saw its order-out is applied with no other read of window
     rows under way or waiting (`ClosedAndKept.Looks`), so the others reflow at once. A
     conceal leaves a window ordered in (`kosmos-probe reveal`). Before this, the look came
-    a pairing window, 250 ms, after the order-out, and Activity Monitor's Command-W parked
+    a pairing window, then 250 ms, after the order-out, and Activity Monitor's Command-W parked
     257 and 267 ms after it (live log, September 25, 2026).
   - A deselected tab is not one: its switch has paired by the look, and it left the
     session. A switch's two halves came 0.2 ms apart (`kosmos-probe tabs`), and a read took
@@ -288,21 +288,23 @@
     could order in, the look waits until a pairing window after the order-out, as a
     destroyed tab's place does. Closing the selected Ghostty or Finder tab is the likely
     case. Activity Monitor, with no other window, parks at once.
-  - Open: how far apart Kosmos applies a switch's two halves, which sets the pairing
-    window and whether a window whose app has no other window ordered out needs the wait
-    too, as the tab that a window's first Command-T deselects might. Another window of the
-    app ordered in at the tab's frame gives no reason to wait. Its order-in applied before
-    the look, so it paired then and its claim holds the place, or it never pairs. The case
-    left, which the pairing log settles, is an incoming tab still unknown at the look, as a
-    first Command-T's new tab or a tab not seen since launch, whose events come in a later
-    main queue turn. Kosmos logged order changes at debug level, and the live logs of
-    September 23 to 25 kept info level, so their five pairings, four Terminal tab switches
-    and a Terminal window leaving fullscreen that paired with another's toolbar windows,
-    have no times for their halves.
-    Kosmos now logs each candidate window's order change at info level, and says when a
-    switch pairs after its deselected tab parked as closed and kept. A day of Ghostty and
-    Finder tabs settles it, and the log goes then; until then the pairing window stays
-    250 ms.
+  - A switch's two halves come within a millisecond. In a deliberate run on
+    September 26, 2026, from 18:30:54 to 18:31:29, Steve switched, opened with Command-T
+    and closed Finder tabs: 75 order-ins and 75 order-outs. 72 switches paired, each with
+    its halves logged 0 to 1 ms apart, and no window parked as closed and kept (live log).
+    Among them were a window's first Command-T while its app had no other window ordered
+    out, at 18:31:03 and 18:31:10, so such a window needs no wait at the look either.
+    Ghostty with `macos-titlebar-style = hidden` has no native tabs. The pairing window is
+    10 ms; it was 250 ms, the yabai forks' value. Each order change is stamped when
+    SkyLight's callback receives its event, before the hop to the main queue, and carries
+    that stamp through the row read. So neither a job on the main actor nor a second read
+    parts the halves, and the gap left is WindowServer's own, 0.2 ms in `kosmos-probe
+    tabs`. The ceiling: a switch whose events come more than 10 ms apart does not pair.
+    The deselected tab parks as closed and kept, and the selected tab, a hidden member
+    ordered in with no partner, is placed 10 ms later as a tab dragged out is, on the
+    focused workspace, so a group on another workspace moves there. The next switch
+    between the two pairs through `Session.replace`, which keeps the selected tab's new
+    place. Reading the AXTabGroup (below) would pair them.
   - A minimize and a hide have reports of their own, taken to come before the order-out:
     a minimized window was ordered out when its animation ended, 270 ms after miniaturize,
     and a hidden app's window 17 ms after the hide (`kosmos-probe departures`). A minimize
@@ -348,7 +350,6 @@
   - A window in native fullscreen moves to a Space of its own, and Accessibility has no
     notification for it. SkyLight reports 1326 as it leaves its Space and 1325 about 0.5 s
     later as it joins one of type 4 (the fullscreen probe in `kosmos-probe`).
-  - A `summon` command brings a window to the current workspace on purpose.
 - Kosmos keeps its layout across its own restarts: an install, a crash or a relaunch.
   Before this, quit recovery showed every concealed window and each window at launch joined
   the workspace its display showed, so ChatGPT and Claude on workspace 2, Spotify on 6 and a
@@ -406,7 +407,7 @@
     longer has, or has ordered out on no Space, as a window its app closed and kept, which
     opens as a new window. The launch reads the saved windows the same way. A failed read
     drops none, as read for every window closed it would lose the file at the next write
-    (`SkyLight.readRows`, [hiding.md](hiding.md)). A window parked at the save holds no
+    (`SkyLight.rows` returns nil for it, [inventory.md](inventory.md)). A window parked at the save holds no
     tile, nor does one ordered out at the launch, as one minimized since.
   - During the hold, a focus in a direction and `swap` go by the tiles on screen, the held
     ones (`Workspace.shownFrames`), and a floating window whose center is on a tile a
@@ -435,12 +436,12 @@
   window its app ordered out (alt-tab's measurements on macOS 26). A switch posts 1325
   for the incoming tab, 816 and 1326 for the outgoing, then 815 for the incoming, all
   within 0.2 ms (`kosmos-probe tabs`, macOS 27). Closing a tab can destroy it instead.
-  - Kosmos pairs the two within 250 ms, in either order, as the yabai forks that follow
-    tabs do, and only when they have one frame. Tabs share theirs: a tab that joined its
-    group at another size took the group's, and a frame set on the selected tab alone,
-    0.3 s before a switch or in the same turn, was the incoming tab's at every event of
-    the switch (`kosmos-probe tabs`, macOS 27). A
-    native fullscreen window's toolbar window, a window leaving fullscreen and a new
+  - Kosmos pairs the two within 10 ms (above), in either order, as the yabai forks that
+    follow tabs do within 250 ms, and only when they have one frame. Tabs share theirs: a
+    tab that joined its group at another size took the group's, and a frame set on the
+    selected tab alone, 0.3 s before a switch or in the same turn, was the incoming tab's
+    at every event of the switch (`kosmos-probe tabs`, macOS 27). A native fullscreen
+    window's toolbar window, a window leaving fullscreen and a new
     window cascaded from one closing have frames of their own. Before frames counted, a
     Terminal window leaving fullscreen paired with another Terminal window's order change
     as its toolbar windows went, and took the other fullscreen window's parked place
@@ -491,12 +492,12 @@
     floats when a rule floats its app, and the workspace a rule names does not apply to it.
     It shows for the pairing window before it takes its place, so it slides from there as
     a reopened window does ([geometry.md](geometry.md)). A window its app had closed and
-    kept opens again as a new window, 250 ms late only while another window of its app is
+    kept opens again as a new window, 10 ms late only while another window of its app is
     ordered in at its frame (above). Merge All Windows parks the merged windows that way,
     and selecting one's tab brings it to the group's place.
   - Kosmos does not read the AXTabGroup of the selected tab. Frames tell the cases seen
     so far apart at no cost, and a false switch now needs two windows of one app with one
-    frame, one leaving and one arriving within 250 ms. The AXTabs of the incoming window
+    frame, one leaving and one arriving within 10 ms. The AXTabs of the incoming window
     name tabs by title, not by window, so they cannot say which window left, and the read
     costs a round trip on every switch, on the worker that private focus waits on.
     Whether a fullscreen group's tab bar is in the tab's AX tree or its toolbar window's

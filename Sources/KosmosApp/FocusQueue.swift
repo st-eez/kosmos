@@ -78,18 +78,23 @@ final class FocusQueue: Sendable {
         }
     }
 
-    /// Waits no longer than the main actor waits on a worker (docs/overview.md, section 4.2);
-    /// a slow app's job finishes on its own.
+    /// No measurement chose the 30 ms, and the log gives each wait to choose it
+    /// (docs/focus.md). A slow app's job finishes on its own.
     private static func wait(for worker: AppWorker?, _ id: WindowID, _ isCurrent: @escaping @Sendable () -> Bool,
                              _ request: KeyRequest,
                              performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                              forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         guard let worker else { return }
+        let start = ContinuousClock.now
         let finished = DispatchSemaphore(value: 0)
         worker.focusPrivately(id, isCurrent: isCurrent, request: request, performing: performing, forgetRecord: forgetRecord) {
             finished.signal()
         }
-        _ = finished.wait(timeout: .now() + .milliseconds(30))
+        if finished.wait(timeout: .now() + .milliseconds(30)) == .timedOut {
+            focusLog.notice("focus of \(id) ran out its 30 ms wait for the worker of pid \(worker.pid)")
+        } else {
+            focusLog.info("focus of \(id) waited \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms for the worker of pid \(worker.pid)")
+        }
     }
 }
 

@@ -149,7 +149,10 @@ extension Controller {
             execute(plan)
         }
         if !moved.isEmpty {
-            controllerLog.info("left mouse up: \(moved.count) tiled windows moved or resized with the button down go back to their tiles")
+            controllerLog.info("""
+                left mouse up: tiled windows \(moved.sorted().map(String.init).joined(separator: " "), privacy: .public), \
+                moved or resized with the button down, go back to their tiles
+                """)
             execute(session.released(moved))
         }
     }

@@ -77,7 +77,7 @@ import Testing
         let test = try TestServer(handler: handler)
         defer { test.stop() }
         var connection: ClientConnection? = try ClientConnection(socketPath: test.socketPath)
-        try connection?.write(frame(Request.command(["ping"]).encoded), deadline: .now + .seconds(5))
+        try connection?.write(frame(Request(args: ["ping"]).encoded), deadline: .now + .seconds(5))
         try await waitUntil { await gate.isWaiting }
         connection = nil
         await gate.open()
@@ -88,57 +88,6 @@ import Testing
         try await waitUntil { await gate.isWaiting }
         await gate.open()
         #expect(try await next.value.stdout == "pong")
-    }
-
-    @Test func subscriberGetsTheLatestFrameThenEachPublish() async throws {
-        let test = try TestServer()
-        defer { test.stop() }
-        test.server.publish(Array(#"{"seq":1}"#.utf8))
-        test.server.publish(Array(#"{"seq":2}"#.utf8))
-        let frames = Lines()
-        let path = test.socketPath
-        let subscriber = Task.detached {
-            try IPCClient.subscribe(socketPath: path) { frames.append(String(decoding: $0, as: UTF8.self)) }
-        }
-        try await waitUntil { frames.all.count == 1 }
-        test.server.publish(Array(#"{"seq":3}"#.utf8))
-        try await waitUntil { frames.all.count == 2 }
-        test.server.stop()
-        #expect(try await subscriber.value == Response())
-        #expect(frames.all == [#"{"seq":2}"#, #"{"seq":3}"#])
-    }
-
-    @Test func slowSubscriberSkipsToTheNewestFrames() async throws {
-        let test = try TestServer()
-        defer { test.stop() }
-        let connection = try ClientConnection(socketPath: test.socketPath)
-        try connection.write(frame(Request.subscribe.encoded), deadline: .now + .seconds(5))
-        let answer = try #require(try connection.readFrame(deadline: .now + .seconds(5)))
-        #expect(try Response(decoding: answer) == Response())
-
-        // The client stops reading. Each frame is far larger than the socket buffers, so the
-        // first frame written stays in the middle of its write, and each later frame replaces
-        // the one waiting. Which frame is first depends on when the server finishes writing the
-        // subscribe response: frame 1 waits too if the response is still in flight.
-        let count = 10
-        let padding = String(repeating: "x", count: 256 << 10)
-        for seq in 1...count {
-            test.server.publish(Array(#"{"pad":"\#(padding)","seq":\#(seq)}"#.utf8))
-        }
-
-        var received: [Int] = []
-        while received.last != count {
-            let body = try #require(try connection.readFrame(deadline: .now + .seconds(5)))
-            guard case .object(let members) = try JSON(parsing: body), case .int(let seq) = members["seq"] else {
-                Issue.record("a frame without seq")
-                return
-            }
-            received.append(seq)
-        }
-        // At most the frame that was in flight, then the newest.
-        #expect(received.count <= 2)
-        // The subscriber is still connected, with nothing more to read.
-        #expect(throws: IPCError.timedOut) { _ = try connection.readFrame(deadline: .now + .milliseconds(200)) }
     }
 
     @Test func replacesAStaleSocketAndRestarts() throws {

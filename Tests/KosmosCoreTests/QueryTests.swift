@@ -25,26 +25,20 @@ import Testing
     #expect(s.windowList { $0 == 12 ? nil : "App \($0)" } == "10 1 App 10\n11 1 App 11 *\n12 3 ?")
 }
 
-@Test func listedBindingsPutMainFirstThenModesByName() throws {
+@Test func listedBindingsKeepFileOrder() throws {
     let result = Config.load("""
         config-version = 1
         workspaces = ['1']
-        [mode.resize.binding]
-        alt-h = 'resize width -50'
-        esc = 'mode main'
-        [mode.main.binding]
+        [binding]
         alt-l = 'focus right'
-        alt-r = 'mode resize'
-        [mode.apps.binding]
-        esc = 'mode main'
+        alt-h = 'resize width -50'
+        alt-shift-r = 'reload-config'
         """)
     #expect(result.diagnostics.isEmpty)
-    let listed = ListedBinding.list(try #require(result.config).modes)
-    #expect(listed.map { "\($0.mode) \($0.key): \($0.description) [\($0.category)]" } == [
-        "main alt-l: Focus right [Focus]",
-        "main alt-r: Switch to mode resize [Other]",
-        "apps esc: Switch to mode main [Other]",
-        "resize alt-h: Shrink window width by 50 points [Resize]",
-        "resize esc: Switch to mode main [Other]",
+    let listed = ListedBinding.list(try #require(result.config).bindings)
+    #expect(listed.map { "\($0.key): \($0.description) [\($0.category)]" } == [
+        "alt-l: Focus right [Focus]",
+        "alt-h: Shrink window width by 50 points [Resize]",
+        "alt-shift-r: Reload the config [Other]",
     ])
 }

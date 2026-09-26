@@ -25,7 +25,9 @@
   probe window showed no such zone at a bottom edge with no display below, nor at a right
   edge another display adjoins. So a window left more than 2 pt taller than a frame write
   asked is written again through a height 40 pt shorter, then the target's, and only a
-  window still taller refused the height.
+  window still taller refused the height. From September 24 to 26, 2026 the live log had
+  14 such writes: 2 took the target, from 1045 and 1080 pt to 1035, and 12 were windows
+  that hold their height, at 588, 1080 and 1084 pt.
 - AppKit holds a window that grows onto another display to the old display's edge until
   its app has taken the move, 10 to 30 ms after the position write. On 2026-09-26 a
   Ghostty window moved from the built-in display up to the 1920 pt main panel above it
@@ -130,6 +132,22 @@
   concealed nor revealed, so only the 100 ms retry keeps a size it ignores during the
   move from counting. One that ignores the retry too records a minimum, until it is
   seen smaller.
+  - No measurement shows the retry landing. From September 24 to 26, 2026 the live log
+    had 82 retries: 29 ended in a minimum a median of 109 ms after the retry was
+    scheduled, 47 in a refusal of a newer target, as in a resize burst, and 6 in
+    neither, and a retry that landed logged nothing. Since racereveal holds a write until
+    its window's conceal lands, and the worker writes a size again after a move to
+    another display (above), no probe has shown a shrink ignored. Each retry now logs how
+    it went at notice level, as `<id> retry` then `landed`, `refused again` or
+    `superseded by a newer target` at the next read back of the window, `dropped` when
+    the mouse holds the window, its workspace is hidden or it is gone, or `wrote nothing`
+    when the window took its tile before the retry or has none. The `left mouse up` line
+    names the windows each mouse up sends back.
+  - The retry goes once a week of use logs no `retry landed` line. The first refusal
+    then records the minimum, and `writeTileAgain`, the ledger's `refusedLarger` and
+    `forgetLargerReadBack`, the two exemptions for concealed and hidden windows and the
+    10 Hz write loop above go with it. If only windows that a mouse up sent back land,
+    the retry stays for those windows alone, in the mouse up's path.
 - A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
   Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
   axis. Its workspace is laid out again then, or at the mouse up during a press.

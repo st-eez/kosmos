@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var forcedProfile: String?
     private var displayIDs: Set<DisplayID> = []
     private var displayChange: DispatchWorkItem?
+    private var lastScreenChange: ContinuousClock.Instant?
     private var screensAsleep = false
     /// When `kosmos handover` asked the next quit to leave the record to the Kosmos that
     /// follows.
@@ -94,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The last second of changes has no write yet.
         controller?.writeLayout(wait: true)
         // Slides end first, so recovery finds the pool's Spaces empty.
-        controller?.endSlides("at quit")
+        controller?.slides?.endAll("at quit")
         if handingOver, let hiding {
             hiding.handOver()
             log.notice("quit: the record is left to the Kosmos that starts next")
@@ -111,18 +112,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server = try IPCServer(socketPath: kosmosSocketPath(), log: { message in
                 log.notice("ipc: \(message, privacy: .public)")
             }) { [weak self] arguments in
-                self?.respond(to: arguments, received: .now, from: .cli) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
+                self?.respond(to: arguments) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
             }
         } catch {
             log.error("socket not started: \(String(describing: error), privacy: .public)")
         }
     }
 
-    private func respond(to arguments: [String], received: ContinuousClock.Instant, from source: CommandSource) -> Response {
+    private func respond(to arguments: [String]) -> Response {
+        let received = ContinuousClock.now
         if let query = Query(arguments) { return answer(query) }
         if arguments.first == "handover" { return armHandover(Array(arguments.dropFirst())) }
         switch Command.parse(arguments) {
-        case .success(let command): return run(command, received: received, from: source)
+        case .success(let command): return run(command, received: received, from: .cli)
         case .failure(let error): return failure(error.message)
         }
     }
@@ -146,7 +148,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func run(_ command: Command, received: ContinuousClock.Instant, from source: CommandSource) -> Response {
-        if case .mode(let name) = command { return switchMode(to: name) }
         guard let controller else { return Self.waiting }
         // Changing the model without moving windows would leave the two apart.
         guard controller.managing else { return failure("observing only while another window manager runs") }
@@ -178,24 +179,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Response()
     }
 
-    /// script/install.sh sends its SIGTERM right after the arm.
+    /// script/install.sh sends its SIGTERM right after the arm, 2 to 7 ms after it at three
+    /// installs (docs/hiding.md).
     private static let armLife: Duration = .seconds(5)
 
     private func listBindings() -> Response {
         guard let hotkeys else { return failure("no hotkeys are registered") }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let listed = (try? encoder.encode(ListedBinding.list(hotkeys.modes))) ?? Data("[]".utf8)
+        let listed = (try? encoder.encode(ListedBinding.list(hotkeys.bindings))) ?? Data("[]".utf8)
         return Response(stdout: String(decoding: listed, as: UTF8.self))
-    }
-
-    private func switchMode(to name: String) -> Response {
-        guard let hotkeys else { return failure("no hotkeys are registered") }
-        // The command reports its own problems; the status item keeps the ones a load found,
-        // so its icon never changes during a command.
-        let problems = hotkeys.switchMode(to: name)
-        for problem in problems { log.error("hotkey: \(problem.description, privacy: .public)") }
-        return problems.isEmpty ? Response() : Response(exitCode: 1, stderr: problems.map(\.description).joined(separator: "\n"))
     }
 
     /// The profile holds until the displays change or the config reloads (docs/displays.md).
@@ -223,20 +216,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// While the session is locked or the displays sleep, the resync after the unlock or wake
     /// reads the displays instead, as a sleeping Mac can report them gone (docs/displays.md).
     private func screenParametersChanged() {
-        log.notice("screen parameters changed: \(NSScreen.screens.count) displays")
+        let now = ContinuousClock.now
+        let gap = lastScreenChange.map { String(format: ", %.0f ms after the one before", (now - $0).milliseconds) } ?? ""
+        lastScreenChange = now
+        log.notice("screen parameters changed: \(NSScreen.screens.count) displays\(gap, privacy: .public)")
         // A gone display's link stops firing, so its slides would hold their windows displaced
         // until the change applies (docs/geometry.md).
-        controller?.endSlides("at a display change")
+        controller?.slides?.endAll("at a display change")
         displayChange?.cancel()
         let apply = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.displayChange = nil
-                if !self.inventory.sessionLocked, !self.screensAsleep { self.applyDisplays() }
+                guard !self.inventory.sessionLocked, !self.screensAsleep, let before = self.controller?.session.monitors
+                else { return }
+                self.applyDisplays()
+                guard let after = self.controller?.session.monitors else { return }
+                log.notice("display change applied: \(Self.changed(from: before, to: after), privacy: .public) changed")
             }
         }
         displayChange = apply
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: apply)
+    }
+
+    /// Whether a change the 0.5 s wait let through was a hotplug's or the visible area's alone
+    /// (docs/displays.md).
+    private static func changed(from old: [Monitor], to new: [Monitor]) -> String {
+        if Set(old.map(\.id)) != Set(new.map(\.id)) { return "the display set" }
+        if old.map(\.frame) != new.map(\.frame) { return "display frames" }
+        return old == new ? "nothing" : "only the visible area"
     }
 
     private func reloadConfig(_ loaded: ConfigFile.Loaded, atLaunch: Bool) -> (applied: Bool, messages: [String]) {
@@ -269,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = self?.run(binding.command, received: .now, from: .hotkey)
         }
         self.hotkeys = hotkeys
-        let problems = hotkeys.load(config.modes)
+        let problems = hotkeys.load(config.bindings)
         showHotkeyProblems(problems)
         messages += problems.map(\.description)
         log.notice("config loaded from \(loaded.source, privacy: .public): profile \(controller.profile ?? "base", privacy: .public)")
@@ -377,7 +385,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hiding = hiding
         let controller = Controller(inventory: inventory, hiding: hiding, setup: setup,
                                     barDisplays: ConfigFile.barDisplays(displays), managing: managing)
-        controller.publish = { [weak self] snapshot in self?.server?.publish(Array(snapshot)) }
         controller.onFocusProblem = { [weak self] problem in
             self?.focusProblem = problem
             self?.updateProblems()

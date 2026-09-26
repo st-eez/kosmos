@@ -12,7 +12,7 @@ import Testing
 }
 
 @Test func insertWithoutFocusAppends() {
-    var workspace = Workspace(orientation: .vertical)
+    var workspace = Workspace("v[]")
     for window: WindowID in 1...3 {
         workspace.insert(window)
     }
