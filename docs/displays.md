@@ -97,8 +97,9 @@
   glide use the notification, and the AeroSpace fork keeps its monitor snapshot until it
   (commit 1d8c379b).
 - A burst of changes gets one response, 0.5 s after the last, as a wake does ([inventory.md](inventory.md)).
-  Kosmos reads the displays, resolves the profile again, which ends a forced one, and
-  arranges the workspaces:
+  Slides end at each change, before the wait ([geometry.md](geometry.md)). Kosmos reads
+  the displays, resolves the profile again, which ends a forced one, and arranges the
+  workspaces:
   - the focused workspace keeps the focus, on its display;
   - every other display keeps its workspace if it may still show it, else shows the one it
     showed before it left, if that may show there, else the first workspace assigned to

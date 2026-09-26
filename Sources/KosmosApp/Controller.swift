@@ -439,8 +439,8 @@ final class Controller {
         return displays.subtracting([desktop])
     }
 
-    func endSlides() {
-        slides?.endAll("at quit")
+    func endSlides(_ why: String) {
+        slides?.endAll(why)
     }
 
     /// `retry`: it follows a miss, which the kill switch then counts once.
