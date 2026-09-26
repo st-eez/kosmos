@@ -39,6 +39,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("display-clamp", "display-clamp [trials] [later]", {
         displayClamp(trials: $0.first.flatMap(Int.init) ?? 10, later: $0.contains("later"))
     }),
+    ("slide-sync", "slide-sync [slides] [mode...]", { slideSync(slides: $0.first.flatMap(Int.init) ?? 6, modes: Array($0.dropFirst())) }),
     ("border-watch", "border-watch <window> [seconds]", { arguments in
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
