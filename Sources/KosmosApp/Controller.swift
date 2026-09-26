@@ -157,13 +157,12 @@ final class Controller {
     /// A window taken over that no admission placed, as one whose app never answered, would stay
     /// concealed with no workspace to show it, so it shows where it is.
     private func revealUnadmitted() {
-        let windows = adoption.unadmitted.filter(hiding.isConcealed)
+        let (windows, displays) = adoption.reveal(concealed: hiding.isConcealed) { id in
+            inventory.windows[id].flatMap { display(under: $0.frame) }
+        }
         adoption = Adoption()
         guard !windows.isEmpty else { return }
         controllerLog.notice("taken over and never admitted, so revealed: \(windows, privacy: .public)")
-        let displays = Dictionary(uniqueKeysWithValues: windows.compactMap { id in
-            inventory.windows[id].flatMap { display(under: $0.frame) }.map { (id, $0) }
-        })
         hiding.apply(show: windows, on: displays, hide: [], stripping: []) { outcome, _ in
             if case .failed = outcome { controllerLog.error("the reveal of the windows never admitted failed; recovery ran") }
         }

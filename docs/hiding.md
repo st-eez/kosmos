@@ -245,9 +245,11 @@
     a second time, which `add` leaves as it is, stays as it is. The Controller's check that
     this replaced had revealed it, even on a hidden workspace. A kept window that no admission
     places within 5 s of the adoption, as one whose app never answers, is revealed where it
-    is (`handover-nobackstop`); every window of the launch of 02:08:38 was admitted within
-    68 ms of its start. A window whose app answers after the 5 s shows over the shown
-    workspace until its admission conceals it again.
+    is (`handover-nobackstop`), with the windows that stand on it. `Adoption.reveal` chooses
+    them and the display under each, and KosmosRecovery's tests cover it. Every window of
+    the launch of 02:08:38 was admitted within 68 ms of its start. A window whose app
+    answers after the 5 s shows over the shown workspace until its admission conceals it
+    again.
   - A conceal after the adoption goes into the kept holding Space, by the rule above.
     `kosmos-probe handover` on September 26, 2026 (macOS 27) made a holding Space in a
     child process, which then exited, and in a second round was killed with SIGKILL. In

@@ -46,4 +46,15 @@ private func member(_ id: UInt32, parent: UInt32 = 0, orderedIn: Bool = true) ->
         adoption.admitted(1)
         #expect(adoption.unadmitted.isEmpty)
     }
+
+    /// At the admission bound, 8 was admitted, so a switch reveals it. 1 and its sheet 4 show
+    /// where they are, on the display under each; 4 is under none, so Hiding picks its Space.
+    /// 9 left its holding Space since, as a window its app ordered out does.
+    @Test func theBoundRevealsTheConcealedWindowsNeverAdmittedOnTheDisplayUnderEach() {
+        var adoption = Adoption(members: [member(1), member(4, parent: 1), member(8), member(9)], recorded: [1, 8, 9])
+        adoption.admitted(8)
+        let (windows, displays) = adoption.reveal(concealed: { $0 != 9 }, display: { $0 == 1 ? 70 : nil })
+        #expect(windows == [1, 4])
+        #expect(displays == [1: 70])
+    }
 }
