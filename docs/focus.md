@@ -137,8 +137,8 @@
   logged. The read and the raise go to the same app with the same timeout, so the app is
   not answering, and a record for a call that changes nothing would swallow a later click
   on the window: going ahead failed TLC's user configs, whose model assumes reads answer.
-  The empty workspace's window is key already when Kosmos is the front process and the
-  window's last key change on the main actor said it became key.
+  The empty workspace's window, its display's (below), is key already when Kosmos is the
+  front process and the window's last key change on the main actor said it became key.
 - A private request for a window runs as the split model in tla/Kosmos.tla specifies it,
   one step per action (KosmosCore's KeyRequest: FocusStart, WorkerStart, WorkerRead,
   WorkerRaise, FocusDecide as `queueKeys`, WorkerPost). Each side records the echo,
@@ -303,6 +303,25 @@
   every switch. A background accessory app keyed an invisible window of its own by the
   private key record in 10 of 10 trials, from its own background thread and from another
   process (`kosmos-probe keying`, September 24, 2026).
+  - Each display has a window of its own, made at its bottom left corner and never moved,
+    as each display keeps its own border window ([borders.md](borders.md)). Before
+    2026-09-25 one window moved to the empty workspace's display before each request:
+    `setFrameOrigin` ran on the main actor while the focus queue posted the key record from
+    its own thread, and the border hop showed AppKit's new frame reaching WindowServer after
+    another thread's SkyLight call. Keyed at its old place, the window left the menu bar and
+    the next new window on the display it came from. The focus queue also skipped the moved
+    window as key already when it was key on the other display. A display that goes keeps
+    its window for its return. A display whose frame changes gets a new window, created at
+    its new corner at the display change, and the old one closes, so no move is left to
+    land late. Unmeasured: whether the order-in of a window made at a display change can
+    reach WindowServer after the key record of the resync that follows in the same main
+    actor turn.
+  - Inside the front app the key record keys nothing
+    ([overview.md, section 2](overview.md#2-what-the-fork-measured)), so while Kosmos is
+    the front process with another of its windows key, as another display's empty
+    workspace window, AppKit keys the window on the main actor, and the request records
+    its echo just before. Unmeasured: whether AppKit's key change inside Kosmos moves the
+    menu bar to the window's display as the key record does.
   - Kosmos is an accessory app, and the inventory tracks only regular apps' windows, so it
     never manages or conceals the window. The window becoming key is the key window report
     for an empty workspace, as Kosmos keeps no worker for itself; it names no window and

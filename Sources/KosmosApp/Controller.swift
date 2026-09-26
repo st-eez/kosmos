@@ -18,8 +18,9 @@ final class Controller {
     var misses = FocusMisses()
     let inventory: Inventory
     let hiding: Hiding
-    private let emptyWorkspace: EmptyWorkspaceWindow
-    private let focusQueue: FocusQueue
+    /// One for each display, kept for a display that goes (docs/focus.md).
+    private var emptyWorkspaces: [DisplayID: EmptyWorkspaceWindow] = [:]
+    private let focusQueue = FocusQueue()
     private let bar = BarPush()
     private var switchGeneration = 0
     var owner: [WindowID: pid_t] = [:]
@@ -83,10 +84,6 @@ final class Controller {
         self.inventory = inventory
         self.hiding = hiding
         self.managing = managing
-        let emptyWorkspace = EmptyWorkspaceWindow()
-        emptyWorkspace.onKey = { [weak inventory] stamp in inventory?.ownWindowKeyed(at: stamp) }
-        self.emptyWorkspace = emptyWorkspace
-        focusQueue = FocusQueue(emptyWorkspace: emptyWorkspace.target)
         session = Session(names: setup.workspaces, monitors: setup.monitors, assigned: setup.workspaceDisplays)
         rules = setup.rules
         profile = setup.profile
@@ -94,6 +91,7 @@ final class Controller {
         inventory.onEvent = { [weak self] event in self?.handle(event) }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         watchLeftButton()
+        for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
     }
 
     func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
@@ -106,6 +104,7 @@ final class Controller {
                             merge: setup.mergeWorkspaces)
         pointer?.setMonitors(session.monitors)
         dragTap?.setMonitors(session.monitors)
+        for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
         let shown = session.monitors.map { "\($0.id): \(session.workspace(shownOn: $0.id) ?? "none")" }
         controllerLog.notice("""
             profile \(setup.profile ?? "base", privacy: .public), workspace on each display \
@@ -346,6 +345,7 @@ final class Controller {
         if case .window(let id) = target, inventory.leftScreen(id) { return }
         let pid: pid_t?
         let privately: Bool
+        var emptyWorkspace: EmptyWorkspaceWindow.Target?
         switch target {
         case .window(let id):
             pid = owner[id]
@@ -356,11 +356,12 @@ final class Controller {
             // the path from this window (docs/focus.md).
             pid = getpid()
             privately = focusQueue.killSwitch.offReason != .crashed
-            emptyWorkspace.place(on: session.monitor(of: session.focusedWorkspace).frame)
+            emptyWorkspace = self.emptyWorkspace(on: session.monitor(of: session.focusedWorkspace))?.target
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately, concealed: concealed,
+                           emptyWorkspace: emptyWorkspace,
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },
@@ -368,6 +369,17 @@ final class Controller {
                                self?.reports.requestDropped(target, at: stamp)
                                self?.misses.requestDropped(at: stamp)
                            })
+    }
+
+    /// A window whose display moved is made again at its corner, never moved (docs/focus.md).
+    private func emptyWorkspace(on monitor: Monitor) -> EmptyWorkspaceWindow? {
+        guard !NSScreen.screens.isEmpty else { return nil }
+        if let window = emptyWorkspaces[monitor.id], window.isPlaced(on: monitor.frame) { return window }
+        emptyWorkspaces[monitor.id]?.close()
+        let window = EmptyWorkspaceWindow(display: monitor.frame)
+        window.onKey = { [weak inventory] stamp in inventory?.ownWindowKeyed(at: stamp) }
+        emptyWorkspaces[monitor.id] = window
+        return window
     }
 
     /// Runs just before a call that changes the key window, so the echo is recorded before
