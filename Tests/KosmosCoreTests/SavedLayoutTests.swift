@@ -191,34 +191,66 @@ private func sameLayout(_ a: Workspace, _ b: Workspace) -> Bool {
         #expect(fewer.focusedWorkspace == "a")
     }
 
-    /// A rule's workspace and floating apply to new windows. A saved window is no longer new,
-    /// as the second Ghostty the user moved from 1, its rule's workspace, to 8.
+    /// A rule's workspace and floating apply to new windows. A saved window is no longer new:
+    /// the second Ghostty, which the user moved to hidden 3, lands there though its rule names
+    /// 1, and a window the file lacks still follows the rule.
     @Test func aSavedWindowKeepsItsPlaceOverItsRule() {
-        var before = Desk.session()
-        _ = before.add(10, to: "8")
-        _ = before.add(11, to: "8")
-        _ = before.add(12, to: "8", floating: true)
-        var after = Self.restored(before.savedLayout())
-        _ = after.add(10, to: "1")
-        _ = after.add(11, floating: true)
-        _ = after.add(12)
-        #expect(after.workspaces["8"]!.tree == "h[10 11]" && after.workspaces["8"]!.floating == [12])
-    }
-
-    /// The second Ghostty, which the user moved to hidden 3, lands on 3 though its rule names
-    /// 1, and a Ghostty the file lacks still follows the rule.
-    @Test func theSecondGhosttyLandsOnItsSavedWorkspaceNotItsRules() {
         var before = Desk.session()
         _ = before.add(10, to: "1")
         _ = before.add(11, to: "1")
         _ = before.perform(.moveNodeToWorkspace(.named("3"), focusFollowsWindow: false, window: 11))
-        #expect(before.workspace(of: 11) == "3" && !before.isShown("3"))
+        _ = before.add(12, to: "3")
+        _ = before.add(13, to: "3", floating: true)
+        #expect(!before.isShown("3"))
         var after = Self.restored(before.savedLayout())
         _ = after.add(10, to: "1")
         #expect(after.add(11, to: "1").hide == [11])
-        #expect(after.workspace(of: 11) == "3")
-        _ = after.add(12, to: "1")
-        #expect(after.workspace(of: 12) == "1")
+        _ = after.add(12, floating: true)
+        _ = after.add(13)
+        #expect(after.workspaces["3"]!.tree == "h[11 12]" && after.workspaces["3"]!.floating == [13])
+        _ = after.add(14, to: "1")
+        #expect(after.workspace(of: 14) == "1")
+    }
+
+    /// A hint the tree left behind before the save is still stale after the restart: it holds
+    /// no tile, and its window returns by the stale path, as it would have with no restart.
+    @Test func aStaleHintStaysStaleAcrossTheRestart() throws {
+        var before = Session(names: ["a"], monitors: [Desk.main])
+        before.place("h[1 v[2 3]:2]", on: "a")
+        var first = Session(names: ["a"], monitors: [Desk.main])
+        first.restore(before.savedLayout())
+        _ = first.add(1)
+        _ = first.add(9)
+        let layout = try Self.roundTrip(first.savedLayout())
+        #expect(layout.windows.filter(\.stale).map(\.window).sorted() == [2, 3])
+        var second = Session(names: ["a"], monitors: [Desk.main])
+        second.restore(layout)
+        _ = second.add(1)
+        _ = second.add(9)
+        #expect(second.frames(of: "a")[1]!.width > 900)
+        for window in [3, 2] as [WindowID] {
+            _ = first.add(window)
+            _ = second.add(window)
+        }
+        #expect(second.workspaces["a"]!.sameTree(as: first.workspaces["a"]!), "\(second.workspaces["a"]!.detailed)")
+    }
+
+    /// A tab switch during the hold passes its place to the new tab, and the windows still
+    /// pending find it there. A tab that was pending itself takes the place and is pending no
+    /// more.
+    @Test(arguments: [9, 3] as [WindowID])
+    func aTabSwitchDuringTheHoldKeepsThePlaces(new: WindowID) {
+        var before = Session(names: ["a"], monitors: [Desk.main])
+        before.place("h[1 2 3]", on: "a")
+        var after = Session(names: ["a"], monitors: [Desk.main])
+        after.restore(before.savedLayout())
+        _ = after.add(1)
+        let plan = after.replace(1, with: new)
+        // A new tab takes the old tab's tile as it was held.
+        if new == 9 { #expect(plan?.frames == [9: before.frames(of: "a")[1]!]) }
+        for window in [2, 3] as [WindowID] where window != new { _ = after.add(window) }
+        #expect(after.workspaces["a"]!.tree == (new == 9 ? "h[9 2 3]" : "h[3 2]"))
+        #expect(after.validate().isEmpty && after.savedWorkspace(of: new) == nil)
     }
 
     /// A profile that leaves a workspace out before its saved windows are back sends them where
