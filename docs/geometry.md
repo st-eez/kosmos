@@ -221,6 +221,57 @@
     frame. A display link per display, at that display's rate, steps the windows sliding on
     it, and stops once none is left; at the end the Space goes back to identity and the
     window leaves it.
+  - Each display frame's transforms, alphas and borders go out together a quarter of a
+    refresh after the vsync that the link's callback reports, and show a refresh after the
+    link's target.
+    WindowServer takes a change into the next composite only until about 0.3 ms after the
+    vsync, and the link calls back 0.05 ms after it (`kosmos-probe slide-sync`, built-in
+    display at 120 Hz, September 26, 2026). Sent from the callback, a transform made that
+    composite or missed it by chance, and the border's ring, committed after the
+    callback's border work, missed it more often. In the probe:
+    - With both sent from the callback, as Kosmos sent them until then, the refresh after
+      a slide's first move showed nothing new in 6 of 10 and 7 of 8 slides, and the ring
+      showed with its window in 91 of 136 and 86 of 122 frames. Sent a quarter of a refresh
+      later, 1 of 10 and 2 of 8 slides held, and the ring showed with its window in 137 of
+      137 and 116 of 122 frames.
+    - A ring sent 0.5 ms after its transform, as the border work delayed it, trailed the
+      window in 97 of 132 frames. Both sent 0.3 ms after the vsync put every transform a
+      refresh after its target and the ring ahead of it in 87 of 116 frames.
+    - With the backdrop redrawn at every display frame, as on a busy screen, transforms
+      sent from the callback showed at their target in a slide's first frames and a refresh
+      after it later on, in two runs of three. The first run of the frame benchmark
+      (`script/bench-frames.sh`, branch bench, September 26, 2026, with Moonlight
+      streaming) showed the same in move right steps 26 and 42: the first frame showed at
+      its target, the next came two refreshes later, and every later frame showed a refresh
+      after its target, a double first step and then no change for a refresh.
+    - The cost is the first move's latency. Deferred, the first move showed 25.5 ms after
+      the first callback's timestamp in 16 of 18 slides and 33.8 ms in 2. Sent from the
+      callback, it showed at 8.8 ms, the first frame's target, in 7 of 18 slides, and at
+      17.2 or 25.5 ms in the rest. The built-in display showed nothing new for the refresh
+      after a slide's first change in 35 of 36 slides, whatever the change: the window's
+      first move, or the border's resize or the window joining its Space, which come before
+      a deferred first frame. So deferred, the first move carries two display frames'
+      steps, and sent from the callback, the first move is followed by a refresh with
+      nothing new. Whether a display at a fixed refresh rate skips that refresh is
+      unmeasured.
+    - The ceilings:
+      - The cut-off and the deferred send were measured on the built-in display at 120 Hz
+        only, with the screen otherwise still. The probe records only the built-in display.
+        External and fixed-rate displays, Steve's twin ASUS panels among them, are
+        unmeasured, as is the deferred send on a busy screen. The upgrade is a display
+        argument for `kosmos-probe slide-sync` and a run of its `deferred` mode with the
+        display kept busy, as its `warm` mode keeps it.
+      - A frame goes a quarter of a refresh after its vsync however late its callback ran,
+        plus up to 1 ms of dispatch's timer leeway. A callback the main actor delays past
+        the next cut-off, about 8.6 ms after the vsync at 120 Hz, shows its frame a refresh
+        late, in the composite of the frame after it. Running the links on a thread of
+        their own, as the perf audit of September 26, 2026 proposes, would keep main actor
+        work from delaying a frame.
+  - At debug level the slide log gives each display frame: how long after the link's
+    timestamp it was stepped, its target, and the frame each sliding window shows at and
+    whether its transform changed; and each read that set a window's transform for a new
+    frame. `script/bench-frames.sh` streams the log at debug
+    level, so each step's lines place its captured frames against the frames Kosmos set.
   - WindowServer applies a Space's transform to each window the Space shows in that
     window's own coordinates, origin at its top left and y down, and maps where a point
     shows to the window's point: a translation of 300 in x shows the window 300 points
@@ -342,6 +393,8 @@
     guardian's recovery should show the window at its own frame and alpha 1, out of the
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next
     slide should run; a relayout on a display showing a native fullscreen Space, which
-    should jump, and one on its desktop Space with the key window, which should slide; and
+    should jump, and one on its desktop Space with the key window, which should slide;
     whether a write that lands during the 1 ms reads shows its window displaced for a
-    display frame.
+    display frame; and how Steve's slides start now that each display frame goes a quarter
+    of a refresh after its callback: the frame benchmark's latency, jumps and skips in
+    slides, with the slide log's frame lines.
