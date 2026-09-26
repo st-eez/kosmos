@@ -551,7 +551,7 @@ public struct Session: Sendable {
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
     /// Targets for the shown workspaces' floating windows on a display showing another workspace
-    /// (docs/displays.md). A concealed window's center is on no display, so it stays.
+    /// (docs/displays.md). A window whose center is on no display stays.
     public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {

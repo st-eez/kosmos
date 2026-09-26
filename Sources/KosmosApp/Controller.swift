@@ -315,9 +315,9 @@ final class Controller {
     }
 
     /// The read waits on WindowServer, so it runs only with a floating window shown, and
-    /// never before a switch's focus request. A concealed window reads as off every display
-    /// and waits for its reveal (docs/displays.md). A window the modifier drags goes where
-    /// the drag puts it, as WindowServer can lag its last write.
+    /// never before a switch's focus request. A concealed window's row gives its own frame,
+    /// so it goes home as a revealed one would (docs/displays.md). A window the modifier drags
+    /// goes where the drag puts it, as WindowServer can lag its last write.
     private func bringFloatingHome() {
         let windows = session.shownFloatingWindows.filter { $0 != modifierDrag?.grab.window }
         guard !windows.isEmpty else { return }

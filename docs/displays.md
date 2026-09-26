@@ -124,10 +124,12 @@
   `layoutFloatingWindow` moves it. That covers a move to another display, a rule that
   sends a new window to a workspace another display shows, and a display change. Kosmos
   reads the windows' frames from WindowServer when it checks. A window whose center is on
-  no display, as a concealed one reads, is left for the check after its reveal. The read
-  waits on WindowServer, which is busy committing right after a switch, so it runs only
-  while a shown workspace has a floating window, and never between a keypress and its
-  batch or its focus request. The log gives each read's time, to measure at the desk.
+  no display stays. A concealed window's row gives the frame it has, as a shown window's
+  does ([hiding.md](hiding.md)), so one still concealed on a shown workspace, as while its
+  switch waits for its writes, goes home as a revealed one would. The read waits on
+  WindowServer, which is busy committing right after a switch, so it runs only while a
+  shown workspace has a floating window, and never between a keypress and its batch or its
+  focus request. The log gives each read's time, to measure at the desk.
 - A floating window the user drags onto a display showing another workspace joins that
   workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
   check above leaves it there. Kosmos takes a move of a floating window of a shown
