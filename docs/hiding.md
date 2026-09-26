@@ -136,7 +136,11 @@
   regardless, because a closed window's Spaces read as none, so recovery adds it, and that
   add never lands. A window whose Spaces do not read stays where it is and keeps the record
   too, since a removal could leave it on no Space and an add could take it off its own.
-  Every step can safely run twice.
+  A failed read of the windows' rows, for which `SkyLight.rows` returns nil, leaves the
+  recovery incomplete with the record kept. Read as no window alive before the plan, it
+  would take every window out of its Space whether or not its add landed, and read after
+  the removals, it cannot tell a closed window from one left on no Space. Every step can
+  safely run twice.
 - Recovery leaves in its Space a window of another process that is neither a child of a
   concealed window nor unread, such as a JankyBorders border window (below), and so does
   the ledger rebuilt after an incomplete recovery. Whether a destroy takes away a Space
@@ -220,7 +224,7 @@
     guardian's ready report, which the main thread would read only after the launch, and
     runs startup recovery when none comes. Recovery runs with the windows it spares
     (`Recovery.run`, `sparing`). The settled members of the holding Spaces are read with
-    `SkyLight.readRows`, and each recorded member that is ordered in stays concealed, with
+    `SkyLight.rows`, and each recorded member that is ordered in stays concealed, with
     the windows that stand on it, as its sheets (`Adoption`). The quit wrote the layout
     after the batches landed, so nearly all of them belong to hidden workspaces, and
     admission reveals the others. The rest come back as recovery brings them: windows
@@ -256,7 +260,8 @@
   still listed stays recorded, as one that only stopped being managed or that a failed
   read took for closed, so recovery restores it. A window the ledger does not hold leaves
   once its row is gone or it has a Space: recovery restores one alive on no Space. A failed
-  row query counts as neither (`SkyLight.readRows`).
+  row query, for which `SkyLight.rows` returns nil, counts as neither, and the conceal
+  that needed the room does not go.
 - A batch leaves out each window to hide that WindowServer no longer lists, and each
   window new to the record whose process is gone, as a closed tab whose place waits for
   the next tab ([tree.md](tree.md)) or a window of an app that quit before the inventory
@@ -264,9 +269,8 @@
   one new to the record stops the batch before it sends anything, and a recorded one fails
   its confirmation, since no Space lists a closed window. Either way recovery then shows
   every concealed window, as it did when a switch hid two windows of the bench stub that
-  had just quit (live log, September 25, 2026). The batch reads the rows through
-  `SkyLight.readRows`, which returns nil for a failed query, where `SkyLight.rows`, as
-  the inventory reads rows, returns none. A failed query leaves no window out, so a
+  had just quit (live log, September 25, 2026). `SkyLight.rows` returns nil for a failed
+  query, and a failed query leaves no window out, so a
   window new to the record, whose owner the query would have named, stops the batch and
   recovery runs. Read as every window gone, it would leave the windows to hide on screen
   until their workspace was shown and hidden again.
@@ -280,9 +284,8 @@
   ledger, one it revealed stays in, and the log names them. A failed window still ordered
   in fails the batch, and recovery runs. KosmosCore's tests cover the rule
   (`ConcealLedger.Batch.confirmed`). A failed row query counts every failed window as
-  ordered in, so recovery runs: this read takes its rows from `SkyLight.readRows`, which
-  returns nil for a failed query, where `SkyLight.rows` returns no rows. Read as every
-  window gone, a failed query would leave a live window whose conceal failed on screen,
+  ordered in, so recovery runs, as `SkyLight.rows` returns nil for a failed query. Read as
+  every window gone, a failed query would leave a live window whose conceal failed on screen,
   and one whose reveal failed concealed, with no recovery.
 - Open until the desk: `move-node-to-workspace --focus-follows-window` to a hidden
   workspace on another display, as alt-shift-N there. Whether a window concealed with the

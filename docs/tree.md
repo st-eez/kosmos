@@ -408,7 +408,7 @@
     longer has, or has ordered out on no Space, as a window its app closed and kept, which
     opens as a new window. The launch reads the saved windows the same way. A failed read
     drops none, as read for every window closed it would lose the file at the next write
-    (`SkyLight.readRows`, [hiding.md](hiding.md)). A window parked at the save holds no
+    (`SkyLight.rows` returns nil for it, [inventory.md](inventory.md)). A window parked at the save holds no
     tile, nor does one ordered out at the launch, as one minimized since.
   - During the hold, a focus in a direction and `swap` go by the tiles on screen, the held
     ones (`Workspace.shownFrames`), and a floating window whose center is on a tile a

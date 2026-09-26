@@ -304,7 +304,7 @@ private final class Onscreen: Sendable {
                 return ids.isEmpty ? nil : soon
             }
             guard let soon else { break }
-            let rows = SkyLight.rows(ids)
+            let rows = SkyLight.rows(ids) ?? []
             let read = CACurrentMediaTime()
             let moved = state.withLock { state in
                 var moved: [WindowRow] = []

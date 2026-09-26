@@ -39,7 +39,7 @@ extension Controller {
         // Onto the desktop of a display whose workspace is empty, that workspace takes the
         // focus. Only then is the window's level read from WindowServer.
         let emptyWorkspace = skip == .notTiled ? entered.display.flatMap { display in
-            focusFollowsMouse.emptyWorkspace(entered: display, overDesktop: window == 0 || SkyLight.rows([window]).first
+            focusFollowsMouse.emptyWorkspace(entered: display, overDesktop: window == 0 || SkyLight.rows([window])?.first
                 .map { FocusFollowsMouse.isDesktop(level: $0.level) } == true, in: session)
         } : nil
         if let skip, emptyWorkspace == nil {

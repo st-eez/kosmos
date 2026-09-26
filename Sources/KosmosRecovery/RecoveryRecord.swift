@@ -87,10 +87,8 @@ public struct RecoveryRecord: Equatable, Sendable {
         return newest
     }
 
-    /// Keeps `keeping` whatever `alive` says. Nil when `alive` misses a window of `seen`, which
-    /// an earlier read found: a failed query reads nothing.
-    public func pruned(alive: Set<UInt32>, keeping: Set<UInt32>, seen: [UInt32]) -> RecoveryRecord? {
-        guard seen.allSatisfy(alive.contains) else { return nil }
+    /// Keeps `keeping` whatever `alive` says.
+    public func pruned(alive: Set<UInt32>, keeping: Set<UInt32>) -> RecoveryRecord {
         var pruned = self
         pruned.windows.removeAll { !alive.contains($0.id) && !keeping.contains($0.id) }
         return pruned

@@ -61,7 +61,15 @@ public enum Recovery {
         // recovery cannot mix destinations.
         let displays = Displays.current()
         let named = Set(members.values.joined()).union(record.windows.map(\.id))
-        let frames = Dictionary(SkyLight.rows(Array(named)).map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        // Read as no window alive, a failed query would take every window out of its Space
+        // whether or not its add landed.
+        guard let rows = SkyLight.rows(Array(named)) else {
+            let remaining = Set(members.values.joined()).subtracting(spared).count
+            recoveryLog.error("the concealed windows' rows did not read; \(remaining) windows still concealed, keeping the record")
+            file.publish(record.keptAfterIncomplete(gone: gone, keepingAnimationSpaces: keeping))
+            return .incomplete(remaining: remaining)
+        }
+        let frames = Dictionary(rows.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let original = Dictionary(record.windows.map { ($0.id, $0.originalSpace) }, uniquingKeysWith: { a, _ in a })
         let plan = RecoveryPlan.make(members: members, recorded: record.windows.map(\.id), sparing: spared, alive: Set(frames.keys),
                                      isOnAnySpace: { SkyLight.spaces(of: $0).map { !$0.isEmpty } },
@@ -83,11 +91,14 @@ public enum Recovery {
         let handled = Set(plan.adds.values.joined()).union(plan.removalsBySpace.values.joined())
         let after = SpaceMembers.read(liveSpaces, of: record)
         let remaining = plan.remaining(after.members)
-        let alive = Set(SkyLight.rows(Array(plan.windows)).map(\.id))
-        let onNoSpace = { (window: UInt32) in alive.contains(window) && (SkyLight.spaces(of: window) ?? []).isEmpty }
-        guard plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
+        // A failed query cannot tell a closed window from one left on no Space, so each
+        // window with no Space counts as left there.
+        let alive = SkyLight.rows(Array(plan.windows)).map { Set($0.map(\.id)) }
+        let onNoSpace = { (window: UInt32) in alive?.contains(window) != false && (SkyLight.spaces(of: window) ?? []).isEmpty }
+        guard alive != nil, plan.isComplete(remainingMembers: remaining, isOnNoSpace: onNoSpace) else {
             let withoutSpace = plan.windows.filter(onNoSpace).count
-            recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space; keeping the record")
+            let unread = alive == nil ? ", the rows unread" : ""
+            recoveryLog.error("\(remaining) windows still concealed, \(withoutSpace) on no Space\(unread, privacy: .public); keeping the record")
             file.publish(record.keptAfterIncomplete(gone: gone.union(after.gone), keepingAnimationSpaces: keeping))
             return .incomplete(remaining: remaining + withoutSpace)
         }

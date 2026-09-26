@@ -407,7 +407,10 @@ final class Controller {
             $0 != modifierDrag?.grab.window && !ledger.isWriting($0) && !ledger.isLanding($0, at: start)
         }
         guard !windows.isEmpty else { return }
-        let frames = Dictionary(SkyLight.rows(windows).map { ($0.id, $0.frame) }) { first, _ in first }
+        guard let rows = SkyLight.rows(windows) else {
+            return controllerLog.notice("floating check: the rows of \(windows.count) windows did not read")
+        }
+        let frames = Dictionary(rows.map { ($0.id, $0.frame) }) { first, _ in first }
         let targets = session.floatingFrames(at: frames)
         controllerLog.info("floating check: \(windows.count) windows read in \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms, \(targets.count) moved")
         writeFrames(targets)
@@ -466,7 +469,7 @@ final class Controller {
             var pop = false
             // Read now, as the inventory's row can lag an order-in. Ceiling: an order-in after the
             // read shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
-            if id == popping, let row = SkyLight.rows([id]).first { (from, pop) = (row.frame, !row.orderedIn) }
+            if id == popping, let row = SkyLight.rows([id])?.first { (from, pop) = (row.frame, !row.orderedIn) }
             if let from, let shownOn = self.display(under: from), fullscreen.contains(shownOn) { continue }
             motions[id] = Slides.Motion(from: from, display: display, pop: pop)
         }
@@ -594,7 +597,7 @@ final class Controller {
     /// its app closed and kept, which opens as a new window. Nil when the query fails, which
     /// must not read as every window closed (docs/hiding.md).
     private static func openRows(_ windows: [WindowID]) -> [WindowID: WindowRow]? {
-        guard let rows = SkyLight.readRows(windows) else { return nil }
+        guard let rows = SkyLight.rows(windows) else { return nil }
         let open = rows.filter { $0.orderedIn || SkyLight.spaces(of: $0.id).map { !$0.isEmpty } ?? true }
         return Dictionary(open.map { ($0.id, $0) }) { first, _ in first }
     }

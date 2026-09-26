@@ -235,8 +235,9 @@ final class Inventory {
     func leftScreen(_ id: WindowID) -> Bool {
         if let left = departures.justLeft(id, at: .now) { return left }
         guard windows[id]?.orderedIn == true else { return false }
-        guard let row = SkyLight.rows([id]).first else { return true }
-        return !row.orderedIn
+        // Unread, it is as the inventory has it.
+        guard let rows = SkyLight.rows([id]) else { return false }
+        return rows.first?.orderedIn != true
     }
 
     private func readApplied() {
@@ -341,15 +342,17 @@ final class Inventory {
         }
     }
 
-    private func applyReads(_ events: [PendingEvent], _ rows: [WindowRow]) {
+    /// A failed read leaves each window it names as it was.
+    private func applyReads(_ events: [PendingEvent], _ read: [WindowRow]?) {
         defer { readApplied() }
-        let rows = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
+        if read == nil { inventoryLog.notice("the rows for \(events.count) window events did not read; their windows stay as they were") }
+        let rows = Dictionary((read ?? []).map { ($0.id, $0) }) { first, _ in first }
         for event in events {
             switch event {
             case .read(let id, let followUp):
                 if let row = rows[id] {
                     if case .changed(let at) = followUp { apply(row, changedAt: at) } else { apply(row) }
-                } else {
+                } else if read != nil {
                     remove(id, reason: "gone")
                 }
                 follow(followUp, id)
@@ -508,9 +511,9 @@ final class Inventory {
         let tracked = Array(windows.keys) + arrivedWhileLocked.keys
         looks.readAsked()
         reads.async {
-            let listed = SkyLight.allWindowIDs()
-            let unlisted = Set(tracked).subtracting(listed)
-            let rows = SkyLight.rows(listed + unlisted, cornerRadii: true, minimums: true)
+            let rows = SkyLight.allWindowIDs().flatMap { listed in
+                SkyLight.rows(listed + Set(tracked).subtracting(listed), cornerRadii: true, minimums: true)
+            }
             onMain { self.finishSweep(rows) }
         }
     }
@@ -518,13 +521,15 @@ final class Inventory {
     /// Ceiling: an event handled after this for a change the snapshot already had came late,
     /// and its window is still logged as missed: 28 of the 32 windows logged so from September
     /// 24 to 26, 2026 had a late event (docs/inventory.md).
-    private func finishSweep(_ rows: [WindowRow]) {
+    private func finishSweep(_ read: [WindowRow]?) {
         let touched = touchedDuringSweep ?? []
         touchedDuringSweep = nil
         defer { if sweepAgain { sweepAgain = false; sweep() } }
         defer { readApplied() }
         guard !sessionLocked else { return }   // taken before the lock; the unlock sweeps again
-        let rows = rows.filter { !touched.contains($0.id) }
+        // Read as every window gone, a failed read would take every window out of the tree.
+        guard let read else { return inventoryLog.notice("sweep read failed; every window stays as it was") }
+        let rows = read.filter { !touched.contains($0.id) }
         let seen = Set(rows.map(\.id))
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
             let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)

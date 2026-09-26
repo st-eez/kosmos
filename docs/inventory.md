@@ -50,6 +50,15 @@
   September 24 to 26, 2026, 28 had their event within 1 s after the sweep, which Kosmos
   logged then (live log), so a count most often marks a late event. The 3 s sweep this
   replaced found and lost none on 2026-09-24, over a day of use and live tests.
+- A read of window rows or of the window list can fail, as during a Space transition, and
+  `SkyLight.rows` and `SkyLight.allWindowIDs` then return nil, so no caller takes the
+  failure for every window gone. A sweep whose read fails changes nothing, and a failed
+  read for events leaves each window they name as it was; each logs a notice. The ceiling:
+  after an unlock whose sweep read fails, the windows the lock held back wait for the
+  next sweep, at the next Space change; sweeping again after a delay would close it. A
+  read of one window that fails leaves it as the inventory has it, ordered in or not. No
+  failed read shows in the live log of September 24 to 26, 2026; the one mass loss, 23
+  windows at 23:22:08 on September 25, was real closes whose events came 3 to 5 ms late.
   It counted none of its corrections, which it logged only at debug or info level.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no

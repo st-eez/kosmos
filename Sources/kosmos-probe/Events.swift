@@ -66,7 +66,7 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
         // AppKit sends the level to WindowServer after the setter returns.
         var landed: Double?
         while landed == nil, uptime() - at < 500 {
-            if SkyLight.rows([window]).first?.level == level { landed = uptime() } else { usleep(500) }
+            if SkyLight.rows([window])?.first?.level == level { landed = uptime() } else { usleep(500) }
         }
         let text = "child sets level \(level); WindowServer reads it "
             + (landed.map { String(format: "%.1f ms later", $0 - at) } ?? "not within 500 ms")
@@ -115,7 +115,7 @@ nonisolated(unsafe) var levelSteps: [(at: Double, landed: Double, text: String)]
         let bytes = payload.prefix(16).map { String(format: "%02x", $0) }.joined()
         DispatchQueue.main.async { MainActor.assumeIsolated { printEvent(id, window: window, payload: bytes, at: at) } }
     }
-    let watched = SkyLight.allWindowIDs()
+    let watched = SkyLight.allWindowIDs() ?? []
     SkyLight.watch(watched)
     print("watching \(watched.count) windows for \(seconds) s")
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
@@ -129,7 +129,7 @@ nonisolated(unsafe) var eventAppNames: [pid_t: String] = [:]
 @MainActor func printEvent(_ id: UInt32, window: UInt32?, payload: String, at: Date) {
     var line = "\(wallClock.string(from: at)) \(id)"
     if let window {
-        let pid = SkyLight.rows([window]).first?.pid
+        let pid = SkyLight.rows([window])?.first?.pid
         let name = pid.map { pid in
             if let name = eventAppNames[pid] { return name }
             let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"

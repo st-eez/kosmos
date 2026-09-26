@@ -68,7 +68,7 @@ public struct SpaceMembers: Equatable, Sendable {
 
     private static func rows(_ windows: [UInt32]) -> [UInt32: Row] {
         var rows: [UInt32: Row] = [:]
-        for row in SkyLight.rows(windows) { rows[row.id] = Row(owner: ProcessIdentity.of(row.pid), parent: row.parent) }
+        for row in SkyLight.rows(windows) ?? [] { rows[row.id] = Row(owner: ProcessIdentity.of(row.pid), parent: row.parent) }
         return rows
     }
 }

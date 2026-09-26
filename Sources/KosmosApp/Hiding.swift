@@ -230,7 +230,7 @@ private final class HidingStore: @unchecked Sendable {
             // A window that closed or was ordered out after its row read leaves the batch; a
             // failed row query leaves every window in, so recovery runs (docs/hiding.md).
             guard kosmos_barrier(any), let (kept, left) = batch.confirmed(members: members(), orderedIn: { failed in
-                SkyLight.readRows(Array(failed)).map { Set($0.filter(\.orderedIn).map(\.id)) } ?? failed
+                SkyLight.rows(Array(failed)).map { Set($0.filter(\.orderedIn).map(\.id)) } ?? failed
             }) else { return (false, sent, true, batch.strip.count) }
             if !left.isEmpty {
                 // Their conceal never landed.
@@ -250,7 +250,7 @@ private final class HidingStore: @unchecked Sendable {
         guard load() else { return nil }
         // A window with no row, or new to the record with no owner, is left out. A failed row
         // query leaves none out, so a window new to the record stops the batch (docs/hiding.md).
-        let read = SkyLight.readRows(hide)
+        let read = SkyLight.rows(hide)
         let rows = Dictionary((read ?? []).map { ($0.id, $0) }) { first, _ in first }
         let recorded = Set(state!.windows.map(\.id))
         var owners: [WindowID: ProcessIdentity] = [:]
@@ -295,7 +295,7 @@ private final class HidingStore: @unchecked Sendable {
     func forgetClosed(_ window: WindowID) {
         guard load() else { return }
         forget(ledger.departed([window], members: SkyLight.windows(in:),
-                               settled: { SkyLight.readRows([$0]).map(\.isEmpty) ?? false || SkyLight.spaces(of: $0)?.isEmpty == false }))
+                               settled: { SkyLight.rows([$0]).map(\.isEmpty) ?? false || SkyLight.spaces(of: $0)?.isEmpty == false }))
     }
 
     func forget(_ windows: [WindowID]) {
@@ -329,11 +329,11 @@ private final class HidingStore: @unchecked Sendable {
         }
         if !record.publish(next) {
             // The record's slot is full: drop the windows that no longer exist.
-            let alive = Set(SkyLight.rows(next.windows.map(\.id)).map(\.id))
-            guard let pruned = next.pruned(alive: alive, keeping: Set(ledger.entries.keys).union(windows), seen: new) else {
+            guard let rows = SkyLight.rows(next.windows.map(\.id)) else {
                 hidingLog.error("the recorded windows could not be read; not concealing")
                 return abandon(created)
             }
+            let pruned = next.pruned(alive: Set(rows.map(\.id)), keeping: Set(ledger.entries.keys).union(windows))
             guard record.publish(pruned) else {
                 hidingLog.error("the recovery record is full; not concealing")
                 return abandon(created)
@@ -386,7 +386,7 @@ private final class HidingStore: @unchecked Sendable {
     func adopt() -> (Recovery.Outcome, Adoption) {
         var adoption = Adoption()
         let outcome = recover(keepingAnimationSpaces: false) { members, recorded in
-            guard let rows = SkyLight.readRows(members) else {
+            guard let rows = SkyLight.rows(members) else {
                 hidingLog.error("the concealed windows' rows could not be read; restoring every one")
                 return []
             }

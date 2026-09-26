@@ -25,3 +25,12 @@ import Testing
     }
     bytes.prefix(3).withUnsafeBytes { #expect(WindowServerEvent(id: 811, payload: $0) == nil) }
 }
+
+/// A read that finds no window is empty, and only a failed one is nil, which callers must not
+/// take for every window gone (docs/inventory.md).
+@Test func aReadThatFindsNoWindowIsEmptyAndNotFailed() throws {
+    #expect(SkyLight.rows([]) == [])
+    let ids = try #require(SkyLight.allWindowIDs())
+    let gone = (ids.max() ?? 0) &+ 1_000_000
+    #expect(SkyLight.rows([gone]) == [])
+}

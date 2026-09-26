@@ -186,7 +186,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
     WindowServerEvent.register([815, 816, 1325, 1326]) { id, window, _ in
         guard let window, tabWindows.contains(window) else { return }
         // The frame the inventory reads when this event reaches it.
-        let frame = SkyLight.rows([window]).first.map { "\($0.frame)" } ?? "no row"
+        let frame = SkyLight.rows([window])?.first.map { "\($0.frame)" } ?? "no row"
         print(String(format: "%.1f event %d tab %@ frame %@", uptime(), id, window == tabWindows[0] ? "A" : "B", frame))
     }
     SkyLight.watch(tabWindows)
@@ -213,7 +213,7 @@ nonisolated(unsafe) var tabWindows: [UInt32] = []
         print("B concealed (\(conceal!)) in holding Space \(space)")
     }
     func state(_ step: String) {
-        let rows = Dictionary(uniqueKeysWithValues: SkyLight.rows(tabWindows).map { ($0.id, $0) })
+        let rows = Dictionary(uniqueKeysWithValues: (SkyLight.rows(tabWindows) ?? []).map { ($0.id, $0) })
         if space != 0 { _ = kosmos_barrier(space) }
         let parts = zip(["A", "B"], tabWindows).map { name, id in
             let spaces = SkyLight.spaces(of: id) ?? []

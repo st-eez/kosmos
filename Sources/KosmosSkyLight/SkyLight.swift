@@ -107,25 +107,21 @@ public enum SkyLight {
     /// exists (`kosmos-probe destroyed-space`).
     public static func windows(in space: UInt64) -> [UInt32]? { kosmos_space_windows(space) as? [UInt32] }
 
-    /// It can block during a Space transition, so call it off the main thread.
-    public static func allWindowIDs() -> [UInt32] {
+    /// Nil when the read fails, which each caller must not take for no window
+    /// (docs/inventory.md). It can block during a Space transition, so call it off the main
+    /// thread.
+    public static func allWindowIDs() -> [UInt32]? {
         let spaces = Displays.current().allSpaces
         var setTags: UInt64 = 0, clearTags: UInt64 = 0
-        let ids = SLSCopyWindowsWithOptionsAndTags(connection, 0, spaces as CFArray, 0x7, &setTags, &clearTags)?
+        return SLSCopyWindowsWithOptionsAndTags(connection, 0, spaces as CFArray, 0x7, &setTags, &clearTags)?
             .takeRetainedValue() as? [UInt32]
-        return ids ?? []
     }
 
-    /// Windows that no longer exist are left out, and a failed query reads as every window
-    /// gone. The radii add about 1 µs to a read of 2 windows, and the minimums add 8 to 10 µs to
-    /// a read of 50, so only the inventory reads them (docs/borders.md, docs/geometry.md).
-    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow] {
-        readRows(ids, cornerRadii: cornerRadii, minimums: minimums) ?? []
-    }
-
-    /// Nil when the query fails, for a caller that must not take that for every window gone
-    /// (docs/hiding.md).
-    public static func readRows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow]? {
+    /// Windows that no longer exist are left out. Nil when the query fails, which each caller
+    /// must not take for every window gone (docs/inventory.md). The radii add about 1 µs to a
+    /// read of 2 windows, and the minimums add 8 to 10 µs to a read of 50, so only the
+    /// inventory reads them (docs/borders.md, docs/geometry.md).
+    public static func rows(_ ids: [UInt32], cornerRadii: Bool = false, minimums: Bool = false) -> [WindowRow]? {
         guard !ids.isEmpty else { return [] }
         guard let query = SLSWindowQueryWindows(connection, ids as CFArray, Int32(ids.count)) else { return nil }
         defer { query.release() }

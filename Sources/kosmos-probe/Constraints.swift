@@ -73,7 +73,7 @@ private func describe(_ c: Constraints) -> String {
     }
 
     // Every other app's window at level 0 with no parent, as the inventory's candidates.
-    let rows = SkyLight.rows(SkyLight.allWindowIDs()).filter { $0.level == 0 && $0.parent == 0 && $0.pid != getpid() }
+    let rows = (SkyLight.rows(SkyLight.allWindowIDs() ?? []) ?? []).filter { $0.level == 0 && $0.parent == 0 && $0.pid != getpid() }
     let others = iteratorConstraints(rows.map(\.id))
     var fallbacks = 0
     for row in rows.sorted(by: { $0.pid == $1.pid ? $0.id < $1.id : $0.pid < $1.pid }) {
@@ -104,7 +104,7 @@ private func describe(_ c: Constraints) -> String {
     }
     let two = time(own, rounds: 5000)
     print(String(format: "rows of 2 windows with radii: %.4f ms median, with the minimums too %.4f ms", two.plain, two.minimums))
-    let all = SkyLight.allWindowIDs()
+    let all = SkyLight.allWindowIDs() ?? []
     let every = time(all, rounds: 500)
     print(String(format: "rows of all %d windows with radii: %.4f ms median, with the minimums too %.4f ms",
                  all.count, every.plain, every.minimums))
