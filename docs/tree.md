@@ -74,6 +74,29 @@
     window centered between them is never reached from a tile. Kosmos follows AeroSpace
     here, where [overview.md, section 1](overview.md#1-goal-and-constraints) would follow Omarchy, because only AeroSpace's rule reaches that
     window. Steve chose it.
+  - A focus that crosses to another display ([displays.md](displays.md)) enters the
+    workspace there at the edge it crosses. Down the tree it takes the first or last child
+    of each container along the direction, and the child holding the most recently focused
+    window of each container across it, as `move` enters a sibling container. That
+    workspace's floating windows count as tiles, as above. A workspace with a fullscreen
+    window keeps its focus, since that window covers every edge, and an empty workspace
+    takes the focus with no window.
+  - Before this, the focus entered by focus order alone. On September 25, 2026 the left
+    panel showed Discord and the main panel Helium left of Outlook. From Outlook, Command-Tab
+    to Discord and then `focus right` reached Outlook, the most recently focused, where
+    Helium stood at the edge (live). Hyprland, which Steve uses on Omarchy, reaches Helium
+    there. Its `movefocus` looks at the windows of the workspaces other displays show too,
+    and takes one whose edge meets the focused window's (`CWindowQuery::inDirection` at
+    e368c13). AeroSpace enters at the edge only when `wrap-around-all-monitors` wraps to
+    the display at the other end (`hitAllMonitorsOuterFrameBoundaries` marks
+    `findLeafWindowRecursive(snappedTo: direction.opposite)` most recent). Crossing to the
+    next display it focuses the workspace's most recently focused window through
+    `focusWorkspace`, so it too reached Outlook (FocusCommand.swift and focus.swift in
+    aerospace-steez at 40b2b44d, which upstream 39e51904 matches). Kosmos enters at the
+    edge in both cases.
+  - Within a workspace AeroSpace enters the sibling at its near edge the same way
+    (`findLeafWindowRecursive(snappedTo: direction.opposite)` in `FocusCommand.run`), where
+    Kosmos keeps i3's focus order.
 - Returning windows (unminimize, app unhide, leaving native fullscreen) go back to their own
   workspace at their saved position, and Kosmos follows them to that workspace, as it does
   for Command-Tab. For an app that unhides, it follows the window the app keys if that

@@ -58,6 +58,13 @@ extension Workspace {
         focus(direction, from: window, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
     }
 
+    /// `enter` on `screen` with `deskGaps`, with the floating windows at `frames`, and the
+    /// window it focuses.
+    mutating func enter(_ direction: Direction, frames: [WindowID: CGRect] = [:]) -> WindowID? {
+        enter(direction, frame: { frames[$0] }, in: screen, gaps: deskGaps, minimums: [:])
+        return focusedWindow
+    }
+
     @discardableResult
     mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         resize(window, dimension, by: amount, in: rect, gaps: gaps, minimums: [:])

@@ -21,6 +21,15 @@ extension Workspace {
         return target
     }
 
+    /// Focuses the window at the edge a focus in the direction enters by from another display
+    /// (docs/tree.md). A fullscreen window covers every edge, so its workspace keeps its focus.
+    mutating func enter(_ direction: Direction, frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
+                        minimums: [WindowID: CGSize]) {
+        let seen = withFloatingTiled(frame, in: rect, gaps: gaps, minimums: minimums)
+        guard fullscreenWindow == nil, !seen.root.children.isEmpty else { return }
+        focus(seen.edgeWindow(of: seen.root, direction))
+    }
+
     /// The workspace with each floating window that `frame` places tiled, for a focus in a
     /// direction (docs/tree.md).
     func withFloatingTiled(_ frame: (WindowID) -> CGRect?, in rect: CGRect, gaps: Gaps,
@@ -293,7 +302,8 @@ extension Workspace {
         return true
     }
 
-    /// The window a move lands beside when it enters `container`.
+    /// The window a move lands beside, or a focus from another display reaches, when it enters
+    /// `container`.
     private func edgeWindow(of container: Container, _ direction: Direction) -> WindowID {
         let child: Node
         if container.orientation == direction.orientation {

@@ -101,6 +101,40 @@ import Testing
     #expect(workspace.focus(.right, from: 1, frames: frames) == 3)
 }
 
+// MARK: Focus entering from another display
+
+/// Entered from the left, v[1 h[2 3]] gives 1 when it was focused last, else 2 at the near
+/// edge, though 3 was focused last (docs/tree.md).
+@Test func enteringTakesTheNearEdgeAlongAndFocusOrderAcross() {
+    var workspace = Workspace("v[1 h[2 3]]")
+    workspace.focus(3)
+    workspace.focus(1)
+    #expect(workspace.enter(.right) == 1)
+    workspace.focus(3)
+    #expect(workspace.enter(.right) == 2)
+    #expect(workspace.enter(.down) == 1)
+    #expect(workspace.enter(.up) == 2)
+}
+
+@Test func enteringCountsFloatingWindowsAsTiles() {
+    var workspace = Workspace("h[1 2]")
+    workspace.floating = [9]
+    // Left of tile 1's center, so it stands before tile 1.
+    let frames: [WindowID: CGRect] = [9: CGRect(x: 0, y: 100, width: 300, height: 300)]
+    #expect(workspace.enter(.right, frames: frames) == 9)
+    #expect(workspace.enter(.left, frames: frames) == 2)
+    #expect(workspace.tree == "h[1 2]")
+}
+
+@Test func enteringKeepsTheFocusOfAFullscreenWindowAndFindsNoneInAnEmptyWorkspace() {
+    var workspace = Workspace("h[1 2]")
+    workspace.toggleFullscreen(2)
+    #expect(workspace.enter(.right) == 2)
+    #expect(workspace.fullscreenWindow == 2)
+    var empty = Workspace("h[]")
+    #expect(empty.enter(.right) == nil)
+}
+
 // MARK: Swap
 
 @Test func swapExchangesPlacesAndKeepsShares() {

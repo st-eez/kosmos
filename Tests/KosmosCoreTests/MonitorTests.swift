@@ -249,7 +249,7 @@ import Testing
         _ = s.add(50, to: "5"); _ = s.add(51, to: "5", floating: true)
         _ = s.park([13], because: .minimized)
         let between = CGRect(x: 760, y: 300, width: 400, height: 400)
-        let frames: [WindowID: CGRect] = [12: CGRect(x: 0, y: 300, width: 400, height: 400), 13: between, 51: between]
+        var frames: [WindowID: CGRect] = [12: CGRect(x: 0, y: 300, width: 400, height: 400), 13: between, 51: between]
         // A parked window and another workspace's floating window count nowhere, whatever
         // their frames.
         s.adopt(10)
@@ -257,8 +257,40 @@ import Testing
         s.adopt(10)
         #expect(s.perform(.focus(.left, boundaries: .allMonitors), frame: { frames[$0] })?.focus == .window(12))
         #expect(s.focusedWorkspace == "1")
-        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frame: { frames[$0] })?.focus == .window(50))
+        // On its own workspace a floating window counts, here right of 50, at the edge the
+        // focus enters by.
+        frames[51] = CGRect(x: -500, y: 300, width: 400, height: 400)
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors), frame: { frames[$0] })?.focus == .window(51))
         #expect(s.focusedWorkspace == "5")
+    }
+
+    /// Live on September 25, 2026 (docs/tree.md): the left panel showed workspace 7 with
+    /// Discord, and the main panel 3 with Helium left of Outlook. From Outlook, Command-Tab to
+    /// Discord and then `focus right` reach Helium, at the edge the focus enters by.
+    @Test func focusAcrossMonitorsEntersAtTheEdgeItCrosses() {
+        var s = Desk.session()
+        _ = s.perform(.workspace(.named("7"))); _ = s.perform(.workspace(.named("3")))
+        _ = s.add(30, to: "3"); _ = s.add(31, to: "3"); _ = s.add(70, to: "7")
+        #expect(s.workspaces["3"]!.tree == "h[30 31]")
+        s.adopt(31)
+        s.adopt(70)
+        #expect(s.focusedWorkspace == "7")
+        #expect(s.perform(.focus(.right, boundaries: .allMonitors))?.focus == .window(30))
+        #expect(s.focusedWorkspace == "3")
+        #expect(s.perform(.focus(.left, boundaries: .allMonitors))?.focus == .window(70))
+    }
+
+    @Test func focusWrappingAcrossMonitorsEntersAtTheEdgeAndAnEmptyWorkspaceTakesTheFocus() {
+        var s = Desk.session()
+        _ = s.add(10); _ = s.add(11); _ = s.add(50, to: "5"); _ = s.add(51, to: "5")
+        s.adopt(51)
+        s.adopt(11)
+        // From the main panel's right edge on to the left panel's left edge.
+        #expect(s.perform(.focus(.right, boundaries: .allMonitorsWrapping))?.focus == .window(50))
+        _ = s.perform(.workspace(.named("2")))
+        s.adopt(51)
+        #expect(s.perform(.focus(.right, boundaries: .allMonitors))?.focus == .noWindow)
+        #expect(s.focusedWorkspace == "2" && s.focusedDisplay == 2)
     }
 
     @Test func moveAcrossMonitorsTakesTheWindowOverTheEdgeAndFollowsIt() {
