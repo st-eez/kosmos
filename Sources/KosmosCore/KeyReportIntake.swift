@@ -41,8 +41,6 @@ public struct KeyReportIntake: Sendable {
         case replaced(held: Report, by: KeyWindow)
         /// At the grace's end the held report's window had no place or was parked.
         case heldWindowLeft(Report)
-        /// At the grace's end another window was key.
-        case heldMovedOn(Report, key: KeyWindow?)
         /// At the grace's end the session was locked.
         case heldWhileLocked(Report)
         /// At the grace's end, whether the key window before the held report left. `at`: the
@@ -265,12 +263,6 @@ public struct KeyReportIntake: Sendable {
         }
         if case .window(let id) = report.key, facts.workspace(id) == nil || facts.isParked(id) {
             facts.note(.heldWindowLeft(report))
-            return .none
-        }
-        // A later report moved the key window on, as Kosmos's own echo does when an app it
-        // activated keys its last key window first and then the requested one.
-        if report.key != key {
-            facts.note(.heldMovedOn(report, key: key))
             return .none
         }
         guard let previous = report.previous else { return .none }

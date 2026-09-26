@@ -79,18 +79,18 @@
     that would end a held report (below) ends the wait: a report of another placed window
     that is not Kosmos's echo. Kosmos's echo, a report of no key window and a parked
     window's report leave the wait, as they leave a hold. On a shown workspace the window
-    becomes the focus. On a hidden one, which only a rule names for a
-    new window, the report is decided as one of a concealed window whose key window before
-    it stayed, since an app keys a window it opens, and Kosmos follows it there
-    (displays.md). A report that comes after the admission and
-    before the window's conceal completes is followed the same way. After that, Kosmos
-    requests its focus intent again, and a later report loses to it, as a tab's does
-    (tree.md). A command received after the report wins, as over a Command-Tab. Kosmos
-    follows no window parked at admission or admitted while the session is locked.
-    On 2026-09-25 at 10:25:31 Steve launched Chrome from workspace 8, and a rule put its
-    first window on workspace 4, which no display showed. The log has no key window report
-    from Chrome, and Accessibility answered for the window 854 ms after WindowServer made
-    it a candidate, within the launch retries: Chrome keyed the window before its worker's
+    becomes the focus. On a hidden one, which only a rule names for a new window, the
+    report is decided as one of a concealed window whose key window before it stayed,
+    since an app keys a window it opens, and Kosmos follows it there (displays.md). A
+    report that comes after the admission and before the window's conceal completes is
+    followed the same way. After that, Kosmos requests its focus intent again, and a later
+    report is one of a concealed window, held for the grace and followed as a Command-Tab
+    is. A command received after the report wins, as over a Command-Tab. Kosmos follows no
+    window parked at admission or admitted while the session is locked. On 2026-09-25 at
+    10:25:31 Steve launched Chrome from workspace 8, and a rule put its first window on
+    workspace 4, which no display showed. The log has no key window report from Chrome,
+    and Accessibility answered for the window 854 ms after WindowServer made it a
+    candidate, within the launch retries: Chrome keyed the window before its worker's
     observer was registered, and its activation read got no answer while it launched.
     Kosmos concealed the window, keyed Claude on workspace 8 again, and Steve pressed alt-4
     himself. A worker now reports its app's focused window when it starts, before any of
@@ -107,12 +107,15 @@
     window key before it. A report of another window that is not Kosmos's echo replaces
     it. A report that repeats its window leaves it held and consumes the echo it matches,
     so after a key record's first key is held, the named window's report is no echo and
-    replaces it. A held report whose window is no longer the key window last heard of when
-    the grace ends is dropped, for Ghostty's first key after alt-1 (above). So is one whose
-    grace ends while the session is locked, as the resync after the unlock requests the
-    intent again. Every held report logs its outcome. A Command-Tab after that report
-    follows as usual, 100 ms late. This happened live: Command-H on the only window of
-    workspace 2 took Kosmos to workspace 1, where macOS keyed Ghostty.
+    replaces it. A held report whose grace ends while the session is locked is dropped, as
+    the resync after the unlock requests the intent again. Every held report logs its
+    outcome. A Command-Tab after that report follows as usual, 100 ms late. This happened
+    live: Command-H on the only window of workspace 2 took Kosmos to workspace 1, where
+    macOS keyed Ghostty. From 6f54cda to change 26 Kosmos also dropped a held report whose
+    window was no longer the key window it last heard of when the grace ended, for
+    Ghostty's first key after alt-1 (above). The drop lost a Command-Tab whose report came
+    before the echo of an older request of Kosmos's (tla/README.md, change 26,
+    `split-user-helddrop`).
   - A report that repeats the key window Kosmos last heard of, while a request of Kosmos's
     to another window of that app awaits its echo, is a miss of that request, not the
     user's choice: the app kept its key window, or keyed another one itself before

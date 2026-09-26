@@ -244,6 +244,20 @@ private struct Replay {
     #expect(replay.expire(2) == .follow(11, bringsPointer: true))
 }
 
+@Test func aHeldCommandTabIsFollowedAfterKosmossEchoMovesTheKeyOn() {   // change 26
+    // After `workspace 3` the user Command-Tabbed to window 11 on hidden workspace 1, and
+    // Kosmos's older request then keyed the empty workspace's window. Dropping the held
+    // report once the echo moved the key on lost the Command-Tab (`split-user-helddrop`).
+    var replay = Replay(windows: [11: ("1", ghostty), 12: ("1", helium)], shown: ["3"], concealed: [11, 12])
+    _ = replay.heard(.window(12), from: helium, at: -100)
+    replay.command(at: 0)
+    replay.requested(.noWindow, app: kosmos, at: 20)
+    replay.pickedAway = true
+    #expect(replay.heard(.window(11), from: ghostty, at: 10, read: true) == .hold(1))
+    #expect(replay.heard(.noWindow, from: kosmos, at: 30) == .none)
+    #expect(replay.expire(1) == .follow(11, bringsPointer: true))
+}
+
 @Test func aReportOfAnotherWindowReplacesTheHeldOneAndARepeatLeavesItHeld() {
     var replay = Replay(windows: [21: ("2", helium), 22: ("2", preview), 11: ("1", ghostty)], shown: ["2"],
                         concealed: [11])
@@ -458,21 +472,21 @@ private struct Replay {
     #expect(replay.placed(71) == .requestFocus(retry: false))
 }
 
-@Test func aReportBeforeTheAdmissionsConcealLandsIsFollowedAndOneAfterLosesToTheIntent() {
+@Test func aReportBeforeTheAdmissionsConcealLandsIsFollowedAtOnceAndOneAfterAsACommandTab() {
     var replay = Replay(windows: [80: ("8", claude), 70: ("4", chrome), 71: ("4", chrome)], shown: ["1", "8"])
     _ = replay.heard(.window(80), from: claude, at: -100)
     #expect(replay.admit(70, at: 0).focus == .placedHidden)
     #expect(replay.placed(70) == .none)
     #expect(replay.heard(.window(70), from: chrome, at: 10) == .follow(70, bringsPointer: true))
-    // Once the conceal has landed Kosmos requests its intent again, and the echo that comes
-    // after the report moves the key on.
+    // Once the conceal has landed Kosmos requests its intent again. A later report is held
+    // for the grace, and Kosmos's echo after it leaves the hold (change 26).
     #expect(replay.admit(71, at: 20).focus == .placedHidden)
     replay.intake.forgetPlacedHidden([71])
     replay.concealed = [71]
     replay.requested(.window(80), app: claude, at: 25)
     #expect(replay.heard(.window(71), from: chrome, at: 30) == .hold(1))
     #expect(replay.heard(.window(80), from: claude, at: 40) == .none)
-    #expect(replay.expire(1) == .none)
+    #expect(replay.expire(1) == .follow(71, bringsPointer: false))
 }
 
 @Test func aTabKeyedBeforeItsPlaceIsDecidedWhenItTakesTheDeselectedTabsPlace() {
