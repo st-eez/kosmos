@@ -287,7 +287,13 @@ private struct ConfigDecoder {
             settings.inactive = color(entry.value, path.key(entry.key)) ?? .clear
         }
         if let entry = table["warning"] {
-            settings.warning = color(entry.value, path.key(entry.key))
+            switch entry.value.kind {
+            case .boolean(let on): settings.warning = on ? nil : .clear
+            case .string: settings.warning = color(entry.value, path.key(entry.key))
+            default:
+                fail("expected true, false or a color as '#rrggbb' or '#rrggbbaa', found \(kindName(entry.value))",
+                     at: entry.value.position, path.key(entry.key))
+            }
         }
         return settings
     }
