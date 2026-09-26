@@ -2,11 +2,9 @@ import AppKit
 import KosmosCore
 import Synchronization
 
-/// The window an empty workspace keys, so keystrokes reach no hidden window. An app with a
-/// concealed window keys that window when fronted, and only the private key record keys this
-/// one (docs/focus.md). Each display has its own, made at its bottom left corner and never
-/// moved: keying a window makes its display the active one, and a move from the main actor
-/// can reach WindowServer after the focus queue's key record.
+/// The window an empty workspace keys, so keystrokes reach no hidden window (docs/focus.md).
+/// Each display has its own, never moved: a move from the main actor can reach WindowServer
+/// after the focus queue's key record.
 final class EmptyWorkspaceWindow: NSWindow {
     /// What the focus queue needs of the window, from any thread.
     final class Target: Sendable {

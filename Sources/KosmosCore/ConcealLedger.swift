@@ -30,10 +30,9 @@ public struct ConcealLedger: Equatable, Sendable {
             return failed
         }
 
-        /// The batch less the windows it failed, once none of them is ordered in: each closed or
-        /// was ordered out after the batch read its row, as at Command-W right before a switch,
-        /// and recovery would restore every other window and not it. Nil when a failed window is
-        /// still ordered in (docs/hiding.md).
+        /// The batch less the windows it failed when none is ordered in: each closed or was
+        /// ordered out after its row read, as at Command-W right before a switch. Nil when one
+        /// is still ordered in (docs/hiding.md).
         public func confirmed(members: [SpaceID: Set<WindowID>],
                               orderedIn: (Set<WindowID>) -> Set<WindowID>) -> (batch: Batch, left: Set<WindowID>)? {
             let left = failed(members: members)

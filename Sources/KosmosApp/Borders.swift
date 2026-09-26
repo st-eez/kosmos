@@ -86,10 +86,9 @@ final class Borders {
         border.order(.above, relativeTo: Int(target))
     }
 
-    /// A border ordered in draws in whichever Space it is in, and one ordered in fresh joined
-    /// its display's current Space, maybe another app's fullscreen one. So while ordered out
-    /// it moves to its target's ordinary Space on its own display, or stays, and only then is
-    /// ordered in (docs/borders.md).
+    /// A border joins its display's current Space, maybe another app's fullscreen one, so
+    /// while ordered out it moves to its target's ordinary Space on its own display, or stays,
+    /// and is ordered in after (docs/borders.md).
     private func pin(_ window: BorderWindow, to target: WindowID) {
         let border = WindowID(window.windowNumber), display = window.display
         spaces.async {
