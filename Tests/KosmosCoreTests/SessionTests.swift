@@ -208,12 +208,12 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.workspace(of: 2) == "1")
 }
 
-@Test func observedMinimumsShapeTheLayout() {
+@Test func aLearnedMinimumSpillsTheWindowAndKeepsTheSplit() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
     let plan = s.setMinimum(2, CGSize(width: 700, height: 100))
-    #expect(plan.frames[1] == CGRect(x: 0, y: 0, width: 300, height: 800))
-    #expect(plan.frames[2] == CGRect(x: 300, y: 0, width: 700, height: 800))
+    #expect(plan.frames[1] == CGRect(x: 0, y: 0, width: 500, height: 800))
+    #expect(plan.frames[2] == CGRect(x: 500, y: 0, width: 700, height: 800))
     #expect(s.setMinimum(2, CGSize(width: 600, height: 50)).isEmpty)   // no larger
     #expect(s.setMinimum(2, CGSize(width: 600, height: 200)).frames.count == 2)
     #expect(s.minimums[2] == CGSize(width: 700, height: 200))
@@ -234,19 +234,65 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     #expect(s.minimums[2] == nil)
 }
 
-@Test func resizeStopsAtAnObservedMinimum() {
+/// Steve's decision of September 25, 2026: the user's resize moves the split past a minimum.
+@Test func aResizePastAMinimumMovesTheSplitAndTheWindowSpills() {
     var s = session()
     _ = s.add(1); _ = s.add(2)
     s.adopt(1)
-    _ = s.setMinimum(2, CGSize(width: 400, height: 0))
-    #expect(s.perform(.resize(.width, by: 300))?.frames[2]!.width == 400)
-    #expect(s.perform(.resize(.width, by: 50)) == nil)
+    _ = s.constrain(2, to: CGSize(width: 400, height: 0))
+    // 2 keeps its left edge on its 200 point tile and goes 200 points past the right edge.
+    var plan = s.perform(.resize(.width, by: 300))
+    #expect(plan?.frames[1] == CGRect(x: 0, y: 0, width: 800, height: 800))
+    #expect(plan?.frames[2] == CGRect(x: 800, y: 0, width: 400, height: 800))
+    // At the left edge, 1 keeps its right edge and goes past the left edge.
+    _ = s.constrain(1, to: CGSize(width: 400, height: 0))
+    s.adopt(2)
+    plan = s.perform(.resize(.width, by: 500))
+    #expect(plan?.frames[1] == CGRect(x: -100, y: 0, width: 400, height: 800))
+    #expect(plan?.frames[2] == CGRect(x: 300, y: 0, width: 700, height: 800))
+}
+
+/// Steve's Helium beside Outlook on the 1920 by 1080 main panel with his gaps, Helium held to
+/// 785 points wide and Outlook to 1145 (live log, September 25, 2026).
+@Test func aNewWindowGetsItsMinimumWhereTheMinimumsFitAndSpillsWhereTheyDoNot() {
+    let gaps = Gaps(inner: 10, outer: Insets(top: 35, left: 10, bottom: 10, right: 10))
+    var s = Session(names: ["3"], display: CGRect(x: 0, y: 0, width: 1920, height: 1080), gaps: gaps)
+    _ = s.add(1, minimum: CGSize(width: 785, height: 588))
+    s.adopt(1)
+    // A window held to 1000 fits beside Helium in the 1890 points between the gaps.
+    var plan = s.add(2, minimum: CGSize(width: 1000, height: 0))
+    #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 890, height: 1035))
+    #expect(plan.frames[2] == CGRect(x: 910, y: 35, width: 1000, height: 1035))
+    // 785, 10 and 1145 make 1940: the split stays equal, and Outlook goes 200 points past the
+    // right edge.
+    _ = s.remove(2)
+    plan = s.add(2, minimum: CGSize(width: 1145, height: 0))
+    #expect(plan.frames[1] == CGRect(x: 10, y: 35, width: 945, height: 1035))
+    #expect(plan.frames[2] == CGRect(x: 965, y: 35, width: 1145, height: 1035))
+}
+
+@Test func aBalanceGivesEachWindowItsMinimumWhereTheyFit() {
+    var s = session()
+    for window: WindowID in [1, 2, 3] {
+        _ = s.add(window)
+        s.adopt(window)
+    }
+    _ = s.constrain(3, to: CGSize(width: 500, height: 0))
+    var frames = s.perform(.balanceSizes)!.frames
+    #expect([1, 2, 3].map { frames[$0]!.width } == [250, 250, 500])
+    // 1200 points do not fit in 1000, so the shares stay equal and each window spills.
+    _ = s.constrain(1, to: CGSize(width: 400, height: 0))
+    _ = s.constrain(2, to: CGSize(width: 400, height: 0))
+    frames = s.perform(.balanceSizes)!.frames
+    #expect([1, 2, 3].map { frames[$0]!.minX } == [-67, 333, 667])
+    #expect([1, 2, 3].map { frames[$0]!.width } == [400, 400, 500])
 }
 
 @Test func removingAWindowForgetsItsMinimum() {
     var s = session()
     _ = s.add(1)
     _ = s.setMinimum(1, CGSize(width: 900, height: 0))
+    _ = s.constrain(1, to: CGSize(width: 800, height: 0))
     _ = s.remove(1)
     #expect(s.minimums.isEmpty)
 }

@@ -236,7 +236,7 @@ extension DragGate {
         let tile = s.frames(of: "1")[10]!
         let drag = try #require(s.beginDrag(grab(10, at: CGPoint(x: tile.maxX - 1, y: tile.midY)), frame: tile))
         let far = s.dragEdges(drag, by: CGSize(width: 2000, height: 0))
-        #expect(far?.frames[11]?.width == 1)
+        #expect(far?.frames[11]?.width == 50)
         let back = s.dragEdges(drag, by: CGSize(width: 100, height: 0))
         #expect(back?.frames[10]?.maxX == tile.maxX + 100)
     }

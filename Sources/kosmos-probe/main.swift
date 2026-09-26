@@ -28,6 +28,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
     ("borders", "borders", { _ in borders() }),
+    ("constraints", "constraints", { _ in constraints() }),
     ("border-space", "border-space", { _ in borderSpace() }),
     ("borders-cpu", "borders-cpu [relayouts]", { bordersCPU(relayouts: $0.first.flatMap(Int.init) ?? 12) }),
     ("border-hop", "border-hop [one|per-display] [hops]", {

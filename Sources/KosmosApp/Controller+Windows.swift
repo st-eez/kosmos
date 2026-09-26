@@ -25,6 +25,8 @@ extension Controller {
             updateBorders()
         case .reordered(let id):
             borderWindows.raise(id)
+        case .minimumChange(let id, let minimum):
+            execute(session.constrain(id, to: minimum))
         case .styleChange:
             updateBorders()
         }
@@ -75,8 +77,9 @@ extension Controller {
         let atLaunch = arrival != .reopened && inventory.wasThereAtLaunch(id)
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
         let floats = rule?.float == true, workspace = arrival == .detached ? nil : rule?.workspace
-        let placed: Session.Plan? = arrival == .reopened ? session.reopen(id, to: workspace, floating: floats)
-                                                         : session.add(id, to: workspace, at: center, floating: floats)
+        let minimum = inventory.windows[id]?.minimum ?? .zero
+        let placed: Session.Plan? = arrival == .reopened ? session.reopen(id, to: workspace, floating: floats, minimum: minimum)
+                                                         : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum)
         guard var plan = placed else { return }
         if floats, let frame = inventory.windows[id]?.frame {
             controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
@@ -176,7 +179,7 @@ extension Controller {
         // admission outlasted the claimed tab's wait. The replace's plan lays the place out.
         let parked = session.parkReason(of: old) == .closedByApp
         if parked { _ = session.unpark([old], follow: nil) }
-        guard let plan = session.replace(old, with: new) else { return false }
+        guard let plan = session.replace(old, with: new, minimum: inventory.windows[new]?.minimum ?? .zero) else { return false }
         controllerLog.info("tab \(new) replaces \(old)\(parked ? ", after \(old) parked as closed and kept" : "", privacy: .public)")
         tabs.replaced(old, with: new)
         // A deselected tab leaves every Space, and the tab selected lands on its ordinary

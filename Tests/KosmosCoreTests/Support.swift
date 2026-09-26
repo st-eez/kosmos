@@ -71,9 +71,15 @@ extension Workspace {
         return focusedWindow
     }
 
-    @discardableResult
-    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
-        resize(window, dimension, by: amount, in: rect, gaps: gaps, minimums: [:])
+    /// Gives the window `points` of its container, and its siblings the rest in proportion,
+    /// past the floor a resize keeps, for tests of windows left a point.
+    mutating func squeeze(_ window: WindowID, to points: CGFloat, in rect: CGRect, gaps: Gaps) {
+        let path = root.path(to: window)!, parent = path.dropLast(), index = path.last!
+        let old = root[parent].children[index].weight, new = points / usableLength(of: parent, in: rect, gaps: gaps)
+        for sibling in root[parent].children.indices {
+            root[parent].children[sibling].weight *= sibling == index ? new / old : (1 - new) / (1 - old)
+        }
+        edits += 1
     }
 
     /// On `screen` with no gaps, which matter only for stale hints.

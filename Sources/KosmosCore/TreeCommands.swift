@@ -10,6 +10,11 @@ public enum ResizeDimension: Sendable {
 }
 
 extension Workspace {
+    /// The least share of its container a user's resize leaves a child, as rift keeps each side
+    /// of a split (`clamp(0.05, 0.95)` in src/layout_engine/systems/bsp.rs), whatever the
+    /// minimums (docs/tree.md).
+    static let leastShare = 0.05
+
     /// Focuses the window next to `window` in the direction and returns it, or returns nil at
     /// the edge of the workspace (docs/tree.md).
     mutating func focus(_ direction: Direction, from window: WindowID, frame: (WindowID) -> CGRect?,
@@ -187,10 +192,10 @@ extension Workspace {
         return true
     }
 
-    /// Takes the space from the siblings in proportion to their shares, and stops at the
-    /// limits `change` keeps (docs/tree.md).
+    /// Takes the space from the siblings in proportion to their shares, past their minimums,
+    /// and stops at the floor `change` keeps (docs/tree.md).
     @discardableResult
-    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> Bool {
+    mutating func resize(_ window: WindowID, _ dimension: ResizeDimension, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let path = root.path(to: window) else { return false }
         let orientation = switch dimension {
             case .width: Orientation.horizontal
@@ -202,7 +207,7 @@ extension Workspace {
         let children = root[parent].children
         let usable = usableLength(of: parent, in: rect, gaps: gaps)
         guard children.count > 1, usable > 0 else { return false }
-        return change(by: amount, along: orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
+        return change(by: amount) { workspace, points in
             let old = children[index].weight
             let new = old + points / usable
             let scale = (1 - new) / (1 - old)
@@ -217,15 +222,14 @@ extension Workspace {
     /// Outward when `amount` is positive. Only the neighbour across the edge gives or takes
     /// the space, and every other edge stays (docs/modifier-drags.md).
     @discardableResult
-    mutating func moveEdge(_ window: WindowID, _ direction: Direction, by amount: CGFloat, in rect: CGRect, gaps: Gaps,
-                           minimums: [WindowID: CGSize]) -> Bool {
+    mutating func moveEdge(_ window: WindowID, _ direction: Direction, by amount: CGFloat, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let path = root.path(to: window), let beyond = neighbor(of: window, direction) else { return false }
         let depth = beyond.count - 1
         let inner = (depth + 1 ..< path.count).filter { root[path.prefix($0)].orientation == direction.orientation }
         let usable = Dictionary(uniqueKeysWithValues: ([depth] + inner).map { ($0, usableLength(of: path.prefix($0), in: rect, gaps: gaps)) })
         guard usable[depth]! > 0 else { return false }
         let before = root
-        return change(by: amount, along: direction.orientation, in: rect, gaps: gaps, minimums: minimums) { workspace, points in
+        return change(by: amount) { workspace, points in
             let parent = path.prefix(depth), index = path[depth], neighbour = beyond[depth]
             let children = before[parent].children
             let share = points / usable[depth]!
@@ -250,23 +254,17 @@ extension Workspace {
         }
     }
 
-    /// The change for `amount` points, else the most whole points toward it that keep the
-    /// limits of docs/tree.md. `apply` returns false for a share at or below zero.
-    private mutating func change(by amount: CGFloat, along orientation: Orientation, in rect: CGRect, gaps: Gaps,
-                                 minimums: [WindowID: CGSize], _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
-        let length: (CGRect) -> CGFloat = orientation == .horizontal ? \.width : \.height
-        func limit(_ id: WindowID) -> CGFloat {
-            let minimum = minimums[id].map { orientation == .horizontal ? $0.width : $0.height } ?? 0
-            return max(1, minimum.rounded(.up))
-        }
-        let before = tileFrames(in: rect, gaps: gaps)
+    /// The change for `amount` points, else the most whole points toward it that leave each
+    /// child `leastShare` of its container, or the share it had when that was less. `apply`
+    /// returns false for a share at or below zero.
+    private mutating func change(by amount: CGFloat, _ apply: (inout Workspace, CGFloat) -> Bool) -> Bool {
+        // A resize changes only weights, so the two lists line up.
+        let before = root.allWeights
         func changed(by points: CGFloat) -> Workspace? {
             var changed = self
             guard apply(&changed, points) else { return nil }
             changed.normalize()
-            let kept = changed.tileFrames(in: rect, gaps: gaps).allSatisfy { id, frame in
-                length(frame) >= min(limit(id), length(before[id]!))
-            }
+            let kept = zip(changed.root.allWeights, before).allSatisfy { $0 >= min(Self.leastShare, $1) - 1e-9 }
             return kept ? changed : nil
         }
         var result = changed(by: amount)
@@ -297,6 +295,16 @@ extension Workspace {
         root.children = windows.map { Node(kind: .window($0), weight: 1 / Double(windows.count)) }
         edits += 1
         check()
+    }
+}
+
+extension Container {
+    /// Every child's weight, depth first.
+    fileprivate var allWeights: [Double] {
+        children.flatMap { child -> [Double] in
+            guard case .container(let nested) = child.kind else { return [child.weight] }
+            return [child.weight] + nested.allWeights
+        }
     }
 }
 
