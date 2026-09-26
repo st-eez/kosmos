@@ -285,12 +285,15 @@ actor AppWorker {
         guard !backoff.backedOff else { return }   // held until the app answers again
         let writes = queuedWrites
         queuedWrites = [:]
-        var dropped: [WindowID] = []
+        // Each report goes at once, so a window's slide and a batch waiting for its write wait
+        // for none of the app's other writes.
+        let dropped = writes.keys.filter { elements[$0] == nil }
+        if !dropped.isEmpty {
+            log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
+            send(.framesDropped(dropped))
+        }
         for (id, entry) in writes {
-            guard let element = elements[id] else {
-                dropped.append(id)
-                continue
-            }
+            guard let element = elements[id] else { continue }
             let start = ContinuousClock.now
             switch entry.write {
             case .position(let origin):
@@ -320,13 +323,7 @@ actor AppWorker {
             }
             // script/bench-relayout.sh counts these lines.
             log.info("\(id) written, AX time \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 2)) ms")
-            // At once, so its slide and a batch waiting for it wait for none of the app's other
-            // writes.
             send(.frameApplied(id: id, target: entry.target, readBack: readBack))
-        }
-        if !dropped.isEmpty {
-            log.notice("\(self.name, privacy: .public) frame writes dropped for \(dropped.map(String.init).joined(separator: " "), privacy: .public): no element")
-            send(.framesDropped(dropped))
         }
     }
 
