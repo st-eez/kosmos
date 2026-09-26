@@ -419,19 +419,20 @@
     window adopted just after Kosmos activated its app, one the user did not pick, with its
     notification logged before the app's activation read.
   - Removing only the matched record, with two rules that come with it (change 19): a
-    notification of a key record's window only joins the record, and a notification's echo
-    that names a window other than the intent requests the intent again. Kosmos builds the
-    rest of change 19: an activation read matches its app's key record whatever window it
-    reads, and a read's echo that names a window other than the intent requests the intent
-    again (above). Removing only the matched record alone leaves a record whose echo never
-    comes, as when an app keeps its own key window, to swallow a later Command-Tab to its
-    window. Kosmos drops the records before the matched one, so an earlier request's echo
-    that arrives after a later one's reads as the user's choice. Kosmos also lets the
-    notification of its own activation consume the record, so the activation read is a
-    report of its own. The split configs found these races before change 19, and none keeps
-    the old rules. The live evidence: on a fast sweep of the pointer across apps, focus
-    going back to a window the pointer left, with that window's report logged after the echo
-    of the later request.
+    notification of a key record's window only joins the record, and a notification that
+    echoes a request no read waited on, as a raise inside the front app, requests the
+    intent again when it names a window other than the intent. Kosmos builds the rest of
+    change 19: an activation read matches its app's key record whatever window it reads,
+    and a read's echo, or the named window's report after a read that waited, requests the
+    intent again when it names a window other than the intent (above). Removing only the
+    matched record alone leaves a record whose echo never comes, as when an app keeps its
+    own key window, to swallow a later Command-Tab to its window. Kosmos drops the records
+    before the matched one, so an earlier request's echo that arrives after a later one's
+    reads as the user's choice. Kosmos also lets the notification of its own activation
+    consume the record, so the activation read is a report of its own. The split configs
+    found these races before change 19, and none keeps the old rules. The live evidence: on
+    a fast sweep of the pointer across apps, focus going back to a window the pointer left,
+    with that window's report logged after the echo of the later request.
   - An activation read of an app that lost the front that still stands when Kosmos
     recorded an activation after its stamp, or when the app had already lost the front to
     Kosmos's activation as the main actor noticed it (changes 19 and 20, `NoticeCheck`;
