@@ -216,28 +216,36 @@ state, and during a slide the frame the slide shows the window at.
   so a move cost its slide up to 6 display frames, as it did Spotify's slide on the left
   panel beside it. The move ordered the old display's border window out, framed the new
   display's pooled window to cover that display and ordered it in below Ghostty, all through
-  AppKit, as Ghostty's write landed and WindowServer moved it to the new display: the
+  AppKit, as Ghostty's write landed and WindowServer moved it to the new display. The
   slide's reads, on another thread, found the write landed from 7 ms before a move's border
   update began to 14 ms after it ended, and the inventory took Ghostty's Space change 1 to
   4 ms after four of the updates ended, and 6 ms before the fifth, the 4.0 ms one, began.
   Those reads, and the transforms they sent, went through during the updates, so
   WindowServer still answered other calls. Which of the move's AppKit calls waited is
-  unmeasured. The pool served each move: 2578 was the only border window made in the test,
-  at a slide's start, and 2583, the last of the other windows WindowServer reported made,
-  was CursorUIViewService's.
+  unmeasured. The pool served each move, and 2578 was the only border window made in the
+  test, at a slide's start.
 - So from a slide's start its border has a window ready on each other display the slide
-  can still show the window on: framed to cover that display, ordered in below the target
-  and drawing nothing. The union of the frame shown and the slide's end
+  can still show the window on. Each is framed to cover its display, ordered in below the
+  target and draws nothing. The union of the frame shown and the slide's end
   (`SlidingWindow.path`) holds every frame to come, as the ease never overshoots. The
   ring's move to a display with a window ready sets only layers, the ring in that window
   and a zero opacity in the one it leaves, which stays ready until the slide ends. Then
-  every ready window goes back to its pool. A raise orders them below the target again.
-  None is made ready on a display that may show a native fullscreen Space, where a border
-  stays ordered out until its Space move is sent (above). At debug level the borders log
-  gives each ring's move between displays, and whether a window was ready there, and each
-  border window ordered in or put back, with the time each AppKit call took. The ceiling:
-  for a slide's 0.38 s the window list has a ready window over every window below the
-  target on each other display the slide crosses, as it has the ring's window on its own.
+  every ready window goes back to its pool. When the ring takes a ready window, Kosmos
+  moves that window to its target's Space, off the main thread, as the target may have
+  reached its display since the slide's start. A raise orders the ready windows below the
+  target again. No
+  window is made ready on a display that may show a native fullscreen Space, where a border
+  stays ordered out until its Space move is sent (above), though the window the ring leaves
+  there stays ready. KosmosCore's `BorderPool` chooses which window each ring takes, and
+  which it readies, clears and puts back, and `Borders` makes the AppKit calls. At debug
+  level the borders log gives each ring's move to a ready window, each border window
+  ordered in or put back, and each raise's orders, with the time the AppKit calls took.
+  The ceiling: until the slide ends, 0.38 s after it starts or, while its write has not
+  landed, up to 1 s after the newest write (`SlidingWindow.landingWait`), the window list
+  has a ready window over every window below the target on each other display the slide
+  crosses, as it has the ring's window on its own. Framing each ready window and the
+  ring's window to the slide's path cut to their display and widened by the ring would
+  limit that to the path.
 - A display frame's ring moves go out with its transforms, a quarter of a refresh after the
   vsync the link's callback reports, and land in the same composite ([geometry.md](geometry.md) has
   WindowServer's cut-off). In `kosmos-probe slide-sync` on 2026-09-26 the ring showed with
@@ -286,9 +294,11 @@ state, and during a slide the frame the slide shows the window at.
   slide log gives its display link's callback time, which includes the borders.
 - Open until the live test:
   - whether a ring's move to another display mid-slide now costs its display frame under
-    1 ms, and whether a ready border window shows nothing until the ring reaches it
-    (Ghostty's moves of September 27, 2026 again, with the frame and borders lines at
-    debug level);
+    1 ms, whether a ready border window shows nothing until the ring reaches it, what a
+    slide's start costs now that it orders in a window for each other display it crosses,
+    and makes one on a display with none in its pool, and what a raise mid-slide costs,
+    now that it orders each ready window too (Ghostty's moves of September 27, 2026
+    again, with the frame and borders lines at debug level);
   - how much later than its window a border shows at a revealing switch, now that it
     comes after the focus request;
   - whether a focus move between displays still shows the border at the last window's

@@ -61,9 +61,9 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
         Border(around: frame, radius: 16, width: 2, color: blue, displays: displays, path: path)!
     }
     let start = border(from, path: from.union(to))
-    #expect(start.display == 1 && start.slideDisplays == [2: right.frame])
+    #expect(start.display == 1 && start.slideDisplays == [right])
     let past = CGRect(x: 800, y: 100, width: 500, height: 300)
-    #expect(border(past, path: past.union(to)).slideDisplays == [1: left.frame])
+    #expect(border(past, path: past.union(to)).slideDisplays == [left])
     #expect(border(to, path: to).slideDisplays.isEmpty)
     // A path along a display's edge crosses nothing there, and a border at rest names nothing.
     #expect(border(from, path: CGRect(x: 100, y: 100, width: 500, height: 700)).slideDisplays.isEmpty)

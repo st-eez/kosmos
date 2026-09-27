@@ -596,8 +596,8 @@ final class Controller {
         }
         borderWindows.show(shown.reduce(into: [:]) { result, entry in
             let slide = sliding[entry.key]
-            result[entry.key] = Borders.Shown(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
-                                              alpha: slide?.alpha ?? 1, sliding: slide != nil)
+            result[entry.key] = ShownBorder(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
+                                            alpha: slide?.alpha ?? 1, sliding: slide != nil)
         }, fullscreen: fullscreenDisplays)
     }
 

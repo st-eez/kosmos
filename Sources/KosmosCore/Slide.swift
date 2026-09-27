@@ -120,7 +120,7 @@ public struct SlidingWindow: Sendable {
 
     public func isAwaiting(at now: Double) -> Bool { landed == nil && now < sent + Self.landingWait }
 
-    /// Holds every frame the slide can still show the window at: the ease never overshoots, so
+    /// Holds every frame the slide can still show the window at. The ease never overshoots, so
     /// each frame to come lies between the one shown and the slide's end.
     public var path: CGRect { shown.union(slide?.to ?? readBack ?? target) }
 

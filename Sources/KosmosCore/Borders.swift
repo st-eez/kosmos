@@ -63,9 +63,9 @@ public struct Border: Equatable, Sendable {
     public var displayFrame: CGRect
     /// The ring cut to its display, so no border shows on a display the window is not on.
     public var frame: CGRect
-    /// While the window slides, each other display the slide can still show it on, with that
-    /// display's frame (docs/borders.md).
-    public var slideDisplays: [DisplayID: CGRect]
+    /// While the window slides, each other display the slide can still show it on
+    /// (docs/borders.md).
+    public var slideDisplays: [Monitor]
 
     /// `radius` is how much WindowServer rounds the window's corners, and `path`, while the
     /// window slides, holds every frame the slide can still show it at. Nil when the window
@@ -77,8 +77,7 @@ public struct Border: Equatable, Sendable {
             return common.isNull ? 0 : common.width * common.height
         }
         guard let display = displays.max(by: { area($0, frame) < area($1, frame) }), area(display, frame) > 0 else { return nil }
-        let crossed = path.map { path in displays.filter { $0.id != display.id && area($0, path) > 0 } } ?? []
-        slideDisplays = Dictionary(crossed.map { ($0.id, $0.frame) }) { first, _ in first }
+        slideDisplays = path.map { path in displays.filter { $0.id != display.id && area($0, path) > 0 } } ?? []
         lineWidth = CGFloat(width)
         ring = frame.insetBy(dx: -lineWidth, dy: -lineWidth)
         cornerRadius = radius > 0 ? radius + lineWidth : 0
@@ -86,6 +85,23 @@ public struct Border: Equatable, Sendable {
         self.display = display.id
         displayFrame = display.frame
         self.frame = ring.intersection(display.frame)
+    }
+}
+
+/// A border as its window shows it.
+public struct ShownBorder: Equatable, Sendable {
+    public var border: Border
+    public var level: Int32
+    public var alpha: Double
+    /// While the target slides, its border window covers its display and each display frame
+    /// moves only the ring's layer, a fourth of the cost of moving the window (docs/borders.md).
+    public var sliding: Bool
+
+    public init(border: Border, level: Int32, alpha: Double, sliding: Bool) {
+        self.border = border
+        self.level = level
+        self.alpha = alpha
+        self.sliding = sliding
     }
 }
 
