@@ -196,18 +196,22 @@ final class Slides {
             }
             return done
         }
+        let transformsSent = CACurrentMediaTime()
+        for (id, window) in done { finished(id, window) }
+        if done.isEmpty { onChange?() }
+        let spent = CACurrentMediaTime() - began
         // Places each display frame's transform against the frames script/bench-frames.sh
-        // captures (docs/geometry.md).
+        // captures, and splits the frame's time between the transforms and the border update
+        // that follows them (docs/geometry.md).
         slideLog.debug("""
             frame \((self.links[display]?.callbacks ?? 0) + 1) on display \(display): stepped \
             \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after the link's timestamp, called back \
             \((calledBack - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, target \
-            \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it; \
+            \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, transforms \
+            \((transformsSent - began) * 1000, format: .fixed(precision: 2)) ms, borders \
+            \((spent - (transformsSent - began)) * 1000, format: .fixed(precision: 2)) ms; \
             \(stepped.map { "\($0.id) shown at \($0.shown)\($0.sent ? "" : ", unchanged")" }.joined(separator: "; "), privacy: .public)
             """)
-        for (id, window) in done { finished(id, window) }
-        if done.isEmpty { onChange?() }
-        let spent = CACurrentMediaTime() - began
         links[display]?.callbacks += 1
         links[display]?.time += spent
         if let slowest = links[display]?.slowest, spent > slowest { links[display]?.slowest = spent }
