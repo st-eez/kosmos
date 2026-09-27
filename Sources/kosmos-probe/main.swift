@@ -24,9 +24,19 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("displays", "displays", { _ in displays() }),
     ("secure-input", "secure-input", { _ in secureInput() }),
     ("mission-control", "mission-control [seconds]", { missionControl(seconds: $0.first.flatMap(Double.init) ?? 120) }),
-    ("bench-windows", "bench-windows <count> [display]", { arguments in
+    ("bench-windows", "bench-windows <count> [display] [--colors] [--slow <ms>]", { arguments in
         guard let count = arguments.first.flatMap(Int.init) else { usage() }
-        benchWindows(count, on: arguments.dropFirst().first)
+        var rest = Array(arguments.dropFirst()), slow = 0.0
+        if let flag = rest.firstIndex(of: "--slow") {
+            guard flag + 1 < rest.count, let ms = Double(rest[flag + 1]) else { usage() }
+            slow = ms
+            rest.removeSubrange(flag...flag + 1)
+        }
+        benchWindows(count, on: rest.first { $0 != "--colors" }, colors: rest.contains("--colors"), slow: slow)
+    }),
+    ("bench-frames", "bench-frames <directory> <display> [real]", { arguments in
+        guard arguments.count >= 2 else { usage() }
+        benchFrames(arguments[0], display: arguments[1], real: arguments.dropFirst(2).first == "real")
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
     ("borders", "borders", { _ in borders() }),
