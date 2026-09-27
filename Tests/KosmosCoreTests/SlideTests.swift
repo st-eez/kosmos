@@ -71,6 +71,23 @@ private func move() -> SlidingWindow {
     SlidingWindow(space: 7, display: 1, from: left, to: right, pop: false, at: 0)
 }
 
+@Test func aSlidesPathHoldsEveryFrameStillToCome() {
+    var window = move()
+    #expect(window.path == left.union(right))
+    var paths: [CGRect] = []
+    for step in 0...40 {
+        paths.append(window.path)
+        _ = window.step(at: Double(step) * 0.01)
+        #expect(paths.allSatisfy { $0.insetBy(dx: -1e-6, dy: -1e-6).contains(window.shown) })
+    }
+    #expect(window.path == right)
+    // A pop waiting for its write pops where the write lands.
+    var pop = SlidingWindow(space: 7, display: 1, from: opened, to: narrow, pop: true, at: 0)
+    #expect(pop.path == narrow)
+    pop.confirmed(target: narrow, readBack: right, at: 0.01)
+    #expect(pop.path == right)
+}
+
 @Test func aWriteLandsAtTheFrameReadBack() {
     var window = SlidingWindow(space: 7, display: 1, from: left, to: narrow, pop: false, at: 0)
     let resized = CGRect(origin: left.origin, size: narrow.size)

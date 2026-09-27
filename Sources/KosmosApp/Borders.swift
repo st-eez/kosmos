@@ -21,6 +21,11 @@ final class Borders {
     }
 
     private var windows: [WindowID: BorderWindow] = [:]
+    /// While its target slides, a border window on each other display the slide can still show
+    /// it on, ordered in below the target from the slide's start and drawing nothing, so the
+    /// ring's move there sets only layers: the move's AppKit calls took up to 52 ms while
+    /// WindowServer moved the target to that display (docs/borders.md).
+    private var ready: [WindowID: [DisplayID: BorderWindow]] = [:]
     /// A border window keeps to one display: moved to another display's Space before its new
     /// frame lands, it showed there at its old frame (docs/borders.md).
     private var spare: [DisplayID: [BorderWindow]] = [:]
@@ -73,14 +78,28 @@ final class Borders {
     /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
     func show(_ shown: [WindowID: Shown], fullscreen: Set<DisplayID> = []) {
         for (target, window) in windows where shown[target]?.border.display != window.display {
-            window.putBack()
             windows[target] = nil
-            waiting[target] = nil
-            spare[window.display, default: []].append(window)
+            if waiting.removeValue(forKey: target) == nil, let next = shown[target], next.sliding {
+                let isReady = ready[target]?[next.border.display] != nil
+                bordersLog.debug("""
+                    ring of \(target) moves from display \(window.display) to \(next.border.display), \
+                    \(isReady ? "where its border window is ready" : "where none is ready", privacy: .public)
+                    """)
+                window.clear()
+                ready[target, default: [:]][window.display] = window
+            } else {
+                putBack(window)
+            }
+        }
+        for (target, slideWindows) in ready where shown[target]?.sliding != true {
+            slideWindows.values.forEach(putBack)
+            ready[target] = nil
         }
         for (target, next) in shown {
+            if next.sliding { prepare(target, next, fullscreen: fullscreen) }
             let display = next.border.display
-            let window = windows[target], fresh = window == nil
+            let window = windows[target] ?? ready[target]?.removeValue(forKey: display), fresh = window == nil
+            let began = CACurrentMediaTime()
             let border = window ?? spare[display]?.popLast() ?? BorderWindow(display: display, frame: next.border.displayFrame)
             windows[target] = border
             // Ordered in there before its move, it would draw on the fullscreen app, and a frame
@@ -96,19 +115,60 @@ final class Borders {
             }
             // Setting another level can move the border within the stacking order.
             let leveled = border.level.rawValue != Int(next.level)
-            border.show(next)
             if fresh {
-                border.order(.below, relativeTo: Int(target))
-                pin(border, to: target, thenShow: false)
-            } else if leveled {
-                border.order(.below, relativeTo: Int(target))
+                orderIn(border, next, below: target, since: began)
+            } else {
+                border.show(next)
+                if leveled { border.order(.below, relativeTo: Int(target)) }
             }
         }
+    }
+
+    /// None is made ready on a display that may show a native fullscreen Space, where a border
+    /// stays ordered out until its Space move is sent.
+    private func prepare(_ target: WindowID, _ next: Shown, fullscreen: Set<DisplayID>) {
+        for (display, frame) in next.border.slideDisplays where ready[target]?[display] == nil && !fullscreen.contains(display) {
+            let began = CACurrentMediaTime()
+            let window = spare[display]?.popLast() ?? BorderWindow(display: display, frame: frame)
+            var blank = next
+            (blank.border.display, blank.border.displayFrame, blank.alpha) = (display, frame, 0)
+            orderIn(window, blank, below: target, since: began, ready: true)
+            ready[target, default: [:]][display] = window
+        }
+    }
+
+    /// `began` is before the window was taken from its pool or made.
+    private func orderIn(_ window: BorderWindow, _ next: Shown, below target: WindowID, since began: Double,
+                         ready: Bool = false) {
+        let taken = CACurrentMediaTime()
+        window.show(next)
+        let framed = CACurrentMediaTime()
+        window.order(.below, relativeTo: Int(target))
+        let ordered = CACurrentMediaTime()
+        pin(window, to: target, thenShow: false)
+        bordersLog.debug("""
+            border \(window.windowNumber) of \(target) ordered in on display \(window.display)\
+            \(ready ? " ready for the slide" : "", privacy: .public): taken in \
+            \((taken - began) * 1000, format: .fixed(precision: 2)) ms, framed in \
+            \((framed - taken) * 1000, format: .fixed(precision: 2)) ms, ordered below it in \
+            \((ordered - framed) * 1000, format: .fixed(precision: 2)) ms
+            """)
+    }
+
+    private func putBack(_ window: BorderWindow) {
+        let began = CACurrentMediaTime()
+        window.putBack()
+        spare[window.display, default: []].append(window)
+        bordersLog.debug("""
+            border \(window.windowNumber) put back on display \(window.display) in \
+            \((CACurrentMediaTime() - began) * 1000, format: .fixed(precision: 2)) ms
+            """)
     }
 
     /// A raise of the target leaves its border under the windows the raise put the target
     /// over (kosmos-probe borders). A waiting border is ordered below its target when it shows.
     func raise(_ target: WindowID) {
+        ready[target]?.values.forEach { $0.order(.below, relativeTo: Int(target)) }
         guard waiting[target] == nil else { return }
         windows[target]?.order(.below, relativeTo: Int(target))
     }
@@ -174,6 +234,13 @@ private final class BorderWindow: NSWindow {
     func putBack() {
         orderOut(nil)
         shown = nil
+    }
+
+    /// Draws nothing, ordered in where it is.
+    func clear() {
+        guard var next = shown, next.alpha != 0 else { return }
+        next.alpha = 0
+        show(next)
     }
 
     func show(_ next: Borders.Shown) {

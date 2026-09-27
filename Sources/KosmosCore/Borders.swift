@@ -63,15 +63,22 @@ public struct Border: Equatable, Sendable {
     public var displayFrame: CGRect
     /// The ring cut to its display, so no border shows on a display the window is not on.
     public var frame: CGRect
+    /// While the window slides, each other display the slide can still show it on, with that
+    /// display's frame (docs/borders.md).
+    public var slideDisplays: [DisplayID: CGRect]
 
-    /// `radius` is how much WindowServer rounds the window's corners. Nil when the window is
-    /// on none of `displays`.
-    public init?(around frame: CGRect, radius: CGFloat, width: Double, color: BorderColor, displays: [Monitor]) {
-        func area(_ monitor: Monitor) -> CGFloat {
-            let common = monitor.frame.intersection(frame)
+    /// `radius` is how much WindowServer rounds the window's corners, and `path`, while the
+    /// window slides, holds every frame the slide can still show it at. Nil when the window
+    /// is on none of `displays`.
+    public init?(around frame: CGRect, radius: CGFloat, width: Double, color: BorderColor, displays: [Monitor],
+                 path: CGRect? = nil) {
+        func area(_ monitor: Monitor, _ rect: CGRect) -> CGFloat {
+            let common = monitor.frame.intersection(rect)
             return common.isNull ? 0 : common.width * common.height
         }
-        guard let display = displays.max(by: { area($0) < area($1) }), area(display) > 0 else { return nil }
+        guard let display = displays.max(by: { area($0, frame) < area($1, frame) }), area(display, frame) > 0 else { return nil }
+        let crossed = path.map { path in displays.filter { $0.id != display.id && area($0, path) > 0 } } ?? []
+        slideDisplays = Dictionary(crossed.map { ($0.id, $0.frame) }) { first, _ in first }
         lineWidth = CGFloat(width)
         ring = frame.insetBy(dx: -lineWidth, dy: -lineWidth)
         cornerRadius = radius > 0 ? radius + lineWidth : 0
@@ -98,16 +105,17 @@ extension Session {
         return bordered
     }
 
-    /// `shown` gives where a window shows and its corner radius, or nil for one concealed or
-    /// ordered out. `flashing` names the windows whose app just refused their tile.
+    /// `shown` gives where a window shows, its corner radius and, while it slides, its slide's
+    /// path, or nil for one concealed or ordered out. `flashing` names the windows whose app
+    /// just refused their tile.
     public func borders(_ settings: BorderSettings, accent: BorderColor, red: BorderColor, flashing: Set<WindowID>,
-                        shown: (WindowID) -> (frame: CGRect, radius: CGFloat)?) -> [WindowID: Border] {
+                        shown: (WindowID) -> (frame: CGRect, radius: CGFloat, path: CGRect?)?) -> [WindowID: Border] {
         var borders: [WindowID: Border] = [:]
         for (window, focused) in bordered {
             guard let color = settings.color(focused: focused, flashing: flashing.contains(window), accent: accent, red: red),
                   let target = shown(window),
                   let border = Border(around: target.frame, radius: target.radius, width: settings.width, color: color,
-                                      displays: monitors) else { continue }
+                                      displays: monitors, path: target.path) else { continue }
             borders[window] = border
         }
         return borders

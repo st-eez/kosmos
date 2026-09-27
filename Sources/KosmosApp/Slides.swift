@@ -93,10 +93,10 @@ final class Slides {
         for (id, display) in displays where !visible(id) || fullscreen.contains(display) { end(id, "as it left the screen") }
     }
 
-    /// Where the window shows as of its link's last display frame, and at what alpha; nil when
-    /// it is not sliding.
-    func shown(_ id: WindowID) -> (frame: CGRect, alpha: Double)? {
-        onscreen.state.withLock { state in state.windows[id].map { ($0.shown, $0.alpha) } }
+    /// Where the window shows as of its link's last display frame, at what alpha, and the path
+    /// that holds every frame its slide can still show it at; nil when it is not sliding.
+    func shown(_ id: WindowID) -> (frame: CGRect, alpha: Double, path: CGRect)? {
+        onscreen.state.withLock { state in state.windows[id].map { ($0.shown, $0.alpha, $0.path) } }
     }
 
     /// A change to the newest write's frame leaves the slide: WindowServer can take it after
