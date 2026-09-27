@@ -332,6 +332,62 @@
     at its new place for one read of 10 swaps. The reads come every 0.1 ms within 20 ms of
     a window's write, its read back or a new frame, and every 1 ms after; a row a read
     misses tells nothing.
+  - A landing can show its window off its slide for a refresh, a ceiling Kosmos accepts. In
+    about a quarter of the steps that slide windows, a window shows for one refresh, about
+    8 ms at 120 Hz, at its new frame without its Space's offset, displaced by up to its
+    whole move: 59 of 240 steps in the second frame benchmark run. It comes more often when
+    WindowServer is busy, since a read waits for it, 1.4 ms at the median and 5 ms at p90
+    in the live log of September 25 and 26, 2026, against 0.018 ms on an idle Mac in
+    `kosmos-probe slide-landing`. The app commits its frame change on its own schedule, and
+    no API lets Kosmos commit the Space's transform in the same composite, so a landing
+    WindowServer composites before a read finds it shows without its transform. Steve
+    watched 120 fps recordings at full resolution and could not see it at normal speed. An
+    upgrade waits for Steve to notice it in normal use.
+    - The evidence:
+      - WindowServer takes a change into the next composite only until about 0.3 ms after
+        the vsync (`kosmos-probe slide-sync`, September 26, 2026).
+      - On an idle Mac, reads as Kosmos makes them, reads back to back, and a transform
+        sent at the window's move (806) or resize (807) event each left the window
+        displaced in 0 to 2 of 16 landings (`kosmos-probe slide-landing`, with and without
+        `--size`, September 26, 2026).
+      - With reads alone, displaced frames came in 31 of the 240 steps, besides 17 the
+        analyzer made (the first frame benchmark run, `script/bench-frames.sh`, September
+        26, 2026).
+      - With the transform also sent at each 806 and 807 in WindowServer's callback, which
+        runs on the main thread, the event set the transform first in 123 of 583 landings,
+        and displaced frames came in 59 steps, up to 343 px in join-with (the second run,
+        September 26, 2026, with its analyzer and capture changed as well). Kosmos went
+        back to reads alone.
+      - None of SkyLight's 79 bridged operations moves a window (the blip research of
+        September 27, 2026, from SkyLight, WindowManager.app and QuartzCore on macOS 27).
+      - WindowServer's rights check refuses a move, alpha or transform of another app's
+        window from a connection without rights its owner granted or the Dock's
+        entitlement, with Screen Recording or without (the blip research).
+      - WindowManager.app, which runs Stage Manager and tiling, holds a window's move for
+        the app's own Core Animation commit, by a fence the app's transaction carries and
+        Kosmos cannot join (the blip research).
+      - WindowServer draws another app's window into a `CAPluginLayer` only for the Dock, a
+        connection entitled to it, or one holding rights on the window (the blip research).
+      - 44 private SkyLight window calls, each made from a process of its own on a
+        connection foreign to the window, as Kosmos's is, changed nothing on a test window
+        that a child of the probe owns (`kosmos-probe api-sweep`, macOS 27 26A428,
+        September 27, 2026). Besides 5 reads, the 39 calls that would change the window's
+        frame, bounds, resolution, alpha, transform, Spaces, order, shape or level left it
+        as it was, read back at once and 100 ms later, whatever they returned, and
+        `SLSSetWindowTransformAtPlacement` crashed its own process. The run left out
+        `SLSDisableUpdate` with `SLSReenableUpdate`, so the screen could not freeze, and
+        `api-sweep --list` gives the 55 calls the probe never makes, for want of a
+        signature or for a global effect.
+    - The upgrades, each with its cost:
+      - Writes timed to the refresh with the offset set ahead, for apps that commit fast.
+        It is a probability game, since an app that commits after its transform lands shows
+        its window displaced backwards instead, as the space-anim demo's swaps did.
+      - A stand-in from a Screen Recording snapshot, as yabai animates windows. It costs a
+        permission prompt and its re-approval after 30 days unused, the capture indicator
+        flashing, protected video going black, about 50 ms a capture on macOS 27 (AltTab's
+        measure), content frozen for the slide, and clicks on the stand-in lost.
+      - Accessibility writes at each display frame, as Rift and glide animate. They stutter
+        on an app slow to commit.
   - A write lands once WindowServer has the frame the worker read back after it, and the
     slide ends at that frame, so a window that rounds its size ends where it is, and one
     that refuses the move lands at once and slides back. A slide that is over holds its
@@ -518,7 +574,6 @@
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next
     slide should run; a relayout on a display showing a native fullscreen Space, which
     should jump, and one on its desktop Space with the key window, which should slide;
-    how often a landing still shows its window displaced under load, the frame benchmark's
-    displaced frames in slides; and how Steve's slides start now that each display frame
-    goes a quarter of a refresh after its callback: the frame benchmark's latency, jumps and
-    skips in slides, with the slide log's frame lines.
+    and how Steve's slides start now that each display frame goes a quarter of a refresh
+    after its callback: the frame benchmark's latency, jumps and skips in slides, with the
+    slide log's frame lines.

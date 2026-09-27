@@ -313,6 +313,9 @@ private final class Onscreen: Sendable {
                 var moved: [WindowRow] = []
                 for row in rows {
                     guard var window = state.windows[row.id], window.isAwaiting(at: read) else { continue }
+                    // A landing composited before a read finds it shows the window a refresh at
+                    // its new frame, off its slide. docs/geometry.md records this ceiling, why no
+                    // API closes it, and the upgrades with their costs.
                     if window.observed(row.frame, at: read) {
                         window.show()
                         moved.append(row)

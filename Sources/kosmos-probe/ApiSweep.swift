@@ -1,6 +1,5 @@
 // An empirical sweep of the private SkyLight window calls, to show which can change another
-// app's window from an ordinary process like Kosmos (blip-research.md decided this from the
-// disassembly; the sweep confirms it by experiment).
+// app's window from an ordinary process like Kosmos (docs/geometry.md).
 //
 //   kosmos-probe api-sweep [--list] [--check] [--out <path>] [--from <i>] [--to <i>]
 //                                   A child of the probe, an accessory app never activated and

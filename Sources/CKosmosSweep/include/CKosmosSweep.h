@@ -1,5 +1,5 @@
 // The api-sweep probe's table of private window calls and the code that performs one on a
-// window this process does not own (docs/api-sweep header in kosmos-probe/ApiSweep.swift).
+// window this process does not own (kosmos-probe/ApiSweep.swift, docs/geometry.md).
 //
 // Every signature here was taken from a published header dump or a reverse engineered
 // project, named in `source`, and marked known, inferred or unknown. Unknown signatures are
