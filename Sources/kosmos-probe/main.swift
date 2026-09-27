@@ -53,9 +53,10 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let count = arguments.first.flatMap(Int.init)
         slideSync(slides: count ?? 6, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
-    ("slide-landing", "slide-landing [landings] [mode...]", { arguments in
+    ("slide-landing", "slide-landing [landings] [--size] [mode...]", { arguments in
         let count = arguments.first.flatMap(Int.init)
-        slideLanding(landings: count ?? 16, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
+        let rest = arguments.dropFirst(count == nil ? 0 : 1)
+        slideLanding(landings: count ?? 16, sizes: rest.contains("--size"), modes: rest.filter { $0 != "--size" })
     }),
     ("slide-links", "slide-links [slides] [mode...]", { arguments in
         let count = arguments.first.flatMap(Int.init)

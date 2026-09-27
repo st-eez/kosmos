@@ -1,16 +1,18 @@
 // When a sliding window's write lands against the transform that shows it, and how soon each
 // way of following the landing sets the transform again (docs/geometry.md).
 //
-//   kosmos-probe slide-landing [landings] [mode...]
+//   kosmos-probe slide-landing [landings] [--size] [mode...]
 //                                   A red window of a child app, in an animation Space of the
 //                                   probe's whose transform holds it still at the bottom left of
 //                                   the built-in display, over a black window. The probe writes
 //                                   the window's position through Accessibility, 240 points right
-//                                   or back, at a random point of the refresh, as Kosmos writes a
-//                                   sliding window, and follows each landing as the mode says. A
-//                                   strip recorded with ScreenCaptureKit counts the frames that
-//                                   show the window off its place. Each mode runs 16 landings by
-//                                   default, or the modes named run alone:
+//                                   or back, or with --size its width, 240 points wider or back,
+//                                   at a random point of the refresh, as Kosmos writes a sliding
+//                                   window, and follows each landing as the mode says. A strip
+//                                   recorded with ScreenCaptureKit counts the frames that show
+//                                   the window's left edge, or with --size its right edge, off
+//                                   its place. Each mode runs 16 landings by default, or the
+//                                   modes named run alone:
 //                                     none    follows nothing until 60 ms after the write: when
 //                                             the landing shows, against the window's 806 and 807
 //                                             notifications
@@ -44,12 +46,12 @@ private enum LandingMode: String, CaseIterable, Sendable {
     return CGRect(x: visible.minX + 40 + landingDistance, y: visible.maxY - 160, width: 180, height: 120)
 }
 
-/// A red titled window at rest on the built-in display, in an app never activated. Prints its
-/// id and runs until its standard input closes.
+/// A red titled window at rest on the built-in display, in an app never activated, resizable so
+/// Accessibility can write its size. Prints its id and runs until its standard input closes.
 @MainActor func landingWindow() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: .zero, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
     window.title = "kosmos-probe landing"
     window.backgroundColor = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
     window.animationBehavior = .none
@@ -72,7 +74,7 @@ private struct Landing: Sendable {
     let sent: Double
     var returned: Double?
     /// Each 806 or 807 for the window, and whether it came on the main thread.
-    var notified: [(at: Double, main: Bool)] = []
+    var notified: [(id: UInt32, at: Double, main: Bool)] = []
     /// When the transform for the write's target went.
     var followed: Double?
     /// Set when nothing followed the landing by the settle.
@@ -144,7 +146,7 @@ private final class LandingFollower: Sendable {
         state.withLock { state in
             if state.payloads[id] == nil { state.payloads[id] = bytes }
             guard let mode = state.landing?.mode else { return }
-            state.landing?.notified.append((now, main))
+            state.landing?.notified.append((id, now, main))
             switch mode {
             case .notify:
                 if let frame = SkyLight.rows([self.window])?.first?.frame { _ = show(frame, in: &state, at: CACurrentMediaTime()) }
@@ -196,7 +198,7 @@ private final class LandingFollower: Sendable {
     }
 }
 
-@MainActor func slideLanding(landings count: Int, modes: [String]) -> Never {
+@MainActor func slideLanding(landings count: Int, sizes: Bool, modes: [String]) -> Never {
     let named = modes.map(LandingMode.init(rawValue:))
     guard !named.contains(nil) else { usage() }
     let app = NSApplication.shared
@@ -256,15 +258,20 @@ private final class LandingFollower: Sendable {
     let vsyncs = Vsyncs(screen, rate: rate)
 
     // A strip 4 points tall across the path, 40 points above the window's bottom edge, in the
-    // display's points from its top left. The reader gives the red's left edge in points from
-    // the window's place at rest.
+    // display's points from its top left. The reader gives the red's left edge, or with sizes
+    // its right edge, in points from its place at rest.
     let strip = CGRect(x: path.minX - bounds.minX, y: rest.maxY - 40 - bounds.minY - 2, width: path.width, height: 4)
     let capture = StripCapture(displayID: screen.displayID, strip: strip, scale: scale, rate: rate) { row, width in
         let pixels = CGFloat(width) / strip.width
-        guard let first = (0..<width).first(where: { x in
+        func red(_ x: Int) -> Bool {
             let pixel = row[x]
             return (pixel >> 16) & 0xff > 160 && (pixel >> 8) & 0xff < 100 && pixel & 0xff < 100
-        }) else { return (nil, nil) }
+        }
+        if sizes {
+            guard let last = (0..<width).last(where: red) else { return (nil, nil) }
+            return (Double(path.minX + CGFloat(last + 1) / pixels - rest.maxX), nil)
+        }
+        guard let first = (0..<width).first(where: red) else { return (nil, nil) }
         return (Double(path.minX + CGFloat(first) / pixels - rest.minX), nil)
     }
     capture.start()
@@ -283,8 +290,8 @@ private final class LandingFollower: Sendable {
         cleanUp()
         exit(1)
     }
-    print(String(format: "built-in display at %d Hz, %.0fx; window %d of pid %d, %.0f by %.0f at (%.0f, %.0f), written %.0f points right and back",
-                 rate, scale, window, child.pid, rest.width, rest.height, rest.minX, rest.minY, landingDistance))
+    print(String(format: "built-in display at %d Hz, %.0fx; window %d of pid %d, %.0f by %.0f at (%.0f, %.0f), written %.0f points %@ and back",
+                 rate, scale, window, child.pid, rest.width, rest.height, rest.minX, rest.minY, landingDistance, sizes ? "wider" : "right"))
 
     let writes = DispatchQueue(label: "kosmos-probe.slide-landing.writes", qos: .userInitiated)
     let chosen = named.isEmpty ? LandingMode.allCases : named.compactMap { $0 }
@@ -294,11 +301,17 @@ private final class LandingFollower: Sendable {
         for _ in 1...count {
             // A write at a random point of the refresh, as a relayout's is.
             pumpEvents(0.1 + Double.random(in: 0..<refresh))
-            let to = at == rest ? rest.offsetBy(dx: landingDistance, dy: 0) : rest
+            let to = at != rest ? rest : sizes ? CGRect(origin: rest.origin, size: CGSize(width: rest.width + landingDistance, height: rest.height))
+                : rest.offsetBy(dx: landingDistance, dy: 0)
             follower.begin(Landing(mode: mode, to: to, sent: CACurrentMediaTime()))
             writes.async {
-                var origin = to.origin
-                AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &origin)!)
+                if sizes {
+                    var size = to.size
+                    AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
+                } else {
+                    var origin = to.origin
+                    AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &origin)!)
+                }
                 follower.returned(at: CACurrentMediaTime())
             }
             pumpEvents(mode == .none ? 0.06 : 0.1)
@@ -344,7 +357,8 @@ private final class LandingFollower: Sendable {
     func phase(_ time: Double) -> Double? {
         vsyncs.last { $0 <= time }.map { (time - $0).truncatingRemainder(dividingBy: refresh) }
     }
-    var blipped = 0, offFrames = 0, onMain = 0, notices = 0, settled = 0
+    var blipped = 0, offFrames = 0, onMain = 0, settled = 0
+    var notices: [UInt32: Int] = [:]
     var ax: [Double] = [], notice: [Double] = [], follow: [Double] = [], shown: [Double] = []
     var lines: [String] = []
     for (index, landing) in landings.enumerated() {
@@ -354,7 +368,7 @@ private final class LandingFollower: Sendable {
         offFrames += off.count
         if landing.settled { settled += 1 }
         onMain += landing.notified.filter(\.main).count
-        notices += landing.notified.count
+        for notice in landing.notified { notices[notice.id, default: 0] += 1 }
         if let returned = landing.returned { ax.append(returned - landing.sent) }
         let first = landing.notified.first?.at
         if let first, let returned = landing.returned { notice.append(first - returned) }
@@ -362,7 +376,7 @@ private final class LandingFollower: Sendable {
         if let first, let shownAt = off.first?.time { shown.append(shownAt - first) }
         func after(_ time: Double?) -> String { time.map { ms($0 - landing.sent) } ?? "-" }
         let places = off.map { $0.window.map { String(format: "%+.0f", $0) } ?? "gone" }.joined(separator: " ")
-        lines.append("  \(index + 1): returned \(after(landing.returned)), notified \(landing.notified.map { after($0.at) }.joined(separator: " ")) "
+        lines.append("  \(index + 1): returned \(after(landing.returned)), notified \(landing.notified.map { "\($0.id) at \(after($0.at))" }.joined(separator: ", ")) "
                      + "(\(first.flatMap(phase).map(ms) ?? "-") ms after its vsync), followed \(after(landing.followed))"
                      + "\(landing.settled ? " at the settle" : ""); \(off.count) frames off"
                      + (off.isEmpty ? "" : " from \(after(off.first?.time)) to \(after(off.last?.time)), at \(places)"))
@@ -371,7 +385,7 @@ private final class LandingFollower: Sendable {
           + "\(settled) followed only at the settle")
     print("  ms at the median: the write \(median(ax)), its first 806 or 807 after it returned \(median(notice)), "
           + "the transform after that notification \(median(follow)), the first frame off after it \(median(shown)); "
-          + "\(onMain) of \(notices) notifications on the main thread")
+          + "\(notices[806, default: 0]) 806 and \(notices[807, default: 0]) 807, \(onMain) of them on the main thread")
     print("  per landing, ms after the write:")
     lines.forEach { print($0) }
 }
