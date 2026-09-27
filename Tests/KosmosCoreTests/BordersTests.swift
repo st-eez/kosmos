@@ -51,6 +51,25 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
                    displays: [left, right]) == nil)
 }
 
+@Test func aSlidingBorderNamesTheOtherDisplaysItsSlideCanStillShowItOn() {
+    let left = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+    let right = Monitor(id: 2, frame: CGRect(x: 1000, y: 0, width: 1000, height: 800))
+    let below = Monitor(id: 3, frame: CGRect(x: 0, y: 800, width: 1000, height: 600))
+    let displays = [left, right, below]
+    let from = CGRect(x: 100, y: 100, width: 500, height: 300), to = CGRect(x: 1200, y: 100, width: 500, height: 300)
+    func border(_ frame: CGRect, path: CGRect?) -> Border {
+        Border(around: frame, radius: 16, width: 2, color: blue, displays: displays, path: path)!
+    }
+    let start = border(from, path: from.union(to))
+    #expect(start.display == 1 && start.slideDisplays == [right])
+    let past = CGRect(x: 800, y: 100, width: 500, height: 300)
+    #expect(border(past, path: past.union(to)).slideDisplays == [left])
+    #expect(border(to, path: to).slideDisplays.isEmpty)
+    // A path along a display's edge crosses nothing there, and a border at rest names nothing.
+    #expect(border(from, path: CGRect(x: 100, y: 100, width: 500, height: 700)).slideDisplays.isEmpty)
+    #expect(border(from, path: nil).slideDisplays.isEmpty)
+}
+
 @Test func theShownTiledAndFloatingWindowsAreBordered() {
     var s = Session(names: ["1", "2"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2); _ = s.add(3, floating: true)
@@ -83,7 +102,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     _ = s.adopt(2)
     let frames: [WindowID: CGRect] = [1: CGRect(x: 10, y: 10, width: 300, height: 700), 2: CGRect(x: 320, y: 10, width: 300, height: 700)]
     // Window 3 is concealed or ordered out, so `shown` finds it nowhere.
-    let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
+    let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16), path: CGRect?.none) } }
     #expect(Array(s.borders(steve, accent: accent, red: red, flashing: [], shown: shown).keys) == [2])
     #expect(s.borders(BorderSettings(), accent: accent, red: red, flashing: [], shown: shown).mapValues(\.color) == [2: accent])
     let both = BorderSettings(width: 2, active: blue, inactive: BorderColor(hex: "#414868")!)
@@ -97,7 +116,7 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     _ = s.add(1); _ = s.add(2)
     _ = s.adopt(2)
     let frames: [WindowID: CGRect] = [1: CGRect(x: 0, y: 0, width: 500, height: 800), 2: CGRect(x: 500, y: 0, width: 500, height: 800)]
-    let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16)) } }
+    let shown = { (id: WindowID) in frames[id].map { (frame: $0, radius: CGFloat(16), path: CGRect?.none) } }
     // The inactive window, transparent otherwise, flashes the system red, and so does the focused one.
     #expect(s.borders(steve, accent: accent, red: red, flashing: [1], shown: shown).mapValues(\.color) == [1: red, 2: blue])
     #expect(s.borders(steve, accent: accent, red: red, flashing: [2], shown: shown).mapValues(\.color) == [2: red])

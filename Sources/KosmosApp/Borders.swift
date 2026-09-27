@@ -11,22 +11,7 @@ private let bordersLog = Logger(subsystem: "io.github.st-eez.kosmos", category: 
 /// (docs/borders.md).
 @MainActor
 final class Borders {
-    struct Shown: Equatable {
-        var border: Border
-        var level: Int32
-        var alpha: Double
-        /// While the target slides, its border window covers its display and each display frame
-        /// moves only the ring's layer, a fourth of the cost of moving the window (docs/borders.md).
-        var sliding: Bool
-    }
-
-    private var windows: [WindowID: BorderWindow] = [:]
-    /// A border window keeps to one display: moved to another display's Space before its new
-    /// frame lands, it showed there at its old frame (docs/borders.md).
-    private var spare: [DisplayID: [BorderWindow]] = [:]
-    /// Borders on a display that may show a native fullscreen Space, ordered out until their
-    /// Space move is sent, with what to show then (docs/borders.md).
-    private var waiting: [WindowID: Shown] = [:]
+    private var pool = BorderPool<BorderWindow>()
     /// A Space read can wait out a Space transition, so Space reads and moves run here.
     private let spaces = DispatchQueue(label: "kosmos.borders", qos: .userInitiated)
     private(set) var accent = Borders.readAccent()
@@ -71,46 +56,63 @@ final class Borders {
     }
 
     /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
-    func show(_ shown: [WindowID: Shown], fullscreen: Set<DisplayID> = []) {
-        for (target, window) in windows where shown[target]?.border.display != window.display {
-            window.putBack()
-            windows[target] = nil
-            waiting[target] = nil
-            spare[window.display, default: []].append(window)
-        }
-        for (target, next) in shown {
-            let display = next.border.display
-            let window = windows[target], fresh = window == nil
-            let border = window ?? spare[display]?.popLast() ?? BorderWindow(display: display, frame: next.border.displayFrame)
-            windows[target] = border
-            // Ordered in there before its move, it would draw on the fullscreen app, and a frame
-            // set before the move might take it back to the fullscreen Space (docs/borders.md).
-            if fresh, fullscreen.contains(display) {
-                waiting[target] = next
-                pin(border, to: target, thenShow: true)
-                continue
-            }
-            if waiting[target] != nil {
-                waiting[target] = next
-                continue
-            }
-            // Setting another level can move the border within the stacking order.
-            let leveled = border.level.rawValue != Int(next.level)
-            border.show(next)
-            if fresh {
-                border.order(.below, relativeTo: Int(target))
-                pin(border, to: target, thenShow: false)
-            } else if leveled {
-                border.order(.below, relativeTo: Int(target))
+    func show(_ shown: [WindowID: ShownBorder], fullscreen: Set<DisplayID> = []) {
+        for step in pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) {
+            switch step {
+            case .putBack(let window):
+                let began = CACurrentMediaTime()
+                window.putBack()
+                bordersLog.debug("""
+                    border \(window.windowNumber) put back on display \(window.display) in \
+                    \(ms(since: began), format: .fixed(precision: 2)) ms
+                    """)
+            case .clear(let window):
+                window.clear()
+            case .ready(let window, let target, let next):
+                orderIn(window, next, below: target, ready: true)
+            case .orderIn(let window, let target, let next):
+                orderIn(window, next, below: target)
+            case .show(let window, let target, let next, let taken):
+                // Setting another level can move the border within the stacking order.
+                let leveled = window.level.rawValue != Int(next.level)
+                window.show(next)
+                if leveled { window.order(.below, relativeTo: Int(target)) }
+                guard taken else { continue }
+                pin(window, to: target, thenShow: false)
+                bordersLog.debug("ring of \(target) moved to border \(window.windowNumber), ready on display \(window.display)")
+            case .wait(let window, let target):
+                // Ordered in there before its move, it would draw on the fullscreen app, and a
+                // frame set before the move might take it back to the fullscreen Space.
+                pin(window, to: target, thenShow: true)
             }
         }
+    }
+
+    private func orderIn(_ window: BorderWindow, _ next: ShownBorder, below target: WindowID, ready: Bool = false) {
+        let began = CACurrentMediaTime()
+        window.show(next)
+        let framed = CACurrentMediaTime()
+        window.order(.below, relativeTo: Int(target))
+        pin(window, to: target, thenShow: false)
+        bordersLog.debug("""
+            border \(window.windowNumber) of \(target) ordered in on display \(window.display)\
+            \(ready ? " ready for the slide" : "", privacy: .public): framed in \
+            \((framed - began) * 1000, format: .fixed(precision: 2)) ms, ordered below it in \
+            \(ms(since: framed), format: .fixed(precision: 2)) ms
+            """)
     }
 
     /// A raise of the target leaves its border under the windows the raise put the target
     /// over (kosmos-probe borders). A waiting border is ordered below its target when it shows.
     func raise(_ target: WindowID) {
-        guard waiting[target] == nil else { return }
-        windows[target]?.order(.below, relativeTo: Int(target))
+        let windows = pool.ordered(below: target)
+        guard !windows.isEmpty else { return }
+        let began = CACurrentMediaTime()
+        for window in windows { window.order(.below, relativeTo: Int(target)) }
+        bordersLog.debug("""
+            \(windows.count) border windows of \(target) ordered below it again in \
+            \(ms(since: began), format: .fixed(precision: 2)) ms
+            """)
     }
 
     /// A border joins its display's current Space, maybe another app's fullscreen one, so it
@@ -127,8 +129,7 @@ final class Borders {
             }
             guard thenShow else { return }
             onMain {
-                // Unless the border went back to its pool meanwhile.
-                guard self.windows[target] === window, let next = self.waiting.removeValue(forKey: target) else { return }
+                guard let next = self.pool.moved(window, of: target) else { return }
                 window.show(next)
                 window.order(.below, relativeTo: Int(target))
             }
@@ -136,12 +137,14 @@ final class Borders {
     }
 }
 
+private func ms(since began: Double) -> Double { (CACurrentMediaTime() - began) * 1000 }
+
 /// `.transient` hides it in Mission Control, and `canHide = false` keeps it on screen when
 /// another app's Hide Others hides Kosmos.
 private final class BorderWindow: NSWindow {
     let display: DisplayID
     private let ring = CALayer()
-    private var shown: Borders.Shown?
+    private var shown: ShownBorder?
 
     /// `frame` is its display's, in Accessibility's coordinates.
     init(display: DisplayID, frame: CGRect) {
@@ -176,7 +179,14 @@ private final class BorderWindow: NSWindow {
         shown = nil
     }
 
-    func show(_ next: Borders.Shown) {
+    /// Draws nothing, ordered in where it is.
+    func clear() {
+        guard var next = shown else { return }
+        next.alpha = 0
+        show(next)
+    }
+
+    func show(_ next: ShownBorder) {
         guard next != shown else { return }
         let previous = shown
         shown = next
