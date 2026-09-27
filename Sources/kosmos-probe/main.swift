@@ -57,6 +57,10 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let count = arguments.first.flatMap(Int.init)
         slideLanding(landings: count ?? 16, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
+    ("slide-links", "slide-links [slides] [mode...]", { arguments in
+        let count = arguments.first.flatMap(Int.init)
+        slideLinks(slides: count ?? 8, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
+    }),
     ("border-watch", "border-watch <window> [seconds]", { arguments in
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
