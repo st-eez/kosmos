@@ -295,7 +295,7 @@ final class Inventory {
         switch event {
         case .created(let id):
             enqueue(.read(id, .none, at: stamp))
-        case .changed(let id):
+        case .changed(let id), .moved(let id), .resized(let id):
             enqueue(.read(id, .changed, at: stamp))
         case .reordered(let id):
             enqueue(.read(id, .changed, at: stamp))

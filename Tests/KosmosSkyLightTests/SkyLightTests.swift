@@ -14,7 +14,9 @@ import Testing
     bytes.replaceSubrange(0..<4, with: withUnsafeBytes(of: UInt32(77).littleEndian, Array.init))
     bytes.replaceSubrange(8..<12, with: withUnsafeBytes(of: UInt32(88).littleEndian, Array.init))
     bytes.withUnsafeBytes { payload in
-        #expect(WindowServerEvent(id: 806, payload: payload)?.window == 77)
+        #expect(WindowServerEvent(id: 806, payload: payload) == .moved(77))
+        #expect(WindowServerEvent(id: 807, payload: payload) == .resized(77))
+        #expect(WindowServerEvent(id: 815, payload: payload) == .changed(77))
         #expect(WindowServerEvent(id: 1325, payload: payload)?.window == 88)
         #expect(WindowServerEvent(id: 1327, payload: payload)?.window == nil)
         #expect(WindowServerEvent(id: 999, payload: payload) == nil)

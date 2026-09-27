@@ -77,8 +77,15 @@ public struct SlidingWindow: Sendable {
     /// Where the window shows through its Space's transform.
     public private(set) var shown: CGRect
     public private(set) var alpha: Double
-    /// The window's frame as WindowServer last had it.
+    /// The window's frame as WindowServer last had it, as a read found it or as an event implies
+    /// it from the read back.
     public private(set) var actual: CGRect
+    /// Kept apart from `actual`, since only a read lands a write.
+    private var lastRead: CGRect
+    /// An older write's events can still come, and none says which write it is for.
+    private var superseded = false
+    /// A read asked before the last event can predate its part, and tells nothing.
+    private var notifiedAt = -Double.infinity
     /// Nil while a pop waits for its write to land.
     public private(set) var slide: Slide?
     /// When the newest write was queued and when it landed, on the display link's clock.
@@ -96,6 +103,7 @@ public struct SlidingWindow: Sendable {
         shown = pop ? target.scaled(Slide.popScale) : from
         alpha = pop ? 0 : 1
         actual = from
+        lastRead = from
         slide = pop ? nil : .move(from: from, to: target, at: now)
         sent = now
         changedAt = now
@@ -106,6 +114,7 @@ public struct SlidingWindow: Sendable {
     public mutating func wrote(_ target: CGRect, sliding: Bool, at now: Double) -> Bool {
         guard sliding || target == self.target else { return false }
         if target != self.target { slide = slide?.retargeted(to: target, at: now) }
+        superseded = landed == nil && (superseded || target != self.target)
         (self.target, readBack, landed, sent, changedAt) = (target, nil, nil, now, now)
         return true
     }
@@ -115,15 +124,30 @@ public struct SlidingWindow: Sendable {
         self.readBack = readBack
         changedAt = now
         if let slide, slide.to != readBack { self.slide = slide.retargeted(to: readBack, at: now) }
-        if actual == readBack { landed = now }
+        if lastRead == readBack { landed = now }
     }
 
     public func isAwaiting(at now: Double) -> Bool { landed == nil && now < sent + Self.landingWait }
 
     public func isWrite(_ frame: CGRect) -> Bool { frame == target || frame == readBack }
 
+    /// One part at a time, since a size write lands before its origin (docs/geometry.md). An
+    /// event before the read back can be another write's. True when the Space's transform must
+    /// change.
+    public mutating func notified(moved: Bool, at now: Double) -> Bool {
+        guard isAwaiting(at: now), !superseded, let readBack else { return false }
+        notifiedAt = now
+        var frame = actual
+        if moved { frame.origin = readBack.origin } else { frame.size = readBack.size }
+        guard frame != actual else { return false }
+        (actual, changedAt) = (frame, now)
+        return true
+    }
+
     /// True when the frame is new, so the Space's transform must change.
-    public mutating func observed(_ frame: CGRect, at now: Double) -> Bool {
+    public mutating func observed(_ frame: CGRect, asked: Double, at now: Double) -> Bool {
+        guard asked > notifiedAt else { return false }
+        lastRead = frame
         if frame == readBack, landed == nil { landed = now }
         guard frame != actual else { return false }
         (actual, changedAt) = (frame, now)

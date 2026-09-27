@@ -37,6 +37,13 @@ final class Slides {
 
     init(hiding: Hiding) {
         self.hiding = hiding
+        SkyLight.handleInCallback { [onscreen] event in
+            switch event {
+            case .moved(let id): onscreen.notified(id, moved: true)
+            case .resized(let id): onscreen.notified(id, moved: false)
+            default: break
+            }
+        }
         hiding.createAnimationSpaces(Self.poolSize, level: Self.level) { [weak self] spaces in
             self?.free += spaces
             slideLog.info("\(spaces.count) of \(Self.poolSize) animation Spaces created")
@@ -249,8 +256,8 @@ final class Slides {
 }
 
 extension SlidingWindow {
-    /// Sent under Onscreen's lock, from the links and the reads, so the last one sent is for the
-    /// newest frame.
+    /// Sent under Onscreen's lock, from the links, the reads and WindowServer's callback, so the
+    /// last one sent is for the newest frame.
     fileprivate func show() {
         kosmos_space_set_transform(space, Slide.transform(showing: shown, at: actual))
     }
@@ -276,6 +283,19 @@ private final class Onscreen: Sendable {
         var ids = [id]
         kosmos_remove_windows(window.space, &ids, 1)
         return window
+    }
+
+    func notified(_ id: WindowID, moved: Bool) {
+        let now = CACurrentMediaTime()
+        let frame = state.withLock { state -> CGRect? in
+            guard var window = state.windows[id], window.notified(moved: moved, at: now) else { return nil }
+            window.show()
+            state.windows[id] = window
+            return window.actual
+        }
+        if let frame {
+            slideLog.debug("\(id) \(moved ? "moved" : "resized", privacy: .public), taken at \(String(describing: frame), privacy: .public), its transform sent")
+        }
     }
 
     func follow() {
@@ -310,7 +330,7 @@ private final class Onscreen: Sendable {
                 var moved: [WindowRow] = []
                 for row in rows {
                     guard var window = state.windows[row.id], window.isAwaiting(at: read) else { continue }
-                    if window.observed(row.frame, at: read) {
+                    if window.observed(row.frame, asked: now, at: read) {
                         window.show()
                         moved.append(row)
                     }

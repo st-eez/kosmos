@@ -74,18 +74,96 @@ private func move() -> SlidingWindow {
 @Test func aWriteLandsAtTheFrameReadBack() {
     var window = SlidingWindow(space: 7, display: 1, from: left, to: narrow, pop: false, at: 0)
     let resized = CGRect(origin: left.origin, size: narrow.size)
-    let sizeLanded = window.observed(resized, at: 0.004)   // the size landed before the position
-    let readAgain = window.observed(resized, at: 0.005)
+    let sizeLanded = window.observed(resized, asked: 0.003, at: 0.004)   // the size landed before the position
+    let readAgain = window.observed(resized, asked: 0.004, at: 0.005)
     #expect(sizeLanded && !readAgain)
     window.confirmed(target: narrow, readBack: narrow, at: 0.008)
     #expect(window.landed == nil && window.isAwaiting(at: 0.009))
-    let moved = window.observed(narrow, at: 0.010)
+    let moved = window.observed(narrow, asked: 0.009, at: 0.010)
     #expect(moved && window.landed == 0.010 && !window.isAwaiting(at: 0.011))
 
     var readFirst = move()
-    _ = readFirst.observed(right, at: 0.009)
+    _ = readFirst.observed(right, asked: 0.008, at: 0.009)
     readFirst.confirmed(target: right, readBack: right, at: 0.012)
     #expect(readFirst.landed == 0.012)
+}
+
+/// Each notification after the read back takes its part of it, so a size that lands before its
+/// origin shows in place, and a read then lands the write with no transform sent again.
+@Test func aNotificationTakesTheReadBacksOriginOrSize() {
+    var window = SlidingWindow(space: 7, display: 1, from: left, to: narrow, pop: false, at: 0)
+    let early = window.notified(moved: false, at: 0.001)
+    window.confirmed(target: narrow, readBack: narrow, at: 0.002)
+    let resized = window.notified(moved: false, at: 0.004)
+    #expect(!early && resized && window.actual == CGRect(origin: left.origin, size: narrow.size))
+    let moved = window.notified(moved: true, at: 0.006)
+    let movedAgain = window.notified(moved: true, at: 0.007)
+    #expect(moved && window.actual == narrow && !movedAgain && window.landed == nil)
+    let read = window.observed(narrow, asked: 0.008, at: 0.009)
+    let afterLanding = window.notified(moved: true, at: 0.010)
+    #expect(!read && window.landed == 0.009 && !afterLanding)
+}
+
+/// A relayout reflows the window 10 points, and a second sends it to another display before the
+/// first write lands, which a third writes again. The first write's events, which can come
+/// after the newer read backs, take nothing until a read lands a write; the next write guesses
+/// again.
+@Test func aSupersededWritesEventsTakeNothing() {
+    let reflowed = left.offsetBy(dx: 10, dy: 0)
+    let away = CGRect(x: 2010, y: 35, width: 1270, height: 1400)
+    var window = SlidingWindow(space: 7, display: 1, from: left, to: reflowed, pop: false, at: 0)
+    window.confirmed(target: reflowed, readBack: reflowed, at: 0.001)
+    let retargeted = window.wrote(away, sliding: true, at: 0.002)
+    window.confirmed(target: away, readBack: away, at: 0.003)
+    let again = window.wrote(away, sliding: true, at: 0.004)
+    window.confirmed(target: away, readBack: away, at: 0.005)
+    let firstMoved = window.notified(moved: true, at: 0.006)
+    #expect(retargeted && again && !firstMoved && window.actual == left)
+    let firstRead = window.observed(reflowed, asked: 0.007, at: 0.008)
+    let secondMoved = window.notified(moved: true, at: 0.010)
+    let secondResized = window.notified(moved: false, at: 0.010)
+    #expect(firstRead && !secondMoved && !secondResized && window.actual == reflowed)
+    _ = window.observed(away, asked: 0.011, at: 0.012)
+    #expect(window.landed == 0.012)
+
+    let back = window.wrote(left, sliding: true, at: 0.1)
+    window.confirmed(target: left, readBack: left, at: 0.101)
+    let moved = window.notified(moved: true, at: 0.105)
+    #expect(back && moved && window.actual.origin == left.origin)
+}
+
+/// A second write to the same target comes back after the events took its parts. Its read back
+/// is the frame taken, yet only a read lands the write, and a read asked before the events can
+/// predate their parts.
+@Test func onlyAReadAfterTheEventsLandsTheWrite() {
+    var window = SlidingWindow(space: 7, display: 1, from: left, to: narrow, pop: false, at: 0)
+    window.confirmed(target: narrow, readBack: narrow, at: 0.002)
+    _ = window.notified(moved: false, at: 0.004)
+    _ = window.notified(moved: true, at: 0.005)
+    let again = window.wrote(narrow, sliding: true, at: 0.006)
+    window.confirmed(target: narrow, readBack: narrow, at: 0.007)
+    #expect(again && window.actual == narrow && window.landed == nil)
+    let stale = window.observed(left, asked: 0.0045, at: 0.008)
+    #expect(!stale && window.actual == narrow && window.landed == nil)
+    let read = window.observed(narrow, asked: 0.008, at: 0.009)
+    #expect(!read && window.landed == 0.009)
+}
+
+/// Near a display edge the worker writes a height 40 points short, then the target's, and reads
+/// back the target. The short height's event, after the read back, is taken as the target's. A
+/// read asked before the target's own event can predate it, and tells nothing.
+@Test func aReadAskedBeforeTheRetrysSecondResizeTellsNothing() {
+    let tall = CGRect(x: 10, y: 35, width: 945, height: 1400)
+    let short = CGRect(x: 10, y: 35, width: 945, height: 1360)
+    var window = SlidingWindow(space: 7, display: 1, from: left, to: tall, pop: false, at: 0)
+    window.confirmed(target: tall, readBack: tall, at: 0.003)
+    let shortTaken = window.notified(moved: false, at: 0.008)
+    let tallTaken = window.notified(moved: false, at: 0.010)
+    #expect(shortTaken && !tallTaken && window.actual == tall)
+    let stale = window.observed(short, asked: 0.009, at: 0.011)
+    #expect(!stale && window.actual == tall)
+    let read = window.observed(tall, asked: 0.011, at: 0.012)
+    #expect(!read && window.landed == 0.012)
 }
 
 @Test func aSlideOverHoldsItsEndUntilTheWriteLands() {
@@ -102,7 +180,7 @@ private func move() -> SlidingWindow {
     var late = move()
     done = late.step(at: 0.5)
     late.confirmed(target: right, readBack: right, at: 0.6)
-    _ = late.observed(right, at: 0.61)
+    _ = late.observed(right, asked: 0.605, at: 0.61)
     #expect(!done)
     done = late.step(at: 0.62)
     #expect(done)
@@ -125,7 +203,7 @@ private func move() -> SlidingWindow {
     var done = window.step(at: 0.01)
     #expect(!done && window.alpha == 0 && window.slide == nil)
     window.confirmed(target: narrow, readBack: narrow, at: 0.012)
-    _ = window.observed(narrow, at: 0.015)
+    _ = window.observed(narrow, asked: 0.014, at: 0.015)
     done = window.step(at: 0.016)
     #expect(!done && close(window.shown, narrow.scaled(Slide.popScale)) && window.alpha == 0)
     done = window.step(at: 0.2)
@@ -141,7 +219,7 @@ private func move() -> SlidingWindow {
     done = window.step(at: SlidingWindow.popWait)
     #expect(!done && window.slide?.to == narrow && window.isAwaiting(at: 0.5))
     window.confirmed(target: narrow, readBack: narrow, at: 0.6)
-    _ = window.observed(narrow, at: 0.7)
+    _ = window.observed(narrow, asked: 0.65, at: 0.7)
     #expect(window.landed == 0.7)
     done = window.step(at: SlidingWindow.popWait + Slide.popDuration)
     #expect(done)
@@ -150,7 +228,7 @@ private func move() -> SlidingWindow {
 @Test func aWriteThatDoesNotSlideIsFollowedOnlyToTheSameTarget() {
     var window = move()
     window.confirmed(target: right, readBack: right, at: 0.01)
-    _ = window.observed(right, at: 0.012)
+    _ = window.observed(right, asked: 0.011, at: 0.012)
     #expect(!window.isAwaiting(at: 0.1))
     var took = window.wrote(right, sliding: false, at: 0.1)
     #expect(took && window.isAwaiting(at: 0.1) && window.landed == nil)

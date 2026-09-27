@@ -1,15 +1,20 @@
 import CKosmos
 import CoreGraphics
 import Foundation
+import Synchronization
 import os
 
 private let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "skylight")
 
 /// Ids and payloads measured on macOS 27 (docs/inventory.md).
-public enum WindowServerEvent: Sendable {
+public enum WindowServerEvent: Sendable, Equatable {
     case created(UInt32)
     case destroyed(UInt32)
     case changed(UInt32)
+    /// 806 and 807 come as WindowServer takes the window's new origin or size, before the
+    /// composite that shows it, though 807 now and then comes after (docs/geometry.md).
+    case moved(UInt32)
+    case resized(UInt32)
     /// As when its app raises it.
     case reordered(UInt32)
     case spaceMembership(UInt32)
@@ -24,7 +29,9 @@ public enum WindowServerEvent: Sendable {
         switch id {
         case 811: guard let w = u32(at: 0) else { return nil }; self = .created(w)
         case 804: guard let w = u32(at: 0) else { return nil }; self = .destroyed(w)
-        case 806, 807, 815, 816: guard let w = u32(at: 0) else { return nil }; self = .changed(w)
+        case 806: guard let w = u32(at: 0) else { return nil }; self = .moved(w)
+        case 807: guard let w = u32(at: 0) else { return nil }; self = .resized(w)
+        case 815, 816: guard let w = u32(at: 0) else { return nil }; self = .changed(w)
         case 808: guard let w = u32(at: 0) else { return nil }; self = .reordered(w)
         // A 64 bit Space id, then the window id.
         case 1325, 1326: guard let w = u32(at: 8) else { return nil }; self = .spaceMembership(w)
@@ -35,7 +42,8 @@ public enum WindowServerEvent: Sendable {
 
     public var window: UInt32? {
         switch self {
-        case .created(let id), .destroyed(let id), .changed(let id), .reordered(let id), .spaceMembership(let id): id
+        case .created(let id), .destroyed(let id), .changed(let id), .moved(let id), .resized(let id), .reordered(let id),
+             .spaceMembership(let id): id
         case .spacesChanged: nil
         }
     }
@@ -81,6 +89,16 @@ public enum SkyLight {
             if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
         }
     }
+
+    /// Calls `handler` with each event on the callback's thread, ahead of `subscribe`'s hop, so no
+    /// job waiting on the main queue delays it. The handler must not block, and may take only a
+    /// lock no one holds across a SkyLight call that waits for a reply or runs the event loop
+    /// (docs/overview.md). Call once.
+    public static func handleInCallback(_ handler: @escaping @Sendable (WindowServerEvent) -> Void) {
+        inCallback.withLock { $0 = handler }
+    }
+
+    fileprivate static let inCallback = Mutex<(@Sendable (WindowServerEvent) -> Void)?>(nil)
 
     /// Calls `changed` on the main queue when Secure Input turns on or off, whichever process
     /// changes it (docs/hotkeys.md). Call once.
@@ -163,9 +181,10 @@ private final class EventSink: Sendable {
 
     init(_ handler: @escaping @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void) { self.handler = handler }
 
-    /// Callbacks arrive on whichever thread read the message, so every event goes through
-    /// the main queue to keep one order.
+    /// No API says which thread a callback runs on (docs/overview.md), so every event goes
+    /// through the main queue to keep one order.
     func send(_ event: WindowServerEvent, at stamp: ContinuousClock.Instant) {
+        SkyLight.inCallback.withLock { $0 }?(event)
         DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event, stamp) } }
     }
 }

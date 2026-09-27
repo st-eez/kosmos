@@ -46,9 +46,9 @@ private struct Tick {
     let progress: Double
 }
 
-/// One captured frame: its display time and where the window and its ring showed, as
-/// fractions of the way, when they read.
-private struct Seen: Sendable {
+/// One captured frame: its display time and where its reader found the window and its ring,
+/// when they read.
+struct Seen: Sendable {
     let time: Double
     let window: Double?, ring: Double?
 }
@@ -376,7 +376,7 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
 }
 
 /// A ScreenCaptureKit stream of a strip of one display, each frame read at once and let go.
-private final class StripCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+final class StripCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let frames = Mutex<[Seen]>([])
     let failure = Mutex<String?>(nil)
     private let displayID: CGDirectDisplayID

@@ -53,6 +53,15 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let count = arguments.first.flatMap(Int.init)
         slideSync(slides: count ?? 6, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
+    ("slide-landing", "slide-landing [landings] [--size] [mode...]", { arguments in
+        let count = arguments.first.flatMap(Int.init)
+        let rest = arguments.dropFirst(count == nil ? 0 : 1)
+        slideLanding(landings: count ?? 16, sizes: rest.contains("--size"), modes: rest.filter { $0 != "--size" })
+    }),
+    ("slide-links", "slide-links [slides] [mode...]", { arguments in
+        let count = arguments.first.flatMap(Int.init)
+        slideLinks(slides: count ?? 8, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
+    }),
     ("border-watch", "border-watch <window> [seconds]", { arguments in
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
@@ -64,6 +73,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         handoverCreator(window, kill: arguments.contains("kill"))
     }),
+    ("landing-window", nil, { _ in landingWindow() }),
     ("moving-window", nil, { movingWindow(onscreen: $0.contains("onscreen")) }),
     ("level-window", nil, { levelWindow(onscreen: $0.contains("onscreen"), opaque: $0.contains("opaque")) }),
     ("fullscreen-window", nil, { fullscreenWindow(dry: $0.contains("dry")) }),
