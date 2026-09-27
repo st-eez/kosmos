@@ -348,7 +348,7 @@ private final class OffMainSteps: NSObject, @unchecked Sendable {
     private let screen: NSRect
     private let mainHeight: CGFloat, refresh: Double
     private let queue = DispatchQueue(label: "kosmos-probe.slide-sync.steps", qos: .userInteractive)
-    private let thread = LinkThread()
+    private let thread = LinkThread(name: "kosmos-probe.slide-sync.links")
     private let state = Mutex(State())
     /// Set on the main thread before its slide starts and invalidated on `queue` once it ends.
     private nonisolated(unsafe) var link: CADisplayLink?
@@ -431,33 +431,6 @@ private final class OffMainSteps: NSObject, @unchecked Sendable {
         animation.fillMode = .backwards
         ring.add(animation, forKey: "slide")
         CATransaction.commit()
-    }
-}
-
-/// A thread with a run loop of its own for the display links.
-private final class LinkThread: @unchecked Sendable {
-    private let runLoop: CFRunLoop
-
-    init() {
-        let ready = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var loop: CFRunLoop?
-        let thread = Thread {
-            loop = CFRunLoopGetCurrent()
-            // A run loop with no sources returns at once; the port keeps this one alive.
-            RunLoop.current.add(NSMachPort(), forMode: .default)
-            ready.signal()
-            CFRunLoopRun()
-        }
-        thread.name = "kosmos-probe.slide-sync.links"
-        thread.qualityOfService = .userInteractive
-        thread.start()
-        ready.wait()
-        runLoop = loop!
-    }
-
-    func perform(_ block: @escaping @Sendable () -> Void) {
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
-        CFRunLoopWakeUp(runLoop)
     }
 }
 

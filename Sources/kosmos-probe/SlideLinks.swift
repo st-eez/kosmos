@@ -15,20 +15,33 @@
 //                                     left      the left display's window alone
 //                                     both      both at once, started in one main thread turn,
 //                                               as a relayout starts them
+//                                     bothbusy  both, with the main thread blocked 20 to 60 ms
+//                                               at a time, as another app's landing write
+//                                               blocks Kosmos's
+//                                     thread    both, the two links on one thread of their own
+//                                               and every step on one serial queue, the ring
+//                                               in an explicit CATransaction
+//                                     threadbusy
+//                                               thread, with the main thread blocked as
+//                                               bothbusy
 //                                   A crash leaves the Spaces, empty.
 import AppKit
 import CKosmos
 import KosmosCore
+import Synchronization
 
 private let linkDistance: CGFloat = 240
 
 private enum LinksMode: String, CaseIterable {
-    case builtIn = "built-in", left, both
+    case builtIn = "built-in", left, both, bothbusy, thread, threadbusy
+
+    var threaded: Bool { self == .thread || self == .threadbusy }
+    var blocksMain: Bool { self == .bothbusy || self == .threadbusy }
 }
 
 /// One display link callback's step: the link's timestamp, when the step ran, and how long
 /// the transform and the ring took, on CACurrentMediaTime's clock.
-private struct LinkStep {
+private struct LinkStep: Sendable {
     let timestamp: Double, target: Double, stepped: Double, spent: Double
 }
 
@@ -45,7 +58,8 @@ private struct LinkStep {
     private var link: CADisplayLink?
     private var outward = true
     private(set) var started = 0.0
-    private(set) var steps: [LinkStep] = []
+    private var mainSteps: [LinkStep] = []
+    private var threaded: ThreadedSteps!
 
     init?(_ name: String, screen: NSScreen) {
         self.name = name
@@ -71,21 +85,32 @@ private struct LinkStep {
         kosmos_add_windows(space, &ids, 1, false)
         border.place(around: appKitRect(rest), radius: 0, color: green)
         border.window.order(.below, relativeTo: window.windowNumber)
+        threaded = ThreadedSteps(space: space, ring: border.ring, rest: rest, screen: screen.frame,
+                                 mainHeight: NSScreen.screens[0].frame.height)
     }
 
-    var sliding: Bool { slide != nil }
+    var sliding: Bool { slide != nil || threaded.sliding }
+
+    var steps: [LinkStep] { mainSteps + threaded.steps.withLock { $0 } }
 
     /// As Kosmos starts a slide: the link starts, and the ring's window covers the display.
-    func begin(at now: Double) {
+    func begin(at now: Double, onThread: Bool) {
         started = now
-        slide = outward ? .move(from: rest, to: away, at: now) : .move(from: away, to: rest, at: now)
+        let slide: Slide = outward ? .move(from: rest, to: away, at: now) : .move(from: away, to: rest, at: now)
         outward.toggle()
+        if onThread {
+            ring(around: slide.from, covering: true)
+            threaded.begin(slide, link: screen.displayLink(target: threaded, selector: #selector(ThreadedSteps.tick)),
+                           rate: screen.maximumFramesPerSecond)
+            return
+        }
+        self.slide = slide
         let link = screen.displayLink(target: self, selector: #selector(tick))
         let rate = Float(screen.maximumFramesPerSecond)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
         link.add(to: .main, forMode: .common)
         self.link = link
-        ring(around: slide!.from, covering: true)
+        ring(around: slide.from, covering: true)
     }
 
     private func ring(around shown: CGRect, covering: Bool) {
@@ -112,14 +137,17 @@ private struct LinkStep {
         kosmos_space_set_transform(space, Slide.transform(showing: shown, at: rest))
         let over = slide.isOver(at: target)
         ring(around: shown, covering: !over)
-        steps.append(LinkStep(timestamp: timestamp, target: target, stepped: stepped, spent: CACurrentMediaTime() - stepped))
+        mainSteps.append(LinkStep(timestamp: timestamp, target: target, stepped: stepped, spent: CACurrentMediaTime() - stepped))
         guard over else { return }
         self.slide = nil
         link?.invalidate()
         link = nil
     }
 
-    func reset() { steps = [] }
+    func reset() {
+        mainSteps = []
+        threaded.steps.withLock { $0 = [] }
+    }
 
     func finish() {
         link?.invalidate()
@@ -129,6 +157,60 @@ private struct LinkStep {
         kosmos_space_destroy(space)
         window.orderOut(nil)
         border.window.orderOut(nil)
+    }
+}
+
+/// A slide's steps in the thread modes: its link calls back on the link thread both displays
+/// share, and each step runs on their one serial queue a quarter of a refresh after the vsync,
+/// whatever the main thread does.
+private final class ThreadedSteps: NSObject, @unchecked Sendable {
+    private static let thread = LinkThread(name: "kosmos-probe.slide-links.links")
+    private static let queue = DispatchQueue(label: "kosmos-probe.slide-links.steps", qos: .userInteractive)
+    private let space: UInt64
+    /// Set on `queue` while a slide runs, and on the main thread between slides.
+    private let ring: CALayer
+    private let rest: CGRect, screen: NSRect, mainHeight: CGFloat
+    private let slide = Mutex<Slide?>(nil)
+    /// Set on the main thread before its slide starts and invalidated on `queue` once it ends.
+    private nonisolated(unsafe) var link: CADisplayLink?
+    let steps = Mutex<[LinkStep]>([])
+
+    init(space: UInt64, ring: CALayer, rest: CGRect, screen: NSRect, mainHeight: CGFloat) {
+        (self.space, self.ring, self.rest, self.screen, self.mainHeight) = (space, ring, rest, screen, mainHeight)
+    }
+
+    var sliding: Bool { slide.withLock { $0 != nil } }
+
+    func begin(_ slide: Slide, link: CADisplayLink, rate: Int) {
+        let rate = Float(rate)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+        self.link = link
+        self.slide.withLock { $0 = slide }
+        nonisolated(unsafe) let added = link
+        Self.thread.perform { added.add(to: .current, forMode: .common) }
+    }
+
+    @objc func tick(_ link: CADisplayLink) {
+        let (timestamp, target) = (link.timestamp, link.targetTimestamp)
+        let wait = max(0, timestamp + link.duration / 4 - CACurrentMediaTime())
+        Self.queue.asyncAfter(deadline: .now() + wait) { self.step(timestamp: timestamp, target: target) }
+    }
+
+    private func step(timestamp: Double, target: Double) {
+        guard let slide = slide.withLock({ $0 }) else { return }
+        let stepped = CACurrentMediaTime()
+        let shown = slide.shown(at: target).frame
+        kosmos_space_set_transform(space, Slide.transform(showing: shown, at: rest))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ring.frame = NSRect(x: shown.minX, y: mainHeight - shown.maxY, width: shown.width, height: shown.height)
+            .insetBy(dx: -2, dy: -2).offsetBy(dx: -screen.minX, dy: -screen.minY)
+        CATransaction.commit()
+        steps.withLock { $0.append(LinkStep(timestamp: timestamp, target: target, stepped: stepped, spent: CACurrentMediaTime() - stepped)) }
+        guard slide.isOver(at: target) else { return }
+        link?.invalidate()
+        link = nil
+        self.slide.withLock { $0 = nil }
     }
 }
 
@@ -162,14 +244,20 @@ private struct LinkStep {
         let moving: [LinkedSlide] = switch mode {
         case .builtIn: [inside]
         case .left: [beside]
-        case .both: [inside, beside]
+        case .both, .bothbusy, .thread, .threadbusy: [inside, beside]
         }
         var runs: [String: [(started: Double, steps: [LinkStep])]] = [:]
         for _ in 1...slides {
             pumpEvents(0.2 + Double.random(in: 0..<(1.0 / 120)))
             let now = CACurrentMediaTime()
-            for slide in moving { slide.begin(at: now) }
-            while moving.contains(where: \.sliding) { pumpEvents(0.005) }
+            for slide in moving { slide.begin(at: now, onThread: mode.threaded) }
+            var block = now + Double.random(in: 0.01..<0.08)
+            while moving.contains(where: \.sliding) {
+                pumpEvents(0.005)
+                guard mode.blocksMain, CACurrentMediaTime() >= block else { continue }
+                usleep(UInt32.random(in: 20_000...60_000))
+                block = CACurrentMediaTime() + Double.random(in: 0.03..<0.12)
+            }
             for slide in moving {
                 runs[slide.name, default: []].append((slide.started, slide.steps))
                 slide.reset()
