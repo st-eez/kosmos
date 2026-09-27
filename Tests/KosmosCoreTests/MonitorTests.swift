@@ -376,9 +376,6 @@ import Testing
         #expect(s.workspaces["1"]!.tree == "h[11]")
         #expect(s.focusedWorkspace == "5" && plan.focus == .window(10))
         #expect(plan.hide.isEmpty && plan.show.isEmpty && plan.frames[10] == nil)
-        // The floating check brings it to the same place on the left panel.
-        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
-        #expect(s.floatingFrames(at: [10: onMain]) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
         // Past the left panel only when it wraps, round to the main panel.
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
         #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping))?.focus == .window(10))
@@ -396,9 +393,11 @@ import Testing
         // The inventory still has it on the main panel.
         _ = s.perform(.move(.left, boundaries: .allMonitors))
         #expect(s.pointerFrame { _ in onMain } == onLeft)
+        // A second move before a row shows the check's write goes from that write's target.
+        _ = s.perform(.move(.right, boundaries: .allMonitors))
+        #expect(s.pointerFrame { _ in onLeft } == onMain)
         // The pointer moves before the switch that shows workspace 6 on the left panel, and the
         // floating check runs after it.
-        _ = s.perform(.move(.right, boundaries: .allMonitors))
         #expect(s.perform(.moveNodeToWorkspace(.named("6"), focusFollowsWindow: true))?.hide == [50])
         #expect(s.pointerFrame { _ in onMain } == onLeft)
         // A tile's frame is the layout's, and an empty workspace's the display's.

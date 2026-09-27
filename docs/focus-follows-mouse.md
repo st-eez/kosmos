@@ -190,15 +190,17 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     window, or the empty workspace's display. A tile's frame is the layout's after the
     change, the one Kosmos is writing, which the app's worker may not have applied yet;
     AeroSpace's binding slept 50 ms before it read the frame. A floating window's is where
-    a write in flight puts it, else the last frame the inventory heard, taken to its
-    workspace's display as the floating check takes it (`Session.pointerFrame`,
-    [displays.md](displays.md)). So the move reads nothing from WindowServer and runs on the
-    main actor. The check itself runs after the pointer moves, and after the switch when
-    there is one, so without that step the pointer would stay on the display a floating
-    window left through `move`, `move-node-to-monitor` or `move-node-to-workspace`, where
-    the next bump would focus another window. While a window is lifted or a modifier drag
-    is on, the pointer stays ([displays.md](displays.md) and
-    [modifier-drags.md](modifier-drags.md)).
+    a write of Kosmos's that no row shows yet puts it, else the last frame the inventory
+    heard, taken to its workspace's display as the floating check takes it from the same
+    frame (`Session.pointerFrame`, [displays.md](displays.md)). So the move reads nothing
+    from WindowServer and runs on the main actor. The check runs after the pointer moves,
+    and after the switch when there is one. Without taking the frame to that display first,
+    the pointer would stay on the display a floating window left through `move`,
+    `move-node-to-monitor` or `move-node-to-workspace`, and the next bump would focus
+    another window there. A keyboard activation that brings the pointer to a floating
+    window runs the check too, so a window that macOS or its app put on another display
+    comes to the pointer. While a window is lifted or a modifier drag is on, the pointer
+    stays ([displays.md](displays.md) and [modifier-drags.md](modifier-drags.md)).
 - Focus follows mouse leaves Kosmos's own pointer moves alone. After a move, the gate takes
   the next movement as the place the pointer landed and passes nothing on, whether or not
   the move posts an event of its own. A movement the tap passed on before a command is

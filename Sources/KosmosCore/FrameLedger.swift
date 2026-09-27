@@ -117,8 +117,12 @@ public struct FrameLedger: Sendable {
 
     public func isWriting(_ id: WindowID) -> Bool { pending[id] != nil }
 
-    /// Where the write in flight puts the window.
-    public func target(of id: WindowID) -> CGRect? { pending[id] }
+    /// Where the newest write puts the window until a row shows it: the target in flight, then
+    /// the read back that confirmed it, until the write counts as landed. A row can still show
+    /// where the window was (docs/displays.md).
+    public func target(of id: WindowID, at now: ContinuousClock.Instant) -> CGRect? {
+        pending[id] ?? (isLanding(id, at: now) ? landing[id]?.readBack : nil)
+    }
 
     /// A write gone to its app's worker, with the target its read back names.
     public mutating func sent(_ id: WindowID, target: CGRect, at now: ContinuousClock.Instant) {
