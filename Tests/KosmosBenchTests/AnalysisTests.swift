@@ -409,6 +409,19 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(extra.readGaps == [1.5] && extra.memberships == 1)
 }
 
+@Test func aWindowsLinesTakeInTheDisplayFramesThatShowIt() {
+    let text = """
+        2026-09-26 00:59:28.310 I  Kosmos[20670:2488083] [io.github.st-eez.kosmos:app] 4242 written, AX time 0.41 ms
+        2026-09-26 00:59:28.311 D  Kosmos[20670:2488082] [io.github.st-eez.kosmos:slide] frame 3 on display 1: stepped 2.10 ms after the link's timestamp, target 8.33 ms after it; 4243 shown at (10.0, 10.0, 100.0, 90.0); 4242 shown at (130.0, 10.0, 100.0, 90.0), unchanged
+        2026-09-26 00:59:28.312 D  Kosmos[20670:2488084] [io.github.st-eez.kosmos:slide] 4242 read at (128.0, 10.0, 102.0, 90.0), its transform sent
+        2026-09-26 00:59:28.319 D  Kosmos[20670:2488082] [io.github.st-eez.kosmos:slide] frame 4 on display 1: stepped 2.05 ms after the link's timestamp, target 8.33 ms after it; 14242 shown at (10.0, 10.0, 100.0, 90.0)
+        2026-09-26 00:59:28.320 I  Kosmos[20670:2488082] [io.github.st-eez.kosmos:slide] relayout: 2 windows slide, 0 jump, 6 Spaces free
+        """
+    let lines = text.split(separator: "\n").compactMap { LogLine($0) }
+    #expect(lines.count == 5)
+    #expect(lines.filter { $0.isAbout("4242") }.map(\.time) == Array(lines.prefix(3)).map(\.time))
+}
+
 @Test func theSummaryHasARowPerAction() {
     let (first, frames) = record(before: before, slide(after, from: [left, right]))
     let analysis = analyze(.slide, sent: sent, before: first, frames: frames, scene: scene)

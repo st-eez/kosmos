@@ -23,6 +23,12 @@ public struct LogLine: Sendable {
         category = String(line[open.upperBound..<close])
         message = String(line[line.index(after: close)...].drop { $0 == " " })
     }
+
+    /// Whether the line is about the window: it starts with the window's id, or it is a display
+    /// frame's line that says where the window shows.
+    public func isAbout(_ window: String) -> Bool {
+        message.hasPrefix("\(window) ") || message.contains("; \(window) shown at ")
+    }
 }
 
 /// What Kosmos logged about one step: its switches, slides, writes and display link frames.

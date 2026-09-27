@@ -197,7 +197,7 @@ import ImageIO
                 let related = if event.kind == .stall, let since = event.since {
                     record.log.filter { $0.time >= since - 0.002 && $0.time <= at + 0.002 }
                 } else if let window = event.window, let id = legend[window] {
-                    record.log.filter { $0.message.hasPrefix("\(id) ") }
+                    record.log.filter { $0.isAbout(id) }
                 } else {
                     [LogLine]()
                 }

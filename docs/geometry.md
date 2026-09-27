@@ -471,8 +471,9 @@
       and its batch completion on the main actor, its bridge time less the parts the line
       names; each slide's display frames stepped, its landing and the time between the
       reads that follow its write; the slowest display link callback; and the inventory's
-      Space membership events. The log lines during a stall and about a displaced window
-      print under it in kosmos-steps.txt. The summary also gives the CPU per step of Kosmos,
+      Space membership events. Under each event in kosmos-steps.txt print the log lines
+      during a stall, and for any other motion event the lines about its window, the
+      display frames that say where Kosmos showed it among them. The summary also gives the CPU per step of Kosmos,
       WindowServer, the stub, the capture and SketchyBar. The capture reads Notification
       Center's windows on the display 5 times a second and names the steps a banner showed
       in; the script keeps the display awake with `caffeinate` and asks for Do Not Disturb.
