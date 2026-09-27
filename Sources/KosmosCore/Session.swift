@@ -455,7 +455,6 @@ public struct Session: Sendable {
             return focusShown(name)
         case .move(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command) { return plan }
-            guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
             return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
                                               wrapAround: boundaries == .allMonitorsWrapping))
         case .focusMonitor(let target, let wrap):

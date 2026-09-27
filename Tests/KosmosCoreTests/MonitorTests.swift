@@ -360,8 +360,29 @@ import Testing
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
         #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping)) != nil)
         #expect(s.workspace(of: 10) == "1")
-        _ = s.perform(.layout(.toggleFloating))
+    }
+
+    @Test func moveAcrossMonitorsTakesAFloatingWindowToTheDisplayThereAndFollowsIt() {
+        var s = Desk.session()
+        _ = s.add(11); _ = s.add(10, floating: true)
+        _ = s.adopt(10)
+        // A floating window has no place in the tree to move within, and no display is above
+        // the main panel.
+        #expect(s.perform(.move(.left)) == nil)
+        #expect(s.perform(.move(.up, boundaries: .allMonitors)) == nil)
+        #expect(s.workspace(of: 10) == "1" && s.focusedWorkspace == "1" && s.focused == 10)
+        let plan = s.perform(.move(.left, boundaries: .allMonitors))!
+        #expect(s.workspace(of: 10) == "5" && s.workspaces["5"]!.floating == [10])
+        #expect(s.workspaces["1"]!.tree == "h[11]")
+        #expect(s.focusedWorkspace == "5" && plan.focus == .window(10))
+        #expect(plan.hide.isEmpty && plan.show.isEmpty && plan.frames[10] == nil)
+        // The floating check brings it to the same place on the left panel.
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        #expect(s.floatingFrames(at: [10: onMain]) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        // Past the left panel only when it wraps, round to the main panel.
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
+        #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping))?.focus == .window(10))
+        #expect(s.workspace(of: 10) == "1" && s.isFloating(10) && s.focusedWorkspace == "1")
     }
 
     @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {

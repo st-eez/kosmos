@@ -64,6 +64,17 @@
   focused one when the container runs across the direction, as i3's
   `con_descend_direction` picks it. At the workspace's edge a plain `move` wraps the root
   along the direction, as i3 and AeroSpace do ([displays.md](displays.md)).
+  - A floating window has no place in the tree, so a plain `move` leaves it where it is.
+    With `--boundaries all-monitors-outer-frame` it goes to the display in the direction,
+    as a tiled window at the edge does, and stays floating with the focus
+    ([displays.md](displays.md)). Omarchy binds Super+Shift+arrows to Hyprland's `swap`
+    (`hl.dsp.window.swap` in default/hypr/bindings/tiling.lua in basecamp/omarchy at
+    c5b4db7), which does nothing with no window in the direction
+    (`Actions::swapInDirection` in src/config/shared/actions/ConfigActions.cpp, Hyprland
+    main at e368c13), so a lone floating window stays. Kosmos sends it to the display in
+    the direction instead.
+  - Left out: swapping a floating window with the window in the direction, as Hyprland
+    does, and pushing it to the display's edge. Steve chose the display over both.
 - `join-with` is AeroSpace's: the window joins its neighbour in the direction in a new
   container across the neighbour's parent. A neighbour that is a container already runs
   across its parent, so the window joins it.
