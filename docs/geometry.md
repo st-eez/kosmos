@@ -287,6 +287,19 @@
         late, in the composite of the frame after it. Running the links on a thread of
         their own, as the perf audit of September 26, 2026 proposes, would keep main actor
         work from delaying a frame.
+      - Main actor work does delay frames. In the live log of September 25 and 26, 2026,
+        84 of 721 relayouts lost 5 or more of a slide's 45 display frames, and callbacks
+        slower than a refresh explain 100 of their 1,086 lost frames. The rest went to main
+        actor work between the callbacks. A slide lost frames more often when a switch
+        (26% of the losing slides on one display, 3% of the others), an admission (29%
+        and 8%), a focus change (43% and 15%) or an Accessibility write over 100 ms (40%
+        and 6%) came during it. Slides on two displays at once lost 5 or more frames in 14
+        of 17 relayouts other than launches, against 56 of 689 on one display, with a
+        slowest callback of 22 ms at the median against 2.1 ms. Two links alone lose
+        nothing: in `kosmos-probe slide-links` (September 26, 2026), slides on the built-in
+        display and the left panel at once stepped 44 and 45 of 45 frames, with 1 vsync of
+        729 missed. What the main actor waits on in those relayouts is unmeasured; a stack
+        sample during slides settles it.
   - At debug level the slide log gives each display frame: how long after the link's
     timestamp it was stepped, its target, and the frame each sliding window shows at and
     whether its transform changed; and each move or resize event and each read that set a
