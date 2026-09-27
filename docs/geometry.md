@@ -324,7 +324,19 @@
     times with the transform left as it was. Each landing showed 17.2 ms after the vsync
     before its event, or a refresh sooner for the one whose event came 0.31 ms after its
     vsync. So a transform sent at the event lands with the frame, unless the event comes
-    within the send's time of a cut-off. The resize event's (807) timing is unmeasured.
+    within the send's time of a cut-off.
+  - A size write posts a resize (807) and no move, its payload the window id alone. In
+    `kosmos-probe slide-landing --size` (September 26, 2026), the window was written 240
+    points wider and back 16 times in each way of following, and all 80 events came on the
+    main thread. With the transform left as it was, each landing showed after its event,
+    17.2 ms after the vsync before the event in 9, 25.5 ms in 6, and 8.8 ms in the one whose
+    event came 0.10 ms after its vsync. With the transform sent at the event for the write's
+    frame, 2 of 16 landings showed the window off its place for a frame: one whose event
+    came 0.27 ms after its vsync, and one whose frame showed a refresh before its event
+    implied, so its event came about 3 ms after WindowServer had the size. With reads as
+    Kosmos makes them, and back to back, 1 of 16 each, and in those two a read found the new
+    size 8.3 and 6.5 ms before its event. So 807 mostly comes before the composite that
+    shows the size, and now and then after it, when the reads follow the landing.
   - At a sliding window's move or resize event, once the worker's read back of its write
     has come, Kosmos takes the window to have the read back's origin or size and sends the
     transform at once, in WindowServer's callback, ahead of the main queue. Each event takes
@@ -336,8 +348,8 @@
   - A write to another target before the one in flight landed, as a second relayout sending
     the window to another display while a reflow lands, leaves the events to the reads until
     a write lands. The older write's events can come after the newer write's read back, and
-    none says which write it is for. In the probe the event came 5.6 ms after the write
-    returned, at the median.
+    none says which write it is for. In the probe a move event came 5.6 ms after its write
+    returned at the median, and a resize event 11 to 15 ms.
   - Reads of the window's row off the main thread confirm the frame and correct a wrong one,
     and only a read lands the write. A read asked before an event's part came is dropped,
     since WindowServer can have answered it before taking the part. A read waits for

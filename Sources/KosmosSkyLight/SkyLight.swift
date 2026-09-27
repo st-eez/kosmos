@@ -11,8 +11,8 @@ public enum WindowServerEvent: Sendable, Equatable {
     case created(UInt32)
     case destroyed(UInt32)
     case changed(UInt32)
-    /// 806 comes as WindowServer takes the window's new origin, before the composite that shows
-    /// it; 807's timing is unmeasured (docs/geometry.md).
+    /// 806 and 807 come as WindowServer takes the window's new origin or size, before the
+    /// composite that shows it, though 807 now and then comes after (docs/geometry.md).
     case moved(UInt32)
     case resized(UInt32)
     /// As when its app raises it.
