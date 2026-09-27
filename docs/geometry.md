@@ -366,10 +366,11 @@
     not wait for WindowServer. `SLSGetWindowBounds` read the same frame in 0.009 ms at the
     median, which saves nothing against a read's wait for WindowServer under load.
   - The ceilings:
-    - The callback runs on the main thread, so a landing while a main actor job runs past
-      the next cut-off waits for the job or a read, whichever ends first. The upgrade is a
-      SkyLight connection of its own watching the sliding windows, its events received on a
-      thread of their own, which no probe has tried.
+    - The callback runs on the main thread in Kosmos ([overview.md](overview.md)), so a
+      landing while a main actor job runs past the next cut-off waits for the job or a
+      read, whichever ends first. The upgrade is a SkyLight connection of its own watching
+      the sliding windows, its events received on a thread of their own, which no probe has
+      tried.
     - An event for another frame than the read back's shows the window off by the
       difference until the next read: the app moving the window itself during the slide,
       the height 40 points short that Kosmos writes first when AppKit ignored a height near

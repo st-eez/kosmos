@@ -90,8 +90,10 @@ public enum SkyLight {
         }
     }
 
-    /// Calls `handler` with each event in WindowServer's callback, ahead of `subscribe`'s hop, so
-    /// no job waiting on the main queue delays it. Call once.
+    /// Calls `handler` with each event on the callback's thread, ahead of `subscribe`'s hop, so no
+    /// job waiting on the main queue delays it. The handler must not block, and may take only a
+    /// lock no one holds across a SkyLight call that waits for a reply or runs the event loop
+    /// (docs/overview.md). Call once.
     public static func handleInCallback(_ handler: @escaping @Sendable (WindowServerEvent) -> Void) {
         inCallback.withLock { $0 = handler }
     }
@@ -179,8 +181,8 @@ private final class EventSink: Sendable {
 
     init(_ handler: @escaping @MainActor (WindowServerEvent, ContinuousClock.Instant) -> Void) { self.handler = handler }
 
-    /// Callbacks arrive on whichever thread read the message, so every event goes through
-    /// the main queue to keep one order.
+    /// No API says which thread a callback runs on (docs/overview.md), so every event goes
+    /// through the main queue to keep one order.
     func send(_ event: WindowServerEvent, at stamp: ContinuousClock.Instant) {
         SkyLight.inCallback.withLock { $0 }?(event)
         DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event, stamp) } }

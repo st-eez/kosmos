@@ -256,8 +256,8 @@ final class Slides {
 }
 
 extension SlidingWindow {
-    /// Sent under Onscreen's lock, from the links and the reads, so the last one sent is for the
-    /// newest frame.
+    /// Sent under Onscreen's lock, from the links, the reads and WindowServer's callback, so the
+    /// last one sent is for the newest frame.
     fileprivate func show() {
         kosmos_space_set_transform(space, Slide.transform(showing: shown, at: actual))
     }

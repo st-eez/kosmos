@@ -105,8 +105,9 @@ private func move() -> SlidingWindow {
 }
 
 /// A relayout reflows the window 10 points, and a second sends it to another display before the
-/// first write lands. The first write's events, which can come after the second's read back,
-/// take nothing until a read lands the second write; the next write guesses again.
+/// first write lands, which a third writes again. The first write's events, which can come
+/// after the newer read backs, take nothing until a read lands a write; the next write guesses
+/// again.
 @Test func aSupersededWritesEventsTakeNothing() {
     let reflowed = left.offsetBy(dx: 10, dy: 0)
     let away = CGRect(x: 2010, y: 35, width: 1270, height: 1400)
@@ -114,8 +115,10 @@ private func move() -> SlidingWindow {
     window.confirmed(target: reflowed, readBack: reflowed, at: 0.001)
     let retargeted = window.wrote(away, sliding: true, at: 0.002)
     window.confirmed(target: away, readBack: away, at: 0.003)
+    let again = window.wrote(away, sliding: true, at: 0.004)
+    window.confirmed(target: away, readBack: away, at: 0.005)
     let firstMoved = window.notified(moved: true, at: 0.006)
-    #expect(retargeted && !firstMoved && window.actual == left)
+    #expect(retargeted && again && !firstMoved && window.actual == left)
     let firstRead = window.observed(reflowed, asked: 0.007, at: 0.008)
     let secondMoved = window.notified(moved: true, at: 0.010)
     let secondResized = window.notified(moved: false, at: 0.010)
@@ -144,6 +147,23 @@ private func move() -> SlidingWindow {
     #expect(!stale && window.actual == narrow && window.landed == nil)
     let read = window.observed(narrow, asked: 0.008, at: 0.009)
     #expect(!read && window.landed == 0.009)
+}
+
+/// Near a display edge the worker writes a height 40 points short, then the target's, and reads
+/// back the target. The short height's event, after the read back, is taken as the target's. A
+/// read asked before the target's own event can predate it, and tells nothing.
+@Test func aReadAskedBeforeTheRetrysSecondResizeTellsNothing() {
+    let tall = CGRect(x: 10, y: 35, width: 945, height: 1400)
+    let short = CGRect(x: 10, y: 35, width: 945, height: 1360)
+    var window = SlidingWindow(space: 7, display: 1, from: left, to: tall, pop: false, at: 0)
+    window.confirmed(target: tall, readBack: tall, at: 0.003)
+    let shortTaken = window.notified(moved: false, at: 0.008)
+    let tallTaken = window.notified(moved: false, at: 0.010)
+    #expect(shortTaken && !tallTaken && window.actual == tall)
+    let stale = window.observed(short, asked: 0.009, at: 0.011)
+    #expect(!stale && window.actual == tall)
+    let read = window.observed(tall, asked: 0.011, at: 0.012)
+    #expect(!read && window.landed == 0.012)
 }
 
 @Test func aSlideOverHoldsItsEndUntilTheWriteLands() {

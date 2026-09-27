@@ -77,15 +77,14 @@ public struct SlidingWindow: Sendable {
     /// Where the window shows through its Space's transform.
     public private(set) var shown: CGRect
     public private(set) var alpha: Double
-    /// The window's frame as WindowServer last had it, as a read found it or a move or resize
-    /// event gave it.
+    /// The window's frame as WindowServer last had it, as a read found it or as an event implies
+    /// it from the read back.
     public private(set) var actual: CGRect
     /// Kept apart from `actual`, since only a read lands a write.
     private var lastRead: CGRect
-    /// Set by a write to another target before the one in flight landed, until one lands, since
-    /// the older write's events can still come and none says which write it is for.
+    /// An older write's events can still come, and none says which write it is for.
     private var superseded = false
-    /// A read asked before an event's part came can predate it, and tells nothing.
+    /// A read asked before the last event can predate its part, and tells nothing.
     private var notifiedAt = -Double.infinity
     /// Nil while a pop waits for its write to land.
     public private(set) var slide: Slide?
@@ -132,20 +131,20 @@ public struct SlidingWindow: Sendable {
 
     public func isWrite(_ frame: CGRect) -> Bool { frame == target || frame == readBack }
 
-    /// Takes the window to have the read back's origin, or size, until the next read, one part at
-    /// a time since a size write lands before its origin (docs/geometry.md). An event before the
-    /// read back can be another write's. True when the Space's transform must change.
+    /// One part at a time, since a size write lands before its origin (docs/geometry.md). An
+    /// event before the read back can be another write's. True when the Space's transform must
+    /// change.
     public mutating func notified(moved: Bool, at now: Double) -> Bool {
         guard isAwaiting(at: now), !superseded, let readBack else { return false }
+        notifiedAt = now
         var frame = actual
         if moved { frame.origin = readBack.origin } else { frame.size = readBack.size }
         guard frame != actual else { return false }
-        (actual, changedAt, notifiedAt) = (frame, now, now)
+        (actual, changedAt) = (frame, now)
         return true
     }
 
-    /// `asked`: when the read was asked for. True when the frame is new, so the Space's
-    /// transform must change.
+    /// True when the frame is new, so the Space's transform must change.
     public mutating func observed(_ frame: CGRect, asked: Double, at now: Double) -> Bool {
         guard asked > notifiedAt else { return false }
         lastRead = frame
