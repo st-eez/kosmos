@@ -282,11 +282,13 @@
         argument for `kosmos-probe slide-sync` and a run of its `deferred` mode with the
         display kept busy, as its `warm` mode keeps it.
       - A frame goes a quarter of a refresh after its vsync however late its callback ran,
-        plus up to 1 ms of dispatch's timer leeway. A callback the main actor delays past
-        the next cut-off, about 8.6 ms after the vsync at 120 Hz, shows its frame a refresh
-        late, in the composite of the frame after it. Running the links on a thread of
-        their own, as the perf audit of September 26, 2026 proposes, would keep main actor
-        work from delaying a frame.
+        plus up to 1 ms of dispatch's timer leeway, and later when the main actor is busy
+        then. In the second frame benchmark run (September 26, 2026), 2,812 of 8,826 slide
+        frames, in 104 of 240 slides, were stepped 7.1 to 8.1 ms after their vsync, where
+        the ring missed the composite its transforms made. The frame line's callback time
+        tells whether their callbacks came late or their steps waited. Running the links on
+        a thread of their own, as the perf audit of September 26, 2026 proposes, would keep
+        main actor work from delaying a frame.
       - Main actor work does delay frames. In the live log of September 25 and 26, 2026,
         84 of 721 relayouts lost 5 or more of a slide's 45 display frames, and callbacks
         slower than a refresh explain 100 of their 1,086 lost frames. The rest went to main
@@ -298,10 +300,20 @@
         slowest callback of 22 ms at the median against 2.1 ms. Two links alone lose
         nothing: in `kosmos-probe slide-links` (September 26, 2026), slides on the built-in
         display and the left panel at once stepped 44 and 45 of 45 frames, with 1 vsync of
-        729 missed. What the main actor waits on in those relayouts is unmeasured; a stack
-        sample during slides settles it.
+        729 missed. In the live log of September 26, 2026, 22:44:32 to 22:45:04, with a
+        stack sample at each of six slides' starts, a link's timer fires on the main run
+        loop, so each vsync lost is a refresh the main actor spent out of it. 80 of the 90
+        vsyncs lost in bursts of 3 or more came while another app's write landed: Spotify's
+        window on the left panel, resized between 945 and 1,900 points. The main actor was
+        blocked 20 to 60 ms each time, and the inventory's read of that window took 16 to
+        60 ms. A border moving to another display lost 1 to 8 vsyncs after 13 of its 29
+        moves. What the main actor waits on in those landings is unmeasured; the samples
+        found it busy mostly in the slide's own step, in the ring's commit and the
+        transforms' sends, and in AppKit's status item and Core Animation fences, each
+        waiting on WindowServer at times. A System Trace across such landings settles it.
   - At debug level the slide log gives each display frame: how long after the link's
-    timestamp it was stepped, its target, and the frame each sliding window shows at and
+    timestamp it was stepped, when its callback came and its target, and the frame each
+    sliding window shows at and
     whether its transform changed; and each move or resize event and each read that set a
     window's transform for a new frame. `script/bench-frames.sh` streams the log at debug
     level, so each step's lines place its captured frames against the frames Kosmos set.
