@@ -513,11 +513,15 @@
       cost of showing the border before the focus request.
     - A sliding window's place in each frame is how far along the line from its start to
       its end its pixels fit best, since a slide mixes origin and size by one eased
-      fraction; other windows' pixels count neither way, as they pass over and under it,
-      but among equal fits the frame holding fewest of them wins, then the smallest, so a
-      window growing over others, as in fullscreen, or filling the screen is placed by its
-      own edges. A window new to the screen that first shows inside where it ends was
-      uncovered in place and does not move. The slide's start is where the samples put it
+      fraction. Other windows' pixels count neither way, as they pass over and under it, and
+      neither do those along the frame's edges, since the start and the end are whole pixels
+      and a window can show a row off the line between them: in the second run's fullscreen
+      off, one row held the fit still for 125 ms over the windows it uncovered. Among equal
+      fits the frame holding fewest of the other windows' pixels wins, then the one that fits
+      the edges too, then the smallest, so a window growing over others, as in fullscreen, or
+      filling the screen is placed by its own edges. Any window whose frame changes slides,
+      as join-with and flatten slide one 3 points. A window new to the screen that first shows inside where
+      it ends was uncovered in place and does not move. The slide's start is where the samples put it
       on the easing curve. A skip is a window still for one refresh, and a stall for two or
       more, while the easing moves it 2 pixels a refresh or more; a jump is a frame that takes it further than the easing by 10% of its way
       or 8 pixels, and a backward move one that takes it back. A displaced frame shows the

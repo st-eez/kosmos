@@ -101,16 +101,20 @@ public struct Track: Sendable {
     /// a pixel from a whole way before the start to a whole way past the end, where a write
     /// that lands before the transform following it shows the window (docs/geometry.md).
     /// Pixels of other windows count neither way, since a sliding window can pass under or
-    /// over them. Among equal fits the frame holding fewest of them wins, then the smallest:
-    /// a window growing or shrinking over others, as in fullscreen, or filling the screen,
-    /// fits every frame larger than its own.
+    /// over them, and neither do those along the frame's edges: the extents round the start
+    /// and the end, so a window can show a row off the line between them, which would outweigh
+    /// an error of any size along a way with no wallpaper, as fullscreen off's over the windows
+    /// it uncovers. Among equal fits the frame holding fewest other windows' pixels wins, then
+    /// the one that fits the edges too, then the smallest: a window growing or shrinking over
+    /// others, as in fullscreen, or filling the screen, fits every frame larger than its own.
     func fit(window: Summed, wallpaper: Summed, others: Summed) -> (progress: Double, misfit: Int) {
         let step = min(0.002, 0.5 / max(distance, 1))
-        var best = (misfit: Int.max, others: Int.max, area: CGFloat.infinity), ties: [Double] = []
+        var best = (edged: Int.max, others: Int.max, misfit: Int.max, area: CGFloat.infinity), ties: [Double] = []
         for progress in stride(from: -1.2, through: 2.2, by: step) {
             let rect = frame(at: progress)
-            guard rect.size.width > 0, rect.size.height > 0 else { continue }
-            let key = (misfit: window.total - window.count(rect) + wallpaper.count(rect), others: others.count(rect),
+            guard rect.size.width > 2, rect.size.height > 2 else { continue }
+            let key = (edged: window.total - window.count(rect.insetBy(dx: -1, dy: -1)) + wallpaper.count(rect.insetBy(dx: 1, dy: 1)),
+                       others: others.count(rect), misfit: window.total - window.count(rect) + wallpaper.count(rect),
                        area: rect.width * rect.height)
             if key < best { (best, ties) = (key, [progress]) } else if key == best { ties.append(progress) }
         }

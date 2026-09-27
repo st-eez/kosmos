@@ -172,6 +172,49 @@ private let other = [Shape(window: 2, rect: left, border: true), Shape(window: 3
     #expect(analysis.tracks.map(\.window) == [0])
 }
 
+@Test func aWindowSlidingTwoPixelsIsTracked() {
+    // Join-with: window 1 grows 2 pixels to its left, and the capture blends the column its
+    // edge crosses with the wallpaper, as the second run showed at x 577.
+    let grown = CGRect(x: 128, y: 10, width: 102, height: 90)
+    let frames = (0..<60).map { index -> Picture in
+        let time = began + Double(index) * refresh
+        let edge = right.minX - 2 * Slide.ease((time - began + refresh) / Slide.moveDuration)
+        var frame = picture([Shape(window: 0, rect: left), Shape(window: 1, rect: CGRect(x: edge.rounded(.up), y: 10,
+                                                                                          width: grown.maxX - edge.rounded(.up), height: 90))], at: time)
+        let cover = edge.rounded(.up) - edge, color = Color.components(Palette.stub.colors[1])
+        func mix(_ a: Int32, _ b: Int32) -> UInt8 { UInt8(Double(a) * (1 - cover) + Double(b) * cover) }
+        for y in 10..<100 where cover > 0 {
+            let i = y * 240 + Int(edge.rounded(.down)), paper = Color.components(wallpaper.pixels[i])
+            frame.pixels[i] = Color.rgb(mix(paper.0, color.0), mix(paper.1, color.1), mix(paper.2, color.2))
+        }
+        return frame
+    }
+    let (first, kept) = record(before: [Shape(window: 0, rect: left), Shape(window: 1, rect: right)], frames)
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    #expect(analysis.tracks.map(\.window) == [1])
+}
+
+@Test func aWindowAPixelOffItsLineIsPlacedByItsLongWay() {
+    // Fullscreen off: window 1 shrinks back to its tile over windows 0 and 2, 80 pixels a side
+    // across and 3 down, and the capture shows it a pixel up from the line between its start
+    // and its end until it settles, as the second run did.
+    let screen = CGRect(x: 0, y: 0, width: 240, height: 150)
+    let tile = CGRect(x: 80, y: 3, width: 80, height: 140)
+    let sides = [Shape(window: 0, rect: CGRect(x: 5, y: 3, width: 70, height: 140)),
+                 Shape(window: 2, rect: CGRect(x: 165, y: 3, width: 70, height: 140))]
+    let way = Track(window: 1, start: screen, end: tile)
+    let frames = (0..<60).map { index -> Picture in
+        let time = began + Double(index) * refresh
+        let eased = Slide.ease((time - began + refresh) / Slide.moveDuration)
+        return picture(sides + [Shape(window: 1, rect: way.frame(at: eased).offsetBy(dx: 0, dy: eased < 1 ? -1 : 0))], at: time)
+    }
+    let (first, kept) = record(before: sides + [Shape(window: 1, rect: screen)], frames)
+    let analysis = analyze(.slide, sent: sent, before: first, frames: kept, scene: scene)
+    #expect(analysis.events.isEmpty, "\(analysis.events.map(\.detail))")
+    #expect(analysis.tracks.map(\.window) == [1])
+}
+
 @Test func aBorderLateToShowOnBlendedEdgesIsPartial() {
     // alt-N: the capture blends each window's edge with what lies outside it, and its
     // rounded corners show it, the wallpaper until the ring shows a refresh after the windows.
