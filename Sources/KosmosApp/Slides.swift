@@ -183,8 +183,9 @@ final class Slides {
         }
     }
 
-    /// `timestamp` and `at` are the link's timestamp and target for this display frame.
-    private func frame(timestamp: Double, at: Double, on display: DisplayID) {
+    /// `timestamp` is the link's for the callback, `calledBack` when the callback came, and
+    /// `at` the target this display frame is stepped for.
+    private func frame(timestamp: Double, calledBack: Double, at: Double, on display: DisplayID) {
         let began = CACurrentMediaTime()
         var stepped: [(id: WindowID, shown: CGRect, sent: Bool)] = []
         let done = onscreen.state.withLock { state in
@@ -206,7 +207,8 @@ final class Slides {
         // captures (docs/geometry.md).
         slideLog.debug("""
             frame \((self.links[display]?.callbacks ?? 0) + 1) on display \(display): stepped \
-            \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after the link's timestamp, target \
+            \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after the link's timestamp, called back \
+            \((calledBack - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, target \
             \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it; \
             \(stepped.map { "\($0.id) shown at \($0.shown)\($0.sent ? "" : ", unchanged")" }.joined(separator: "; "), privacy: .public)
             """)
@@ -227,9 +229,10 @@ final class Slides {
         // in the same one, a refresh after the target; measured on the built-in display at
         // 120 Hz only (docs/geometry.md).
         let link = screen.displayLink(target: LinkTarget { [weak self] link in
+            let calledBack = CACurrentMediaTime()
             let (timestamp, at) = (link.timestamp, link.targetTimestamp)
-            let wait = max(0, timestamp + link.duration / 4 - CACurrentMediaTime())
-            let step: @MainActor () -> Void = { self?.frame(timestamp: timestamp, at: at, on: display) }
+            let wait = max(0, timestamp + link.duration / 4 - calledBack)
+            let step: @MainActor () -> Void = { self?.frame(timestamp: timestamp, calledBack: calledBack, at: at, on: display) }
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { MainActor.assumeIsolated(step) }
         }, selector: #selector(LinkTarget.frame))
         let rate = Float(screen.maximumFramesPerSecond)
