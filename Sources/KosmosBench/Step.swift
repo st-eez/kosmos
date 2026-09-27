@@ -196,11 +196,11 @@ public func analyze(_ expect: Expect, sent: Double, before: Picture, frames: [Pi
 
 /// The windows that move between the states, each from where it first shows: where it was
 /// before, or for a window new to the screen the first frame that shows it whole, as where its
-/// app opened it. A window that settles within 2 pixels of its start does not move.
+/// app opened it. A window that settles a pixel from its start moves: join-with and flatten
+/// slide one 3 points, and the capture blends the column its edge crosses, which the second run
+/// flagged as a flash in every step of theirs.
 private func slides(_ states: (before: Shown, after: Shown), frames: [Shown], scene: Scene, width: Int) -> [Track] {
-    func moved(_ a: CGRect, _ b: CGRect) -> Bool {
-        max(abs(a.minX - b.minX), abs(a.maxX - b.maxX), abs(a.minY - b.minY), abs(a.maxY - b.maxY)) > 2
-    }
+    func moved(_ a: CGRect, _ b: CGRect) -> Bool { a != b }
     // A window's first frame, or nil for one there before the step.
     var tracks: [(track: Track, first: Int?)] = []
     for window in states.after.rects.indices {
