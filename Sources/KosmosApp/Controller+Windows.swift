@@ -25,8 +25,6 @@ extension Controller {
             if landed { sendReadyBatches() }
             frameChanged(id, from: old, to: frame, changedAt: changedAt, landed: landed)
             updateBorders()
-        case .frameNotified(let id, let moved):
-            slides?.notified(id, moved: moved)
         case .reordered(let id):
             borderWindows.raise(id)
         case .minimumChange(let id, let minimum):

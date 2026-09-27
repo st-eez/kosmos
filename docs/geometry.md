@@ -317,36 +317,58 @@
     before the write lands, with the write, or with a barrier between, showed the window
     displaced backwards for 5 to 17 ms in 10 of 10 swaps. So the transform follows the
     frame instead.
-  - WindowServer posts a window's move (806) or resize (807) as it takes the new frame, and
-    shows the frame in the composite after the next cut-off, about 0.3 ms after a vsync. In
-    `kosmos-probe slide-landing` (built-in display at 120 Hz, September 26, 2026), a child
-    app's window held still by the probe's animation Space was written 240 points by
-    Accessibility 16 times with nothing following: each landing showed 17.2 ms after the
-    vsync before its event, or a refresh sooner for the one whose event came 0.31 ms after
-    its vsync. So a transform sent at the event lands with the frame, unless the event comes
-    within the send's time of a cut-off.
-  - At a sliding window's move or resize event while its write lands, Kosmos takes the
-    window to have the write's origin or size, the read back's once it came, and sends the
-    transform at once. A size write lands before its origin: Kosmos writes size, position,
+  - WindowServer posts a window's move (806) as it takes the new origin, and shows the frame
+    in the composite after the next cut-off, about 0.3 ms after a vsync. In `kosmos-probe
+    slide-landing` (built-in display at 120 Hz, September 26, 2026), a child app's window
+    held still by the probe's animation Space was written 240 points by Accessibility 16
+    times with the transform left as it was. Each landing showed 17.2 ms after the vsync
+    before its event, or a refresh sooner for the one whose event came 0.31 ms after its
+    vsync. So a transform sent at the event lands with the frame, unless the event comes
+    within the send's time of a cut-off. The resize event's (807) timing is unmeasured.
+  - At a sliding window's move or resize event, once the worker's read back of its write
+    has come, Kosmos takes the window to have the read back's origin or size and sends the
+    transform at once, in WindowServer's callback, ahead of the main queue. Each event takes
+    one part, since a size write lands before its origin. Kosmos writes size, position,
     size, and in the first run of the frame benchmark a resized window's size landed 2 to 8
-    ms before its origin. Reads of the window's row off the main thread confirm the frame
-    and correct a wrong one. A read waits for WindowServer, 1.4 ms at the median and 5 ms at
-    p90 under load (live log, September 25 and 26, 2026), and the reads sleep 0.1 ms between
-    them within 20 ms of the window's write, its read back or a new frame, and 1 ms after; a
-    row a read misses tells nothing.
+    ms before its origin. An event before the read back can be for another frame, another
+    write's or the size an app holds a window to after a display move, so the reads follow
+    it.
+  - A write to another target before the one in flight landed, as a second relayout sending
+    the window to another display while a reflow lands, leaves the events to the reads until
+    a write lands. The older write's events can come after the newer write's read back, and
+    none says which write it is for. In the probe the event came 5.6 ms after the write
+    returned, at the median.
+  - Reads of the window's row off the main thread confirm the frame and correct a wrong one,
+    and only a read lands the write. A read asked before an event's part came is dropped,
+    since WindowServer can have answered it before taking the part. A read waits for
+    WindowServer, 1.4 ms at the median and 5 ms at p90 under load (live log, September 25
+    and 26, 2026), and the reads sleep 0.1 ms between them within 20 ms of the window's
+    write, its read back or a new frame, and 1 ms after; a row a read misses tells nothing.
   - In the probe, on the laptop alone, where a read took 0.018 ms and a send 0.067 ms at the
     median, the window showed off its place in 0 of 16 landings with reads as Kosmos makes
     them, 0 of 16 with reads back to back, 1 of 16 with a read at each event, where the
     event came 0.03 ms after its vsync, and 0 of 16 with the frame taken from the write at
-    the event. All 80 events came on the main thread, and each carried the window id alone.
-    Under load a read lags the landing by its wait for WindowServer, and a lag of 1.4 ms
-    crosses a cut-off in about 1 landing in 6 at 120 Hz. The event does not wait for
-    WindowServer.
-  - The ceilings: the events run on the main actor, so a landing while the main actor is
-    busy past the next cut-off waits for the reads. An event for another frame than the
-    write's, as when the app moves the window itself during the slide, shows the window off
-    by the difference until the next read. The events were timed only on an idle Mac; the
-    frame benchmark's displaced frames in slides are the measure under load.
+    the event, sent in the callback. All 80 events came on the main thread, and each carried
+    the window id alone. Under load a read lags the landing by its wait for WindowServer,
+    and a lag of 1.4 ms crosses a cut-off in about 1 landing in 6 at 120 Hz. The event does
+    not wait for WindowServer. `SLSGetWindowBounds` read the same frame in 0.009 ms at the
+    median, which saves nothing against a read's wait for WindowServer under load.
+  - The ceilings:
+    - The callback runs on the main thread, so a landing while a main actor job runs past
+      the next cut-off waits for the job or a read, whichever ends first. The upgrade is a
+      SkyLight connection of its own watching the sliding windows, its events received on a
+      thread of their own, which no probe has tried.
+    - An event for another frame than the read back's shows the window off by the
+      difference until the next read: the app moving the window itself during the slide,
+      the height 40 points short that Kosmos writes first when AppKit ignored a height near
+      a display edge, whose event can come after the read back, an 807 posted with no size
+      change, as some of the switches' 807s may be ([inventory.md](inventory.md)), and an
+      older write's event the main thread handles after a newer write's read back came,
+      once a read landed the older write. The event names only the window, so telling these
+      apart takes the frame, which a read at the event gives at the cost of its wait for
+      WindowServer.
+    - The events were timed only on an idle Mac; the frame benchmark's displaced frames in
+      slides are the measure under load.
   - A write lands once WindowServer has the frame the worker read back after it, and the
     slide ends at that frame, so a window that rounds its size ends where it is, and one
     that refuses the move lands at once and slides back. A slide that is over holds its

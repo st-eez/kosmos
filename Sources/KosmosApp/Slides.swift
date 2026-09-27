@@ -37,6 +37,13 @@ final class Slides {
 
     init(hiding: Hiding) {
         self.hiding = hiding
+        SkyLight.handleInCallback { [onscreen] event in
+            switch event {
+            case .moved(let id): onscreen.notified(id, moved: true)
+            case .resized(let id): onscreen.notified(id, moved: false)
+            default: break
+            }
+        }
         hiding.createAnimationSpaces(Self.poolSize, level: Self.level) { [weak self] spaces in
             self?.free += spaces
             slideLog.info("\(spaces.count) of \(Self.poolSize) animation Spaces created")
@@ -78,22 +85,6 @@ final class Slides {
         if took > 0 { onscreen.follow() }
         if slid + jumped > 0 {
             slideLog.info("relayout: \(slid) windows slide\(popped ? ", 1 of them popping" : "", privacy: .public), \(jumped) jump, \(self.free.count) Spaces free")
-        }
-    }
-
-    /// WindowServer reports a move or resize before the composite that shows it, so the
-    /// transform follows at once, where a read comes a WindowServer round trip later
-    /// (docs/geometry.md).
-    func notified(_ id: WindowID, moved: Bool) {
-        let now = CACurrentMediaTime()
-        let frame = onscreen.state.withLock { state -> CGRect? in
-            guard var window = state.windows[id], window.notified(moved: moved, at: now) else { return nil }
-            window.show()
-            state.windows[id] = window
-            return window.actual
-        }
-        if let frame {
-            slideLog.debug("\(id) \(moved ? "moved" : "resized", privacy: .public), taken at \(String(describing: frame), privacy: .public), its transform sent")
         }
     }
 
@@ -294,6 +285,19 @@ private final class Onscreen: Sendable {
         return window
     }
 
+    func notified(_ id: WindowID, moved: Bool) {
+        let now = CACurrentMediaTime()
+        let frame = state.withLock { state -> CGRect? in
+            guard var window = state.windows[id], window.notified(moved: moved, at: now) else { return nil }
+            window.show()
+            state.windows[id] = window
+            return window.actual
+        }
+        if let frame {
+            slideLog.debug("\(id) \(moved ? "moved" : "resized", privacy: .public), taken at \(String(describing: frame), privacy: .public), its transform sent")
+        }
+    }
+
     func follow() {
         let idle = state.withLock { state in
             defer { state.following = true }
@@ -326,7 +330,7 @@ private final class Onscreen: Sendable {
                 var moved: [WindowRow] = []
                 for row in rows {
                     guard var window = state.windows[row.id], window.isAwaiting(at: read) else { continue }
-                    if window.observed(row.frame, at: read) {
+                    if window.observed(row.frame, asked: now, at: read) {
                         window.show()
                         moved.append(row)
                     }

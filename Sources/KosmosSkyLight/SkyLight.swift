@@ -1,17 +1,18 @@
 import CKosmos
 import CoreGraphics
 import Foundation
+import Synchronization
 import os
 
 private let log = Logger(subsystem: "io.github.st-eez.kosmos", category: "skylight")
 
 /// Ids and payloads measured on macOS 27 (docs/inventory.md).
-public enum WindowServerEvent: Sendable {
+public enum WindowServerEvent: Sendable, Equatable {
     case created(UInt32)
     case destroyed(UInt32)
     case changed(UInt32)
-    /// Posted as WindowServer takes the window's new frame, before the composite that shows it
-    /// (`kosmos-probe slide-landing`).
+    /// 806 comes as WindowServer takes the window's new origin, before the composite that shows
+    /// it; 807's timing is unmeasured (docs/geometry.md).
     case moved(UInt32)
     case resized(UInt32)
     /// As when its app raises it.
@@ -88,6 +89,14 @@ public enum SkyLight {
             if result != .success { log.error("SkyLight event \(id) not registered: \(result.rawValue)") }
         }
     }
+
+    /// Calls `handler` with each event in WindowServer's callback, ahead of `subscribe`'s hop, so
+    /// no job waiting on the main queue delays it. Call once.
+    public static func handleInCallback(_ handler: @escaping @Sendable (WindowServerEvent) -> Void) {
+        inCallback.withLock { $0 = handler }
+    }
+
+    fileprivate static let inCallback = Mutex<(@Sendable (WindowServerEvent) -> Void)?>(nil)
 
     /// Calls `changed` on the main queue when Secure Input turns on or off, whichever process
     /// changes it (docs/hotkeys.md). Call once.
@@ -173,6 +182,7 @@ private final class EventSink: Sendable {
     /// Callbacks arrive on whichever thread read the message, so every event goes through
     /// the main queue to keep one order.
     func send(_ event: WindowServerEvent, at stamp: ContinuousClock.Instant) {
+        SkyLight.inCallback.withLock { $0 }?(event)
         DispatchQueue.main.async { MainActor.assumeIsolated { self.handler(event, stamp) } }
     }
 }

@@ -14,13 +14,9 @@ import Testing
     bytes.replaceSubrange(0..<4, with: withUnsafeBytes(of: UInt32(77).littleEndian, Array.init))
     bytes.replaceSubrange(8..<12, with: withUnsafeBytes(of: UInt32(88).littleEndian, Array.init))
     bytes.withUnsafeBytes { payload in
-        #expect(WindowServerEvent(id: 806, payload: payload)?.window == 77)
-        guard case .moved(77)? = WindowServerEvent(id: 806, payload: payload),
-              case .resized(77)? = WindowServerEvent(id: 807, payload: payload),
-              case .changed(77)? = WindowServerEvent(id: 815, payload: payload) else {
-            Issue.record("806, 807 and 815 read as another kind of event")
-            return
-        }
+        #expect(WindowServerEvent(id: 806, payload: payload) == .moved(77))
+        #expect(WindowServerEvent(id: 807, payload: payload) == .resized(77))
+        #expect(WindowServerEvent(id: 815, payload: payload) == .changed(77))
         #expect(WindowServerEvent(id: 1325, payload: payload)?.window == 88)
         #expect(WindowServerEvent(id: 1327, payload: payload)?.window == nil)
         #expect(WindowServerEvent(id: 999, payload: payload) == nil)
