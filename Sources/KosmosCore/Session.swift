@@ -673,6 +673,15 @@ public struct Session: Sendable {
         return targets
     }
 
+    /// Where the pointer centers for the focus: the focused window's tile, a floating window
+    /// where the floating check puts it from `frame`, or an empty workspace's display
+    /// (docs/focus-follows-mouse.md). Nil for a floating window with no frame.
+    public func pointerFrame(frame: (WindowID) -> CGRect?) -> CGRect? {
+        guard let window = focused else { return monitor(of: focusedWorkspace).frame }
+        if let tile = frames(of: focusedWorkspace)[window] { return tile }
+        return frame(window).map { floatingFrames(at: [window: $0])[window] ?? $0 }
+    }
+
     var framesBeforeFullscreen: [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         for workspace in workspaces.values {

@@ -73,15 +73,12 @@ extension Controller {
         execute(plan)
     }
 
-    /// Only when the pointer is outside, as AeroSpace's `window-lazy-center`. The frame is the
-    /// layout's or the inventory's, read from no other process (docs/focus-follows-mouse.md).
+    /// Only when the pointer is outside, as AeroSpace's `window-lazy-center`. A floating
+    /// window's frame is where a write in flight puts it, else the inventory's, read from no
+    /// other process (docs/focus-follows-mouse.md).
     func centerPointer() {
         guard !dragging else { return }
-        let frame: CGRect? = if let window = session.focused {
-            session.frames(of: session.focusedWorkspace)[window] ?? inventory.windows[window]?.frame
-        } else {
-            session.monitor(of: session.focusedWorkspace).frame
-        }
+        let frame = session.pointerFrame { ledger.target(of: $0) ?? inventory.windows[$0]?.frame }
         guard let frame, !frame.isEmpty, let location = CGEvent(source: nil)?.location, !frame.contains(location) else { return }
         CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: frame.midY))
         pointer?.warped()

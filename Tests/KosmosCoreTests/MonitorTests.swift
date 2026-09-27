@@ -385,6 +385,29 @@ import Testing
         #expect(s.workspace(of: 10) == "1" && s.isFloating(10) && s.focusedWorkspace == "1")
     }
 
+    @Test func thePointerGoesWhereTheFloatingCheckPutsTheFocusedWindow() {
+        var s = Desk.session()
+        _ = s.add(11); _ = s.add(10, floating: true); _ = s.add(50, to: "5")
+        _ = s.adopt(10)
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let onLeft = CGRect(x: -1820, y: 100, width: 400, height: 300)
+        #expect(s.pointerFrame { _ in onMain } == onMain)
+        #expect(s.pointerFrame { _ in nil } == nil)
+        // The inventory still has it on the main panel.
+        _ = s.perform(.move(.left, boundaries: .allMonitors))
+        #expect(s.pointerFrame { _ in onMain } == onLeft)
+        // The pointer moves before the switch that shows workspace 6 on the left panel, and the
+        // floating check runs after it.
+        _ = s.perform(.move(.right, boundaries: .allMonitors))
+        #expect(s.perform(.moveNodeToWorkspace(.named("6"), focusFollowsWindow: true))?.hide == [50])
+        #expect(s.pointerFrame { _ in onMain } == onLeft)
+        // A tile's frame is the layout's, and an empty workspace's the display's.
+        _ = s.adopt(11)
+        #expect(s.pointerFrame { _ in onLeft } == s.frames(of: "1")[11])
+        _ = s.perform(.workspace(.named("2")))
+        #expect(s.pointerFrame { _ in onLeft } == Desk.main.frame)
+    }
+
     @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {
         // No display is above the main panel, so the window wraps to the built-in display below.
         var s = Desk.session()
