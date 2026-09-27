@@ -66,6 +66,12 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
     }),
+    ("api-sweep", "api-sweep [--list] [--check] [--out <path>] [--from <i>] [--to <i>]", { apiSweep($0) }),
+    ("api-sweep-window", nil, { _ in apiSweepWindow() }),
+    ("api-sweep-call", nil, { arguments in
+        guard arguments.count >= 2, let index = Int(arguments[0]), let window = UInt32(arguments[1]) else { usage() }
+        apiSweepCall(index: index, window: window)
+    }),
     ("panel", nil, { _ in showPanel() }),
     ("clamp-window", nil, { _ in clampWindow() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),

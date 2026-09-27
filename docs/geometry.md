@@ -313,8 +313,7 @@
         waiting on WindowServer at times. A System Trace across such landings settles it.
   - At debug level the slide log gives each display frame: how long after the link's
     timestamp it was stepped, when its callback came and its target, and the frame each
-    sliding window shows at and
-    whether its transform changed; and each move or resize event and each read that set a
+    sliding window shows at and whether its transform changed; and each read that set a
     window's transform for a new frame. `script/bench-frames.sh` streams the log at debug
     level, so each step's lines place its captured frames against the frames Kosmos set.
   - WindowServer applies a Space's transform to each window the Space shows in that
@@ -328,72 +327,67 @@
     together (kosmos-probe space-anim and its demo, branch spaceanim). A transform sent
     before the write lands, with the write, or with a barrier between, showed the window
     displaced backwards for 5 to 17 ms in 10 of 10 swaps. So the transform follows the
-    frame instead.
-  - WindowServer posts a window's move (806) as it takes the new origin, and shows the frame
-    in the composite after the next cut-off, about 0.3 ms after a vsync. In `kosmos-probe
-    slide-landing` (built-in display at 120 Hz, September 26, 2026), a child app's window
-    held still by the probe's animation Space was written 240 points by Accessibility 16
-    times with the transform left as it was. Each landing showed 17.2 ms after the vsync
-    before its event, or a refresh sooner for the one whose event came 0.31 ms after its
-    vsync. So a transform sent at the event lands with the frame, unless the event comes
-    within the send's time of a cut-off.
-  - A size write posts a resize (807) and no move, its payload the window id alone. In
-    `kosmos-probe slide-landing --size` (September 26, 2026), the window was written 240
-    points wider and back 16 times in each way of following, and all 80 events came on the
-    main thread. With the transform left as it was, each landing showed after its event,
-    17.2 ms after the vsync before the event in 9, 25.5 ms in 6, and 8.8 ms in the one whose
-    event came 0.10 ms after its vsync. With the transform sent at the event for the write's
-    frame, 2 of 16 landings showed the window off its place for a frame: one whose event
-    came 0.27 ms after its vsync, and one whose frame showed a refresh before its event
-    implied, so its event came about 3 ms after WindowServer had the size. With reads as
-    Kosmos makes them, and back to back, 1 of 16 each, and in those two a read found the new
-    size 8.3 and 6.5 ms before its event. So 807 mostly comes before the composite that
-    shows the size, and now and then after it, when the reads follow the landing.
-  - At a sliding window's move or resize event, once the worker's read back of its write
-    has come, Kosmos takes the window to have the read back's origin or size and sends the
-    transform at once, in WindowServer's callback, ahead of the main queue. Each event takes
-    one part, since a size write lands before its origin. Kosmos writes size, position,
-    size, and in the first run of the frame benchmark a resized window's size landed 2 to 8
-    ms before its origin. An event before the read back can be for another frame, another
-    write's or the size an app holds a window to after a display move, so the reads follow
-    it.
-  - A write to another target before the one in flight landed, as a second relayout sending
-    the window to another display while a reflow lands, leaves the events to the reads until
-    a write lands. The older write's events can come after the newer write's read back, and
-    none says which write it is for. In the probe a move event came 5.6 ms after its write
-    returned at the median, and a resize event 11 to 15 ms.
-  - Reads of the window's row off the main thread confirm the frame and correct a wrong one,
-    and only a read lands the write. A read asked before an event's part came is dropped,
-    since WindowServer can have answered it before taking the part. A read waits for
-    WindowServer, 1.4 ms at the median and 5 ms at p90 under load (live log, September 25
-    and 26, 2026), and the reads sleep 0.1 ms between them within 20 ms of the window's
-    write, its read back or a new frame, and 1 ms after; a row a read misses tells nothing.
-  - In the probe, on the laptop alone, where a read took 0.018 ms and a send 0.067 ms at the
-    median, the window showed off its place in 0 of 16 landings with reads as Kosmos makes
-    them, 0 of 16 with reads back to back, 1 of 16 with a read at each event, where the
-    event came 0.03 ms after its vsync, and 0 of 16 with the frame taken from the write at
-    the event, sent in the callback. All 80 events came on the main thread, and each carried
-    the window id alone. Under load a read lags the landing by its wait for WindowServer,
-    and a lag of 1.4 ms crosses a cut-off in about 1 landing in 6 at 120 Hz. The event does
-    not wait for WindowServer. `SLSGetWindowBounds` read the same frame in 0.009 ms at the
-    median, which saves nothing against a read's wait for WindowServer under load.
-  - The ceilings:
-    - The callback runs on the main thread in Kosmos ([overview.md](overview.md)), so a
-      landing while a main actor job runs past the next cut-off waits for the job or a
-      read, whichever ends first. The upgrade is a SkyLight connection of its own watching
-      the sliding windows, its events received on a thread of their own, which no probe has
-      tried.
-    - An event for another frame than the read back's shows the window off by the
-      difference until the next read: the app moving the window itself during the slide,
-      the height 40 points short that Kosmos writes first when AppKit ignored a height near
-      a display edge, whose event can come after the read back, an 807 posted with no size
-      change, as some of the switches' 807s may be ([inventory.md](inventory.md)), and an
-      older write's event the main thread handles after a newer write's read back came,
-      once a read landed the older write. The event names only the window, so telling these
-      apart takes the frame, which a read at the event gives at the cost of its wait for
-      WindowServer.
-    - The events were timed only on an idle Mac; the frame benchmark's displaced frames in
-      slides are the measure under load.
+    frame instead: reads of the window's row off the main thread set the transform for
+    each new frame WindowServer gives it. In the demo, reads every 0.1 ms left the window
+    at its new place for one read of 10 swaps. The reads come every 0.1 ms within 20 ms of
+    a window's write, its read back or a new frame, and every 1 ms after; a row a read
+    misses tells nothing.
+  - A landing can show its window off its slide for a refresh, a ceiling Kosmos accepts. In
+    about a quarter of the steps that slide windows, a window shows for one refresh, about
+    8 ms at 120 Hz, at its new frame without its Space's offset, displaced by up to its
+    whole move: 59 of 240 steps in the second frame benchmark run. It comes more often when
+    WindowServer is busy, since a read waits for it, 1.4 ms at the median and 5 ms at p90
+    in the live log of September 25 and 26, 2026, against 0.018 ms on an idle Mac in
+    `kosmos-probe slide-landing`. The app commits its frame change on its own schedule, and
+    no API lets Kosmos commit the Space's transform in the same composite, so a landing
+    WindowServer composites before a read finds it shows without its transform. Steve
+    watched 120 fps recordings at full resolution and could not see it at normal speed. An
+    upgrade waits for Steve to notice it in normal use.
+    - The evidence:
+      - WindowServer takes a change into the next composite only until about 0.3 ms after
+        the vsync (`kosmos-probe slide-sync`, September 26, 2026).
+      - On an idle Mac, reads as Kosmos makes them, reads back to back, and a transform
+        sent at the window's move (806) or resize (807) event each left the window
+        displaced in 0 to 2 of 16 landings (`kosmos-probe slide-landing`, with and without
+        `--size`, September 26, 2026).
+      - With reads alone, displaced frames came in 31 of the 240 steps, besides 17 the
+        analyzer made (the first frame benchmark run, `script/bench-frames.sh`, September
+        26, 2026).
+      - With the transform also sent at each 806 and 807 in WindowServer's callback, which
+        runs on the main thread, the event set the transform first in 123 of 583 landings,
+        and displaced frames came in 59 steps, up to 343 px in join-with (the second run,
+        September 26, 2026, with its analyzer and capture changed as well). Kosmos went
+        back to reads alone.
+      - None of SkyLight's 79 bridged operations moves a window (the blip research of
+        September 27, 2026, from SkyLight, WindowManager.app and QuartzCore on macOS 27).
+      - WindowServer's rights check refuses a move, alpha or transform of another app's
+        window from a connection without rights its owner granted or the Dock's
+        entitlement, with Screen Recording or without (the blip research).
+      - WindowManager.app, which runs Stage Manager and tiling, holds a window's move for
+        the app's own Core Animation commit, by a fence the app's transaction carries and
+        Kosmos cannot join (the blip research).
+      - WindowServer draws another app's window into a `CAPluginLayer` only for the Dock, a
+        connection entitled to it, or one holding rights on the window (the blip research).
+      - 44 private SkyLight window calls, each made from a process of its own on a
+        connection foreign to the window, as Kosmos's is, changed nothing on a test window
+        that a child of the probe owns (`kosmos-probe api-sweep`, macOS 27 26A428,
+        September 27, 2026). Besides 5 reads, the 39 calls that would change the window's
+        frame, bounds, resolution, alpha, transform, Spaces, order, shape or level left it
+        as it was, read back at once and 100 ms later, whatever they returned, and
+        `SLSSetWindowTransformAtPlacement` crashed its own process. The run left out
+        `SLSDisableUpdate` with `SLSReenableUpdate`, so the screen could not freeze, and
+        `api-sweep --list` gives the 55 calls the probe never makes, for want of a
+        signature or for a global effect.
+    - The upgrades, each with its cost:
+      - Writes timed to the refresh with the offset set ahead, for apps that commit fast.
+        It is a probability game, since an app that commits after its transform lands shows
+        its window displaced backwards instead, as the space-anim demo's swaps did.
+      - A stand-in from a Screen Recording snapshot, as yabai animates windows. It costs a
+        permission prompt and its re-approval after 30 days unused, the capture indicator
+        flashing, protected video going black, about 50 ms a capture on macOS 27 (AltTab's
+        measure), content frozen for the slide, and clicks on the stand-in lost.
+      - Accessibility writes at each display frame, as Rift and glide animate. They stutter
+        on an app slow to commit.
   - A write lands once WindowServer has the frame the worker read back after it, and the
     slide ends at that frame, so a window that rounds its size ends where it is, and one
     that refuses the move lands at once and slides back. A slide that is over holds its
@@ -580,7 +574,6 @@
     pool's Space; a display unplugged or the lid closed mid-slide, after which the next
     slide should run; a relayout on a display showing a native fullscreen Space, which
     should jump, and one on its desktop Space with the key window, which should slide;
-    how often a landing still shows its window displaced under load, the frame benchmark's
-    displaced frames in slides; and how Steve's slides start now that each display frame
-    goes a quarter of a refresh after its callback: the frame benchmark's latency, jumps and
-    skips in slides, with the slide log's frame lines.
+    and how Steve's slides start now that each display frame goes a quarter of a refresh
+    after its callback: the frame benchmark's latency, jumps and skips in slides, with the
+    slide log's frame lines.

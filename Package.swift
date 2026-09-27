@@ -37,11 +37,21 @@ let package = Package(
         // The frame analysis of script/bench-frames.sh, apart from the screen capture so tests
         // can feed it frames (docs/geometry.md).
         .target(name: "KosmosBench", dependencies: ["KosmosCore"]),
+        // The api-sweep probe's table of private window calls and the code that performs one.
+        // Only kosmos-probe depends on it, so the sweep's calls stay out of the app.
+        .target(
+            name: "CKosmosSweep",
+            cSettings: [.unsafeFlags(["-fobjc-arc"])],
+            linkerSettings: [
+                .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
+                .linkedFramework("QuartzCore"),
+            ]
+        ),
         // Measurements of private behaviour that the design depends on
         // (docs/overview.md, section 6).
         .executableTarget(
             name: "kosmos-probe",
-            dependencies: ["CKosmos", "KosmosBench", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]
+            dependencies: ["CKosmos", "CKosmosSweep", "KosmosBench", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]
         ),
         .testTarget(name: "KosmosBenchTests", dependencies: ["KosmosBench", "KosmosCore"]),
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
