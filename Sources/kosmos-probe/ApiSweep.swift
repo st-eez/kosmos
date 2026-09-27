@@ -61,6 +61,8 @@ import KosmosSkyLight
     print(String(format: "test window %d, 200 by 150 at (%.0f, %.0f) on the built-in display, pid %d",
                  window, rest.minX, rest.minY, child.pid))
 
+    // A second for Kosmos's intake to adopt the window if it would.
+    pumpEvents(1)
     switch kosmosListsWindow(window) {
     case .present:
         print("error: Kosmos manages the test window (\(window)); aborting so the sweep does not fight it")
@@ -100,13 +102,14 @@ import KosmosSkyLight
         let record = recordJSON(index: index, entry: entry, call: call, before: before, after: after,
                                 persist: persist, changed: changed, persisted: persisted, reset: reset, ms: ms)
         append(file, record)
-        print(String(format: "[%d/%d] %-42s %-7s rc=%@ changed=%@",
-                     position + 1, indices.count, (entry.name as NSString).utf8String!, call.outcome,
-                     call.rc.map(String.init) ?? "-", changed.isEmpty ? "none" : changed.joined(separator: ","))
-              + (persisted.isEmpty || persisted == changed ? "" : " persisted=\(persisted.joined(separator: ","))"))
+        func padded(_ text: String, _ width: Int) -> String { text.padding(toLength: max(width, text.count), withPad: " ", startingAt: 0) }
+        print("[\(position + 1)/\(indices.count)] " + padded(entry.name, 42) + " " + padded(call.outcome, 7)
+              + " rc=\(call.rc.map(String.init) ?? "-") changed=\(changed.isEmpty ? "none" : changed.joined(separator: ","))"
+              + " persisted=\(persisted.isEmpty ? "none" : persisted.joined(separator: ","))" + (reset.ok ? "" : " RESET FAILED: \(reset.line)"))
     }
 
     fclose(file)
+    if kosmosListsWindow(window) == .present { print("warning: Kosmos listed the test window by the end of the run") }
     child.quit()
     print("\ndone")
     exit(0)
