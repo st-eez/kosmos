@@ -312,8 +312,9 @@
         transforms' sends, and in AppKit's status item and Core Animation fences, each
         waiting on WindowServer at times. A System Trace across such landings settles it.
   - At debug level the slide log gives each display frame: how long after the link's
-    timestamp it was stepped, when its callback came and its target, and the frame each
-    sliding window shows at and whether its transform changed; and each read that set a
+    timestamp it was stepped, when its callback came and its target, how long its transforms
+    and then its border update took, and the frame each sliding window shows at and whether
+    its transform changed; and each read that set a
     window's transform for a new frame. `script/bench-frames.sh` streams the log at debug
     level, so each step's lines place its captured frames against the frames Kosmos set.
   - WindowServer applies a Space's transform to each window the Space shows in that
