@@ -334,11 +334,14 @@
     a window's write, its read back or a new frame, and every 1 ms after; a row a read
     misses tells nothing.
   - A landing can show its window off its slide for a refresh, a ceiling Kosmos accepts. In
-    about a quarter of the steps that slide windows, a window shows for one refresh, about
+    about one in eight steps that slide windows, a window shows for one refresh, about
     8 ms at 120 Hz, at its new frame without its Space's offset, displaced by up to its
-    whole move: 59 of 240 steps in the second frame benchmark run. It comes more often when
-    WindowServer is busy, since a read waits for it, 1.4 ms at the median and 5 ms at p90
-    in the live log of September 25 and 26, 2026, against 0.018 ms on an idle Mac in
+    whole move: 31 of 240 steps in the first frame benchmark run, which found landings by
+    reads alone, as Kosmos does now. The second run's 59 of 240 steps do not measure Kosmos
+    now. That build also sent the transform at each move and resize event, since taken out,
+    and the run changed its analyzer and capture. The displaced refresh comes more often
+    when WindowServer is busy, since a read waits for it, 1.4 ms at the median and 5 ms at
+    p90 in the live log of September 25 and 26, 2026, against 0.018 ms on an idle Mac in
     `kosmos-probe slide-landing`. The app commits its frame change on its own schedule, and
     no API lets Kosmos commit the Space's transform in the same composite, so a landing
     WindowServer composites before a read finds it shows without its transform. Steve
