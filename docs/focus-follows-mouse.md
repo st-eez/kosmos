@@ -246,8 +246,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     annotated field is for the live test. If not, `NSWindow.windowNumber(at:
     belowWindowWithWindowNumber: 0)` returns WindowServer's hit test for a point, including
     other apps' windows, at one WindowServer call per movement. It takes the event's
-    location as the monitor gives it, in screen coordinates. Branch `ffm-monitor` holds this
-    variant.
+    location as the monitor gives it, in screen coordinates. Tag `archive/ffm-monitor` holds
+    this variant.
 
   The mask stays mouse moved, so a drag still sends nothing (AeroSpace notes the same),
   and Control still comes from each event's modifier flags. An active tap is the other way
@@ -279,7 +279,7 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     level of another app's window, and raising the floating windows again after the raise
     would key one of the front app's, or reorder only a background app's own windows. A
     Space shown above the desktop's keeps a floating window on top, and covers every menu
-    and all system UI too (`kosmos-probe float-layer`, on the floatprobe branch). A covered
+    and all system UI too (`kosmos-probe float-layer`, at tag `archive/floatprobe`). A covered
     floating window stays in reach of `focus` in a direction ([tree.md](tree.md)), where hover
     cannot reach it. If it bothers in practice, the path is yabai's
     `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
