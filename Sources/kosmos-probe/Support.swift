@@ -104,3 +104,30 @@ func percentile(_ values: [Double], _ p: Double) -> Double {
 
 /// Milliseconds since boot, the same in every process.
 func uptime() -> Double { Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6 }
+
+/// A thread with a run loop of its own for the display links.
+final class LinkThread: @unchecked Sendable {
+    private let runLoop: CFRunLoop
+
+    init(name: String) {
+        let ready = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var loop: CFRunLoop?
+        let thread = Thread {
+            loop = CFRunLoopGetCurrent()
+            // A run loop with no sources returns at once; the port keeps this one alive.
+            RunLoop.current.add(NSMachPort(), forMode: .default)
+            ready.signal()
+            CFRunLoopRun()
+        }
+        thread.name = name
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        ready.wait()
+        runLoop = loop!
+    }
+
+    func perform(_ block: @escaping @Sendable () -> Void) {
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopWakeUp(runLoop)
+    }
+}

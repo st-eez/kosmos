@@ -50,7 +50,8 @@ public struct Facts: Sendable {
     public var readGaps: [Double] = []
     /// WindowServer's Space membership events, from the inventory's debug lines.
     public var memberships = 0
-    /// Milliseconds: the slowest display link callback, and the slowest Accessibility write.
+    /// Milliseconds: the slowest slide display frame's step, the wait for its lock included,
+    /// and the slowest Accessibility write.
     public var slowestFrame: Double?
     public var slowestWrite: Double?
     public var failed = 0

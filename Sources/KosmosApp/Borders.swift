@@ -17,6 +17,12 @@ final class Borders {
     private(set) var accent = Borders.readAccent()
     private(set) var red = Borders.readRed()
     var onAccentChange: (@MainActor () -> Void)?
+    /// Hands Slides the border windows whose rings each sliding target's display frames move.
+    var onRings: (@MainActor ([WindowID: HandedRing]) -> Void)?
+    /// The windows whose rings went to Slides last.
+    private var handed: [BorderWindow] = []
+    /// The borders of the sliding targets as last shown.
+    private var sliding: [WindowID: ShownBorder] = [:]
     private var appearance: NSKeyValueObservation?
 
     init() {
@@ -55,37 +61,80 @@ final class Borders {
         return read
     }
 
-    /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
-    func show(_ shown: [WindowID: ShownBorder], fullscreen: Set<DisplayID> = []) {
-        for step in pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) {
-            switch step {
-            case .putBack(let window):
-                let began = CACurrentMediaTime()
-                window.putBack()
-                bordersLog.debug("""
-                    border \(window.windowNumber) put back on display \(window.display) in \
-                    \(ms(since: began), format: .fixed(precision: 2)) ms
-                    """)
-            case .clear(let window):
-                window.clear()
-            case .ready(let window, let target, let next):
-                orderIn(window, next, below: target, ready: true)
-            case .orderIn(let window, let target, let next):
-                orderIn(window, next, below: target)
-            case .show(let window, let target, let next, let taken):
-                // Setting another level can move the border within the stacking order.
-                let leveled = window.level.rawValue != Int(next.level)
-                window.show(next)
-                if leveled { window.order(.below, relativeTo: Int(target)) }
-                guard taken else { continue }
-                pin(window, to: target, thenShow: false)
-                bordersLog.debug("ring of \(target) moved to border \(window.windowNumber), ready on display \(window.display)")
-            case .wait(let window, let target):
-                // Ordered in there before its move, it would draw on the fullscreen app, and a
-                // frame set before the move might take it back to the fullscreen Space.
-                pin(window, to: target, thenShow: true)
+    /// `held`: the windows Slides holds for their rings. `fullscreen`: the displays that may
+    /// show a native fullscreen Space (docs/borders.md).
+    func show(_ shown: [WindowID: ShownBorder], held: Set<WindowID> = [], fullscreen: Set<DisplayID> = []) {
+        sliding = shown.filter(\.value.sliding)
+        for step in pool.show(shown, held: held, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) {
+            apply(step)
+        }
+    }
+
+    /// Whether the target's ring shows, which its slide's first display frame waits for.
+    func showsRing(of target: WindowID) -> Bool {
+        !pool.ordered(below: target).isEmpty
+    }
+
+    private func apply(_ step: BorderPool<BorderWindow>.Step) {
+        switch step {
+        case .putBack(let window):
+            let began = CACurrentMediaTime()
+            window.putBack()
+            bordersLog.debug("""
+                border \(window.windowNumber) put back on display \(window.display) in \
+                \(ms(since: began), format: .fixed(precision: 2)) ms
+                """)
+        case .clear(let window):
+            window.clear()
+        case .ready(let window, let target, let next):
+            orderIn(window, next, below: target, ready: true)
+        case .orderIn(let window, let target, let next):
+            orderIn(window, next, below: target)
+        case .show(let window, let target, let next, let taken):
+            // Setting another level can move the border within the stacking order.
+            let leveled = window.level.rawValue != Int(next.level)
+            window.show(next)
+            if leveled { window.order(.below, relativeTo: Int(target)) }
+            guard taken else { return }
+            pin(window, to: target, thenShow: false)
+            bordersLog.debug("ring of \(target) moved to border \(window.windowNumber), ready on display \(window.display)")
+        case .wait(let window, let target):
+            // Ordered in there before its move, it would draw on the fullscreen app, and a
+            // frame set before the move might take it back to the fullscreen Space.
+            pin(window, to: target, thenShow: true)
+        case .hand(let next):
+            hand(next)
+        }
+    }
+
+    /// While a target slides, its windows' ring frames and opacity are Slides' to set, so each
+    /// lands with its window's transform and never a display frame behind it (docs/borders.md).
+    private func hand(_ next: [WindowID: [BorderWindow]]) {
+        for (target, windows) in next {
+            guard let ring = sliding[target] else { continue }
+            // A display frame can move the ring into a ready window, so each takes the ring's
+            // color, corners and level.
+            for window in windows where window.display != ring.border.display {
+                guard let covered = window.covered else { continue }
+                var ready = ring
+                (ready.border.display, ready.border.displayFrame, ready.alpha) = (window.display, covered, 0)
+                window.show(ready)
             }
         }
+        // Main's pending changes to these windows, such as a resize to cover a display, commit
+        // here, before a display frame's transaction on the frames queue could commit them.
+        CATransaction.flush()
+        var rings: [WindowID: HandedRing] = [:]
+        for (target, windows) in next {
+            guard let width = sliding[target]?.border.lineWidth else { continue }
+            let covering = windows.compactMap { window in window.covered.map { (window, $0) } }
+            rings[target] = HandedRing(ring: SlideRing(lineWidth: width, displays: covering.map { Monitor(id: $0.0.display, frame: $0.1) }),
+                                       layers: covering.map { RingLayer(layer: $0.0.ring) })
+        }
+        onRings?(rings)
+        for window in handed { window.handed = false }
+        handed = next.values.flatMap { $0 }
+        for window in handed { window.handed = true }
     }
 
     private func orderIn(_ window: BorderWindow, _ next: ShownBorder, below target: WindowID, ready: Bool = false) {
@@ -132,6 +181,7 @@ final class Borders {
                 guard let next = self.pool.moved(window, of: target) else { return }
                 window.show(next)
                 window.order(.below, relativeTo: Int(target))
+                if next.sliding, let hand = self.pool.handOff() { self.apply(hand) }
             }
         }
     }
@@ -143,7 +193,9 @@ private func ms(since began: Double) -> Double { (CACurrentMediaTime() - began) 
 /// another app's Hide Others hides Kosmos.
 private final class BorderWindow: NSWindow {
     let display: DisplayID
-    private let ring = CALayer()
+    let ring = CALayer()
+    /// Its ring's frame and opacity are Slides' to set while its target slides.
+    var handed = false
     private var shown: ShownBorder?
 
     /// `frame` is its display's, in Accessibility's coordinates.
@@ -171,6 +223,9 @@ private final class BorderWindow: NSWindow {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// The display it covers while its target slides.
+    var covered: CGRect? { shown?.sliding == true ? shown?.border.displayFrame : nil }
 
     /// Into its pool. macOS can move a window ordered out, as off a display that goes, so its
     /// next show sets everything again.
@@ -202,16 +257,19 @@ private final class BorderWindow: NSWindow {
             setFrameOrigin(appKitFrame.origin)
         }
         if level.rawValue != Int(next.level) { level = NSWindow.Level(rawValue: Int(next.level)) }
+        let slideSets = next.sliding && handed
         // In the layer's coordinates, from the window's bottom left.
-        ring.frame = CGRect(x: border.ring.minX - frame.minX, y: frame.maxY - border.ring.maxY,
-                            width: border.ring.width, height: border.ring.height)
+        if !slideSets {
+            ring.frame = CGRect(x: border.ring.minX - frame.minX, y: frame.maxY - border.ring.maxY,
+                                width: border.ring.width, height: border.ring.height)
+        }
         ring.cornerRadius = border.cornerRadius
         ring.borderWidth = border.lineWidth
         if previous?.border.color != border.color {
             let color = border.color
             ring.borderColor = CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
         }
-        ring.opacity = Float(next.alpha)
+        if !slideSets { ring.opacity = Float(next.alpha) }
         CATransaction.commit()
     }
 }

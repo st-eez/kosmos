@@ -113,6 +113,7 @@ final class Controller {
         self.barDisplays = barDisplays
         inventory.onEvent = { [weak self] event in self?.handle(event) }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
+        borderWindows.onRings = { [weak self] rings in self?.slides?.hand(rings) }
         watchLeftButton()
         for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
         restoreLayout()
@@ -458,7 +459,7 @@ final class Controller {
             // read shows until the pop's Space turns transparent; docs/geometry.md has the upgrade.
             if id == popping, let row = SkyLight.rows([id])?.first { (from, pop) = (row.frame, !row.orderedIn) }
             if let from, let shownOn = session.display(under: from), fullscreen.contains(shownOn) { continue }
-            motions[id] = Slides.Motion(from: from, display: display, pop: pop)
+            motions[id] = Slides.Motion(from: from, display: display, pop: pop, ringed: borderWindows.showsRing(of: id))
         }
         return motions
     }
@@ -592,7 +593,8 @@ final class Controller {
     /// A locked session keeps its borders until the resync after the unlock (docs/borders.md).
     func updateBorders() {
         guard !sessionLocked else { return }
-        guard managing, let borders else { return borderWindows.show([:]) }
+        let held = slides?.held ?? []
+        guard managing, let borders else { return borderWindows.show([:], held: held) }
         // One read of each slide, so a border's frame and alpha come from the same display frame.
         var sliding: [WindowID: (frame: CGRect, alpha: Double, path: CGRect)] = [:]
         let shown = session.borders(borders, accent: borderWindows.accent, red: borderWindows.red,
@@ -605,7 +607,7 @@ final class Controller {
             let slide = sliding[entry.key]
             result[entry.key] = ShownBorder(border: entry.value, level: inventory.windows[entry.key]?.level ?? 0,
                                             alpha: slide?.alpha ?? 1, sliding: slide != nil)
-        }, fullscreen: fullscreenDisplays)
+        }, held: held, fullscreen: fullscreenDisplays)
     }
 
     /// Only plans come here, so the 100 ms retry never flashes, and a drag's plans record their

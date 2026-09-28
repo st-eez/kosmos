@@ -26,6 +26,30 @@
 //                                               display before the slide starts
 //                                     window    the ring's own window moved with AppKit
 //                                     space     the ring's window in the slide's Space
+//                                     mainbusy  deferred, with the main thread blocked 20 to
+//                                               60 ms at a time, as another app's landing write
+//                                               blocks Kosmos's
+//                                     thread    the link on a thread of its own, and the
+//                                               transform and the ring's layer sent from a
+//                                               serial queue a quarter of a refresh after the
+//                                               vsync, the ring in an explicit CATransaction
+//                                     threadbusy
+//                                               thread, with the main thread blocked as mainbusy
+//                                     threadlocked
+//                                               thread, with the main thread holding Core
+//                                               Animation's global lock (CATransaction.lock())
+//                                               20 to 60 ms at a time
+//                                     startbusy deferred, with the main thread blocked 19.6 to
+//                                               24.8 ms right after each slide starts, as a
+//                                               ready border window's order below held
+//                                               Kosmos's
+//                                     threadstart
+//                                               thread, with the main thread blocked as
+//                                               startbusy
+//                                     animated  thread's transforms, with the ring moved by one
+//                                               Core Animation animation on the slide's curve,
+//                                               set as the slide starts and a refresh late, and
+//                                               the main thread blocked as mainbusy
 //                                   Needs Screen Recording for the terminal, and exits rather
 //                                   than ask. A crash leaves the Space, empty.
 import AppKit
@@ -44,6 +68,8 @@ private struct Tick {
     let slide: Int, index: Int
     let entry: Double, timestamp: Double, target: Double
     let progress: Double
+    /// When its transform went out, when the send returned, and when its ring's commit returned.
+    var sent = 0.0, transformed = 0.0, committed = 0.0
 }
 
 /// One captured frame: its display time and where its reader found the window and its ring,
@@ -54,7 +80,15 @@ struct Seen: Sendable {
 }
 
 private enum RingMode: String, CaseIterable {
-    case layer, deferred, flush, busy, send300, warm, covered, window, space
+    case layer, deferred, flush, busy, send300, warm, covered, window, space, mainbusy, thread, threadbusy, threadlocked, startbusy,
+         threadstart, animated
+
+    /// The link on a thread of its own, its steps on a serial queue.
+    var offMain: Bool { self == .thread || self == .threadbusy || self == .threadlocked || self == .threadstart || self == .animated }
+    /// The main thread blocked once, right after each slide starts.
+    var blocksStart: Bool { self == .startbusy || self == .threadstart }
+    /// The main thread blocked 20 to 60 ms at a time during each slide.
+    var blocksMain: Bool { self == .mainbusy || self == .threadbusy || self == .threadlocked || self == .animated }
 }
 
 @MainActor func slideSync(slides: Int, modes: [String]) -> Never {
@@ -126,10 +160,23 @@ private enum RingMode: String, CaseIterable {
         pumpEvents(0.3)
         var slidesRun: [(added: Double, ended: Double)] = []
         for number in 1...slides {
+            // Over any window raised since, as the ring's window and the backdrop sit in the
+            // desktop Space, which the window's own Space draws above.
+            backdrop.orderFrontRegardless()
+            border.window.order(.above, relativeTo: backdrop.windowNumber)
             // A start at a random point of the refresh, as a command's is.
             pumpEvents(0.25 + Double.random(in: 0..<refresh))
             let added = run.begin(number)
-            while run.sliding { pumpEvents(0.005) }
+            if mode.blocksStart { usleep(UInt32.random(in: 19_600...24_800)) }
+            var block = added + Double.random(in: 0.01..<0.08)
+            while run.sliding {
+                pumpEvents(0.005)
+                guard mode.blocksMain, CACurrentMediaTime() >= block else { continue }
+                if mode == .threadlocked { CATransaction.lock() }
+                usleep(UInt32.random(in: 20_000...60_000))
+                if mode == .threadlocked { CATransaction.unlock() }
+                block = CACurrentMediaTime() + Double.random(in: 0.03..<0.12)
+            }
             pumpEvents(0.1)
             slidesRun.append((added, CACurrentMediaTime()))
             run.reset()
@@ -137,7 +184,7 @@ private enum RingMode: String, CaseIterable {
         run.finish()
         pumpEvents(0.1)
         let frames = capture.frames.withLock { $0 }
-        report(mode, ticks: run.ticks, slides: slidesRun, frames: frames, refresh: refresh, scale: scale)
+        report(mode, ticks: run.allTicks, slides: slidesRun, frames: frames, refresh: refresh, scale: scale)
     }
     capture.stop()
     kosmos_space_destroy(space)
@@ -181,17 +228,24 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
     private var link: CADisplayLink?
     private(set) var ticks: [Tick] = []
     private var dark = false
+    private var offMain: OffMainSteps?
 
     init(_ mode: RingMode, screen: NSScreen, space: UInt64, target: NSWindow, border: ProbeBorder, backdrop: NSWindow, rest: CGRect,
          end: CGRect, rate: Int, green: CGColor) {
         (self.mode, self.screen, self.space, self.target, self.border, self.backdrop) = (mode, screen, space, target, border, backdrop)
         (self.rest, self.end, self.rate, self.green) = (rest, end, rate, green)
         super.init()
+        if mode.offMain {
+            offMain = OffMainSteps(mode, space: space, ring: border.ring, rest: rest, screen: screen.frame,
+                                   mainHeight: NSScreen.screens[0].frame.height, refresh: 1 / Double(rate))
+        }
         if mode == .warm { startLink() }
         if mode == .covered { cover(at: rest) }
     }
 
-    var sliding: Bool { slide != nil }
+    var sliding: Bool { offMain?.sliding ?? (slide != nil) }
+
+    var allTicks: [Tick] { offMain?.ticks.withLock { $0 } ?? ticks }
 
     private var windows: [UInt32] {
         mode == .space ? [UInt32(target.windowNumber), border.id] : [UInt32(target.windowNumber)]
@@ -206,6 +260,12 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         var ids = windows
         kosmos_add_windows(space, &ids, ids.count, false)
         let now = CACurrentMediaTime()
+        if let offMain {
+            cover(at: rest)
+            offMain.begin(number, slide: .move(from: rest, to: end, at: now),
+                          link: screen.displayLink(target: offMain, selector: #selector(OffMainSteps.frame)), rate: rate)
+            return now
+        }
         slide = .move(from: rest, to: end, at: now)
         if link == nil { startLink() }
         if movesLayer { cover(at: rest) }
@@ -236,7 +296,9 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         }
         guard slide != nil else { return }
         let (entry, timestamp, at) = (CACurrentMediaTime(), link.timestamp, link.targetTimestamp)
-        guard mode == .deferred else { return step(link, entry: entry, timestamp: timestamp, at: at) }
+        guard mode == .deferred || mode == .mainbusy || mode == .startbusy else {
+            return step(link, entry: entry, timestamp: timestamp, at: at)
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, timestamp + link.duration / 4 - CACurrentMediaTime())) {
             MainActor.assumeIsolated { self.step(link, entry: entry, timestamp: timestamp, at: at) }
         }
@@ -245,6 +307,7 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
     private func step(_ link: CADisplayLink, entry: Double, timestamp: Double, at: Double) {
         guard let slide else { return }
         let shown = slide.shown(at: at).frame
+        let sent = CACurrentMediaTime()
         if mode == .send300 {
             while CACurrentMediaTime() < timestamp + 0.0003 {}
         }
@@ -263,7 +326,7 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         }
         index += 1
         let progress = Double((shown.minX - rest.minX) / distance)
-        ticks.append(Tick(slide: number, index: index, entry: entry, timestamp: timestamp, target: at, progress: progress))
+        ticks.append(Tick(slide: number, index: index, entry: entry, timestamp: timestamp, target: at, progress: progress, sent: sent))
         guard slide.isOver(at: at) else { return }
         self.slide = nil
         if mode != .warm {
@@ -274,6 +337,7 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
 
     /// The window back at rest, out of the Space, and its ring around it.
     func reset() {
+        border.ring.removeAllAnimations()
         kosmos_space_set_transform(space, .identity)
         var ids = windows
         kosmos_remove_windows(space, &ids, ids.count)
@@ -289,6 +353,109 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         link = nil
         border.place(around: appKitRect(rest), radius: 0, width: ringWidth, color: green)
         backdrop.backgroundColor = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
+    }
+}
+
+/// The thread modes' steps: the link calls back on a thread of its own, and each step runs on a
+/// serial queue a quarter of a refresh after the vsync, whatever the main thread does.
+private final class OffMainSteps: NSObject, @unchecked Sendable {
+    private struct State {
+        var slide: Slide?
+        var number = 0, index = 0
+    }
+
+    private let mode: RingMode
+    private let space: UInt64
+    /// Set on `queue` while a slide runs, and on the main thread between slides.
+    private let ring: CALayer
+    private let rest: CGRect
+    private let screen: NSRect
+    private let mainHeight: CGFloat, refresh: Double
+    private let queue = DispatchQueue(label: "kosmos-probe.slide-sync.steps", qos: .userInteractive)
+    private let thread = LinkThread(name: "kosmos-probe.slide-sync.links")
+    private let state = Mutex(State())
+    /// Set on the main thread before its slide starts and invalidated on `queue` once it ends.
+    private nonisolated(unsafe) var link: CADisplayLink?
+    let ticks = Mutex<[Tick]>([])
+
+    init(_ mode: RingMode, space: UInt64, ring: CALayer, rest: CGRect, screen: NSRect, mainHeight: CGFloat, refresh: Double) {
+        (self.mode, self.space, self.ring, self.rest, self.screen) = (mode, space, ring, rest, screen)
+        (self.mainHeight, self.refresh) = (mainHeight, refresh)
+    }
+
+    var sliding: Bool { state.withLock { $0.slide != nil } }
+
+    /// On the main thread, as Kosmos starts a slide.
+    func begin(_ number: Int, slide: Slide, link: CADisplayLink, rate: Int) {
+        if mode == .animated { animate(slide) }
+        let rate = Float(rate)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+        self.link = link
+        state.withLock { $0 = State(slide: slide, number: number) }
+        nonisolated(unsafe) let added = link
+        thread.perform { added.add(to: .current, forMode: .common) }
+    }
+
+    /// On the link's thread.
+    @objc func frame(_ link: CADisplayLink) {
+        let (entry, timestamp, at) = (CACurrentMediaTime(), link.timestamp, link.targetTimestamp)
+        guard sliding else { return }
+        let wait = max(0, timestamp + link.duration / 4 - entry)
+        queue.asyncAfter(deadline: .now() + wait) { self.step(entry: entry, timestamp: timestamp, at: at) }
+    }
+
+    private func step(entry: Double, timestamp: Double, at: Double) {
+        let next = state.withLock { state -> (slide: Slide, number: Int, index: Int)? in
+            guard let slide = state.slide else { return nil }
+            state.index += 1
+            return (slide, state.number, state.index)
+        }
+        guard let next else { return }
+        let shown = next.slide.shown(at: at).frame
+        let sent = CACurrentMediaTime()
+        kosmos_space_set_transform(space, Slide.transform(showing: shown, at: rest))
+        let transformed = CACurrentMediaTime()
+        if mode != .animated {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.frame = ringFrame(around: shown)
+            CATransaction.commit()
+        }
+        let progress = Double((shown.minX - rest.minX) / distance)
+        let committed = CACurrentMediaTime()
+        ticks.withLock {
+            $0.append(Tick(slide: next.number, index: next.index, entry: entry, timestamp: timestamp, target: at, progress: progress,
+                           sent: sent, transformed: transformed, committed: committed))
+        }
+        guard next.slide.isOver(at: at) else { return }
+        link?.invalidate()
+        link = nil
+        state.withLock { $0.slide = nil }
+    }
+
+    /// The ring's frame in its window covering the display, around `shown` in CoreGraphics'
+    /// coordinates.
+    private func ringFrame(around shown: CGRect) -> CGRect {
+        NSRect(x: shown.minX, y: mainHeight - shown.maxY, width: shown.width, height: shown.height)
+            .insetBy(dx: -ringWidth, dy: -ringWidth).offsetBy(dx: -screen.minX, dy: -screen.minY)
+    }
+
+    /// One animation of the ring's position over the whole slide, starting a refresh late, as
+    /// a transform stepped for a target shows a refresh after it (docs/geometry.md).
+    private func animate(_ slide: Slide) {
+        let from = ringFrame(around: slide.from), to = ringFrame(around: slide.to)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ring.frame = to
+        let animation = CABasicAnimation(keyPath: "position")
+        animation.fromValue = NSValue(point: NSPoint(x: from.midX, y: from.midY))
+        animation.toValue = NSValue(point: NSPoint(x: to.midX, y: to.midY))
+        animation.duration = slide.duration
+        animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+        animation.beginTime = ring.convertTime(slide.start + refresh, from: nil)
+        animation.fillMode = .backwards
+        ring.add(animation, forKey: "slide")
+        CATransaction.commit()
     }
 }
 
@@ -314,6 +481,9 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
     var lag: [Int: Int] = [:]
     var holds = 0, firsts = 0, captured = 0
     var gaps: [Double] = []
+    var offsets: [Double] = []
+    var lost: [Int] = []
+    var firstSteps: [Double] = [], firstMoves: [Double] = []
     var lines: [String] = []
     for (offset, span) in slides.enumerated() {
         let number = offset + 1
@@ -322,7 +492,10 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
         captured += seen.count
         gaps += zip(seen, seen.dropFirst()).map { ($1.time - $0.time) / refresh }
         var shownAt: [Int: Double] = [:]
+        let sorted = own.sorted { $0.index < $1.index }
+        lost.append(zip(sorted, sorted.dropFirst()).reduce(0) { $0 + max(0, Int((($1.1.timestamp - $1.0.timestamp) / refresh).rounded()) - 1) })
         for frame in seen {
+            if let window = frame.window, let ring = frame.ring { offsets.append((ring - window) * Double(distance)) }
             let window = match(frame.window, own), ring = match(frame.ring, own)
             if let window, shownAt[window.index] == nil { shownAt[window.index] = frame.time }
             if let window, let ring { lag[window.index - ring.index, default: 0] += 1 }
@@ -333,6 +506,8 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
         }
         // The first frame that moved the window, and the next that moved it again.
         let moved = seen.filter { ($0.window ?? 0) > pixel }
+        if let step = sorted.first { firstSteps.append((step.sent - span.added) * 1000) }
+        if let first = moved.first { firstMoves.append((first.time - span.added) * 1000) }
         if let first = moved.first, let next = moved.dropFirst().first(where: { abs(($0.window ?? 0) - (first.window ?? 0)) > pixel }) {
             firsts += 1
             if next.time - first.time > 1.5 * refresh { holds += 1 }
@@ -369,6 +544,29 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
     }
     print("  window shown after its callback's target, refreshes at the median (frames): \(byIndex.joined(separator: ", "))")
     print("  first move then nothing new for a refresh or more: \(holds) of \(firsts) slides")
+    if !firstSteps.isEmpty, !firstMoves.isEmpty {
+        print(String(format: "  from the start, ms: first step p50 %.1f, max %.1f; first move on screen p50 %.1f, max %.1f",
+                     percentile(firstSteps, 0.5), firstSteps.max()!, percentile(firstMoves, 0.5), firstMoves.max()!))
+    }
+    let sends = ticks.filter { $0.sent > 0 && $0.transformed > 0 }.map { ($0.sent - $0.timestamp) * 1000 }
+    if !sends.isEmpty {
+        let transforms = ticks.filter { $0.transformed > 0 }.map { ($0.transformed - $0.sent) * 1000 }
+        let commits = ticks.filter { $0.transformed > 0 }.map { ($0.committed - $0.transformed) * 1000 }
+        print(String(format: "  transform sent after the timestamp, ms: p50 %.2f, p90 %.2f, max %.2f; the send took p50 %.3f, p90 %.3f, max %.3f; the ring's transaction p50 %.3f, p90 %.3f, max %.3f",
+                     percentile(sends, 0.5), percentile(sends, 0.9), sends.max()!, percentile(transforms, 0.5), percentile(transforms, 0.9),
+                     transforms.max()!, percentile(commits, 0.5), percentile(commits, 0.9), commits.max()!))
+    }
+    let phases = ticks.map { ($0.entry - $0.timestamp) * 1000 }
+    if !phases.isEmpty {
+        print(String(format: "  callback after its timestamp, ms: p50 %.2f, p90 %.2f, max %.2f; past a quarter refresh %d of %d",
+                     percentile(phases, 0.5), percentile(phases, 0.9), phases.max()!, phases.filter { $0 > refresh * 250 }.count, phases.count))
+    }
+    print("  vsyncs lost per slide: \(lost.map(String.init).joined(separator: " ")), \(lost.reduce(0, +)) in all")
+    if !offsets.isEmpty {
+        let apart = offsets.map(abs)
+        print(String(format: "  ring's inner edge less the window's edge, points: p50 %+.2f, |p90| %.2f, |max| %.2f; over 2 points apart in %d of %d frames",
+                     percentile(offsets, 0.5), percentile(apart, 0.9), apart.max()!, apart.filter { $0 > 2 }.count, apart.count))
+    }
     let lags = lag.keys.sorted().map { "\($0 == 0 ? "with its window" : $0 > 0 ? "\($0) behind" : "\(-$0) ahead") \(lag[$0]!)" }
     print("  ring against its window, frames: \(lags.isEmpty ? "none read" : lags.joined(separator: ", "))")
     print("  per slide, ms from the first callback's timestamp: the start, and each callback's timestamp/entry/target/first frame showing it:")
