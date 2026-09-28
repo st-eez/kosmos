@@ -265,19 +265,19 @@ state, and during a slide the frame the slide shows the window at.
     windows' frames, order, level, color and corners, and gives the ready windows the
     ring's color, corners and level, as the ring can reach one before the next update.
   - The border update hands the slide the rings once each sliding window's ring window is
-    shown covering its display, and the ring of each held window below that goes is put
-    back, before it puts any other window back, orders in any other ring or readies any
-    window. It hands them again once its new windows are ordered in.
-    Ordering a ready window below Ghostty took the main actor 19.6 and 24.8 ms at two
-    slide starts in the debug log of September 27, 2026, 14:56, and a ring handed after it
-    would have stood still that long while its window slid. Until then a ring whose
-    window's largest part lies on a display with no window handed stays in the window it
-    has, cut at that display's edge, and shows nowhere once the window has left every
-    display with a window handed (`SlideRing`).
-  - A window that begins to slide with its ring showing takes no display frame until that
-    first hand-off, so its ring moves with it from the first display frame. Without that
-    wait the first frames came before the hand-off, and the ease covers 11% of a move in
-    its first 10 ms and 22% in 20 ms. Its first move waits for:
+    shown covering its display, and each ring the relayout takes from a window that began
+    to slide with it showing is put back. Only then does it put any other window back,
+    order in any other ring or ready any window, and it hands the rings again once its new
+    windows are ordered in. Ordering a ready window below Ghostty took the main actor 19.6
+    and 24.8 ms at two slide starts in the debug log of September 27, 2026, 14:56, and a
+    ring handed after it would have stood still that long while its window slid. Until then
+    a ring whose window's largest part lies on a display with no window handed stays in the
+    window it has, cut at that display's edge, and shows nowhere once the window has left
+    every display with a window handed (`SlideRing`).
+  - A window that begins to slide with its ring showing is held, and takes no display frame
+    until that first hand-off, so its ring moves with it from the first display frame.
+    Without that wait the first frames came before the hand-off, and the ease covers 11% of
+    a move in its first 10 ms and 22% in 20 ms. Its first move waits for:
     - the rest of its relayout's main actor turn after the writes, which includes the focus
       request, the read of the floating windows' rows and the bar's state;
     - the border update's read of the borders, each sliding window's ring window framed to
