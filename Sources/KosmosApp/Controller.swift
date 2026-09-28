@@ -231,13 +231,16 @@ final class Controller {
             return "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))"
         }
         reports.commandExecuted(receivedAt: received)
-        // Floating windows' frames as the inventory last heard them, so nothing waits on
-        // WindowServer, or where a write in flight puts them, which the inventory has yet to hear.
-        let frame = { [inventory, ledger] (id: WindowID) in ledger.target(of: id) ?? inventory.windows[id]?.frame }
-        if let plan = session.perform(command, frame: frame) {
+        if let plan = session.perform(command, frame: { knownFrame($0) }) {
             execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: .command(command, from: source)))
         }
         return nil
+    }
+
+    /// A floating window's frame as the inventory last heard it, so nothing waits on
+    /// WindowServer, or where a write the inventory has yet to hear puts it.
+    func knownFrame(_ id: WindowID) -> CGRect? {
+        ledger.newestWrite(of: id, at: .now) ?? inventory.windows[id]?.frame
     }
 
     private func resync(displaysChanged: Bool) {
@@ -386,20 +389,24 @@ final class Controller {
     /// The read waits on WindowServer, so it runs only with a floating window shown, and
     /// never before a switch's focus request. A concealed window's row gives its own frame,
     /// so it goes home as a revealed one would (docs/displays.md). A window the modifier drags
-    /// goes where the drag puts it, and one a plan writes where the plan puts it, as
-    /// WindowServer can lag the last write.
+    /// goes where the drag puts it. One with a write no row shows yet needs no read, and the
+    /// pointer centers from the same frame.
     private func bringFloatingHome() {
         let start = ContinuousClock.now
-        let windows = session.shownFloatingWindows.filter {
-            $0 != modifierDrag?.grab.window && !ledger.isWriting($0) && !ledger.isLanding($0, at: start)
-        }
+        let dragged = modifierDrag?.grab.window
+        func written(_ id: WindowID) -> CGRect? { id == dragged ? nil : ledger.newestWrite(of: id, at: start) }
+        let windows = session.shownFloatingWindows.filter { $0 != dragged }
         guard !windows.isEmpty else { return }
-        guard let rows = SkyLight.rows(windows) else {
-            return controllerLog.notice("floating check: the rows of \(windows.count) windows did not read")
+        let reading = windows.filter { written($0) == nil }
+        var frames: [WindowID: CGRect] = [:]
+        if !reading.isEmpty {
+            guard let rows = SkyLight.rows(reading) else {
+                return controllerLog.notice("floating check: the rows of \(reading.count) windows did not read")
+            }
+            frames = Dictionary(rows.map { ($0.id, $0.frame) }) { first, _ in first }
         }
-        let frames = Dictionary(rows.map { ($0.id, $0.frame) }) { first, _ in first }
-        let targets = session.floatingFrames(at: frames)
-        controllerLog.info("floating check: \(windows.count) windows read in \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms, \(targets.count) moved")
+        let targets = session.floatingFrames(at: frames, written: written)
+        controllerLog.info("floating check: \(reading.count) windows read in \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms, \(targets.count) moved")
         writeFrames(targets)
     }
 
