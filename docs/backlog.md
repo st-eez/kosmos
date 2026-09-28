@@ -136,11 +136,21 @@ looks fine to him.
 
 ## Clean up branches
 
-Unmerged branches that are finished or superseded. Delete them once Steve agrees.
-- `frames` (f9f821c) is superseded, since slides left the main run loop in 7f32a0b.
-- `offsetprobe` and `blipideas` are finished blip experiments, recorded in geometry.md.
-- Check `animation-trial`, `ffm-monitor`, `floatprobe`, `minimum` and the `tlccloud`
-  branches against main before deleting them.
+The finished experiments and every branch merged into main were deleted on 2026-09-28.
+These are left, each unmerged, for Steve to decide.
+- `minimum` (2 commits) overlaps minimums that don't fit only by their excess, and flashes a
+  border when a minimum blocks what Kosmos asked for. Check it against main's minimums and
+  refusal flash.
+- `animation-trial` (13 commits) holds the first slide trial and its bench tooling, such as
+  `kosmos-probe eui`. Slides took another design, so only the tooling may be worth keeping.
+- `ffm-monitor` takes pointer movement from a global monitor instead of the pointer tap,
+  which main kept.
+- `floatprobe` probes a Space above the desktop to keep floating windows over tiles.
+  Floating windows took another design.
+- `tlccloud`, `tlccloud-handover`, `tlccloud-handover2`, `claude/tlc-h01` and
+  `claude/tlc-h02` hold the cloud TLC runner (`tla/cloud.sh`) and its results. Keep them
+  while TLC runs in the cloud.
+- `rulefollow` is the Teams follow reference above.
 - `live` is the worktree the install script builds from. Keep it.
 
 ## Deferred by Steve
