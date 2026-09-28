@@ -67,11 +67,12 @@
     the farthest display the other way by the same preference, and with none there either
     there is no display.
     - A display that meets the current one only at a corner, or along the same line past
-      its end, or past a gap, counts when nothing that way overlaps. The ceiling is that
-      such a display loses to any display that way that overlaps, however far that one is,
-      and is then reached from a display it overlaps, by monitor number, `next`, `prev` or
-      the pointer. The upgrade path, when an arrangement shows the need, is to rank every
-      display that way by the distance between the two frames.
+      its end, or lies past a gap without overlapping it, counts when nothing that way
+      overlaps. The ceiling is that such a display loses to any display that way that
+      overlaps, however far that one is, and is then reached from a display it overlaps,
+      by monitor number, `next`, `prev` or the pointer. The upgrade path, when an
+      arrangement shows the need, is to rank every display that way by the distance
+      between the two frames.
     - Hyprland's `movefocus`, with `binds:window_direction_monitor_fallback`, and
       `focusmonitor` with a direction take the display whose edge meets the current
       display's on that side, within 2 px, with the longest overlap across the direction
@@ -134,9 +135,9 @@
     that action for `focus` only; Kosmos takes it for `move` too, which is what Steve's
     `move --boundaries-action fail || move-node-to-monitor --wrap-around` binding did,
     except from the built-in display. There down wraps to the display above that overlaps
-    it, where AeroSpace's wrapped to the ASUS at the office and to the left panel at home,
-    and left and right reach the ASUS at the office and the left panel at home, where
-    AeroSpace's did nothing.
+    it, where AeroSpace's went to the ASUS at the office, the next display in its left to
+    right order, and wrapped to the left panel at home, and left and right reach the ASUS
+    at the office and the left panel at home, where AeroSpace's did nothing.
   - `profile <name>` applies a profile until the displays change or the config reloads,
     as `set-profile.sh` did.
 - A key window report of a window on the workspace of any display names a window on
