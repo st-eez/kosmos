@@ -134,14 +134,22 @@ looks fine to him.
   computer use clicks inside a bordered window land on it, and slide frame times stay
   within today's.
 
+## Flash a border when a refusal records a minimum
+
+The border flashes red when a window spills past its tile (`Session.spilling`), but not when
+an app's refusal records a learned minimum. A learned minimum at the right edge, between
+windows or down a column is then never flashed, since the app has already left the window
+where it spills ([borders.md](borders.md) records this ceiling). The fix calls `flash([id])`
+in the `.minimum` case of `Controller+Windows.swift`, which needs `flash` made internal, and
+replaces that ceiling in borders.md with the rule. The deleted `minimum` branch did this
+(9e5ee38). Weigh it against the refusal retry above, which may move the recording to the
+first refusal.
+
 ## Clean up branches
 
 The finished experiments and every branch merged into main were deleted on 2026-09-28.
 `ffm-monitor` and `floatprobe` live on as tags `archive/ffm-monitor` and
-`archive/floatprobe`, which focus-follows-mouse.md cites. These are left, each unmerged.
-- `minimum` (2 commits) overlaps minimums that don't fit only by their excess, and flashes a
-  border when a minimum blocks what Kosmos asked for. Check it against main's minimums and
-  refusal flash.
+`archive/floatprobe`, which focus-follows-mouse.md cites. These are kept.
 - `tlccloud`, `tlccloud-handover`, `tlccloud-handover2`, `claude/tlc-h01` and
   `claude/tlc-h02` hold the cloud TLC runner (`tla/cloud.sh`) and its results. Keep them
   while TLC runs in the cloud.
