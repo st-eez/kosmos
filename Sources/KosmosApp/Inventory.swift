@@ -75,14 +75,15 @@ final class Inventory {
     }
     private var watchPending = false
     private var sweeps = Sweeps()
-    /// Read once for each process, as each read is a synchronous LaunchServices call, and
-    /// dropped by its exit source (docs/inventory.md).
-    ///
-    /// Ceiling: an app that changes its activation policy while it runs keeps the first one.
-    /// Observing activationPolicy with key-value observing would follow a change.
-    private var regularApps: [pid_t: Bool] = [:]
+    /// Read once for each process, as each read is a synchronous LaunchServices call, then
+    /// followed by key-value observing, and dropped by its exit source (docs/inventory.md).
+    private var regularApps = RegularApps()
+    /// The app is held with its observation: an app released while observed logged that it was
+    /// deallocated with observers still registered, and the probe crashed (`kosmos-probe policy`).
+    private var policyWatches: [pid_t: (app: NSRunningApplication, observation: NSKeyValueObservation)] = [:]
     private var exitSources: [pid_t: any DispatchSourceProcess] = [:]
-    private var foundRegularAtLaunch: Set<pid_t> = []
+    /// Apps that became regular, whose windows the sweep that follows admits.
+    private var becameRegular: Set<pid_t> = []
     private enum FollowUp: Sendable {
         case none
         case readIfUnknown
@@ -108,13 +109,13 @@ final class Inventory {
         // NSRunningApplication(processIdentifier:) returned nil for a running app at startup
         // (docs/inventory.md).
         for app in NSWorkspace.shared.runningApplications {
-            remember(app.processIdentifier, regular: app.activationPolicy == .regular)
+            remember(app.processIdentifier, app)
         }
         let center = NSWorkspace.shared.notificationCenter
+        // NSWorkspace posts the launch of a regular app only (docs/inventory.md).
         center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            let pid = app.processIdentifier, regular = app.activationPolicy == .regular
-            MainActor.assumeIsolated { self?.launched(pid, regular: regular) }
+            MainActor.assumeIsolated { self?.remember(app.processIdentifier, app) }
         }
         center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
@@ -381,7 +382,8 @@ final class Inventory {
     /// `at`: when the change came, which order changes carry.
     private func apply(_ row: WindowRow, changedAt: ContinuousClock.Instant? = nil, at stamp: ContinuousClock.Instant = .now) {
         sweeps.touch([row.id])
-        guard ownedByRegularApp(row) else { return }
+        // A window admitted stays when its app stops being regular (docs/inventory.md).
+        guard windows[row.id] != nil || ownedByRegularApp(row) else { return }
         guard !sessionLocked || windows[row.id] != nil else {
             if arrivedWhileLocked.updateValue(row, forKey: row.id) == nil { scheduleWatch() }
             if isCandidate(row) {
@@ -453,34 +455,65 @@ final class Inventory {
 
     private func ownedByRegularApp(_ row: WindowRow) -> Bool {
         if let regular = regularApps[row.pid] { return regular }
-        let regular = NSRunningApplication(processIdentifier: row.pid)?.activationPolicy == .regular
-        remember(row.pid, regular: regular)
-        return regular
+        remember(row.pid, NSRunningApplication(processIdentifier: row.pid))
+        return regularApps[row.pid] == true
+    }
+
+    /// Records the process's activation policy and follows it until the process exits. `app` is
+    /// nil for a process LaunchServices does not know, which is not regular (docs/inventory.md).
+    ///
+    /// Ceiling: such a process is not observed, so only a launch notification can say it became
+    /// regular. Observing NSWorkspace's list would follow it.
+    private func remember(_ pid: pid_t, _ app: NSRunningApplication?) {
+        // WindowServer names pid 0 as the owner of some windows, and dispatch aborts on a
+        // process source for pid 0 or less. Such a pid's false stays cached.
+        if pid > 0 { follow(pid, app) }
+        switch regularApps.record(pid, regular: app?.activationPolicy == .regular) {
+        case .none:
+            break
+        case .seenRegular:
+            // NSWorkspace posts no launch of an app that became regular after it launched.
+            if let app { apps.add(app) }
+        case .becameRegular:
+            if let app { apps.add(app) }
+            inventoryLog.info("\(self.appName(pid), privacy: .public) became a regular app; sweeping for its windows")
+            becameRegular.insert(pid)
+            sweep()
+        case .leftRegular:
+            inventoryLog.info("\(self.appName(pid), privacy: .public) is no longer a regular app; its windows stay")
+        }
     }
 
     /// A process that exited before its source started reports its exit at once (macOS 27).
-    private func remember(_ pid: pid_t, regular: Bool) {
-        regularApps[pid] = regular
-        // WindowServer names pid 0 as the owner of some windows, and dispatch aborts on a
-        // process source for pid 0 or less. Such a pid's false stays cached.
-        guard pid > 0, exitSources[pid] == nil else { return }
+    private func follow(_ pid: pid_t, _ app: NSRunningApplication?) {
+        if let app, policyWatches[pid] == nil {
+            // It came on the main thread 1 to 5 ms after each change (`kosmos-probe policy`), which
+            // the API does not promise.
+            let observation = app.observe(\.activationPolicy) { [weak self] _, _ in
+                onMain { self?.policyChanged(pid) }
+            }
+            policyWatches[pid] = (app, observation)
+        }
+        guard exitSources[pid] == nil else { return }
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         source.setEventHandler { [weak self] in
-            MainActor.assumeIsolated {
-                self?.regularApps[pid] = nil
-                self?.exitSources.removeValue(forKey: pid)?.cancel()
-            }
+            MainActor.assumeIsolated { self?.exited(pid) }
         }
         exitSources[pid] = source
         source.resume()
     }
 
-    private func launched(_ pid: pid_t, regular: Bool) {
-        let wasRegular = regularApps[pid]
-        remember(pid, regular: regular)
-        guard regular, wasRegular == false else { return }
-        foundRegularAtLaunch.insert(pid)
-        sweep()
+    private func policyChanged(_ pid: pid_t) {
+        guard let app = policyWatches[pid]?.app else { return }   // exited since
+        remember(pid, app)
+    }
+
+    private func exited(_ pid: pid_t) {
+        regularApps.forget(pid)
+        exitSources.removeValue(forKey: pid)?.cancel()
+        policyWatches.removeValue(forKey: pid)?.observation.invalidate()
+        // NSWorkspace posts no exit of an app that is not regular as it exits.
+        apps.remove(pid)
     }
 
     private func isCandidate(_ row: WindowRow) -> Bool {
@@ -527,7 +560,7 @@ final class Inventory {
         guard let read, let snapshot else { return inventoryLog.notice("sweep read failed; every window stays as it was") }
         let rows = read.filter { snapshot.seen.contains($0.id) }
         for row in rows where windows[row.id] == nil && ownedByRegularApp(row) {
-            let reported = arrivedWhileLocked[row.id] != nil || foundRegularAtLaunch.contains(row.pid)
+            let reported = arrivedWhileLocked[row.id] != nil || becameRegular.contains(row.pid)
             if !snapshot.first, !reported { inventoryLog.notice("sweep found \(row.id), missed by events") }
             apply(row)
         }
@@ -552,7 +585,7 @@ final class Inventory {
             readIfUnknown(windows.filter { $0.value.orderedIn }.keys)
         }
         // A sweep that follows was asked for after this snapshot, and may find the late windows.
-        if !sweeps.again { foundRegularAtLaunch = [] }
+        if !sweeps.again { becameRegular = [] }
         if awaitingUnlockSweep {
             awaitingUnlockSweep = false
             arrivedWhileLocked = [:]

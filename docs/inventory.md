@@ -5,7 +5,8 @@
   - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole. Events 804, 806 to 808, 815 and 816 arrive only for windows on it, and 811, 1325
-    and 1326 for every window. Their ids and payloads were measured on macOS 27 and are
+    and 1326 for every window, 811 only while the list names some window (`kosmos-probe
+    policy`, 2026-09-27). Their ids and payloads were measured on macOS 27 and are
     decoded in one place, WindowServerEvent. A window event carries the window id first,
     and a Space membership event a 64 bit Space id, then the window id.
   - One AX observer per app: creation, focus, main window, destroy and minimize.
@@ -16,21 +17,55 @@
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
 - The inventory reads each process's activation policy once, since each read is a
-  synchronous LaunchServices call, and forgets it when the process's exit source fires.
-  Read at every window event and at every row of a sweep, the call showed up on the main
-  thread in samples of workspace switches (2026-09-24). The running apps come from
-  NSWorkspace's list at start, since `NSRunningApplication(processIdentifier:)` returned
-  nil for a running app then, and a later process is read as it launches or at its first
-  window. A process LaunchServices does not know, such as JankyBorders, is not regular. The
-  exit source is there because NSWorkspace reports no exit of a background-only or
-  LSUIElement app, and pids come round again, about every 7 hours on the development Mac. A
-  process that exited before its source started reports its exit at once (macOS 27).
-  WindowServer names pid 0 as the owner of some windows (2 of 34 rows on the development
-  Mac), and dispatch aborts on a process source for pid 0 or less, so such a pid's answer
-  stays cached. An app that changes its policy while it runs keeps the one read first, as
-  it keeps the Accessibility worker Apps gave it at launch; observing activationPolicy with
-  key-value observing would follow a change. An app found regular only at its launch gets a
-  sweep for the windows left out before it.
+  synchronous LaunchServices call, then follows it by key-value observing, and forgets it
+  when the process's exit source fires. Read at every window event and at every row of a
+  sweep, the call showed up on the main thread in samples of workspace switches
+  (2026-09-24). The running apps come from NSWorkspace's list at start, since
+  `NSRunningApplication(processIdentifier:)` returned nil for a running app then, and a
+  later process is read as it launches or at its first window. A process LaunchServices
+  does not know, such as JankyBorders, is not regular. NSWorkspace posts the launch only of
+  an app regular as it launches, and the exit only of an app regular as it exits, so the
+  exit source is there for the rest, and because pids come round again, about every 7 hours
+  on the development Mac. A process that exited before its source started reports its exit
+  at once (macOS 27). WindowServer names pid 0 as the owner of some windows (2 of 34 rows on
+  the development Mac), and dispatch aborts on a process source for pid 0 or less, so such
+  a pid's answer stays cached.
+- An app can change its activation policy while it runs. RustDesk's Info.plist sets
+  LSUIElement, and its remote desktop process makes itself regular for its window, which
+  Kosmos never managed on September 27, 2026. In `kosmos-probe policy` that day, over 10
+  rounds, a child launched as an accessory, from a bundle with LSUIElement set or setting
+  the policy itself, then became regular and an accessory again, and in 5 rounds regular
+  once more. NSWorkspace posted no launch of it, at its launch or when it became regular,
+  and posted its exit only in the 5 rounds it exited regular. Key-value observing of
+  `activationPolicy` reported each of its 25 changes to the probe, on the main thread, 1.2
+  to 4.9 ms after the child began it, on the instance from NSWorkspace's list and on one
+  made by pid alike. A window the child made in the same turn reached WindowServer 32 to
+  49 ms after the change began, as `setActivationPolicy(.regular)` blocks the child that
+  long. `RegularApps` decides what each policy recorded calls for:
+  - An app that becomes regular gets its Accessibility worker, and a sweep admits its
+    windows the old policy left out, whose rules and placement apply as to any window
+    admitted, so one there since Kosmos launched joins the workspace of the display under
+    it ([displays.md](displays.md)). The sweep counts none of them as missed by events. An app first read before
+    LaunchServices knew it, and found regular only by its launch notification, takes the
+    same path.
+  - An app first read as regular at a window, as one that became regular before it made
+    any, gets its worker then, since no launch notification gave it one. Before this, such
+    an app's windows were tracked and never managed, as Apps made workers only at its start
+    and at launch notifications.
+  - An app that stops being regular keeps its windows already admitted and its worker, and
+    its new windows are left out until it is regular again. Dropping its windows as an
+    exit does would break the rule that only WindowServer evidence or app exit removes a
+    window, and one concealed then would stay on the holding Space until Kosmos quits, as
+    a window that stops being managed does ([hiding.md](hiding.md)). The exit source stops
+    its worker, since NSWorkspace posts no exit of an app that is not regular as it exits.
+  - Nothing polls. Observing the 96 to 99 apps running took 8 to 13 ms in the probe, about
+    0.1 ms each, which Kosmos pays once at start and once for each later process at its
+    launch or first window.
+  - The ceiling is a process LaunchServices did not know at its first window, which has no
+    instance to observe, so only a launch notification can say it became regular.
+    NSWorkspace's list gained the probe's child 40 to 164 ms after it started, long before
+    its window. Observing that list, as LaunchServices learns of each process, would close
+    the gap.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
   Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. A workspace
   switch posts no Space event, so it starts no sweep (`kosmos-probe events`, 40 switches
