@@ -39,6 +39,13 @@
 //                                               thread, with the main thread holding Core
 //                                               Animation's global lock (CATransaction.lock())
 //                                               20 to 60 ms at a time
+//                                     startbusy deferred, with the main thread blocked 19.6 to
+//                                               24.8 ms right after each slide starts, as a
+//                                               ready border window's order below held
+//                                               Kosmos's
+//                                     threadstart
+//                                               thread, with the main thread blocked as
+//                                               startbusy
 //                                     animated  thread's transforms, with the ring moved by one
 //                                               Core Animation animation on the slide's curve,
 //                                               set as the slide starts and a refresh late, and
@@ -73,10 +80,13 @@ struct Seen: Sendable {
 }
 
 private enum RingMode: String, CaseIterable {
-    case layer, deferred, flush, busy, send300, warm, covered, window, space, mainbusy, thread, threadbusy, threadlocked, animated
+    case layer, deferred, flush, busy, send300, warm, covered, window, space, mainbusy, thread, threadbusy, threadlocked, startbusy,
+         threadstart, animated
 
     /// The link on a thread of its own, its steps on a serial queue.
-    var offMain: Bool { self == .thread || self == .threadbusy || self == .threadlocked || self == .animated }
+    var offMain: Bool { self == .thread || self == .threadbusy || self == .threadlocked || self == .threadstart || self == .animated }
+    /// The main thread blocked once, right after each slide starts.
+    var blocksStart: Bool { self == .startbusy || self == .threadstart }
     /// The main thread blocked 20 to 60 ms at a time during each slide.
     var blocksMain: Bool { self == .mainbusy || self == .threadbusy || self == .threadlocked || self == .animated }
 }
@@ -157,6 +167,7 @@ private enum RingMode: String, CaseIterable {
             // A start at a random point of the refresh, as a command's is.
             pumpEvents(0.25 + Double.random(in: 0..<refresh))
             let added = run.begin(number)
+            if mode.blocksStart { usleep(UInt32.random(in: 19_600...24_800)) }
             var block = added + Double.random(in: 0.01..<0.08)
             while run.sliding {
                 pumpEvents(0.005)
@@ -285,7 +296,9 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         }
         guard slide != nil else { return }
         let (entry, timestamp, at) = (CACurrentMediaTime(), link.timestamp, link.targetTimestamp)
-        guard mode == .deferred || mode == .mainbusy else { return step(link, entry: entry, timestamp: timestamp, at: at) }
+        guard mode == .deferred || mode == .mainbusy || mode == .startbusy else {
+            return step(link, entry: entry, timestamp: timestamp, at: at)
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, timestamp + link.duration / 4 - CACurrentMediaTime())) {
             MainActor.assumeIsolated { self.step(link, entry: entry, timestamp: timestamp, at: at) }
         }
@@ -294,6 +307,7 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
     private func step(_ link: CADisplayLink, entry: Double, timestamp: Double, at: Double) {
         guard let slide else { return }
         let shown = slide.shown(at: at).frame
+        let sent = CACurrentMediaTime()
         if mode == .send300 {
             while CACurrentMediaTime() < timestamp + 0.0003 {}
         }
@@ -312,7 +326,7 @@ private func read(_ row: UnsafeBufferPointer<UInt32>, width: Int, scale: CGFloat
         }
         index += 1
         let progress = Double((shown.minX - rest.minX) / distance)
-        ticks.append(Tick(slide: number, index: index, entry: entry, timestamp: timestamp, target: at, progress: progress))
+        ticks.append(Tick(slide: number, index: index, entry: entry, timestamp: timestamp, target: at, progress: progress, sent: sent))
         guard slide.isOver(at: at) else { return }
         self.slide = nil
         if mode != .warm {
@@ -469,6 +483,7 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
     var gaps: [Double] = []
     var offsets: [Double] = []
     var lost: [Int] = []
+    var firstSteps: [Double] = [], firstMoves: [Double] = []
     var lines: [String] = []
     for (offset, span) in slides.enumerated() {
         let number = offset + 1
@@ -491,6 +506,8 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
         }
         // The first frame that moved the window, and the next that moved it again.
         let moved = seen.filter { ($0.window ?? 0) > pixel }
+        if let step = sorted.first { firstSteps.append((step.sent - span.added) * 1000) }
+        if let first = moved.first { firstMoves.append((first.time - span.added) * 1000) }
         if let first = moved.first, let next = moved.dropFirst().first(where: { abs(($0.window ?? 0) - (first.window ?? 0)) > pixel }) {
             firsts += 1
             if next.time - first.time > 1.5 * refresh { holds += 1 }
@@ -527,10 +544,14 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
     }
     print("  window shown after its callback's target, refreshes at the median (frames): \(byIndex.joined(separator: ", "))")
     print("  first move then nothing new for a refresh or more: \(holds) of \(firsts) slides")
-    let sends = ticks.filter { $0.sent > 0 }.map { ($0.sent - $0.timestamp) * 1000 }
+    if !firstSteps.isEmpty, !firstMoves.isEmpty {
+        print(String(format: "  from the start, ms: first step p50 %.1f, max %.1f; first move on screen p50 %.1f, max %.1f",
+                     percentile(firstSteps, 0.5), firstSteps.max()!, percentile(firstMoves, 0.5), firstMoves.max()!))
+    }
+    let sends = ticks.filter { $0.sent > 0 && $0.transformed > 0 }.map { ($0.sent - $0.timestamp) * 1000 }
     if !sends.isEmpty {
-        let transforms = ticks.filter { $0.sent > 0 }.map { ($0.transformed - $0.sent) * 1000 }
-        let commits = ticks.filter { $0.sent > 0 }.map { ($0.committed - $0.transformed) * 1000 }
+        let transforms = ticks.filter { $0.transformed > 0 }.map { ($0.transformed - $0.sent) * 1000 }
+        let commits = ticks.filter { $0.transformed > 0 }.map { ($0.committed - $0.transformed) * 1000 }
         print(String(format: "  transform sent after the timestamp, ms: p50 %.2f, p90 %.2f, max %.2f; the send took p50 %.3f, p90 %.3f, max %.3f; the ring's transaction p50 %.3f, p90 %.3f, max %.3f",
                      percentile(sends, 0.5), percentile(sends, 0.9), sends.max()!, percentile(transforms, 0.5), percentile(transforms, 0.9),
                      transforms.max()!, percentile(commits, 0.5), percentile(commits, 0.9), commits.max()!))
