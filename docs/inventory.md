@@ -73,6 +73,36 @@
   - Nothing polls. Observing the 96 to 102 apps running took 7 to 13 ms in the probe's
     runs, about 0.1 ms each, which Kosmos pays once at start and once for each later
     process at its launch or first window.
+  - Each observation ends before its app can be released. AppKit keeps each
+    NSRunningApplication with an observer in an NSHashTable made with
+    NSPointerFunctionsZeroingWeakMemory, which without garbage collection holds
+    unretained pointers that nothing clears (AppKit's disassembly on macOS 27, and
+    NSPointerFunctions.h). The instance's dealloc leaves it there and only logs that it
+    "is being deallocated while observers are still registered". Each LaunchServices
+    notification for the policy then sends `_hasASN:` to every instance in the table,
+    freed ones included. NSKeyValueObservation holds its object weakly, so ending it
+    once the app is freed removes nothing. The policyfix merge (6a9a3df) ended each
+    observation with `policyWatches.removeValue(forKey: pid)?.observation.invalidate()`,
+    and Swift released the tuple's app before `invalidate` ran. The Kosmos started at
+    11:44 on September 28, 2026 logged 37 instances freed while observed, the first 11
+    ms after it started and 7 within 80 ms of Outlook's exit at 11:48:16. At 15:58:42,
+    as Phone began to quit, it crashed with EXC_BAD_ACCESS in `objc_msgSend` under
+    AppKit's `runningApplicationNotificationCallback` (Kosmos-2026-09-28-155851.ips). An
+    earlier version of `kosmos-probe policy` crashed so on September 27. `PolicyWatch`
+    holds the app and ends the observation in its deinit, which runs before a class
+    releases its properties, so every path that drops a watch ends the observation
+    first.
+  - `kosmos-probe policy-exits` runs children that launch, change their policy and exit, 4
+    at a time, and ends each observation at the exit source. Ended as the merge did, 3 of
+    10 debug runs of 100 children crashed with Kosmos's stack. The other 7, and 5 release
+    runs, lived, and each logged up to 98 instances freed while observed and 239 to 244
+    callbacks that threw, which AppKit logs and skips, as it sent `_hasASN:` to other
+    objects in the freed memory. With a copy of `PolicyWatch`, 6 runs of 2500 children in
+    all, debug and release, 945 of them exiting in the run loop turn of a change, logged
+    none of either and none crashed (September 28, 2026). The order of a change's
+    notification and the exit does not matter, as AppKit walks the table on the main thread
+    under the lock that removing an observer takes, and the removal takes the instance out
+    of the table.
   - The ceiling is a process LaunchServices did not know at its first window, which has no
     instance to observe, so only a launch notification can say it became regular.
     NSWorkspace's list gained the probe's child 40 to 180 ms after it started, long before
@@ -83,7 +113,9 @@
     regular one, sweeps, stops the worker at exit and keeps the admitted windows. A
     KosmosApp test target would add one. `kosmos-probe policy 2 bundle titled` shows the
     wiring against a running Kosmos, with a standard window the child makes before it
-    becomes regular and one it makes as it does.
+    becomes regular and one it makes as it does. `kosmos-probe policy-exits` runs a copy of
+    `PolicyWatch`, as the probe cannot import KosmosApp, so a change to Kosmos's copy needs
+    the probe's changed with it. Moving it to a module both import would end the copy.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
   Space change, after an unlock or a wake, as yabai, rift and Amethyst do, and when an app
   becomes regular. A workspace switch posts no Space event, so it starts no sweep

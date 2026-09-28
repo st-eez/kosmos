@@ -78,10 +78,7 @@ final class Inventory {
     /// Read once for each process, as each read is a synchronous LaunchServices call, then
     /// followed by key-value observing, and dropped by its exit source (docs/inventory.md).
     private var regularApps = RegularApps()
-    /// Each app is held with its observation. An earlier version of `kosmos-probe policy` released
-    /// apps it still observed, which logged that they were deallocated with observers still
-    /// registered, and it crashed (September 27, 2026).
-    private var policyWatches: [pid_t: (app: NSRunningApplication, observation: NSKeyValueObservation)] = [:]
+    private var policyWatches: [pid_t: PolicyWatch] = [:]
     private var exitSources: [pid_t: any DispatchSourceProcess] = [:]
     /// Apps that became regular, whose windows the sweep that follows admits.
     private var becameRegular: Set<pid_t> = []
@@ -490,10 +487,7 @@ final class Inventory {
         if let app, policyWatches[pid] == nil {
             // It came on the main thread 1 to 6 ms after each change (`kosmos-probe policy`), which
             // the API does not promise.
-            let observation = app.observe(\.activationPolicy) { [weak self] _, _ in
-                onMain { self?.policyChanged(pid) }
-            }
-            policyWatches[pid] = (app, observation)
+            policyWatches[pid] = PolicyWatch(app) { [weak self] in onMain { self?.policyChanged(pid) } }
         }
         guard exitSources[pid] == nil else { return }
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
@@ -512,7 +506,7 @@ final class Inventory {
     private func exited(_ pid: pid_t) {
         regularApps.forget(pid)
         exitSources.removeValue(forKey: pid)?.cancel()
-        policyWatches.removeValue(forKey: pid)?.observation.invalidate()
+        policyWatches[pid] = nil
         // NSWorkspace posts no exit of an app that is not regular as it exits.
         apps.remove(pid)
     }
@@ -596,4 +590,19 @@ final class Inventory {
             for (id, row) in windows where !row.orderedIn && isManaged(id) { looks.orderedOut(id, at: .now) }
         }
     }
+}
+
+/// Ends the observation before it releases the app, as AppKit messages an NSRunningApplication
+/// freed while observed at the next policy notification (docs/inventory.md).
+private final class PolicyWatch {
+    let app: NSRunningApplication
+    private let observation: NSKeyValueObservation
+
+    init(_ app: NSRunningApplication, changed: @escaping @Sendable () -> Void) {
+        self.app = app
+        observation = app.observe(\.activationPolicy) { _, _ in changed() }
+    }
+
+    /// A class releases its properties after its deinit, so `app` is still held here.
+    deinit { observation.invalidate() }
 }
