@@ -100,7 +100,7 @@ private struct LinkStep: Sendable {
         outward.toggle()
         if onThread {
             ring(around: slide.from, covering: true)
-            threaded.begin(slide, link: screen.displayLink(target: threaded, selector: #selector(ThreadedSteps.tick)),
+            threaded.begin(slide, link: screen.displayLink(target: threaded!, selector: #selector(ThreadedSteps.tick)),
                            rate: screen.maximumFramesPerSecond)
             return
         }
