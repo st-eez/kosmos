@@ -5,9 +5,14 @@
   - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole. Events 804, 806 to 808, 815 and 816 arrive only for windows on it, and 811, 1325
-    and 1326 for every window. Their ids and payloads were measured on macOS 27 and are
-    decoded in one place, WindowServerEvent. A window event carries the window id first,
-    and a Space membership event a 64 bit Space id, then the window id.
+    and 1326 for every window, 811 only while the list names some window. Kosmos's list
+    names every window it tracks, candidate or not, so it is empty only before the first
+    sweep or while it tracks no window. A new window then reaches the inventory by 1325 as
+    it joins a Space. An earlier version of `kosmos-probe policy`, which sent no list or an
+    empty one, got no 811 and got 1325 for its child's window (2026-09-27). Their ids and
+    payloads were measured on macOS 27 and are decoded in one place, WindowServerEvent. A
+    window event carries the window id first, and a Space membership event a 64 bit Space
+    id, then the window id.
   - One AX observer per app: creation, focus, main window, destroy and minimize.
   - NSWorkspace app lifecycle events, plus a process exit source for each app. The
     inventory alone observes an app's hide and unhide: it records the departure or return
@@ -16,31 +21,117 @@
   lock screen never do, and while the session is locked, creation and destruction wait. A
   read that gets no answer leaves the window's AX facts as they were.
 - The inventory reads each process's activation policy once, since each read is a
-  synchronous LaunchServices call, and forgets it when the process's exit source fires.
-  Read at every window event and at every row of a sweep, the call showed up on the main
-  thread in samples of workspace switches (2026-09-24). The running apps come from
-  NSWorkspace's list at start, since `NSRunningApplication(processIdentifier:)` returned
-  nil for a running app then, and a later process is read as it launches or at its first
-  window. A process LaunchServices does not know, such as JankyBorders, is not regular. The
-  exit source is there because NSWorkspace reports no exit of a background-only or
-  LSUIElement app, and pids come round again, about every 7 hours on the development Mac. A
-  process that exited before its source started reports its exit at once (macOS 27).
-  WindowServer names pid 0 as the owner of some windows (2 of 34 rows on the development
-  Mac), and dispatch aborts on a process source for pid 0 or less, so such a pid's answer
-  stays cached. An app that changes its policy while it runs keeps the one read first, as
-  it keeps the Accessibility worker Apps gave it at launch; observing activationPolicy with
-  key-value observing would follow a change. An app found regular only at its launch gets a
-  sweep for the windows left out before it.
+  synchronous LaunchServices call, then follows it by key-value observing, and forgets it
+  when the process's exit source fires. Read at every window event and at every row of a
+  sweep, the call showed up on the main thread in samples of workspace switches
+  (2026-09-24). The running apps come from NSWorkspace's list at start, since
+  `NSRunningApplication(processIdentifier:)` returned nil for a running app then, and a
+  later process is read as it launches or at its first window. A process LaunchServices
+  does not know, such as JankyBorders, is not regular. NSWorkspace posts the launch only of
+  an app regular as it launches, and the exit only of an app regular as it exits, so the
+  exit source is there for the rest, and because pids come round again, about every 7 hours
+  on the development Mac. A process that exited before its source started reports its exit
+  at once (macOS 27). WindowServer names pid 0 as the owner of some windows (2 of 34 rows on
+  the development Mac), and dispatch aborts on a process source for pid 0 or less, so such
+  a pid's answer stays cached.
+- An app can change its activation policy while it runs. RustDesk's Info.plist sets
+  LSUIElement, and its remote desktop process makes itself regular for its window. Kosmos
+  did not manage that window on September 27, 2026. In `kosmos-probe policy` that day, over
+  10 rounds, a child launched as an accessory, from a bundle with LSUIElement set or
+  setting the policy itself, then became regular and an accessory again, and in 5 rounds
+  regular once more. NSWorkspace posted no launch of it, at its launch or when it became
+  regular, and posted its exit only in the 5 rounds it exited regular. Key-value observing
+  of `activationPolicy` reported each of its 25 changes to the probe, on the main thread,
+  1.2 to 5.9 ms after the child began it, on the instance from NSWorkspace's list and on
+  one made by pid alike. The child's call returned 1.3 to 4.0 ms after it began. A panel the
+  child made once the call returned reached WindowServer 39 to 66 ms after the change began,
+  while AppKit made it, so the observation came first there only because the panel took that
+  long. For an app that makes its window faster the order is unmeasured, and the design does
+  not depend on it. A window read while its app is not regular is left out, and the sweep
+  that the change to regular starts admits it. `RegularApps` decides what each policy
+  recorded calls for:
+  - An app that becomes regular gets its Accessibility worker, and a sweep admits its
+    windows the old policy left out, whose rules and placement apply as to any window
+    admitted, so one there since Kosmos launched joins the workspace of the display under
+    it ([displays.md](displays.md)). The sweep counts none of them as missed by events. An
+    app first read before LaunchServices knew it, and found regular only by its launch
+    notification, takes the same path.
+  - An app first read as regular at a window, as one that became regular before it made
+    any, gets its worker then, since no launch notification gave it one. Every regular
+    record gives Apps the app, which skips one it has a worker for. Before this, such an
+    app's windows were tracked and never managed, as Apps made workers only at its start
+    and at launch notifications.
+  - An app that stops being regular keeps its windows already admitted and its worker, and
+    its new windows are left out until it is regular again. Dropping its windows as an
+    exit does would break the rule that only WindowServer evidence or app exit removes a
+    window, and one concealed then would stay on the holding Space until Kosmos quits, as
+    a window that stops being managed does ([hiding.md](hiding.md)). The exit source stops
+    its worker. Across a restart the next Kosmos reads the policy then and admits none of
+    those windows. Each stays where it is, and one concealed shows over the shown
+    workspace 5 s after the adoption, unmanaged, as a kept window no admission places does
+    ([hiding.md](hiding.md)).
+  - Nothing polls. Observing the 96 to 102 apps running took 7 to 13 ms in the probe's
+    runs, about 0.1 ms each, which Kosmos pays once at start and once for each later
+    process at its launch or first window.
+  - Each observation ends before its app can be released. AppKit keeps each
+    NSRunningApplication with an observer in an NSHashTable made with
+    NSPointerFunctionsZeroingWeakMemory, which without garbage collection holds
+    unretained pointers that nothing clears (AppKit's disassembly on macOS 27, and
+    NSPointerFunctions.h). The instance's dealloc leaves it there and only logs that it
+    "is being deallocated while observers are still registered". Each LaunchServices
+    notification for the policy then sends `_hasASN:` to every instance in the table,
+    freed ones included. NSKeyValueObservation holds its object weakly, so ending it
+    once the app is freed removes nothing. The policyfix merge (6a9a3df) ended each
+    observation with `policyWatches.removeValue(forKey: pid)?.observation.invalidate()`,
+    and Swift released the tuple's app before `invalidate` ran. The Kosmos started at
+    11:44 on September 28, 2026 logged 37 instances freed while observed, the first 11
+    ms after it logged that it started and 7 within 80 ms of Outlook's exit at 11:48:16.
+    At 15:58:42, as Phone began to quit, it crashed with EXC_BAD_ACCESS in
+    `objc_msgSend` under AppKit's `runningApplicationNotificationCallback`
+    (Kosmos-2026-09-28-155851.ips). An earlier version of `kosmos-probe policy` crashed
+    so on September 27. `PolicyWatch`, in the KosmosPolicyWatch target so that the probe
+    below runs it too, holds the app and ends the observation in its deinit, which runs
+    before a class releases its properties, so every path that drops a watch ends the
+    observation first.
+  - `kosmos-probe policy-exits` runs children that launch, change their policy and exit,
+    4 at a time, observes each with `PolicyWatch` and ends the observation at the exit
+    source. Ended as the merge did, 3 of 10 debug runs of 100 children crashed with
+    Kosmos's stack. The other 7 debug runs and 5 release runs lived, and each logged up
+    to all 100 instances freed while observed and 239 to 244 callbacks that threw, which
+    AppKit logs and skips, as it sent `_hasASN:` to other objects in the freed memory. A
+    throw ends that notification's walk, so the live instances in the table miss the
+    change too, and those runs got 4 to 7 observations, against about 248 in a run of
+    100 with `PolicyWatch`. So one instance freed while observed can keep Kosmos from
+    seeing an app become regular, before anything crashes. Kosmos logged no such throw
+    from 11:44 to 15:59 on September 28, so there the crash was the only sign. With
+    `PolicyWatch`, none of 7 runs logged either or crashed (September 28, 2026). 6 of
+    them, debug and release, ran 2500 children in all with an identical copy of the
+    class, and 1 ran 300 with the class itself. 1059 of those children exited in the run
+    loop turn of a change. The order of a change's notification and the exit does not
+    matter, as AppKit walks the table on the main thread under the lock that removing an
+    observer takes, and the removal takes the instance out of the table.
+  - The ceiling is a process LaunchServices did not know at its first window, which has no
+    instance to observe, so only a launch notification can say it became regular.
+    NSWorkspace's list gained the probe's child 40 to 180 ms after it started, long before
+    its window. Observing that list, as LaunchServices learns of each process, would close
+    the gap.
+  - Only `RegularApps` has a runnable check. Kosmos has no test target for KosmosApp, so
+    no test covers the wiring in Inventory and Apps that observes each app, gives Apps
+    each regular one, sweeps, stops the worker at exit and keeps the admitted windows. A
+    KosmosApp test target would add one. `kosmos-probe policy 2 bundle titled` shows the
+    wiring against a running Kosmos, with a standard window the child makes before it
+    becomes regular and one it makes as it does. `kosmos-probe policy-exits` runs
+    Kosmos's own `PolicyWatch`.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
-  Space change, and after an unlock or a wake, as yabai, rift and Amethyst do. A workspace
-  switch posts no Space event, so it starts no sweep (`kosmos-probe events`, 40 switches
-  on 2026-09-24). Sweeps asked for while one runs start one more when it ends, so a burst
-  of Space events ends with a sweep that started after the last of them. The Space list
-  omits windows on no Space, such as one created but not yet shown, so a sweep reads the
-  tracked windows missing from it directly before it counts them gone, and the windows
-  first seen while locked too, which an unlock sweep admits even when ordered out. Those
-  reads can block during a Space transition, so they run off the main thread, after the
-  reads for events already waiting. A window a sweep
+  Space change, after an unlock or a wake, as yabai, rift and Amethyst do, and when an app
+  becomes regular. A workspace switch posts no Space event, so it starts no sweep
+  (`kosmos-probe events`, 40 switches on 2026-09-24). Sweeps asked for while one runs
+  start one more when it ends, so a burst of Space events ends with a sweep that started
+  after the last of them. The Space list omits windows on no Space, such as one created
+  but not yet shown, so a sweep reads the tracked windows missing from it directly before
+  it counts them gone, and the windows first seen while locked too, which an unlock sweep
+  admits even when ordered out. Those reads can block during a Space transition, so they
+  run off the main thread, after the reads for events already waiting. A window a sweep
   finds or loses that no event reported is logged as "missed by events", and so is a known
   window whose ordered in state or candidate status (level 0, no parent) a sweep corrects,
   so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
@@ -57,11 +148,11 @@
   read for events leaves each window they name as it was; each logs a notice. The ceiling:
   a failed first sweep at launch leaves every window unmanaged, and a failed sweep after
   an unlock leaves the windows the lock held back waiting, each until the next sweep, at
-  the next Space change or regular app launch. Sweeping again after a delay would close
-  both. A read of one window that fails leaves it as the inventory has it, ordered in or
-  not. No failed read shows in the live log of September 24 to 26, 2026; the one mass
-  loss, 23 windows at 23:22:08 on September 25, was real closes whose events came 3 to
-  5 ms late.
+  the next Space change or the next app to become regular. Sweeping again after a delay
+  would close both. A read of one window that fails leaves it as the inventory has it,
+  ordered in or not. No failed read shows in the live log of September 24 to 26, 2026; the
+  one mass loss, 23 windows at 23:22:08 on September 25, was real closes whose events came
+  3 to 5 ms late.
 - A change of a window's level posts no event of its own. In `kosmos-probe level` on
   2026-09-24, 60 changes of an invisible or off screen window posted nothing while no
   other app's window came or went. In three runs while other apps' windows came and went,

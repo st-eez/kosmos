@@ -18,6 +18,12 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("tabs", "tabs [strip|keep]", { tabs(conceal: $0.first) }),
     ("level", "level [onscreen|opaque]", { levels($0) }),
     ("events", "events [seconds]", { events(seconds: $0.first.flatMap(Double.init) ?? 30) }),
+    ("policy", "policy [rounds] [bundle] [titled]", {
+        policy(rounds: $0.first.flatMap(Int.init) ?? 4, bundled: $0.contains("bundle"), titled: $0.contains("titled"))
+    }),
+    ("policy-exits", "policy-exits [cycles] [tuple]", {
+        policyExits(cycles: $0.first.flatMap(Int.init) ?? 300, tuple: $0.contains("tuple"))
+    }),
     ("keying", "keying [rounds] [finder]", { keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder")) }),
     ("key-holder", "key-holder [seconds]", { keyHolder(seconds: $0.first.flatMap(Double.init) ?? 30) }),
     ("ax-timeout", "ax-timeout", { _ in axTimeout() }),
@@ -82,6 +88,15 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     }),
     ("landing-window", nil, { _ in landingWindow() }),
     ("moving-window", nil, { movingWindow(onscreen: $0.contains("onscreen")) }),
+    ("policy-window", nil, {
+        policyWindow(titled: $0.contains("titled"), early: $0.contains("early"), exitsRegular: $0.contains("regular"))
+    }),
+    ("policy-flips", nil, { arguments in
+        let policies = arguments.compactMap { name in
+            [NSApplication.ActivationPolicy.regular, .accessory, .prohibited].first { policyName($0) == name }
+        }
+        policyFlips(policies, atOnce: arguments.contains("at-once"))
+    }),
     ("level-window", nil, { levelWindow(onscreen: $0.contains("onscreen"), opaque: $0.contains("opaque")) }),
     ("fullscreen-window", nil, { fullscreenWindow(dry: $0.contains("dry")) }),
     ("departures-window", nil, { _ in departuresWindow() }),

@@ -7,6 +7,7 @@ private let appsLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "ap
 @MainActor
 final class Apps {
     private var workers: [pid_t: AppWorker] = [:]
+    private var started = false
     /// Kept from each app's NSRunningApplication, as NSRunningApplication(processIdentifier:)
     /// returned nil for a running app at startup (docs/inventory.md).
     private var identities: [pid_t: (bundleID: String?, name: String?)] = [:]
@@ -17,16 +18,13 @@ final class Apps {
     }
 
     func start() {
+        started = true
         // Covers the elements copied out of an app's attributes too (docs/geometry.md).
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), AppWorker.timeout)
         for app in NSWorkspace.shared.runningApplications { add(app) }
         // The key window at launch produces no notification; ask for it.
         if let front = NSWorkspace.shared.frontmostApplication { activated(front.processIdentifier, received: .now) }
         let center = NSWorkspace.shared.notificationCenter
-        center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
-            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            MainActor.assumeIsolated { self?.add(app) }
-        }
         center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
@@ -44,9 +42,12 @@ final class Apps {
 
     func identity(_ pid: pid_t) -> (bundleID: String?, name: String?)? { identities[pid] }
 
-    private func add(_ app: NSRunningApplication) {
+    /// The inventory gives each app it finds regular, at its launch or later (docs/inventory.md).
+    /// Before `start`, which adds the regular apps running then, it does nothing.
+    func add(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
-        guard app.activationPolicy == .regular, workers[pid] == nil else { return }
+        // The policy read is a LaunchServices call, so a repeat makes none.
+        guard started, workers[pid] == nil, app.activationPolicy == .regular else { return }
         let name = app.localizedName ?? String(pid)
         let worker = AppWorker(pid: pid, name: name, report: report)
         workers[pid] = worker
@@ -66,7 +67,7 @@ final class Apps {
         }
     }
 
-    private func remove(_ pid: pid_t) {
+    func remove(_ pid: pid_t) {
         identities[pid] = nil
         guard let worker = workers.removeValue(forKey: pid) else { return }
         Task { await worker.stop() }
