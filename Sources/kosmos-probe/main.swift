@@ -64,6 +64,10 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let rest = arguments.dropFirst(count == nil ? 0 : 1)
         slideLanding(landings: count ?? 16, sizes: rest.contains("--size"), modes: rest.filter { $0 != "--size" })
     }),
+    ("reveal-slide", "reveal-slide [trials] [mode...]", { arguments in
+        let count = arguments.first.flatMap(Int.init)
+        revealSlide(trials: count ?? 10, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
+    }),
     ("ca-lock", "ca-lock [trials] [busy]", { caLock(trials: $0.first.flatMap(Int.init) ?? 20, busy: $0.contains("busy")) }),
     ("slide-links", "slide-links [slides] [mode...]", { arguments in
         let count = arguments.first.flatMap(Int.init)
@@ -87,6 +91,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         handoverCreator(window, kill: arguments.contains("kill"))
     }),
     ("landing-window", nil, { _ in landingWindow() }),
+    ("reveal-window", nil, { _ in revealWindow() }),
     ("moving-window", nil, { movingWindow(onscreen: $0.contains("onscreen")) }),
     ("policy-window", nil, {
         policyWindow(titled: $0.contains("titled"), early: $0.contains("early"), exitsRegular: $0.contains("regular"))
