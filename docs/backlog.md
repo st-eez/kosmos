@@ -22,6 +22,9 @@ what Steve has decided. Take an item out when it lands, and add new work here.
     at once.
 - To settle it, take a debug log of a real call:
   `log stream --level debug --predicate 'subsystem == "io.github.st-eez.kosmos"'`.
+- FaceTime goes wrong the other way (Steve, 2026-09-28). An incoming FaceTime call opens
+  FaceTime's window while the call's notification is still showing, before he accepts.
+  Take a debug log of an incoming FaceTime call alongside the Teams one.
 - Steve's decisions:
   - Kosmos follows Hyprland. A new window a rule sends to a hidden workspace shows that
     workspace and takes focus.
