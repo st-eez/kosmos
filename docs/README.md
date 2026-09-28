@@ -110,7 +110,7 @@ prefix.
   Code: `KosmosCore/Borders.swift`, `KosmosApp/Borders.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Slides.swift`,
   `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Borders.swift`,
-  `kosmos-probe/BorderHop.swift`, `kosmos-probe/SlideSync.swift`.
+  `kosmos-probe/BorderHop.swift`, `kosmos-probe/SlideSync.swift`, `kosmos-probe/CALock.swift`.
 
 Other docs:
 

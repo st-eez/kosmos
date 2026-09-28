@@ -72,12 +72,9 @@ public struct Border: Equatable, Sendable {
     /// is on none of `displays`.
     public init?(around frame: CGRect, radius: CGFloat, width: Double, color: BorderColor, displays: [Monitor],
                  path: CGRect? = nil) {
-        func area(_ monitor: Monitor, _ rect: CGRect) -> CGFloat {
-            let common = monitor.frame.intersection(rect)
-            return common.isNull ? 0 : common.width * common.height
-        }
-        guard let display = displays.max(by: { area($0, frame) < area($1, frame) }), area(display, frame) > 0 else { return nil }
-        slideDisplays = path.map { path in displays.filter { $0.id != display.id && area($0, path) > 0 } } ?? []
+        guard let index = Self.display(holding: frame, of: displays) else { return nil }
+        let display = displays[index]
+        slideDisplays = path.map { path in displays.filter { $0.id != display.id && Self.area(of: path, on: $0) > 0 } } ?? []
         lineWidth = CGFloat(width)
         ring = frame.insetBy(dx: -lineWidth, dy: -lineWidth)
         cornerRadius = radius > 0 ? radius + lineWidth : 0
@@ -85,6 +82,42 @@ public struct Border: Equatable, Sendable {
         self.display = display.id
         displayFrame = display.frame
         self.frame = ring.intersection(display.frame)
+    }
+
+    /// The index in `displays` of the one that holds the largest part of `frame`, or nil when
+    /// none holds any of it.
+    public static func display(holding frame: CGRect, of displays: [Monitor]) -> Int? {
+        guard let index = displays.indices.max(by: { area(of: frame, on: displays[$0]) < area(of: frame, on: displays[$1]) }),
+              area(of: frame, on: displays[index]) > 0 else { return nil }
+        return index
+    }
+
+    private static func area(of rect: CGRect, on monitor: Monitor) -> CGFloat {
+        let common = monitor.frame.intersection(rect)
+        return common.isNull ? 0 : common.width * common.height
+    }
+}
+
+/// A sliding window's ring, which each display frame of the slide places in one of the border
+/// windows BorderPool gave the window, each covering its own display (docs/borders.md).
+public struct SlideRing: Equatable, Sendable {
+    public var lineWidth: CGFloat
+    /// The display each border window covers.
+    public var displays: [Monitor]
+
+    public init(lineWidth: CGFloat, displays: [Monitor]) {
+        self.lineWidth = lineWidth
+        self.displays = displays
+    }
+
+    /// The index of the window that shows the ring around `shown`, the one on the display
+    /// holding the largest part of it, as a border at rest goes, and the ring's frame in that
+    /// window's layer, from the window's bottom left. Nil when none of the displays holds any of
+    /// it.
+    public func place(around shown: CGRect) -> (index: Int, frame: CGRect)? {
+        guard let index = Border.display(holding: shown, of: displays) else { return nil }
+        let ring = shown.insetBy(dx: -lineWidth, dy: -lineWidth), display = displays[index].frame
+        return (index, CGRect(x: ring.minX - display.minX, y: display.maxY - ring.maxY, width: ring.width, height: ring.height))
     }
 }
 

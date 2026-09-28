@@ -8,14 +8,21 @@ import os
 private let slideLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "slide")
 
 /// Slides windows to the frames a relayout writes, and pops a new window in, through a pool
-/// of Spaces whose transforms show each window where it showed (docs/geometry.md).
+/// of Spaces whose transforms show each window where it showed. The display links call back
+/// on a thread of their own and each display frame is stepped off the main actor, so main
+/// actor work delays none (docs/geometry.md). The exception is a window that begins to slide
+/// with its ring showing, whose first display frame waits for its relayout's border update
+/// to hand the slide that ring (docs/borders.md).
 @MainActor
 final class Slides {
     /// `from` is where WindowServer has the window, nil while a write of Kosmos's still moves it.
+    /// `ringed`: its border shows, so it takes no display frame until the border update hands
+    /// the slide that ring or puts it back (docs/borders.md).
     struct Motion {
         var from: CGRect?
         var display: DisplayID
         var pop = false
+        var ringed = false
     }
 
     /// One above the desktop Space's, where a shown Space draws its window with its transform
@@ -28,12 +35,10 @@ final class Slides {
     private let onscreen = Onscreen()
     private var free: [SpaceID] = []
     private let poolChecks = DispatchQueue(label: "kosmos.slide.pool", qos: .utility)
-    private var links: [DisplayID: Link] = [:]
-
-    private struct Link {
-        let link: CADisplayLink
-        var callbacks = 0, time = 0.0, slowest = 0.0
-    }
+    private var links: [DisplayID: CADisplayLink] = [:]
+    /// The display links' run loop, which nothing else runs on. It adds and invalidates them,
+    /// in order.
+    private let linkThread = RunLoopExecutor(name: "kosmos.slide.links")
 
     init(hiding: Hiding) {
         self.hiding = hiding
@@ -48,7 +53,7 @@ final class Slides {
     func writing(_ targets: [WindowID: CGRect], sliding: [WindowID: Motion]) {
         let now = CACurrentMediaTime()
         var ended: [(WindowID, SlidingWindow)] = []
-        var slid = 0, jumped = 0, took = 0
+        var slid = 0, jumped = 0, took = 0, held = false
         let known = onscreen.state.withLock { state in
             var known: Set<WindowID> = []
             for (id, target) in targets {
@@ -72,10 +77,12 @@ final class Slides {
                 jumped += 1
                 continue
             }
-            (slid, took, popped) = (slid + 1, took + 1, popped || motion.pop)
+            (slid, took, popped, held) = (slid + 1, took + 1, popped || motion.pop, held || motion.ringed)
         }
         if !ended.isEmpty { stopIdleLinks() }
         if took > 0 { onscreen.follow() }
+        // The turn's border update lets the held windows go; this does, should it not run.
+        if held { onMain { [onscreen] in onscreen.release() } }
         if slid + jumped > 0 {
             slideLog.info("relayout: \(slid) windows slide\(popped ? ", 1 of them popping" : "", privacy: .public), \(jumped) jump, \(self.free.count) Spaces free")
         }
@@ -104,6 +111,17 @@ final class Slides {
     func changedInPress(_ id: WindowID, to frame: CGRect) {
         guard onscreen.state.withLock({ $0.windows[id].map { !$0.isWrite(frame) } }) == true else { return }
         end(id, "as the user moved it")
+    }
+
+    /// The border windows whose rings each sliding window's display frames move, in place of
+    /// those handed before (docs/borders.md).
+    func hand(_ rings: [WindowID: HandedRing]) {
+        onscreen.hand(rings)
+    }
+
+    /// The windows begun with their ring showing that take no display frame yet.
+    var held: Set<WindowID> {
+        onscreen.state.withLock { $0.held }
     }
 
     func end(_ id: WindowID, _ why: String) {
@@ -141,6 +159,7 @@ final class Slides {
             var ids = [id]
             kosmos_add_windows(space, &ids, 1, false)
             state.windows[id] = window
+            if motion.ringed { state.held.insert(id) }
         }
         return true
     }
@@ -176,66 +195,35 @@ final class Slides {
         }
     }
 
-    /// `timestamp` is the link's for the callback, `calledBack` when the callback came, and
-    /// `at` the target this display frame is stepped for.
-    private func frame(timestamp: Double, calledBack: Double, at: Double, on display: DisplayID) {
-        let began = CACurrentMediaTime()
-        var stepped: [(id: WindowID, shown: CGRect, sent: Bool)] = []
-        let done = onscreen.state.withLock { state in
-            var done: [(WindowID, SlidingWindow)] = []
-            for (id, var window) in state.windows where window.display == display {
-                let (shown, alpha) = (window.shown, window.alpha)
-                if window.step(at: at) {
-                    if let window = Onscreen.remove(id, from: &state) { done.append((id, window)) }
-                    continue
-                }
-                if window.shown != shown { window.show() }
-                if window.alpha != alpha { kosmos_space_set_alpha(window.space, Float(window.alpha)) }
-                state.windows[id] = window
-                stepped.append((id, window.shown, window.shown != shown))
-            }
-            return done
-        }
-        let transformsSent = CACurrentMediaTime()
+    /// The windows a display frame finished.
+    private func ended(_ done: [(WindowID, SlidingWindow)]) {
         for (id, window) in done { finished(id, window) }
-        if done.isEmpty { onChange?() }
-        let spent = CACurrentMediaTime() - began
-        // Places each display frame's transform against the frames script/bench-frames.sh
-        // captures, and splits the frame's time between the transforms and the border update
-        // that follows them (docs/geometry.md).
-        slideLog.debug("""
-            frame \((self.links[display]?.callbacks ?? 0) + 1) on display \(display): stepped \
-            \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after the link's timestamp, called back \
-            \((calledBack - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, target \
-            \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, transforms \
-            \((transformsSent - began) * 1000, format: .fixed(precision: 2)) ms, borders \
-            \((spent - (transformsSent - began)) * 1000, format: .fixed(precision: 2)) ms; \
-            \(stepped.map { "\($0.id) shown at \($0.shown)\($0.sent ? "" : ", unchanged")" }.joined(separator: "; "), privacy: .public)
-            """)
-        links[display]?.callbacks += 1
-        links[display]?.time += spent
-        if let slowest = links[display]?.slowest, spent > slowest { links[display]?.slowest = spent }
-        if !done.isEmpty { stopIdleLinks() }
+        stopIdleLinks()
     }
 
     private func startLink(on display: DisplayID) -> Bool {
         guard links[display] == nil else { return true }
         guard let screen = NSScreen.screens.first(where: { $0.displayID == display }) else { return false }
+        let onscreen = onscreen
         // The link keeps its target. Sent a quarter of a refresh after the vsync, clear of
-        // WindowServer's cut-off for the next composite, a frame's transforms and borders land
-        // in the same one, a refresh after the target; measured on the built-in display at
-        // 120 Hz only (docs/geometry.md).
+        // WindowServer's cut-off for the next composite, a frame's transforms and rings land in
+        // the same one, a refresh after the target; measured on the built-in display at 120 Hz
+        // only (docs/geometry.md).
         let link = screen.displayLink(target: LinkTarget { [weak self] link in
             let calledBack = CACurrentMediaTime()
             let (timestamp, at) = (link.timestamp, link.targetTimestamp)
             let wait = max(0, timestamp + link.duration / 4 - calledBack)
-            let step: @MainActor () -> Void = { self?.frame(timestamp: timestamp, calledBack: calledBack, at: at, on: display) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { MainActor.assumeIsolated(step) }
+            Onscreen.frames.asyncAfter(deadline: .now() + wait) {
+                let done = onscreen.step(on: display, timestamp: timestamp, calledBack: calledBack, at: at)
+                if !done.isEmpty { onMain { self?.ended(done) } }
+            }
         }, selector: #selector(LinkTarget.frame))
         let rate = Float(screen.maximumFramesPerSecond)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
-        link.add(to: .main, forMode: .common)
-        links[display] = Link(link: link)
+        onscreen.linkStarted(on: display)
+        nonisolated(unsafe) let added = link
+        linkThread.perform { added.add(to: .current, forMode: .common) }
+        links[display] = link
         return true
     }
 
@@ -245,12 +233,16 @@ final class Slides {
     }
 
     private func stopLink(_ display: DisplayID) {
-        guard let entry = links.removeValue(forKey: display) else { return }
-        entry.link.invalidate()
+        guard let link = links.removeValue(forKey: display) else { return }
+        // After its add, which the link thread may not have run yet. A callback already under
+        // way steps nothing, as the link's frames are gone.
+        nonisolated(unsafe) let stopped = link
+        linkThread.perform { stopped.invalidate() }
+        let frames = onscreen.linkStopped(on: display)
         // script/bench-relayout.sh counts this line.
         slideLog.info("""
-            slide frames: \(entry.callbacks) callbacks, \(entry.time * 1000, format: .fixed(precision: 2)) ms in them, \
-            \(entry.slowest * 1000, format: .fixed(precision: 2)) ms at most, display \(display)
+            slide frames: \(frames.callbacks) callbacks, \(frames.time * 1000, format: .fixed(precision: 2)) ms in them, \
+            \(frames.slowest * 1000, format: .fixed(precision: 2)) ms at most, display \(display)
             """)
     }
 }
@@ -263,14 +255,38 @@ extension SlidingWindow {
     }
 }
 
+/// A border window's ring layer. While its window slides, its frame and opacity are set only
+/// under Onscreen's lock, so the last one set is for the newest frame (docs/borders.md).
+struct RingLayer: @unchecked Sendable {
+    let layer: CALayer
+}
+
+/// A sliding window's border windows, one for each of `ring.displays`.
+struct HandedRing: Sendable {
+    let ring: SlideRing
+    let layers: [RingLayer]
+}
+
 private final class Onscreen: Sendable {
     struct State: Sendable {
         var windows: [WindowID: SlidingWindow] = [:]
+        var rings: [WindowID: HandedRing] = [:]
+        /// Windows begun with their ring showing, which no display frame steps until a
+        /// hand-off.
+        var held: Set<WindowID> = []
+        /// The display frames of each running link, for its log line.
+        var links: [DisplayID: LinkFrames] = [:]
         var following = false
+    }
+
+    struct LinkFrames: Sendable {
+        var callbacks = 0, time = 0.0, slowest = 0.0
     }
 
     let state = Mutex(State())
     private let queue = DispatchQueue(label: "kosmos.slide", qos: .userInteractive)
+    /// Each display frame of every display is stepped here.
+    static let frames = DispatchQueue(label: "kosmos.slide.frames", qos: .userInteractive)
     /// Reads come every 0.1 ms this long after a window's write, read back or new frame, then
     /// every 1 ms (docs/geometry.md).
     private static let fastFor = 0.02
@@ -278,11 +294,108 @@ private final class Onscreen: Sendable {
     /// `state` comes from the lock.
     static func remove(_ id: WindowID, from state: inout State) -> SlidingWindow? {
         guard let window = state.windows.removeValue(forKey: id) else { return nil }
+        state.rings[id] = nil
+        state.held.remove(id)
         kosmos_space_set_transform(window.space, .identity)
         if window.alpha != 1 { kosmos_space_set_alpha(window.space, 1) }
         var ids = [id]
         kosmos_remove_windows(window.space, &ids, 1)
         return window
+    }
+
+    func linkStarted(on display: DisplayID) {
+        state.withLock { $0.links[display] = LinkFrames() }
+    }
+
+    func linkStopped(on display: DisplayID) -> LinkFrames {
+        state.withLock { $0.links.removeValue(forKey: display) } ?? LinkFrames()
+    }
+
+    /// Placed at once, around where each window shows. Every held window goes, as the border
+    /// update's first hand-off comes once each held window's ring is in it or put back
+    /// (BorderPool).
+    func hand(_ rings: [WindowID: HandedRing]) {
+        state.withLock { state in
+            state.rings = rings.filter { state.windows[$0.key] != nil }
+            Self.place(state.rings.map { ($0.value, state.windows[$0.key]!) })
+            state.held.removeAll()
+        }
+    }
+
+    func release() {
+        state.withLock { $0.held.removeAll() }
+    }
+
+    /// Steps the windows sliding on `display` for the target `at`. `timestamp` is the link's
+    /// for the callback, and `calledBack` when the callback came. Returns the windows whose
+    /// slides ended.
+    func step(on display: DisplayID, timestamp: Double, calledBack: Double, at: Double) -> [(WindowID, SlidingWindow)] {
+        let began = CACurrentMediaTime()
+        var stepped: [(id: WindowID, shown: CGRect, sent: Bool)] = []
+        var (locked, transformsSent, ringsPlaced) = (began, began, began)
+        var frame = 0
+        let done = state.withLock { state -> [(WindowID, SlidingWindow)] in
+            locked = CACurrentMediaTime()
+            // A callback of a link since stopped.
+            guard state.links[display] != nil else { return [] }
+            var done: [(WindowID, SlidingWindow)] = []
+            var rings: [(HandedRing, SlidingWindow)] = []
+            for (id, var window) in state.windows where window.display == display && !state.held.contains(id) {
+                let (shown, alpha) = (window.shown, window.alpha)
+                if window.step(at: at) {
+                    if let window = Self.remove(id, from: &state) { done.append((id, window)) }
+                    continue
+                }
+                if window.shown != shown { window.show() }
+                if window.alpha != alpha { kosmos_space_set_alpha(window.space, Float(window.alpha)) }
+                state.windows[id] = window
+                stepped.append((id, window.shown, window.shown != shown))
+                if let ring = state.rings[id], window.shown != shown || window.alpha != alpha { rings.append((ring, window)) }
+            }
+            transformsSent = CACurrentMediaTime()
+            Self.place(rings)
+            ringsPlaced = CACurrentMediaTime()
+            state.links[display]!.callbacks += 1
+            state.links[display]!.time += ringsPlaced - began
+            state.links[display]!.slowest = max(state.links[display]!.slowest, ringsPlaced - began)
+            frame = state.links[display]!.callbacks
+            return done
+        }
+        guard frame > 0 else { return done }
+        // Places each display frame's transform against the frames script/bench-frames.sh
+        // captures, and times Onscreen's lock: the wait for it, then the transforms and the
+        // rings sent under it, which hold a landing's read that long (docs/geometry.md).
+        slideLog.debug("""
+            frame \(frame) on display \(display): stepped \((began - timestamp) * 1000, format: .fixed(precision: 2)) ms after \
+            the link's timestamp, called back \((calledBack - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, \
+            target \((at - timestamp) * 1000, format: .fixed(precision: 2)) ms after it, lock waited \
+            \((locked - began) * 1000, format: .fixed(precision: 2)) ms, transforms \
+            \((transformsSent - locked) * 1000, format: .fixed(precision: 2)) ms, rings \
+            \((ringsPlaced - transformsSent) * 1000, format: .fixed(precision: 2)) ms; \
+            \(stepped.map { "\($0.id) shown at \($0.shown)\($0.sent ? "" : ", unchanged")" }.joined(separator: "; "), privacy: .public)
+            """)
+        return done
+    }
+
+    /// In one transaction, under the lock and just after the transforms, so each ring lands in
+    /// the composite its window's transform makes. The ring goes in the window of the display
+    /// holding the largest part of where its window shows, and the others show none
+    /// (docs/borders.md).
+    private static func place(_ rings: [(HandedRing, SlidingWindow)]) {
+        guard !rings.isEmpty else { return }
+        // Explicit, as the frames queue has no run loop to commit an implicit transaction.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (handed, window) in rings {
+            let place = handed.ring.place(around: window.shown)
+            for (index, ring) in handed.layers.enumerated() {
+                let shows = index == place?.index
+                if shows { ring.layer.frame = place!.frame }
+                let opacity = shows ? Float(window.alpha) : 0
+                if ring.layer.opacity != opacity { ring.layer.opacity = opacity }
+            }
+        }
+        CATransaction.commit()
     }
 
     func follow() {
@@ -338,11 +451,11 @@ private final class Onscreen: Sendable {
     }
 }
 
-@MainActor
-private final class LinkTarget: NSObject {
-    private let step: @MainActor (CADisplayLink) -> Void
+/// Called on the link thread.
+private final class LinkTarget: NSObject, @unchecked Sendable {
+    private let step: @Sendable (CADisplayLink) -> Void
 
-    init(_ step: @escaping @MainActor (CADisplayLink) -> Void) { self.step = step }
+    init(_ step: @escaping @Sendable (CADisplayLink) -> Void) { self.step = step }
 
     @objc func frame(_ link: CADisplayLink) { step(link) }
 }
