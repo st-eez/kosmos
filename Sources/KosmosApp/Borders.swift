@@ -71,37 +71,47 @@ final class Borders {
             return ObjectIdentifier(window)
         })
         if !leaving.isEmpty { hand(handed.mapValues { ($0.width, $0.windows.filter { !leaving.contains(ObjectIdentifier($0)) }) }) }
-        for step in steps {
-            switch step {
-            case .putBack(let window):
-                let began = CACurrentMediaTime()
-                window.putBack()
-                bordersLog.debug("""
-                    border \(window.windowNumber) put back on display \(window.display) in \
-                    \(ms(since: began), format: .fixed(precision: 2)) ms
-                    """)
-            case .clear(let window):
-                window.clear()
-            case .ready(let window, let target, let next):
-                orderIn(window, next, below: target, ready: true)
-            case .orderIn(let window, let target, let next):
-                orderIn(window, next, below: target)
-            case .show(let window, let target, let next, let taken):
-                // Setting another level can move the border within the stacking order.
-                let leveled = window.level.rawValue != Int(next.level)
-                window.show(next)
-                if leveled { window.order(.below, relativeTo: Int(target)) }
-                guard taken else { continue }
-                pin(window, to: target, thenShow: false)
-                bordersLog.debug("ring of \(target) moved to border \(window.windowNumber), ready on display \(window.display)")
-            case .wait(let window, let target):
-                // Ordered in there before its move, it would draw on the fullscreen app, and a
-                // frame set before the move might take it back to the fullscreen Space.
-                pin(window, to: target, thenShow: true)
-            }
+        // The rings go to the slide before any window is readied, as ordering one below its
+        // target waited on WindowServer 19.6 and 24.8 ms at slide starts (docs/borders.md).
+        func readies(_ step: BorderPool<BorderWindow>.Step) -> Bool {
+            if case .ready = step { true } else { false }
         }
+        for step in steps where !readies(step) { apply(step) }
         sliding = shown.filter(\.value.sliding)
         handSliding()
+        guard steps.contains(where: readies) else { return }
+        for step in steps where readies(step) { apply(step) }
+        handSliding()
+    }
+
+    private func apply(_ step: BorderPool<BorderWindow>.Step) {
+        switch step {
+        case .putBack(let window):
+            let began = CACurrentMediaTime()
+            window.putBack()
+            bordersLog.debug("""
+                border \(window.windowNumber) put back on display \(window.display) in \
+                \(ms(since: began), format: .fixed(precision: 2)) ms
+                """)
+        case .clear(let window):
+            window.clear()
+        case .ready(let window, let target, let next):
+            orderIn(window, next, below: target, ready: true)
+        case .orderIn(let window, let target, let next):
+            orderIn(window, next, below: target)
+        case .show(let window, let target, let next, let taken):
+            // Setting another level can move the border within the stacking order.
+            let leveled = window.level.rawValue != Int(next.level)
+            window.show(next)
+            if leveled { window.order(.below, relativeTo: Int(target)) }
+            guard taken else { return }
+            pin(window, to: target, thenShow: false)
+            bordersLog.debug("ring of \(target) moved to border \(window.windowNumber), ready on display \(window.display)")
+        case .wait(let window, let target):
+            // Ordered in there before its move, it would draw on the fullscreen app, and a
+            // frame set before the move might take it back to the fullscreen Space.
+            pin(window, to: target, thenShow: true)
+        }
     }
 
     /// Hands Slides each sliding target's windows ordered in: its ring's and the ready ones.

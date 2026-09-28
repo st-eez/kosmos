@@ -262,6 +262,13 @@ state, and during a slide the frame the slide shows the window at.
     so a move to another display waits for no main actor turn. The border update keeps the
     windows' frames, order, level, color and corners, and gives the ready windows the
     ring's color, corners and level, as the ring can reach one before the next update.
+  - The border update hands the rings over before it readies any window, and hands them
+    again once the ready windows are ordered in. Ordering a ready window below Ghostty
+    took the main actor 19.6 and 24.8 ms at two slide starts in the debug log of September
+    27, 2026, 14:56, and a ring handed after it would have stood still that long while its
+    window slid. Until then a ring whose window's largest part lies on a display with no
+    window handed stays in the window it has, cut at that display's edge, and shows
+    nowhere once the window has left every display with a window handed (`SlideRing`).
   - A step sets the rings under the lock it sends the transforms under, and the hand-off
     places each handed ring under that lock too, from where its window shows then, so a
     ring is never placed from an older display frame than the last one sent. A window the
@@ -303,7 +310,7 @@ state, and during a slide the frame the slide shows the window at.
     too ([geometry.md](geometry.md) has the probe and the upgrade). A window that starts sliding while its
     display's link runs can take a display frame before the main actor hands its ring, and
     its ring stays where it was for that refresh. A display that may show a native
-    fullscreen Space has no ready window, so the ring moves among the other displays'
+    fullscreen Space has no ready window, so the ring shows only in the other displays'
     windows until the pool gives it one there, at the next border update.
 - Borders need no recovery: they are Kosmos's own windows, so they go with its process,
   and a border hides by being ordered out, never through the holding Space.

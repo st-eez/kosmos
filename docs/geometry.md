@@ -339,7 +339,15 @@
         2 points of its window in 921 of 922 frames. In `kosmos-probe slide-links`, both
         displays' links on one thread lost none with the main thread blocked the same way,
         where on the main run loop they lost 379 and 371 vsyncs in 20 slides, each step
-        going out at most 2.4 ms after its quarter point. The ceiling: a step still waits on
+        going out at most 2.4 ms after its quarter point. A slide's first step no longer
+        waits for the rest of the main actor's turn: in the 10 relayouts of the log of
+        September 27, 14:56, 29.2 ms went from the relayout's log line to its first step at
+        the median and 41.9 ms at most. In the probe, with the main thread blocked 19.6 to
+        24.8 ms right after each start, as those border orders blocked it, the link on the
+        main run loop stepped first 27.1 ms after the start at the median and 31.4 ms at
+        most, and the window first moved on screen at 40.1 ms; on a thread of its own, at
+        8.9 and 13.1 ms, and 23.2 ms on screen, as with the main thread free (9.8 ms and
+        22.5 ms). The ceiling: a step still waits on
         WindowServer for its sends and the rings' commit, so a WindowServer stall still
         costs frames, and a slide's start and end still wait for the main actor. How many
         frames Kosmos's own slides lose now is open until the live test.

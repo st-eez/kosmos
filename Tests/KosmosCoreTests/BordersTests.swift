@@ -84,9 +84,19 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     // As a border at rest picks its display.
     let frame = CGRect(x: 800, y: 100, width: 500, height: 300)
     #expect(Border(around: frame, radius: 16, width: 2, color: blue, displays: [left, right])?.display == ring.displays[past!.index].id)
-    // Only the windows the pool gave count, and none holds a window off them.
-    #expect(SlideRing(lineWidth: 2, displays: [left]).place(around: frame)?.index == 0)
+    // None holds a window off them.
     #expect(ring.place(around: CGRect(x: 100_000, y: 100, width: 500, height: 300)) == nil)
+}
+
+@Test func aRingWhoseReadyWindowIsNotOrderedInYetStaysInTheWindowItHas() {
+    let left = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+    // The slide's first hand-off, before the right display's window is readied: the window
+    // is mostly on the right, and the ring stays in the left display's window, which cuts it
+    // at its edge.
+    let first = SlideRing(lineWidth: 2, displays: [left]).place(around: CGRect(x: 800, y: 100, width: 500, height: 300))
+    #expect(first?.index == 0 && first?.frame == CGRect(x: 798, y: 398, width: 504, height: 304))
+    // A window only on a display with none shows no ring.
+    #expect(SlideRing(lineWidth: 2, displays: [left]).place(around: CGRect(x: 1200, y: 100, width: 500, height: 300)) == nil)
 }
 
 @Test func theShownTiledAndFloatingWindowsAreBordered() {
