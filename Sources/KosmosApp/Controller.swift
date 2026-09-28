@@ -239,7 +239,7 @@ final class Controller {
     /// A floating window's frame as the inventory last heard it, so nothing waits on
     /// WindowServer, or where a write the inventory has yet to hear puts it.
     func knownFrame(_ id: WindowID) -> CGRect? {
-        ledger.target(of: id, at: .now) ?? inventory.windows[id]?.frame
+        ledger.newestWrite(of: id, at: .now) ?? inventory.windows[id]?.frame
     }
 
     private func resync(displaysChanged: Bool) {
@@ -388,22 +388,23 @@ final class Controller {
     /// The read waits on WindowServer, so it runs only with a floating window shown, and
     /// never before a switch's focus request. A concealed window's row gives its own frame,
     /// so it goes home as a revealed one would (docs/displays.md). A window the modifier drags
-    /// goes where the drag puts it. One with a write no row shows yet goes from that write's
-    /// frame, as WindowServer can lag it, and the pointer centers from the same frame.
+    /// goes where the drag puts it. One with a write no row shows yet needs no read, and the
+    /// pointer centers from the same frame.
     private func bringFloatingHome() {
         let start = ContinuousClock.now
-        let windows = session.shownFloatingWindows.filter { $0 != modifierDrag?.grab.window }
+        let dragged = modifierDrag?.grab.window
+        func written(_ id: WindowID) -> CGRect? { id == dragged ? nil : ledger.newestWrite(of: id, at: start) }
+        let windows = session.shownFloatingWindows.filter { $0 != dragged }
         guard !windows.isEmpty else { return }
+        let reading = windows.filter { written($0) == nil }
         var frames: [WindowID: CGRect] = [:]
-        for id in windows { frames[id] = ledger.target(of: id, at: start) }
-        let reading = windows.filter { frames[$0] == nil }
         if !reading.isEmpty {
             guard let rows = SkyLight.rows(reading) else {
                 return controllerLog.notice("floating check: the rows of \(reading.count) windows did not read")
             }
-            for row in rows where frames[row.id] == nil { frames[row.id] = row.frame }
+            frames = Dictionary(rows.map { ($0.id, $0.frame) }) { first, _ in first }
         }
-        let targets = session.floatingFrames(at: frames)
+        let targets = session.floatingFrames(at: frames, written: written)
         controllerLog.info("floating check: \(reading.count) windows read in \((ContinuousClock.now - start).milliseconds, format: .fixed(precision: 3)) ms, \(targets.count) moved")
         writeFrames(targets)
     }

@@ -118,10 +118,12 @@ public struct FrameLedger: Sendable {
     public func isWriting(_ id: WindowID) -> Bool { pending[id] != nil }
 
     /// Where the newest write puts the window until a row shows it: the target in flight, then
-    /// the read back that confirmed it, until the write counts as landed. A row can still show
-    /// where the window was (docs/displays.md).
-    public func target(of id: WindowID, at now: ContinuousClock.Instant) -> CGRect? {
-        pending[id] ?? (isLanding(id, at: now) ? landing[id]?.readBack : nil)
+    /// the read back that confirmed it, until the write counts as landed or a move that was not
+    /// Kosmos's replaces it. A row can still show where the window was (docs/displays.md).
+    public func newestWrite(of id: WindowID, at now: ContinuousClock.Instant) -> CGRect? {
+        if let target = pending[id] { return target }
+        guard isLanding(id, at: now), let readBack = landing[id]?.readBack, confirmed[id] == readBack else { return nil }
+        return readBack
     }
 
     /// A write gone to its app's worker, with the target its read back names.

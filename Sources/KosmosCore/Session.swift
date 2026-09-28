@@ -658,13 +658,16 @@ public struct Session: Sendable {
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
     /// Targets for the shown workspaces' floating windows on a display showing another workspace
-    /// (docs/displays.md). A window whose center is on no display stays.
-    public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+    /// (docs/displays.md). Each goes from `written`, a write of Kosmos's no row shows yet, as
+    /// the row can still show where the window was, else from its row in `frames`. A window
+    /// whose center is on no display stays.
+    public func floatingFrames(at frames: [WindowID: CGRect],
+                               written: (WindowID) -> CGRect? = { _ in nil }) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {
             let own = monitor(of: name)
             for window in workspaces[name]!.floating {
-                guard let frame = frames[window] else { continue }
+                guard let frame = written(window) ?? frames[window] else { continue }
                 let center = CGPoint(x: frame.midX, y: frame.midY)
                 guard let under = monitors.first(where: { $0.frame.contains(center) }), under.id != own.id else { continue }
                 targets[window] = floatingFrame(frame, from: under.area, movingTo: own.area)

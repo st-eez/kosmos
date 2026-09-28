@@ -147,8 +147,9 @@
   focus request. The log gives each read's time, to measure at the desk. A window with a
   write of Kosmos's that no row shows yet, as one leaving fullscreen onto another display,
   goes from where that write puts it: the target in flight, then the read back that
-  confirmed it (`FrameLedger.target`), since WindowServer can still have the window where
-  it was. Such a window needs no read. Skipping it instead, as the check once did, left a
+  confirmed it, until a move that was not Kosmos's replaces it (`FrameLedger.newestWrite`,
+  `Session.floatingFrames`), since WindowServer can still have the window where it was.
+  Such a window needs no read. Skipping it instead, as the check once did, left a
   floating window on the display it had just left when a second `move` came before a row
   showed the first check's write. The pointer goes from the same frame
   ([focus-follows-mouse.md](focus-follows-mouse.md)).

@@ -207,18 +207,24 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
 
 /// A second move of a floating window can come before a row shows the first check's write,
 /// and the check and the pointer then go from that write (docs/displays.md).
-@Test func theTargetIsTheNewestWritesUntilARowShowsIt() {
+@Test func theNewestWriteHoldsUntilARowShowsItOrAnotherMoveReplacesIt() {
     var ledger = FrameLedger()
     let rounded = CGRect(x: 100, y: 0, width: 801, height: 600)
-    #expect(ledger.target(of: 1, at: t0) == nil)
+    #expect(ledger.newestWrite(of: 1, at: t0) == nil)
     _ = ledger.writes(for: [1: moved])
-    #expect(ledger.target(of: 1, at: t0) == moved)
+    #expect(ledger.newestWrite(of: 1, at: t0) == moved)
     ledger.sent(1, target: moved, at: t0)
     ledger.confirm(1, target: moved, readBack: rounded, at: t0)
-    #expect(ledger.target(of: 1, at: t0) == rounded)
-    #expect(ledger.target(of: 1, at: t0 + AXBackoff.timeout) == nil)
+    #expect(ledger.newestWrite(of: 1, at: t0) == rounded)
+    #expect(ledger.newestWrite(of: 1, at: t0 + AXBackoff.timeout) == nil)
+    // The user's or the app's move, before any row showed the read back.
+    ledger.observe(1, frame: a)
+    #expect(ledger.newestWrite(of: 1, at: t0) == nil)
+    _ = ledger.writes(for: [1: moved])
+    ledger.sent(1, target: moved, at: t0)
+    ledger.confirm(1, target: moved, readBack: rounded, at: t0)
     ledger.seen(1, frame: rounded)
-    #expect(ledger.target(of: 1, at: t0) == nil)
+    #expect(ledger.newestWrite(of: 1, at: t0) == nil)
 }
 
 /// The panel's tile held to the built-in display's width, 1718 of 1900 pt (docs/geometry.md).

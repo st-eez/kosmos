@@ -393,9 +393,7 @@ import Testing
         // The inventory still has it on the main panel.
         _ = s.perform(.move(.left, boundaries: .allMonitors))
         #expect(s.pointerFrame { _ in onMain } == onLeft)
-        // A second move before a row shows the check's write goes from that write's target.
         _ = s.perform(.move(.right, boundaries: .allMonitors))
-        #expect(s.pointerFrame { _ in onLeft } == onMain)
         // The pointer moves before the switch that shows workspace 6 on the left panel, and the
         // floating check runs after it.
         #expect(s.perform(.moveNodeToWorkspace(.named("6"), focusFollowsWindow: true))?.hide == [50])
@@ -405,6 +403,22 @@ import Testing
         #expect(s.pointerFrame { _ in onLeft } == s.frames(of: "1")[11])
         _ = s.perform(.workspace(.named("2")))
         #expect(s.pointerFrame { _ in onLeft } == Desk.main.frame)
+    }
+
+    @Test func aSecondMoveBeforeARowShowsTheChecksWriteGoesFromThatWrite() {
+        var s = Desk.session()
+        _ = s.add(11); _ = s.add(10, floating: true)
+        _ = s.adopt(10)
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let onLeft = CGRect(x: -1820, y: 100, width: 400, height: 300)
+        // The check writes onLeft, and the second press wraps the window back before a row
+        // shows that write. The row still has it on the main panel, and the write would take
+        // it off, so the check sends it back from the write, as the pointer goes.
+        _ = s.perform(.move(.left, boundaries: .allMonitorsWrapping))
+        _ = s.perform(.move(.left, boundaries: .allMonitorsWrapping))
+        #expect(s.workspace(of: 10) == "1")
+        #expect(s.floatingFrames(at: [10: onMain]) { _ in onLeft } == [10: onMain])
+        #expect(s.pointerFrame { _ in onLeft } == onMain)
     }
 
     @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {
