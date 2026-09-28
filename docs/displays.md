@@ -68,12 +68,15 @@
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
     display in the direction at the edge of the workspace. `focus` is at the edge when no
     window, floating or tiled, stands in the direction ([tree.md](tree.md)), and then focuses
-    the window over there on that display's workspace, as tree.md says; `move` moves a
-    tiled window there and follows it. A move is
-    at the edge when the window has no sibling in the direction and no container above its
-    own runs along the direction, where AeroSpace's `moveOut` reaches the workspace and a
-    plain `move` wraps the root in a new root along the direction, as AeroSpace and i3 do.
-    Past the last display without wrapping, the window stays. With
+    the window over there on that display's workspace, as tree.md says; `move` moves the
+    window there and follows it. A floating window is always at the edge, as it has no
+    place in the tree. It stays floating where the floating check below puts it, and one
+    in fullscreen leaves fullscreen at its frame from before, taken to the new display
+    ([tree.md](tree.md)). A tiled window's move is at the edge when the window has no
+    sibling in the direction and no container above its own runs along the direction,
+    where AeroSpace's `moveOut` reaches the workspace and a plain `move` wraps the root in
+    a new root along the direction, as AeroSpace and i3 do. Past the last display without
+    wrapping, the window stays. With
     `--boundaries-action wrap-around-all-monitors` they go on from the last display to
     the first, and a window with no other display in the direction stays. AeroSpace takes
     that action for `focus` only; Kosmos takes it for `move` too, which is what Steve's
@@ -142,9 +145,14 @@
   WindowServer, which is busy committing right after a switch, so it runs only while a
   shown workspace has a floating window, and never between a keypress and its batch or its
   focus request. The log gives each read's time, to measure at the desk. A window with a
-  write of Kosmos's in flight, or sent and not yet shown in a row, as one leaving
-  fullscreen onto another display, is left to the write: WindowServer can still have it
-  where it was, and the check would move it from there.
+  write of Kosmos's that no row shows yet, as one leaving fullscreen onto another display,
+  goes from where that write puts it: the target in flight, then the read back that
+  confirmed it, until a move that was not Kosmos's replaces it (`FrameLedger.newestWrite`,
+  `Session.floatingFrames`), since WindowServer can still have the window where it was.
+  Such a window needs no read. Skipping it instead, as the check once did, left a
+  floating window on the display it had just left when a second `move` came before a row
+  showed the first check's write. The pointer goes from the same frame
+  ([focus-follows-mouse.md](focus-follows-mouse.md)).
 - A floating window the user drags onto a display showing another workspace joins that
   workspace, with the focus if it had it, as AeroSpace's `moveWithMouse` binds it, so the
   check above leaves it there. Kosmos takes a move of a floating window of a shown

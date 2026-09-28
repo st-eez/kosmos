@@ -211,19 +211,19 @@ import Testing
         let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
         // 10 is home on the main panel, 50 goes to the left panel at the same place, and 60's
         // workspace is hidden.
-        #expect(s.floatingFrames(at: [10: onMain, 50: onMain, 60: onMain]) == [50: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: onMain, 50: onMain, 60: onMain], written: { _ in nil }) == [50: CGRect(x: -1820, y: 100, width: 400, height: 300)])
         _ = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: false, wrapAround: false, window: 10))
-        #expect(s.floatingFrames(at: [10: onMain]) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: onMain], written: { _ in nil }) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
         // Onto a smaller display it keeps its relative place and stays inside, measured from
         // the display it is on.
         _ = s.perform(.moveNodeToMonitor(.number(3), focusFollowsWindow: false, wrapAround: false, window: 10))
-        #expect(s.floatingFrames(at: [10: CGRect(x: 960, y: 540, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: CGRect(x: 960, y: 540, width: 400, height: 300)], written: { _ in nil })
                 == [10: CGRect(x: 956, y: 1571, width: 400, height: 300)])
-        #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)], written: { _ in nil })
                 == [10: CGRect(x: 200, y: 1571, width: 400, height: 300)])
-        #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)])[10]?.size == Desk.builtIn.area.size)
+        #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)], written: { _ in nil })[10]?.size == Desk.builtIn.area.size)
         // A window off every display stays.
-        #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)]).isEmpty)
+        #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)], written: { _ in nil }).isEmpty)
     }
 
     @Test func aFloatingWindowDraggedOntoAnotherDisplayJoinsItsWorkspace() {
@@ -244,7 +244,7 @@ import Testing
         #expect(plan != nil && plan?.show == [] && plan?.hide == [] && plan?.focus == nil)
         #expect(s.workspace(of: 10) == "5" && s.workspaces["5"]!.floating == [10])
         #expect(s.focusedWorkspace == "5" && s.focused == 10)
-        #expect(s.floatingFrames(at: [10: onLeft]).isEmpty)
+        #expect(s.floatingFrames(at: [10: onLeft], written: { _ in nil }).isEmpty)
     }
 
     @Test func aTiledWindowResizedByItsEdgesGoesBackToItsTile() {
@@ -360,8 +360,65 @@ import Testing
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
         #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping)) != nil)
         #expect(s.workspace(of: 10) == "1")
-        _ = s.perform(.layout(.toggleFloating))
+    }
+
+    @Test func moveAcrossMonitorsTakesAFloatingWindowToTheDisplayThereAndFollowsIt() {
+        var s = Desk.session()
+        _ = s.add(11); _ = s.add(10, floating: true)
+        _ = s.adopt(10)
+        // A floating window has no place in the tree to move within, and no display is above
+        // the main panel.
+        #expect(s.perform(.move(.left)) == nil)
+        #expect(s.perform(.move(.up, boundaries: .allMonitors)) == nil)
+        #expect(s.workspace(of: 10) == "1" && s.focusedWorkspace == "1" && s.focused == 10)
+        let plan = s.perform(.move(.left, boundaries: .allMonitors))!
+        #expect(s.workspace(of: 10) == "5" && s.workspaces["5"]!.floating == [10])
+        #expect(s.workspaces["1"]!.tree == "h[11]")
+        #expect(s.focusedWorkspace == "5" && plan.focus == .window(10))
+        #expect(plan.hide.isEmpty && plan.show.isEmpty && plan.frames[10] == nil)
+        // Past the left panel only when it wraps, round to the main panel.
         #expect(s.perform(.move(.left, boundaries: .allMonitors)) == nil)
+        #expect(s.perform(.move(.left, boundaries: .allMonitorsWrapping))?.focus == .window(10))
+        #expect(s.workspace(of: 10) == "1" && s.isFloating(10) && s.focusedWorkspace == "1")
+    }
+
+    @Test func thePointerGoesWhereTheFloatingCheckPutsTheFocusedWindow() {
+        var s = Desk.session()
+        _ = s.add(11); _ = s.add(10, floating: true); _ = s.add(50, to: "5")
+        _ = s.adopt(10)
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let onLeft = CGRect(x: -1820, y: 100, width: 400, height: 300)
+        #expect(s.pointerFrame { _ in onMain } == onMain)
+        #expect(s.pointerFrame { _ in nil } == nil)
+        // The inventory still has it on the main panel.
+        _ = s.perform(.move(.left, boundaries: .allMonitors))
+        #expect(s.pointerFrame { _ in onMain } == onLeft)
+        _ = s.perform(.move(.right, boundaries: .allMonitors))
+        // The pointer moves before the switch that shows workspace 6 on the left panel, and the
+        // floating check runs after it.
+        #expect(s.perform(.moveNodeToWorkspace(.named("6"), focusFollowsWindow: true))?.hide == [50])
+        #expect(s.pointerFrame { _ in onMain } == onLeft)
+        // A tile's frame is the layout's, and an empty workspace's the display's.
+        _ = s.adopt(11)
+        #expect(s.pointerFrame { _ in onLeft } == s.frames(of: "1")[11])
+        _ = s.perform(.workspace(.named("2")))
+        #expect(s.pointerFrame { _ in onLeft } == Desk.main.frame)
+    }
+
+    @Test func aSecondMoveBeforeARowShowsTheChecksWriteGoesFromThatWrite() {
+        var s = Desk.session()
+        _ = s.add(11); _ = s.add(10, floating: true)
+        _ = s.adopt(10)
+        let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let onLeft = CGRect(x: -1820, y: 100, width: 400, height: 300)
+        // The check writes onLeft, and the second press wraps the window back before a row
+        // shows that write. The row still has it on the main panel, and the write would take
+        // it off, so the check sends it back from the write, as the pointer goes.
+        _ = s.perform(.move(.left, boundaries: .allMonitorsWrapping))
+        _ = s.perform(.move(.left, boundaries: .allMonitorsWrapping))
+        #expect(s.workspace(of: 10) == "1")
+        #expect(s.floatingFrames(at: [10: onMain]) { _ in onLeft } == [10: onMain])
+        #expect(s.pointerFrame { _ in onLeft } == onMain)
     }
 
     @Test func moveAcrossMonitorsCrossesWhereNoContainerAboveRunsAlong() {

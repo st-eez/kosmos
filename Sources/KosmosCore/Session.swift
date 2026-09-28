@@ -455,7 +455,6 @@ public struct Session: Sendable {
             return focusShown(name)
         case .move(let direction, let boundaries) where boundaries != .workspace:
             if let plan = performOnFocused(command) { return plan }
-            guard let window = focused, !workspaces[focusedWorkspace]!.floating.contains(window) else { return nil }
             return perform(.moveNodeToMonitor(.direction(direction), focusFollowsWindow: true,
                                               wrapAround: boundaries == .allMonitorsWrapping))
         case .focusMonitor(let target, let wrap):
@@ -659,19 +658,31 @@ public struct Session: Sendable {
     public var shownFloatingWindows: [WindowID] { shownWorkspaces.flatMap { workspaces[$0]!.floating } }
 
     /// Targets for the shown workspaces' floating windows on a display showing another workspace
-    /// (docs/displays.md). A window whose center is on no display stays.
-    public func floatingFrames(at frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+    /// (docs/displays.md). Each goes from `written`, a write of Kosmos's no row shows yet, as
+    /// the row can still show where the window was, else from its row in `frames`. A window
+    /// whose center is on no display stays.
+    public func floatingFrames(at frames: [WindowID: CGRect],
+                               written: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {
             let own = monitor(of: name)
             for window in workspaces[name]!.floating {
-                guard let frame = frames[window] else { continue }
+                guard let frame = written(window) ?? frames[window] else { continue }
                 let center = CGPoint(x: frame.midX, y: frame.midY)
                 guard let under = monitors.first(where: { $0.frame.contains(center) }), under.id != own.id else { continue }
                 targets[window] = floatingFrame(frame, from: under.area, movingTo: own.area)
             }
         }
         return targets
+    }
+
+    /// Where the pointer centers for the focus: the focused window's tile, a floating window
+    /// where the floating check puts it from `frame`, or an empty workspace's display
+    /// (docs/focus-follows-mouse.md). Nil for a floating window with no frame.
+    public func pointerFrame(frame: (WindowID) -> CGRect?) -> CGRect? {
+        guard let window = focused else { return monitor(of: focusedWorkspace).frame }
+        if let tile = frames(of: focusedWorkspace)[window] { return tile }
+        return frame(window).map { floatingFrames(at: [window: $0], written: { _ in nil })[window] ?? $0 }
     }
 
     var framesBeforeFullscreen: [WindowID: CGRect] {

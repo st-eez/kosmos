@@ -51,7 +51,8 @@ extension Controller {
             // user's choice (tla/Kosmos.tla, Adopt).
             requestFocus(.window(window))
             if bringsPointer { centerPointer() }
-            execute(plan)
+            // The pointer went where the floating check puts a floating window.
+            execute(plan, floatingCheck: bringsPointer && session.isFloating(window))
         case .follow(let window, let bringsPointer):
             touch(window)
             execute(session.follow(window), movePointer: bringsPointer)
