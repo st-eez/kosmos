@@ -240,8 +240,11 @@
     once, as any write. The Space's transform shows it where it showed, then eases to its
     frame. A display link per display, at that display's rate, steps the windows sliding on
     it, and stops once none is left; at the end the Space goes back to identity and the
-    window leaves it.
-  - Each display frame's transforms, alphas and borders go out together a quarter of a
+    window leaves it. The links call back on a thread of their own (`kosmos.slide.links`)
+    and every display frame is stepped on one serial queue (`kosmos.slide.frames`), so no
+    main actor work delays a display frame. The main actor starts each slide, retargets it,
+    and finishes it when a display frame hands it the end.
+  - Each display frame's transforms, alphas and rings go out together a quarter of a
     refresh after the vsync that the link's callback reports, and show a refresh after the
     link's target.
     WindowServer takes a change into the next composite only until about 0.3 ms after the
@@ -282,14 +285,27 @@
         argument for `kosmos-probe slide-sync` and a run of its `deferred` mode with the
         display kept busy, as its `warm` mode keeps it.
       - A frame goes a quarter of a refresh after its vsync however late its callback ran,
-        plus up to 1 ms of dispatch's timer leeway, and later when the main actor is busy
-        then. In the second frame benchmark run (September 26, 2026), 2,812 of 8,826 slide
-        frames, in 104 of 240 slides, were stepped 7.1 to 8.1 ms after their vsync, where
-        the ring missed the composite its transforms made. The frame line's callback time
-        tells whether their callbacks came late or their steps waited. Running the links on
-        a thread of their own, as the perf audit of September 26, 2026 proposes, would keep
-        main actor work from delaying a frame.
-      - Main actor work does delay frames. In the live log of September 25 and 26, 2026,
+        plus dispatch's timer leeway, and later when another display's step or a landing's
+        read holds the lock the step takes. In `kosmos-probe slide-sync` on September 27,
+        2026, steps from a link on its own thread went out 3.0 ms after the vsync at the
+        median and 4.1 ms at most, the quarter point being 2.08 ms. In the second frame
+        benchmark run (September 26, 2026), when the links ran on the main run loop, 2,812
+        of 8,826 slide frames, in 104 of 240 slides, were stepped 7.1 to 8.1 ms after their
+        vsync, where the ring missed the composite its transforms made.
+      - On the main run loop, the links called back at a steady offset for whole slides:
+        4.2 ms after their vsync in 24 of 25 link runs of the frame benchmark at 23:42 on
+        September 26, 2026, and 6.1 ms in 5 of 15 in the live log of September 27, 14:07.
+        Of the 2,520 steps more than 4 ms after their vsync in the logs of those two days
+        that give the callback's time, 2,493 came from a callback past the quarter point,
+        stepped at once. Blocking the probe's main thread 20 to 60 ms at a time skipped
+        callbacks but never moved their offset, so what held the main run loop there is
+        unexplained. On a thread of their own the links called back 0.05 ms after the vsync
+        at the median and 2.1 ms at most, none of 2,722 past the quarter point
+        (`kosmos-probe slide-sync`). A callback past it steps its frame at once; if the
+        frame line shows such callbacks, branch `frames` has the upgrade, a late callback's
+        frame stepped at the next vsync's quarter point for that vsync's target.
+      - Main actor work delayed frames while the links ran on the main run loop, before
+        September 27, 2026. In the live log of September 25 and 26, 2026,
         84 of 721 relayouts lost 5 or more of a slide's 45 display frames, and callbacks
         slower than a refresh explain 100 of their 1,086 lost frames. The rest went to main
         actor work between the callbacks. A slide lost frames more often when a switch
@@ -310,12 +326,40 @@
         moves. What the main actor waits on in those landings is unmeasured; the samples
         found it busy mostly in the slide's own step, in the ring's commit and the
         transforms' sends, and in AppKit's status item and Core Animation fences, each
-        waiting on WindowServer at times. A System Trace across such landings settles it.
+        waiting on WindowServer at times. After the borders' ready windows, in the 14 s of
+        debug log after they were installed on September 27, 2026, 14:56, 5 of 10 relayouts
+        of Ghostty between two displays lost 5 or more frames, mostly at the start: 0.4 to
+        4.8 refreshes went from each relayout to its first step, and two starts held the
+        main actor 19.6 and 24.8 ms ordering a ready border window below Ghostty. 20 of
+        their 488 steps came more than 7 ms after their vsync.
+      - So the links run on a thread of their own. In `kosmos-probe slide-sync` on
+        September 27, 2026, with the main thread blocked 20 to 60 ms at a time, as those
+        landings blocked it, a link on the main run loop lost 302 vsyncs in 20 slides, and
+        one on a thread of its own, its steps on a serial queue, lost none, the ring within
+        2 points of its window in 921 of 922 frames. In `kosmos-probe slide-links`, both
+        displays' links on one thread lost none with the main thread blocked the same way,
+        where on the main run loop they lost 379 and 371 vsyncs in 20 slides, each step
+        going out at most 2.4 ms after its quarter point. The ceiling: a step still waits on
+        WindowServer for its sends and the rings' commit, so a WindowServer stall still
+        costs frames, and a slide's start and end still wait for the main actor. How many
+        frames Kosmos's own slides lose now is open until the live test.
   - At debug level the slide log gives each display frame: how long after the link's
-    timestamp it was stepped, when its callback came and its target, how long its transforms
-    and then its border update took, and the frame each sliding window shows at and whether
-    its transform changed; and each read that set a
-    window's transform for a new frame. `script/bench-frames.sh` streams the log at debug
+    timestamp it was stepped, when its callback came and its target, how long it waited for
+    the lock the landing reads take, how long its transforms and then its rings took under
+    that lock, and the frame each sliding window shows at and whether its transform
+    changed; and each read that set a window's transform for a new frame. The rings go
+    under the lock so that a ring handed from the main actor is never placed from an older
+    frame than a step's ([borders.md](borders.md)). The rings' transaction took 0.018 ms at
+    the median and 0.154 ms at most in `kosmos-probe slide-sync` (September 27, 2026),
+    against reads 0.1 ms apart, so a landing's read waits that long at most behind it. The
+    ceiling: the transaction takes Core Animation's global lock, and in the probe's
+    `threadlocked` mode, with the main thread holding that lock 20 to 60 ms at a time, it
+    waited up to 57.6 ms, and the steps queued behind it went out up to 52 ms late, the ring
+    a display frame behind its window in 50 of 818 frames. Whether Kosmos's main actor
+    holds that lock that long is unmeasured; a frame line whose rings take over a
+    millisecond shows it. The upgrade: place the rings on a queue of their own after the
+    unlock, each placement checked against a generation the lock hands out, so neither the
+    reads nor the next display frame's transforms wait for it. `script/bench-frames.sh` streams the log at debug
     level, so each step's lines place its captured frames against the frames Kosmos set.
   - WindowServer applies a Space's transform to each window the Space shows in that
     window's own coordinates, origin at its top left and y down, and maps where a point

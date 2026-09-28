@@ -17,6 +17,12 @@ final class Borders {
     private(set) var accent = Borders.readAccent()
     private(set) var red = Borders.readRed()
     var onAccentChange: (@MainActor () -> Void)?
+    /// Hands Slides the border windows whose rings each sliding target's display frames move.
+    var onRings: (@MainActor ([WindowID: HandedRing]) -> Void)?
+    /// What went to Slides last: each sliding target's line width and windows.
+    private var handed: [WindowID: (width: CGFloat, windows: [BorderWindow])] = [:]
+    /// The borders of the sliding targets as last shown.
+    private var sliding: [WindowID: ShownBorder] = [:]
     private var appearance: NSKeyValueObservation?
 
     init() {
@@ -57,7 +63,15 @@ final class Borders {
 
     /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
     func show(_ shown: [WindowID: ShownBorder], fullscreen: Set<DisplayID> = []) {
-        for step in pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) {
+        let steps = pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) })
+        // The pool can give a window it takes back to another target in the same steps, so the
+        // slide lets go of it first.
+        let leaving = Set(steps.compactMap { step -> ObjectIdentifier? in
+            guard case .putBack(let window) = step, window.handed else { return nil }
+            return ObjectIdentifier(window)
+        })
+        if !leaving.isEmpty { hand(handed.mapValues { ($0.width, $0.windows.filter { !leaving.contains(ObjectIdentifier($0)) }) }) }
+        for step in steps {
             switch step {
             case .putBack(let window):
                 let began = CACurrentMediaTime()
@@ -86,6 +100,38 @@ final class Borders {
                 pin(window, to: target, thenShow: true)
             }
         }
+        sliding = shown.filter(\.value.sliding)
+        handSliding()
+    }
+
+    /// Hands Slides each sliding target's windows ordered in: its ring's and the ready ones.
+    private func handSliding() {
+        var windows: [WindowID: (width: CGFloat, windows: [BorderWindow])] = [:]
+        for (target, next) in sliding {
+            let own = pool.ordered(below: target).filter { $0.covered != nil }
+            // A display frame can move the ring into a ready window, so each takes the ring's
+            // color, corners and level.
+            for window in own where window.display != next.border.display {
+                var ready = next
+                (ready.border.display, ready.border.displayFrame, ready.alpha) = (window.display, window.covered!, 0)
+                window.show(ready)
+            }
+            if !own.isEmpty { windows[target] = (next.border.lineWidth, own) }
+        }
+        hand(windows)
+    }
+
+    /// While a target slides, its windows' ring frames and opacity are Slides' to set, so each
+    /// lands with its window's transform and never a display frame behind it (docs/borders.md).
+    private func hand(_ next: [WindowID: (width: CGFloat, windows: [BorderWindow])]) {
+        guard !(next.isEmpty && handed.isEmpty) else { return }
+        onRings?(next.mapValues { entry in
+            HandedRing(ring: SlideRing(lineWidth: entry.width, displays: entry.windows.map { Monitor(id: $0.display, frame: $0.covered!) }),
+                       layers: entry.windows.map { RingLayer(layer: $0.ring) })
+        })
+        for window in handed.values.flatMap(\.windows) { window.handed = false }
+        for window in next.values.flatMap(\.windows) { window.handed = true }
+        handed = next
     }
 
     private func orderIn(_ window: BorderWindow, _ next: ShownBorder, below target: WindowID, ready: Bool = false) {
@@ -132,6 +178,7 @@ final class Borders {
                 guard let next = self.pool.moved(window, of: target) else { return }
                 window.show(next)
                 window.order(.below, relativeTo: Int(target))
+                if next.sliding { self.handSliding() }
             }
         }
     }
@@ -143,7 +190,9 @@ private func ms(since began: Double) -> Double { (CACurrentMediaTime() - began) 
 /// another app's Hide Others hides Kosmos.
 private final class BorderWindow: NSWindow {
     let display: DisplayID
-    private let ring = CALayer()
+    let ring = CALayer()
+    /// Its ring's frame and opacity are Slides' to set while its target slides.
+    var handed = false
     private var shown: ShownBorder?
 
     /// `frame` is its display's, in Accessibility's coordinates.
@@ -171,6 +220,9 @@ private final class BorderWindow: NSWindow {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// The display it covers while its target slides.
+    var covered: CGRect? { shown?.sliding == true ? shown?.border.displayFrame : nil }
 
     /// Into its pool. macOS can move a window ordered out, as off a display that goes, so its
     /// next show sets everything again.
@@ -202,16 +254,19 @@ private final class BorderWindow: NSWindow {
             setFrameOrigin(appKitFrame.origin)
         }
         if level.rawValue != Int(next.level) { level = NSWindow.Level(rawValue: Int(next.level)) }
+        let slideSets = next.sliding && handed
         // In the layer's coordinates, from the window's bottom left.
-        ring.frame = CGRect(x: border.ring.minX - frame.minX, y: frame.maxY - border.ring.maxY,
-                            width: border.ring.width, height: border.ring.height)
+        if !slideSets {
+            ring.frame = CGRect(x: border.ring.minX - frame.minX, y: frame.maxY - border.ring.maxY,
+                                width: border.ring.width, height: border.ring.height)
+        }
         ring.cornerRadius = border.cornerRadius
         ring.borderWidth = border.lineWidth
         if previous?.border.color != border.color {
             let color = border.color
             ring.borderColor = CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
         }
-        ring.opacity = Float(next.alpha)
+        if !slideSets { ring.opacity = Float(next.alpha) }
         CATransaction.commit()
     }
 }

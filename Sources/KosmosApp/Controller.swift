@@ -113,6 +113,7 @@ final class Controller {
         self.barDisplays = barDisplays
         inventory.onEvent = { [weak self] event in self?.handle(event) }
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
+        borderWindows.onRings = { [weak self] rings in self?.slides?.hand(rings) }
         watchLeftButton()
         for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
         restoreLayout()
