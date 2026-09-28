@@ -230,10 +230,12 @@ state, and during a slide the frame the slide shows the window at.
   (`SlidingWindow.path`) holds every frame to come, as the ease never overshoots. The
   ring's move to a display with a window ready sets only layers, the ring in that window
   and a zero opacity in the one it leaves, which stays ready until the slide ends. Then
-  every ready window goes back to its pool. When the pool gives the ring a ready window, at
-  the next border update after a display frame moved the ring there (below), Kosmos moves
-  that window to its target's Space, off the main thread, as the target may have reached
-  its display since the slide's start. A raise orders the ready windows below the
+  every ready window goes back to its pool but the one on the display where the slide
+  ended, which becomes the ring's window without leaving the screen, as a display frame
+  may have moved the ring into it (below). When the pool gives the ring a ready window, at
+  the next border update after the move or at the slide's end, Kosmos moves that window to
+  its target's Space, off the main thread, as the target may have reached its display since
+  the slide's start. A raise orders the ready windows below the
   target again. No
   window is made ready on a display that may show a native fullscreen Space, where a border
   stays ordered out until its Space move is sent (above), though the window the ring leaves
@@ -253,10 +255,10 @@ state, and during a slide the frame the slide shows the window at.
   its window in 137 of 137 and 116 of 122 frames.
   - The display frames are stepped off the main actor, on the slide frames queue
     ([geometry.md](geometry.md)), and each one moves the rings too, right after its
-    transforms. At each border update of a sliding target, `Borders` hands Slides the
-    target's border windows ordered in, the ring's and the ready ones, each covering its
-    display, and from then until the slide ends or the pool takes a window back, only
-    Slides sets those rings' frames and opacity. Each display frame puts the ring in the
+    transforms. At each border update of a sliding target, `BorderPool` names the target's
+    border windows ordered in, the ready ones and the ring's, each covering its display, and
+    `Borders` hands them to Slides. From then until the slide ends or the pool takes a
+    window back, only Slides sets those rings' frames and opacity. Each display frame puts the ring in the
     window of the display holding the largest part of where the window shows, by the rule
     a border at rest follows (KosmosCore's `SlideRing`), and sets the others' opacity to 0,
     so a move to another display waits for no main actor turn. The border update keeps the
@@ -269,20 +271,30 @@ state, and during a slide the frame the slide shows the window at.
     window slid. Until then a ring whose window's largest part lies on a display with no
     window handed stays in the window it has, cut at that display's edge, and shows
     nowhere once the window has left every display with a window handed (`SlideRing`).
+  - A window that begins to slide takes no display frame until the first hand-off of its
+    relayout's main actor turn, or the end of that turn for a window with no border, so
+    its ring moves with it from the first display frame. Without that wait the first
+    frames came before the hand-off, which followed the turn's focus request, its reads of
+    the floating windows' rows and the ring's window's resize, and the ease covers 11% of
+    a move in its first 10 ms and 22% in 20 ms. The wait costs the first move that long,
+    as when the display frames were stepped on the main actor. Before the hand-off `Borders`
+    flushes the main actor's transaction, so a border window's resize commits on the main
+    thread before a display frame's transaction on the frames queue can commit it.
   - A step sets the rings under the lock it sends the transforms under, and the hand-off
     places each handed ring under that lock too, from where its window shows then, so a
     ring is never placed from an older display frame than the last one sent. A window the
     pool takes back leaves Slides before the pool's steps run, as the same steps can give
-    it to another target. The rings change in an explicit `CATransaction`: the queue has no
-    run loop, and an implicit transaction commits only when its thread's run loop turns
-    (`CATransaction.h`). In `kosmos-probe slide-sync` on September 27, 2026, with the main
-    thread blocked 20 to 60 ms at a time, a ring moved this way from a serial queue showed
-    within 2 points of its window in 921 of 922 frames, and in 908 of 914 with the main
-    thread free. One Core Animation animation of the ring over the slide, on the slide's curve
-    and a refresh late, trailed its window by a display frame in 14 of 102 frames the
-    probe matched, and is left out: it runs on WindowServer's clock and the transforms on
-    the steps', a retarget would need a new animation from the main actor, a pop starts
-    when a step finds its write landed, and a move to another display would need a second
+    it to another target. The rings change in an explicit `CATransaction`, since the queue
+    has no run loop, and an implicit transaction commits only when its thread's run loop
+    turns (`CATransaction.h`). In `kosmos-probe slide-sync` on September 27, 2026, a ring
+    moved this way from a serial queue showed within 2 points of its window in 921 of 922
+    frames in its `threadbusy` mode, with the main thread blocked 20 to 60 ms at a time,
+    and in 908 of 914 in its `thread` mode, with the main thread free. One Core Animation
+    animation of the ring over the slide, on the slide's curve and a refresh late (its
+    `animated` mode), trailed its window by a display frame in 14 of 102 frames the probe
+    matched, and is left out. It runs on WindowServer's clock and the transforms on the
+    steps', a retarget would need a new animation from the main actor, a pop starts when a
+    step finds its write landed, and a move to another display would need a second
     animation.
   - Sent from the callback, after the border work, the ring often missed the composite its
     window's transform made. It showed with its window in 91 of 136 and 86 of 122 frames in
@@ -307,9 +319,7 @@ state, and during a slide the frame the slide shows the window at.
   - The ceilings: a display frame that WindowServer holds past the next cut-off shows a
     refresh late, the ring with its window. The rings' transaction waits for Core
     Animation's global lock, so main actor work that holds it holds the display frames
-    too ([geometry.md](geometry.md) has the probe and the upgrade). A window that starts sliding while its
-    display's link runs can take a display frame before the main actor hands its ring, and
-    its ring stays where it was for that refresh. A display that may show a native
+    too ([geometry.md](geometry.md) has the probe and the upgrade). A display that may show a native
     fullscreen Space has no ready window, so the ring shows only in the other displays'
     windows until the pool gives it one there, at the next border update.
 - Borders need no recovery: they are Kosmos's own windows, so they go with its process,
@@ -336,7 +346,9 @@ state, and during a slide the frame the slide shows the window at.
   - how long the rings' transaction holds each display frame's lock in Steve's slides (the
     frame line's `rings`), whether a ready border window shows nothing until the ring
     reaches it, whether the ring now moves to another display in the display frame where
-    the window's largest part crosses, what a
+    the window's largest part crosses, how long a slide's first move waits for the ring's
+    hand-off (the relayout's log line against its first frame line), whether a slide that
+    ends on another display keeps its ring on screen at the landing, what a
     slide's start costs now that it orders in a window for each other display it crosses,
     and makes one on a display with none in its pool, and what a raise mid-slide costs,
     now that it orders each ready window too (Ghostty's moves of September 27, 2026

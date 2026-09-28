@@ -52,7 +52,7 @@
 #                     percentile of each figure, how many steps stalled, jumped, showed a
 #                     displaced frame or flashed, and from Kosmos's log its switch totals,
 #                     waits for writes to land, batch completions, slide landings, frames
-#                     stepped, read gaps, slowest display link callback and Space membership
+#                     stepped, read gaps, slowest slide display frame and Space membership
 #                     events; then the CPU per step and the notification banners
 #   steps.tsv         per step: its figures, send time and settle
 #   frames.tsv        per kept frame: its time, and how many pixels differ from the frame

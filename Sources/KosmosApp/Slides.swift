@@ -76,6 +76,10 @@ final class Slides {
         }
         if !ended.isEmpty { stopIdleLinks() }
         if took > 0 { onscreen.follow() }
+        // A window that begins here takes no display frame until its ring comes, so the two
+        // move together from the first; one with no border comes at the end of this turn
+        // (docs/borders.md).
+        if slid > 0 { onMain { [onscreen] in onscreen.release() } }
         if slid + jumped > 0 {
             slideLog.info("relayout: \(slid) windows slide\(popped ? ", 1 of them popping" : "", privacy: .public), \(jumped) jump, \(self.free.count) Spaces free")
         }
@@ -147,6 +151,7 @@ final class Slides {
             var ids = [id]
             kosmos_add_windows(space, &ids, 1, false)
             state.windows[id] = window
+            state.held.insert(id)
         }
         return true
     }
@@ -258,6 +263,8 @@ private final class Onscreen: Sendable {
     struct State: Sendable {
         var windows: [WindowID: SlidingWindow] = [:]
         var rings: [WindowID: HandedRing] = [:]
+        /// Windows begun and waiting for their rings, which no display frame steps.
+        var held: Set<WindowID> = []
         /// The display frames of each running link, for its log line.
         var links: [DisplayID: LinkFrames] = [:]
         var following = false
@@ -279,6 +286,7 @@ private final class Onscreen: Sendable {
     static func remove(_ id: WindowID, from state: inout State) -> SlidingWindow? {
         guard let window = state.windows.removeValue(forKey: id) else { return nil }
         state.rings[id] = nil
+        state.held.remove(id)
         kosmos_space_set_transform(window.space, .identity)
         if window.alpha != 1 { kosmos_space_set_alpha(window.space, 1) }
         var ids = [id]
@@ -294,12 +302,18 @@ private final class Onscreen: Sendable {
         state.withLock { $0.links.removeValue(forKey: display) } ?? LinkFrames()
     }
 
-    /// Placed at once, around where each window shows.
+    /// Placed at once, around where each window shows, and every held window goes, as the
+    /// border update hands all the rings its turn has at once.
     func hand(_ rings: [WindowID: HandedRing]) {
         state.withLock { state in
             state.rings = rings.filter { state.windows[$0.key] != nil }
             Self.place(state.rings.map { ($0.value, state.windows[$0.key]!) })
+            state.held.removeAll()
         }
+    }
+
+    func release() {
+        state.withLock { $0.held.removeAll() }
     }
 
     /// Steps the windows sliding on `display` for the target `at`. `timestamp` is the link's
@@ -316,7 +330,7 @@ private final class Onscreen: Sendable {
             guard state.links[display] != nil else { return [] }
             var done: [(WindowID, SlidingWindow)] = []
             var rings: [(HandedRing, SlidingWindow)] = []
-            for (id, var window) in state.windows where window.display == display {
+            for (id, var window) in state.windows where window.display == display && !state.held.contains(id) {
                 let (shown, alpha) = (window.shown, window.alpha)
                 if window.step(at: at) {
                     if let window = Self.remove(id, from: &state) { done.append((id, window)) }
@@ -359,7 +373,7 @@ private final class Onscreen: Sendable {
     /// (docs/borders.md).
     private static func place(_ rings: [(HandedRing, SlidingWindow)]) {
         guard !rings.isEmpty else { return }
-        // Explicit, as this thread has no run loop to commit an implicit transaction.
+        // Explicit, as the frames queue has no run loop to commit an implicit transaction.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (handed, window) in rings {

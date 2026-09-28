@@ -88,11 +88,11 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     #expect(ring.place(around: CGRect(x: 100_000, y: 100, width: 500, height: 300)) == nil)
 }
 
-@Test func aRingWhoseReadyWindowIsNotOrderedInYetStaysInTheWindowItHas() {
+@Test func aRingWhoseWindowLiesMostlyOffTheHandedDisplaysStaysInAHandedWindow() {
     let left = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
-    // The slide's first hand-off, before the right display's window is readied: the window
-    // is mostly on the right, and the ring stays in the left display's window, which cuts it
-    // at its edge.
+    // Only the left display's window is handed, as before the right one is readied. The
+    // window is mostly on the right, and the ring stays in the left display's window, which
+    // cuts it at its edge.
     let first = SlideRing(lineWidth: 2, displays: [left]).place(around: CGRect(x: 800, y: 100, width: 500, height: 300))
     #expect(first?.index == 0 && first?.frame == CGRect(x: 798, y: 398, width: 504, height: 304))
     // A window only on a display with none shows no ring.

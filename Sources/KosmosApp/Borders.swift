@@ -19,8 +19,8 @@ final class Borders {
     var onAccentChange: (@MainActor () -> Void)?
     /// Hands Slides the border windows whose rings each sliding target's display frames move.
     var onRings: (@MainActor ([WindowID: HandedRing]) -> Void)?
-    /// What went to Slides last: each sliding target's line width and windows.
-    private var handed: [WindowID: (width: CGFloat, windows: [BorderWindow])] = [:]
+    /// The windows whose rings went to Slides last.
+    private var handed: [BorderWindow] = []
     /// The borders of the sliding targets as last shown.
     private var sliding: [WindowID: ShownBorder] = [:]
     private var appearance: NSKeyValueObservation?
@@ -63,25 +63,8 @@ final class Borders {
 
     /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
     func show(_ shown: [WindowID: ShownBorder], fullscreen: Set<DisplayID> = []) {
-        let steps = pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) })
-        // The pool can give a window it takes back to another target in the same steps, so the
-        // slide lets go of it first.
-        let leaving = Set(steps.compactMap { step -> ObjectIdentifier? in
-            guard case .putBack(let window) = step, window.handed else { return nil }
-            return ObjectIdentifier(window)
-        })
-        if !leaving.isEmpty { hand(handed.mapValues { ($0.width, $0.windows.filter { !leaving.contains(ObjectIdentifier($0)) }) }) }
-        // The rings go to the slide before any window is readied, as ordering one below its
-        // target waited on WindowServer 19.6 and 24.8 ms at slide starts (docs/borders.md).
-        func readies(_ step: BorderPool<BorderWindow>.Step) -> Bool {
-            if case .ready = step { true } else { false }
-        }
-        for step in steps where !readies(step) { apply(step) }
         sliding = shown.filter(\.value.sliding)
-        handSliding()
-        guard steps.contains(where: readies) else { return }
-        for step in steps where readies(step) { apply(step) }
-        handSliding()
+        for step in pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) { apply(step) }
     }
 
     private func apply(_ step: BorderPool<BorderWindow>.Step) {
@@ -111,38 +94,39 @@ final class Borders {
             // Ordered in there before its move, it would draw on the fullscreen app, and a
             // frame set before the move might take it back to the fullscreen Space.
             pin(window, to: target, thenShow: true)
+        case .hand(let next):
+            hand(next)
         }
-    }
-
-    /// Hands Slides each sliding target's windows ordered in: its ring's and the ready ones.
-    private func handSliding() {
-        var windows: [WindowID: (width: CGFloat, windows: [BorderWindow])] = [:]
-        for (target, next) in sliding {
-            let own = pool.ordered(below: target).filter { $0.covered != nil }
-            // A display frame can move the ring into a ready window, so each takes the ring's
-            // color, corners and level.
-            for window in own where window.display != next.border.display {
-                var ready = next
-                (ready.border.display, ready.border.displayFrame, ready.alpha) = (window.display, window.covered!, 0)
-                window.show(ready)
-            }
-            if !own.isEmpty { windows[target] = (next.border.lineWidth, own) }
-        }
-        hand(windows)
     }
 
     /// While a target slides, its windows' ring frames and opacity are Slides' to set, so each
     /// lands with its window's transform and never a display frame behind it (docs/borders.md).
-    private func hand(_ next: [WindowID: (width: CGFloat, windows: [BorderWindow])]) {
-        guard !(next.isEmpty && handed.isEmpty) else { return }
-        onRings?(next.mapValues { entry in
-            let covering = entry.windows.compactMap { window in window.covered.map { (window, $0) } }
-            return HandedRing(ring: SlideRing(lineWidth: entry.width, displays: covering.map { Monitor(id: $0.0.display, frame: $0.1) }),
-                              layers: covering.map { RingLayer(layer: $0.0.ring) })
-        })
-        for window in handed.values.flatMap(\.windows) { window.handed = false }
-        for window in next.values.flatMap(\.windows) { window.handed = true }
-        handed = next
+    private func hand(_ next: [WindowID: [BorderWindow]]) {
+        for (target, windows) in next {
+            guard let ring = sliding[target] else { continue }
+            // A display frame can move the ring into a ready window, so each takes the ring's
+            // color, corners and level.
+            for window in windows where window.display != ring.border.display {
+                guard let covered = window.covered else { continue }
+                var ready = ring
+                (ready.border.display, ready.border.displayFrame, ready.alpha) = (window.display, covered, 0)
+                window.show(ready)
+            }
+        }
+        // Main's pending changes to these windows, such as a resize to cover a display, commit
+        // here, before a display frame's transaction on the frames queue could commit them.
+        CATransaction.flush()
+        var rings: [WindowID: HandedRing] = [:]
+        for (target, windows) in next {
+            guard let width = sliding[target]?.border.lineWidth else { continue }
+            let covering = windows.compactMap { window in window.covered.map { (window, $0) } }
+            rings[target] = HandedRing(ring: SlideRing(lineWidth: width, displays: covering.map { Monitor(id: $0.0.display, frame: $0.1) }),
+                                       layers: covering.map { RingLayer(layer: $0.0.ring) })
+        }
+        onRings?(rings)
+        for window in handed { window.handed = false }
+        handed = next.values.flatMap { $0 }
+        for window in handed { window.handed = true }
     }
 
     private func orderIn(_ window: BorderWindow, _ next: ShownBorder, below target: WindowID, ready: Bool = false) {
@@ -189,7 +173,7 @@ final class Borders {
                 guard let next = self.pool.moved(window, of: target) else { return }
                 window.show(next)
                 window.order(.below, relativeTo: Int(target))
-                if next.sliding { self.handSliding() }
+                if next.sliding, let hand = self.pool.handOff() { self.apply(hand) }
             }
         }
     }
