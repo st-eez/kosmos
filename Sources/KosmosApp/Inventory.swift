@@ -6,8 +6,8 @@ import os
 private let inventoryLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "inventory")
 
 /// Every window of a regular app, tracked from WindowServer events. Only WindowServer
-/// evidence or app exit removes a window, and one that stops being a candidate stays
-/// (docs/inventory.md).
+/// evidence or app exit removes a window, and one that stops being a candidate, or whose app
+/// stops being regular, stays (docs/inventory.md).
 @MainActor
 final class Inventory {
     private(set) var windows: [WindowID: WindowRow] = [:]
@@ -78,8 +78,9 @@ final class Inventory {
     /// Read once for each process, as each read is a synchronous LaunchServices call, then
     /// followed by key-value observing, and dropped by its exit source (docs/inventory.md).
     private var regularApps = RegularApps()
-    /// The app is held with its observation: an app released while observed logged that it was
-    /// deallocated with observers still registered, and the probe crashed (`kosmos-probe policy`).
+    /// Each app is held with its observation. An earlier version of `kosmos-probe policy` released
+    /// apps it still observed, which logged that they were deallocated with observers still
+    /// registered, and it crashed (September 27, 2026).
     private var policyWatches: [pid_t: (app: NSRunningApplication, observation: NSKeyValueObservation)] = [:]
     private var exitSources: [pid_t: any DispatchSourceProcess] = [:]
     /// Apps that became regular, whose windows the sweep that follows admits.
@@ -467,15 +468,15 @@ final class Inventory {
     private func remember(_ pid: pid_t, _ app: NSRunningApplication?) {
         // WindowServer names pid 0 as the owner of some windows, and dispatch aborts on a
         // process source for pid 0 or less. Such a pid's false stays cached.
-        if pid > 0 { follow(pid, app) }
-        switch regularApps.record(pid, regular: app?.activationPolicy == .regular) {
+        if pid > 0 { observe(pid, app) }
+        let regular = app?.activationPolicy == .regular
+        // NSWorkspace posts no launch of an app that became regular after it launched. Apps
+        // skips an app it has a worker for.
+        if regular, let app { apps.add(app) }
+        switch regularApps.record(pid, regular: regular) {
         case .none:
             break
-        case .seenRegular:
-            // NSWorkspace posts no launch of an app that became regular after it launched.
-            if let app { apps.add(app) }
         case .becameRegular:
-            if let app { apps.add(app) }
             inventoryLog.info("\(self.appName(pid), privacy: .public) became a regular app; sweeping for its windows")
             becameRegular.insert(pid)
             sweep()
@@ -485,9 +486,9 @@ final class Inventory {
     }
 
     /// A process that exited before its source started reports its exit at once (macOS 27).
-    private func follow(_ pid: pid_t, _ app: NSRunningApplication?) {
+    private func observe(_ pid: pid_t, _ app: NSRunningApplication?) {
         if let app, policyWatches[pid] == nil {
-            // It came on the main thread 1 to 5 ms after each change (`kosmos-probe policy`), which
+            // It came on the main thread 1 to 6 ms after each change (`kosmos-probe policy`), which
             // the API does not promise.
             let observation = app.observe(\.activationPolicy) { [weak self] _, _ in
                 onMain { self?.policyChanged(pid) }

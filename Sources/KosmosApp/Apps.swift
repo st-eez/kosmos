@@ -46,7 +46,8 @@ final class Apps {
     /// Before `start`, which adds the regular apps running then, it does nothing.
     func add(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
-        guard started, app.activationPolicy == .regular, workers[pid] == nil else { return }
+        // The policy read is a LaunchServices call, so a repeat makes none.
+        guard started, workers[pid] == nil, app.activationPolicy == .regular else { return }
         let name = app.localizedName ?? String(pid)
         let worker = AppWorker(pid: pid, name: name, report: report)
         workers[pid] = worker
