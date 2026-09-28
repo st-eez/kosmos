@@ -52,12 +52,9 @@ extension Workspace {
     /// recently focused of those whose span across the direction overlaps `source`'s by more
     /// than a point, as Hyprland picks it. With none, the nearest (docs/tree.md).
     private func overThere(in node: Node, _ direction: Direction, from source: CGRect?, frames: [WindowID: CGRect]) -> WindowID {
-        let span: (CGRect) -> (CGFloat, CGFloat) = direction.orientation == .horizontal ? { ($0.minY, $0.maxY) } : { ($0.minX, $0.maxX) }
-        // Negative for the gap between spans that do not meet.
         func overlap(_ window: WindowID) -> CGFloat {
             guard let source, let frame = frames[window] else { return 0 }
-            let (a, b) = (span(source), span(frame))
-            return min(a.1, b.1) - max(a.0, b.0)
+            return direction.orientation.opposite.overlap(source, frame)
         }
         let edge = edgeWindows(of: node, direction)
         var near = edge.filter { overlap($0) > 1 }

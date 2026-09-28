@@ -26,8 +26,11 @@ extension Monitor {
         monitors.sorted { ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id) }
     }
 
-    /// `monitors` is in `arranged` order. A direction looks along the displays beside or
-    /// stacked with `current` (docs/displays.md).
+    /// `monitors` is in `arranged` order. A direction takes the nearest display past
+    /// `current`'s edge that way, of those that overlap `current` across it if any do, and of
+    /// the nearest the one that overlaps most, or with no overlap lies closest across it.
+    /// With no display that way, a wrap takes the farthest the other way by the same
+    /// preference (docs/displays.md).
     static func resolve(_ target: Command.MonitorTarget, from current: Monitor, in monitors: [Monitor],
                         wrapAround: Bool) -> Monitor? {
         func step(_ line: [Monitor], by offset: Int) -> Monitor? {
@@ -41,14 +44,23 @@ extension Monitor {
         case .previous: return step(monitors, by: -1)
         case .number(let number): return monitors.indices.contains(number - 1) ? monitors[number - 1] : nil
         case .direction(let direction):
-            let beside = { (other: Monitor) in
-                other.frame.minY < current.frame.maxY && current.frame.minY < other.frame.maxY
+            typealias Lying = (monitor: Monitor, gap: CGFloat, overlap: CGFloat)
+            let (along, across) = (direction.orientation, direction.orientation.opposite)
+            func lying(_ way: Direction) -> [Lying] {
+                let here = along.span(of: current.frame)
+                let all: [Lying] = monitors.compactMap { other in
+                    let there = along.span(of: other.frame)
+                    let gap = way.isForward ? there.min - here.max : here.min - there.max
+                    return gap >= 0 ? (other, gap, across.overlap(current.frame, other.frame)) : nil
+                }
+                let overlapping = all.filter { $0.overlap > 0 }
+                return overlapping.isEmpty ? all : overlapping
             }
-            var line = monitors.filter { $0.id == current.id || beside($0) == (direction.orientation == .horizontal) }
-            if direction.orientation == .vertical {
-                line.sort { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }
+            if let nearest = lying(direction).min(by: { ($0.gap, -$0.overlap) < ($1.gap, -$1.overlap) }) {
+                return nearest.monitor
             }
-            return step(line, by: direction.step)
+            guard wrapAround else { return nil }
+            return lying(direction.opposite).max(by: { ($0.gap, $0.overlap) < ($1.gap, $1.overlap) })?.monitor
         }
     }
 }

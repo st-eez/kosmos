@@ -58,15 +58,68 @@
   - `focus-monitor` and `move-node-to-monitor` take a direction, `next`, `prev` or a
     monitor number, and `--wrap-around`. `move-node-to-monitor` moves the window to the
     workspace the target display shows, at the edge it enters by when the target is a
-    direction, and `--focus-follows-window` follows it. A direction looks along the
-    displays beside or stacked with the one the command starts from, as AeroSpace's
-    `findRelativeMonitor` does, and orders a column top to bottom, where AeroSpace goes
-    left to right, so a display below and to the left of another is still below it.
+    direction, and `--focus-follows-window` follows it.
+  - A direction takes a display that lies past the edge of the one the command starts
+    from, on that side (`Monitor.resolve`). When some of those overlap it across the
+    direction, only those count, and of them the nearest wins, then the one that overlaps
+    most. When none overlaps, the nearest wins, then the one closest across the
+    direction. Ties go to the lower monitor number. With no display that way, a wrap takes
+    the farthest display the other way by the same preference, and with none there either
+    there is no display.
+    - A display that meets the current one only at a corner, or along the same line past
+      its end, or lies past a gap without overlapping it, counts when nothing that way
+      overlaps. The ceiling is that such a display loses to any display that way that
+      overlaps, however far that one is, and is then reached from a display it overlaps,
+      by monitor number, `next`, `prev` or the pointer. The upgrade path, when an
+      arrangement shows the need, is to rank every display that way by the distance
+      between the two frames.
+    - Hyprland's `movefocus`, with `binds:window_direction_monitor_fallback`, and
+      `focusmonitor` with a direction take the display whose edge meets the current
+      display's on that side, within 2 px, with the longest overlap across the direction
+      (`CMonitorQueryCore::directionLookup` in src/state/MonitorQueryCore.cpp, called from
+      `Actions::moveFocus` in src/config/shared/actions/ConfigActions.cpp, Hyprland main at
+      e368c13). It clamps a negative overlap to zero and starts the longest at -1, so a
+      display whose edge lies on the same line counts however far past the current
+      display's end, as the built-in display does from the office ASUS, 393 pt to its
+      left. Where Hyprland's display overlaps, Kosmos takes the same one. Kosmos also
+      reaches a display past a gap, which Hyprland never does, since macOS keeps each
+      display against another one but not always against the current one. Hyprland wraps
+      to no other display. With no window and no display in the direction, `movefocus`
+      focuses the window in the direction from the far side of the current display, on
+      its workspace, unless `general:no_focus_fallback` is set (ConfigActions.cpp:422-467).
+      Its dwindle `movewindow` takes the display under a point 1 px past the window's edge
+      instead (`CDwindleAlgorithm::moveTargetInDirection`); Kosmos's `move` takes the
+      display `focus` does.
+    - AeroSpace's `findRelativeMonitor` (FocusMonitorCommand.swift in aerospace-steez at
+      40b2b44d) takes, for left and right, every display that shares some of the current
+      display's height, and for up and down every display that shares none of it, and
+      steps one place along its monitor order, left to right. Kosmos did the same,
+      ordering a column top to bottom, until September 28, 2026, when at the office, with
+      the ultrawide at the origin, the ASUS VA24E right of it and the built-in display below
+      the ultrawide from x 439, up from the built-in display reached the ASUS. AeroSpace's
+      order reaches the ultrawide there, and down from the built-in display it reaches the
+      ASUS.
+    - On September 28, 2026 these directions changed in the arrangements of Steve's
+      profiles, the office with the ultrawide at (0, 0, 2560, 1080), the built-in display
+      at (439, 1080, 1728, 1117) and the ASUS VA24E at (2560, 0, 1920, 1080), and home with
+      the left panel at (-1920, 0, 1920, 1080), the main panel at (0, 0, 1920, 1080) and
+      the built-in display at (0, 1080, 1728, 1117). Every other direction, with or without
+      a wrap, and every direction of single, office-va24e and laptop, gives the display it
+      gave before.
+
+      | Layout | From | Direction | Before | After |
+      |---|---|---|---|---|
+      | office | built-in | up, with or without a wrap | ASUS | ultrawide |
+      | office | built-in | right, with or without a wrap | none | ASUS |
+      | office | built-in | left with a wrap | none | ASUS |
+      | home | built-in | left, with or without a wrap | none | left panel |
+      | home | built-in | right with a wrap | none | left panel |
+      | home | built-in | down with a wrap | left panel | main panel |
   - Left out until a binding needs them: `move-workspace-to-monitor`, which every
     workspace of Steve's four profiles would refuse, since each is assigned, and
     AeroSpace's monitor patterns by name.
-  - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the next
-    display in the direction at the edge of the workspace. `focus` is at the edge when no
+  - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the display
+    in the direction at the edge of the workspace. `focus` is at the edge when no
     window, floating or tiled, stands in the direction ([tree.md](tree.md)), and then focuses
     the window over there on that display's workspace, as tree.md says; `move` moves the
     window there and follows it. A floating window is always at the edge, as it has no
@@ -75,12 +128,16 @@
     ([tree.md](tree.md)). A tiled window's move is at the edge when the window has no
     sibling in the direction and no container above its own runs along the direction,
     where AeroSpace's `moveOut` reaches the workspace and a plain `move` wraps the root in
-    a new root along the direction, as AeroSpace and i3 do. Past the last display without
-    wrapping, the window stays. With
-    `--boundaries-action wrap-around-all-monitors` they go on from the last display to
-    the first, and a window with no other display in the direction stays. AeroSpace takes
+    a new root along the direction, as AeroSpace and i3 do. With no display in the
+    direction, the window stays. With
+    `--boundaries-action wrap-around-all-monitors` they go on to the display the wrap
+    above takes, and a window with no such display stays. AeroSpace takes
     that action for `focus` only; Kosmos takes it for `move` too, which is what Steve's
-    `move --boundaries-action fail || move-node-to-monitor --wrap-around` binding did.
+    `move --boundaries-action fail || move-node-to-monitor --wrap-around` binding did,
+    except from the built-in display. There down wraps to the display above that overlaps
+    it, where AeroSpace's went to the ASUS at the office, the next display in its left to
+    right order, and wrapped to the left panel at home, and left and right reach the ASUS
+    at the office and the left panel at home, where AeroSpace's did nothing.
   - `profile <name>` applies a profile until the displays change or the config reloads,
     as `set-profile.sh` did.
 - A key window report of a window on the workspace of any display names a window on
