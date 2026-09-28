@@ -5,13 +5,14 @@
   - SkyLight window notifications on Kosmos's own connection: created, destroyed, ordered
     in and out, moved, resized, Space and session changes. The watch list is always sent
     whole. Events 804, 806 to 808, 815 and 816 arrive only for windows on it, and 811, 1325
-    and 1326 for every window, 811 only while the list names some window (`kosmos-probe
-    policy`, 2026-09-27). Kosmos's list names every window it tracks, candidate or not, so
-    it is empty only before the first sweep or while it tracks no window. A new window then
-    reaches the inventory by 1325 as it joins a Space, which came for the probe's window
-    with no list sent. Their ids and payloads were measured on macOS 27 and are decoded in
-    one place, WindowServerEvent. A window event carries the window id first,
-    and a Space membership event a 64 bit Space id, then the window id.
+    and 1326 for every window, 811 only while the list names some window. Kosmos's list
+    names every window it tracks, candidate or not, so it is empty only before the first
+    sweep or while it tracks no window. A new window then reaches the inventory by 1325 as
+    it joins a Space. An earlier version of `kosmos-probe policy`, which sent no list or an
+    empty one, got no 811 and got 1325 for its child's window (2026-09-27). Their ids and
+    payloads were measured on macOS 27 and are decoded in one place, WindowServerEvent. A
+    window event carries the window id first, and a Space membership event a 64 bit Space
+    id, then the window id.
   - One AX observer per app: creation, focus, main window, destroy and minimize.
   - NSWorkspace app lifecycle events, plus a process exit source for each app. The
     inventory alone observes an app's hide and unhide: it records the departure or return
@@ -88,12 +89,11 @@
   becomes regular. A workspace switch posts no Space event, so it starts no sweep
   (`kosmos-probe events`, 40 switches on 2026-09-24). Sweeps asked for while one runs
   start one more when it ends, so a burst of Space events ends with a sweep that started
-  after the last of them. The Space list
-  omits windows on no Space, such as one created but not yet shown, so a sweep reads the
-  tracked windows missing from it directly before it counts them gone, and the windows
-  first seen while locked too, which an unlock sweep admits even when ordered out. Those
-  reads can block during a Space transition, so they run off the main thread, after the
-  reads for events already waiting. A window a sweep
+  after the last of them. The Space list omits windows on no Space, such as one created
+  but not yet shown, so a sweep reads the tracked windows missing from it directly before
+  it counts them gone, and the windows first seen while locked too, which an unlock sweep
+  admits even when ordered out. Those reads can block during a Space transition, so they
+  run off the main thread, after the reads for events already waiting. A window a sweep
   finds or loses that no event reported is logged as "missed by events", and so is a known
   window whose ordered in state or candidate status (level 0, no parent) a sweep corrects,
   so a gap in macOS's notifications shows in the log. The unlock sweep counts none of the
