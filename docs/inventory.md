@@ -104,12 +104,12 @@
     100 with `PolicyWatch`. So one instance freed while observed can keep Kosmos from
     seeing an app become regular, before anything crashes. Kosmos logged no such throw
     from 11:44 to 15:59 on September 28, so there the crash was the only sign. With
-    `PolicyWatch`, 6 runs of 2500 children with an identical copy of the class, debug
-    and release, and 1 of 300 with the class itself, 1059 of them exiting in the run
-    loop turn of a change, logged none of either and none crashed (September 28, 2026).
-    The order of a change's notification and the exit does not matter, as AppKit walks
-    the table on the main thread under the lock that removing an observer takes, and the
-    removal takes the instance out of the table.
+    `PolicyWatch`, none of 7 runs logged either or crashed (September 28, 2026). 6 of
+    them, debug and release, ran 2500 children in all with an identical copy of the
+    class, and 1 ran 300 with the class itself. 1059 of those children exited in the run
+    loop turn of a change. The order of a change's notification and the exit does not
+    matter, as AppKit walks the table on the main thread under the lock that removing an
+    observer takes, and the removal takes the instance out of the table.
   - The ceiling is a process LaunchServices did not know at its first window, which has no
     instance to observe, so only a launch notification can say it became regular.
     NSWorkspace's list gained the probe's child 40 to 180 ms after it started, long before
