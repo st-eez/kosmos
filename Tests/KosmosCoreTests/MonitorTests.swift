@@ -139,6 +139,84 @@ import Testing
         #expect(s.focusedWorkspace == "2")
     }
 
+    /// The office on September 28, 2026: the ultrawide at the origin, the built-in display
+    /// below it from x 439, and the ASUS VA24E right of the ultrawide. Up from the built-in
+    /// display had reached the ASUS.
+    @Test func aDirectionAtTheOfficeReachesTheDisplayThatLiesThatWay() {
+        let ultrawide = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 2560, height: 1080))
+        let builtIn = Monitor(id: 2, frame: CGRect(x: 439, y: 1080, width: 1728, height: 1117))
+        let asus = Monitor(id: 3, frame: CGRect(x: 2560, y: 0, width: 1920, height: 1080))
+        var s = Session(names: ["1", "5", "8"], monitors: [ultrawide, builtIn, asus], assigned: ["1": 1, "5": 3, "8": 2])
+        func crossing(from name: String, _ direction: Direction, wrap: Bool = false) -> String? {
+            var copy = s
+            _ = copy.perform(.workspace(.named(name)))
+            return copy.perform(.focus(direction, boundaries: wrap ? .allMonitorsWrapping : .allMonitors))
+                .map { _ in copy.focusedWorkspace }
+        }
+        #expect(crossing(from: "8", .up) == "1")
+        #expect(crossing(from: "1", .down) == "8")
+        #expect(crossing(from: "1", .right) == "5" && crossing(from: "5", .left) == "1")
+        // The built-in display ends 393 pt left of the ASUS, and still lies below it.
+        #expect(crossing(from: "5", .down) == "8" && crossing(from: "8", .right) == "5")
+        #expect(crossing(from: "8", .left) == nil)
+        // With no display that way a wrap takes the farthest the other way, one that
+        // overlaps if any does.
+        #expect(crossing(from: "5", .right, wrap: true) == "1")
+        #expect(crossing(from: "8", .down, wrap: true) == "1")
+        #expect(crossing(from: "8", .left, wrap: true) == "5")
+        #expect(crossing(from: "5", .up, wrap: true) == "8")
+        // A move takes the same display.
+        _ = s.perform(.workspace(.named("8")))
+        _ = s.add(80)
+        _ = s.perform(.move(.up, boundaries: .allMonitors))
+        #expect(s.workspace(of: 80) == "1")
+    }
+
+    /// Of the displays that way the nearest wins, so a narrow display between two wide ones
+    /// is never skipped, and of the nearest the one that overlaps most.
+    @Test func aDirectionTakesTheNearestDisplayThenTheOneOverlappingMost() {
+        let top = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let narrow = Monitor(id: 2, frame: CGRect(x: 0, y: 1080, width: 1000, height: 800))
+        let bottom = Monitor(id: 3, frame: CGRect(x: 0, y: 1880, width: 1920, height: 1080))
+        let stack = Monitor.arranged([top, narrow, bottom])
+        #expect(Monitor.resolve(.direction(.down), from: top, in: stack, wrapAround: false) == narrow)
+        #expect(Monitor.resolve(.direction(.up), from: top, in: stack, wrapAround: true) == bottom)
+        // A built-in display under two panels, 838 pt of it under the left one and 890 under
+        // the top one, which comes later in monitor order.
+        let left = Monitor(id: 4, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+        let builtIn = Monitor(id: 5, frame: CGRect(x: -838, y: 1080, width: 1728, height: 1117))
+        let under = Monitor.arranged([left, top, builtIn])
+        #expect(Monitor.resolve(.direction(.up), from: builtIn, in: under, wrapAround: false) == top)
+        #expect(Monitor.resolve(.direction(.down), from: builtIn, in: under, wrapAround: true) == top)
+        #expect(Monitor.resolve(.direction(.down), from: top, in: under, wrapAround: false) == builtIn)
+    }
+
+    /// With no display that way that overlaps, the nearest display that way wins, then the
+    /// one closest across the direction, and a wrap takes the farthest the other way.
+    @Test func withNoOverlapADirectionTakesTheNearestDisplayThatWay() {
+        let current = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 1000))
+        let corner = Monitor(id: 2, frame: CGRect(x: 1000, y: 1000, width: 500, height: 500))
+        let farther = Monitor(id: 3, frame: CGRect(x: 0, y: 1200, width: 1000, height: 1000))
+        // One that overlaps wins over a nearer one that does not.
+        #expect(Monitor.resolve(.direction(.down), from: current, in: Monitor.arranged([current, corner, farther]),
+                                wrapAround: false) == farther)
+        let farLeft = Monitor(id: 4, frame: CGRect(x: -2000, y: 1000, width: 1000, height: 1000))
+        let nearRight = Monitor(id: 5, frame: CGRect(x: 1500, y: 1000, width: 1000, height: 1000))
+        let farthest = Monitor(id: 6, frame: CGRect(x: 3000, y: 2500, width: 1000, height: 1000))
+        let apart = Monitor.arranged([current, farLeft, nearRight, farthest])
+        #expect(Monitor.resolve(.direction(.down), from: current, in: apart, wrapAround: false) == nearRight)
+        #expect(Monitor.resolve(.direction(.up), from: current, in: apart, wrapAround: false) == nil)
+        #expect(Monitor.resolve(.direction(.up), from: current, in: apart, wrapAround: true) == farthest)
+        // Home: the built-in display below the main panel meets the left panel at a corner.
+        let panel = Monitor(id: 7, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+        let main = Monitor(id: 8, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let builtIn = Monitor(id: 9, frame: CGRect(x: 0, y: 1080, width: 1728, height: 1117))
+        let home = Monitor.arranged([panel, main, builtIn])
+        #expect(Monitor.resolve(.direction(.down), from: panel, in: home, wrapAround: false) == builtIn)
+        #expect(Monitor.resolve(.direction(.left), from: builtIn, in: home, wrapAround: false) == panel)
+        #expect(Monitor.resolve(.direction(.up), from: builtIn, in: home, wrapAround: false) == main)
+    }
+
     @Test func moveNodeToMonitorMovesTheWindowToTheShownWorkspaceThere() {
         var s = Desk.session()
         _ = s.add(10); _ = s.add(11)

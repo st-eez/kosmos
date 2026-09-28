@@ -27,6 +27,19 @@ public struct Insets: Equatable, Sendable {
     }
 }
 
+extension Orientation {
+    func span(of frame: CGRect) -> (min: CGFloat, max: CGFloat) {
+        self == .horizontal ? (frame.minX, frame.maxX) : (frame.minY, frame.maxY)
+    }
+
+    /// How much the two frames' spans along the orientation share, negative for the gap
+    /// between spans that do not meet.
+    func overlap(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let (a, b) = (span(of: a), span(of: b))
+        return min(a.max, b.max) - max(a.min, b.min)
+    }
+}
+
 extension Workspace {
     /// `rect` is in Accessibility coordinates, where y grows down, so the first child of a
     /// vertical container is on top. A window whose minimum is longer than its tile spills as

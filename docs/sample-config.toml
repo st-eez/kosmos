@@ -93,9 +93,13 @@ alt-l = 'focus --boundaries all-monitors-outer-frame right'
 alt-k = 'focus --boundaries all-monitors-outer-frame up'
 alt-j = 'focus --boundaries all-monitors-outer-frame down'
 
-# Move the window within its workspace, and at its edge onto the next monitor, where
-# focus follows it. Past the last monitor it wraps to the first, as AeroSpace's
-# `move || move-node-to-monitor --wrap-around` chain did.
+# Move the window within its workspace, and at its edge onto the monitor that way, where
+# focus follows it. With no monitor that way it wraps to the farthest one the other way,
+# as AeroSpace's `move || move-node-to-monitor --wrap-around` chain did, except from the
+# built-in display. There down wraps to the monitor above that overlaps it, where the
+# chain took the ASUS at the office and the left panel at home, and left and right reach
+# the ASUS at the office and the left panel at home, which the chain left alone
+# (docs/displays.md).
 alt-shift-left = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors left'
 alt-shift-right = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors right'
 alt-shift-up = 'move --boundaries all-monitors-outer-frame --boundaries-action wrap-around-all-monitors up'
