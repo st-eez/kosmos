@@ -126,8 +126,9 @@ final class Borders {
     private func hand(_ next: [WindowID: (width: CGFloat, windows: [BorderWindow])]) {
         guard !(next.isEmpty && handed.isEmpty) else { return }
         onRings?(next.mapValues { entry in
-            HandedRing(ring: SlideRing(lineWidth: entry.width, displays: entry.windows.map { Monitor(id: $0.display, frame: $0.covered!) }),
-                       layers: entry.windows.map { RingLayer(layer: $0.ring) })
+            let covering = entry.windows.compactMap { window in window.covered.map { (window, $0) } }
+            return HandedRing(ring: SlideRing(lineWidth: entry.width, displays: covering.map { Monitor(id: $0.0.display, frame: $0.1) }),
+                              layers: covering.map { RingLayer(layer: $0.0.ring) })
         })
         for window in handed.values.flatMap(\.windows) { window.handed = false }
         for window in next.values.flatMap(\.windows) { window.handed = true }
