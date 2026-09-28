@@ -58,6 +58,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let rest = arguments.dropFirst(count == nil ? 0 : 1)
         slideLanding(landings: count ?? 16, sizes: rest.contains("--size"), modes: rest.filter { $0 != "--size" })
     }),
+    ("ca-lock", "ca-lock [trials] [busy]", { caLock(trials: $0.first.flatMap(Int.init) ?? 20, busy: $0.contains("busy")) }),
     ("slide-links", "slide-links [slides] [mode...]", { arguments in
         let count = arguments.first.flatMap(Int.init)
         slideLinks(slides: count ?? 8, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))

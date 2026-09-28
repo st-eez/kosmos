@@ -363,9 +363,15 @@
     ceiling: the transaction takes Core Animation's global lock, and in the probe's
     `threadlocked` mode, with the main thread holding that lock 20 to 60 ms at a time, it
     waited up to 57.6 ms, and the steps queued behind it went out up to 52 ms late, the ring
-    a display frame behind its window in 50 of 818 frames. Whether Kosmos's main actor
-    holds that lock that long is unmeasured; a frame line whose rings take over a
-    millisecond shows it. The upgrade: place the rings on a queue of their own after the
+    a display frame behind its window in 50 of 818 frames. Kosmos's slide start work
+    does not hold it: in `kosmos-probe ca-lock` (September 27, 2026), a border window
+    framed to cover the built-in display, ordered in below a window that had just joined an
+    animation Space, ordered out, and a new one made, 480 calls in three runs, two of them
+    with WindowServer kept busy, took up to 21.4 ms, and a ring's transaction on another
+    thread waited 0.010 ms at most for the lock during any of them, against 5 ms with the
+    main thread holding it 5 ms. The longest ring transaction under way during them, 1.3
+    ms, waited on WindowServer. Whether other main actor work holds the lock long is
+    unmeasured; a frame line whose rings take over a millisecond shows it. The upgrade: place the rings on a queue of their own after the
     unlock, each placement checked against a generation the lock hands out, so neither the
     reads nor the next display frame's transforms wait for it. `script/bench-frames.sh` streams the log at debug
     level, so each step's lines place its captured frames against the frames Kosmos set.
