@@ -115,6 +115,8 @@ prefix.
 
 Other docs:
 
+- [backlog.md](backlog.md): open work, most urgent first, with what settles each item and
+  what Steve has decided.
 - [INSTALL.md](INSTALL.md): installing, launch at login, switching from AeroSpace and
   rolling back.
 - [sample-config.toml](sample-config.toml): Steve's four AeroSpace profiles translated into
