@@ -70,6 +70,25 @@ private let red = BorderColor(red: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
     #expect(border(from, path: nil).slideDisplays.isEmpty)
 }
 
+@Test func aSlidingRingGoesToTheWindowOnTheDisplayHoldingMostOfTheWindow() {
+    let left = Monitor(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+    let right = Monitor(id: 2, frame: CGRect(x: 1000, y: 0, width: 1000, height: 800))
+    let ring = SlideRing(lineWidth: 2, displays: [left, right])
+    // In the layer of the window covering the left display, from its bottom left.
+    let start = ring.place(around: CGRect(x: 100, y: 100, width: 500, height: 300))
+    #expect(start?.index == 0 && start?.frame == CGRect(x: 98, y: 398, width: 504, height: 304))
+    // Past the middle of the edge, in the right display's window, and off that display's left
+    // edge, where its window cuts it.
+    let past = ring.place(around: CGRect(x: 800, y: 100, width: 500, height: 300))
+    #expect(past?.index == 1 && past?.frame == CGRect(x: -202, y: 398, width: 504, height: 304))
+    // As a border at rest picks its display.
+    let frame = CGRect(x: 800, y: 100, width: 500, height: 300)
+    #expect(Border(around: frame, radius: 16, width: 2, color: blue, displays: [left, right])?.display == ring.displays[past!.index].id)
+    // Only the windows the pool gave count, and none holds a window off them.
+    #expect(SlideRing(lineWidth: 2, displays: [left]).place(around: frame)?.index == 0)
+    #expect(ring.place(around: CGRect(x: 100_000, y: 100, width: 500, height: 300)) == nil)
+}
+
 @Test func theShownTiledAndFloatingWindowsAreBordered() {
     var s = Session(names: ["1", "2"], display: CGRect(x: 0, y: 0, width: 1000, height: 800))
     _ = s.add(1); _ = s.add(2); _ = s.add(3, floating: true)
