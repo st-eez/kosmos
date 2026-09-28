@@ -283,9 +283,13 @@ final class Controller {
         let windows = resyncs ? session.resyncPlan(layingOutHidden: false) : plan
         let (show, hide) = (windows.show, windows.hide)
         if resyncs { needsResync = false }
-        let entering = session.entering(show: show, hide: hide, frames: plan.frames.keys,
-                                        concealed: hiding.isConcealedOrConcealing,
-                                        display: { inventory.windows[$0].flatMap { session.display(under: $0.frame) } })
+        let taken = session.entering(show: show, hide: hide, frames: plan.frames.keys,
+                                     concealed: hiding.isConcealedOrConcealing,
+                                     display: { inventory.windows[$0].flatMap { session.display(under: $0.frame) } })
+        let motions = motions(for: plan, show: show, hide: hide, taken: Set(taken), popping: popping)
+        // One that slides shows where it showed until its write lands, so it needs no conceal
+        // first (docs/hiding.md).
+        let entering = taken.filter { motions[$0] == nil }
         // Before the writes, which wait for the batches that conceal their windows.
         let added = order.add(show: show, hide: hide, entering: entering).map(\.number)
         for number in added { switches[number] = Switch(received: received, fromCommand: fromCommand) }
@@ -293,7 +297,7 @@ final class Controller {
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
-        let written = writeFrames(plan.frames, sliding: motions(for: plan, popping: popping).filter { !entering.contains($0.key) })
+        let written = writeFrames(plan.frames, sliding: motions)
         flashSpills(plan.frames, written: written)
         if movePointer { centerPointer() }
         if show.isEmpty && hide.isEmpty {
@@ -314,14 +318,15 @@ final class Controller {
 
     /// A batch whose revealed windows' writes are still landing waits, with every batch after
     /// it, until a row shows each write or the Accessibility timeout after it. A plain switch's
-    /// windows have none, so its batch goes at once (docs/hiding.md).
+    /// windows have none, and a window that slides shows where it showed until its write lands,
+    /// so such a batch goes at once (docs/hiding.md).
     func sendReadyBatches() {
         guard !sessionLocked, order.isWaiting else { return }
         let now = ContinuousClock.now
         func landing(_ id: WindowID) -> Bool {
             // A backed off app's write waits for the app to answer again.
             ledger.isLanding(id, at: now) && hiding.isConcealedOrConcealing(id)
-                && owner[id].flatMap(inventory.worker)?.answers != false
+                && owner[id].flatMap(inventory.worker)?.answers != false && slides?.isSliding(id) != true
         }
         order.ready(landing: landing).forEach(send)
         // Checked again when the first write holding the batch times out.
@@ -442,11 +447,20 @@ final class Controller {
     /// A drag's own writes, the 100 ms retry and floating windows brought home do not come
     /// through here, and jump. `popping` pops only while still ordered out. A window a batch not
     /// yet done conceals would show above the desktop in its slide's Space (docs/geometry.md).
-    private func motions(for plan: Session.Plan, popping: WindowID?) -> [WindowID: Slides.Motion] {
+    /// A window `show` reveals slides from where its row has it: in its slide's Space and the
+    /// holding Space it stays concealed, and the batch's removal shows it where its slide has
+    /// it (kosmos-probe reveal-slide, docs/hiding.md). So does one on screen that the reveal
+    /// takes in (`taken`), and any other window of `show`, as a resync's, jumps. Before the
+    /// batches are added, so `hide` is left out here.
+    private func motions(for plan: Session.Plan, show: [WindowID], hide: [WindowID], taken: Set<WindowID>,
+                         popping: WindowID?) -> [WindowID: Slides.Motion] {
         guard animations, slides != nil else { return [:] }
-        let show = Set(plan.show), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
+        let revealed = Set(show), hidden = Set(hide), held = modifierDrag?.grab.window, fullscreen = fullscreenDisplays
+        func mayMove(_ id: WindowID) -> Bool {
+            revealed.contains(id) ? hiding.isConcealed(id) || taken.contains(id) : !hiding.isConcealed(id)
+        }
         var motions: [WindowID: Slides.Motion] = [:]
-        for id in plan.frames.keys where session.isVisible(id) && !show.contains(id) && !hiding.isConcealed(id)
+        for id in plan.frames.keys where session.isVisible(id) && !hidden.contains(id) && mayMove(id)
             && !order.conceals(id) && id != held && !session.lifted.contains(id) && mouseMoved[id] == nil {
             guard let name = session.workspace(of: id), let pid = owner[id], inventory.worker(pid)?.answers == true else { continue }
             let display = session.monitor(of: name).id

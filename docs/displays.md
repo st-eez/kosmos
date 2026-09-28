@@ -198,7 +198,7 @@
   reads the windows' frames from WindowServer when it checks. A window whose center is on
   no display stays. A concealed window's row gives the frame it has, as a shown window's
   does ([hiding.md](hiding.md)), so one still concealed on a shown workspace, as while its
-  switch waits for its writes, goes home as a revealed one would. The read waits on
+  switch waits for a write, goes home as a revealed one would. The read waits on
   WindowServer, which is busy committing right after a switch, so it runs only while a
   shown workspace has a floating window, and never between a keypress and its batch or its
   focus request. The log gives each read's time, to measure at the desk. A window with a
