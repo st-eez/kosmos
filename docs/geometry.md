@@ -312,12 +312,13 @@
         blocked the same way (`threadbusy`), where on the main run loop they lost 379 and 371
         (`bothbusy`), each step going out at most 2.4 ms after its quarter point.
       - A slide's first display frame waits for its ring's hand-off at the end of its
-        relayout's main actor turn, or for the turn's end for a window with no border
-        ([borders.md](borders.md)), and no longer for the ready border windows ordered in
-        after it. In the 10 relayouts of the debug log of September 27, 14:56, 29.2 ms went
-        from the relayout's log line to its first step at the median and 41.9 ms at most,
-        while two starts held the main actor 19.6 and 24.8 ms ordering a ready border window
-        below Ghostty. In `kosmos-probe slide-sync` with the main thread blocked 19.6 to 24.8
+        relayout's main actor turn when its ring shows, and for nothing when none does
+        ([borders.md](borders.md)). The hand-off no longer waits for the border windows
+        ordered in or put back for other windows, or for the ready ones. In the 10
+        relayouts of the debug log of September 27, 14:56, 29.2 ms went from the relayout's
+        log line to its first step at the median and 41.9 ms at most, while two starts held
+        the main actor 19.6 and 24.8 ms ordering a ready border window below Ghostty. In
+        `kosmos-probe slide-sync` with the main thread blocked 19.6 to 24.8
         ms right after each start, a link on the main run loop stepped first 27.1 ms after
         the start at the median and 31.4 ms at most (`startbusy`), and one on a thread of
         its own 8.9 and 13.1 ms (`threadstart`), as with the main thread free (9.8 ms,

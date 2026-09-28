@@ -264,38 +264,53 @@ state, and during a slide the frame the slide shows the window at.
     so a move to another display waits for no main actor turn. The border update keeps the
     windows' frames, order, level, color and corners, and gives the ready windows the
     ring's color, corners and level, as the ring can reach one before the next update.
-  - The border update hands the rings over before it readies any window, and hands them
-    again once the ready windows are ordered in. Ordering a ready window below Ghostty
-    took the main actor 19.6 and 24.8 ms at two slide starts in the debug log of September
-    27, 2026, 14:56, and a ring handed after it would have stood still that long while its
-    window slid. Until then a ring whose window's largest part lies on a display with no
-    window handed stays in the window it has, cut at that display's edge, and shows
-    nowhere once the window has left every display with a window handed (`SlideRing`).
-  - A window that begins to slide takes no display frame until the first hand-off of its
-    relayout's main actor turn, or the end of that turn for a window with no border, so
-    its ring moves with it from the first display frame. Without that wait the first
-    frames came before the hand-off, which followed the turn's focus request, its reads of
-    the floating windows' rows and the ring's window's resize, and the ease covers 11% of
-    a move in its first 10 ms and 22% in 20 ms. The wait costs the first move that long,
-    as when the display frames were stepped on the main actor. Before the hand-off `Borders`
-    flushes the main actor's transaction, so a border window's resize commits on the main
-    thread before a display frame's transaction on the frames queue can commit it.
+  - The border update hands the slide the rings once each sliding window's ring window is
+    shown covering its display, and the ring of each held window below that goes is put
+    back, before it puts any other window back, orders in any other ring or readies any
+    window. It hands them again once its new windows are ordered in.
+    Ordering a ready window below Ghostty took the main actor 19.6 and 24.8 ms at two
+    slide starts in the debug log of September 27, 2026, 14:56, and a ring handed after it
+    would have stood still that long while its window slid. Until then a ring whose
+    window's largest part lies on a display with no window handed stays in the window it
+    has, cut at that display's edge, and shows nowhere once the window has left every
+    display with a window handed (`SlideRing`).
+  - A window that begins to slide with its ring showing takes no display frame until that
+    first hand-off, so its ring moves with it from the first display frame. Without that
+    wait the first frames came before the hand-off, and the ease covers 11% of a move in
+    its first 10 ms and 22% in 20 ms. Its first move waits for:
+    - the rest of its relayout's main actor turn after the writes, which includes the focus
+      request, the read of the floating windows' rows and the bar's state;
+    - the border update's read of the borders, each sliding window's ring window framed to
+      cover its display, which takes a resize at a slide's start, and the flush below;
+    - the put-back of each such window's ring the relayout takes away, as when the window
+      loses the focus, so a ring never stands still beside its moving window.
+
+    With an `inactive` color that shows, every window that slides has a ring, so each one's
+    first move waits for every sliding window's resize. A window with no ring showing, one
+    with no border or one the relayout gives a ring, as when the focus moves to it, takes
+    its first display frame from its link, a quarter of a refresh after the next vsync. Its
+    new ring window is ordered in showing nothing, and goes to the slide once the update's
+    new windows are ordered in, so its ring shows a few display frames into the slide,
+    around the window, as a border shows at a focus change. A turn whose border update does
+    not run lets the held windows go at the main queue's next turn. Before each hand-off
+    `Borders` flushes the main actor's transaction, so a border window's resize commits on
+    the main thread before a display frame's transaction on the frames queue can commit it.
   - A step sets the rings under the lock it sends the transforms under, and the hand-off
     places each handed ring under that lock too, from where its window shows then, so a
     ring is never placed from an older display frame than the last one sent. A window the
-    pool takes back leaves Slides before the pool's steps run, as the same steps can give
-    it to another target. The rings change in an explicit `CATransaction`, since the queue
-    has no run loop, and an implicit transaction commits only when its thread's run loop
-    turns (`CATransaction.h`). In `kosmos-probe slide-sync` on September 27, 2026, a ring
-    moved this way from a serial queue showed within 2 points of its window in 921 of 922
-    frames in its `threadbusy` mode, with the main thread blocked 20 to 60 ms at a time,
-    and in 908 of 914 in its `thread` mode, with the main thread free. One Core Animation
-    animation of the ring over the slide, on the slide's curve and a refresh late (its
-    `animated` mode), trailed its window by a display frame in 14 of 102 frames the probe
-    matched, and is left out. It runs on WindowServer's clock and the transforms on the
-    steps', a retarget would need a new animation from the main actor, a pop starts when a
-    step finds its write landed, and a move to another display would need a second
-    animation.
+    pool takes back leaves Slides at the first hand-off, before it goes back to its pool,
+    as the same steps can give it to another target. The rings change in an explicit
+    `CATransaction`, since the queue has no run loop, and an implicit transaction commits
+    only when its thread's run loop turns (`CATransaction.h`). In `kosmos-probe slide-sync`
+    on September 27, 2026, a ring moved this way from a serial queue showed within 2 points
+    of its window in 921 of 922 frames in its `threadbusy` mode, with the main thread
+    blocked 20 to 60 ms at a time, and in 908 of 914 in its `thread` mode, with the main
+    thread free. One Core Animation animation of the ring over the slide, on the slide's
+    curve and a refresh late (its `animated` mode), trailed its window by a display frame
+    in 14 of 102 frames the probe matched, and is left out. It runs on WindowServer's clock
+    and the transforms on the steps', a retarget would need a new animation from the main
+    actor, a pop starts when a step finds its write landed, and a move to another display
+    would need a second animation.
   - Sent from the callback, after the border work, the ring often missed the composite its
     window's transform made. It showed with its window in 91 of 136 and 86 of 122 frames in
     the probe. In the first run of the frame benchmark it trailed its sliding window by a
@@ -347,7 +362,8 @@ state, and during a slide the frame the slide shows the window at.
     frame line's `rings`), whether a ready border window shows nothing until the ring
     reaches it, whether the ring now moves to another display in the display frame where
     the window's largest part crosses, how long a slide's first move waits for the ring's
-    hand-off (the relayout's log line against its first frame line), whether a slide that
+    hand-off (the relayout's log line against its first frame line), whether a ring the
+    relayout gives a sliding window first shows around the window, whether a slide that
     ends on another display keeps its ring on screen at the landing, what a
     slide's start costs now that it orders in a window for each other display it crosses,
     and makes one on a display with none in its pool, and what a raise mid-slide costs,

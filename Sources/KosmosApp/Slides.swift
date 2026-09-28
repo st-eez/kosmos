@@ -14,10 +14,13 @@ private let slideLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "s
 @MainActor
 final class Slides {
     /// `from` is where WindowServer has the window, nil while a write of Kosmos's still moves it.
+    /// `ringed`: its border shows, so it takes no display frame until the border update hands
+    /// the slide that ring or puts it back (docs/borders.md).
     struct Motion {
         var from: CGRect?
         var display: DisplayID
         var pop = false
+        var ringed = false
     }
 
     /// One above the desktop Space's, where a shown Space draws its window with its transform
@@ -48,7 +51,7 @@ final class Slides {
     func writing(_ targets: [WindowID: CGRect], sliding: [WindowID: Motion]) {
         let now = CACurrentMediaTime()
         var ended: [(WindowID, SlidingWindow)] = []
-        var slid = 0, jumped = 0, took = 0
+        var slid = 0, jumped = 0, took = 0, held = false
         let known = onscreen.state.withLock { state in
             var known: Set<WindowID> = []
             for (id, target) in targets {
@@ -72,14 +75,12 @@ final class Slides {
                 jumped += 1
                 continue
             }
-            (slid, took, popped) = (slid + 1, took + 1, popped || motion.pop)
+            (slid, took, popped, held) = (slid + 1, took + 1, popped || motion.pop, held || motion.ringed)
         }
         if !ended.isEmpty { stopIdleLinks() }
         if took > 0 { onscreen.follow() }
-        // A window that begins here takes no display frame until its ring comes, so the two
-        // move together from the first; one with no border comes at the end of this turn
-        // (docs/borders.md).
-        if slid > 0 { onMain { [onscreen] in onscreen.release() } }
+        // The turn's border update lets the held windows go; this does, should it not run.
+        if held { onMain { [onscreen] in onscreen.release() } }
         if slid + jumped > 0 {
             slideLog.info("relayout: \(slid) windows slide\(popped ? ", 1 of them popping" : "", privacy: .public), \(jumped) jump, \(self.free.count) Spaces free")
         }
@@ -114,6 +115,11 @@ final class Slides {
     /// those handed before (docs/borders.md).
     func hand(_ rings: [WindowID: HandedRing]) {
         onscreen.hand(rings)
+    }
+
+    /// The windows begun with their ring showing that take no display frame yet.
+    var held: Set<WindowID> {
+        onscreen.state.withLock { $0.held }
     }
 
     func end(_ id: WindowID, _ why: String) {
@@ -151,7 +157,7 @@ final class Slides {
             var ids = [id]
             kosmos_add_windows(space, &ids, 1, false)
             state.windows[id] = window
-            state.held.insert(id)
+            if motion.ringed { state.held.insert(id) }
         }
         return true
     }
@@ -263,7 +269,8 @@ private final class Onscreen: Sendable {
     struct State: Sendable {
         var windows: [WindowID: SlidingWindow] = [:]
         var rings: [WindowID: HandedRing] = [:]
-        /// Windows begun and waiting for their rings, which no display frame steps.
+        /// Windows begun with their ring showing, which no display frame steps until a
+        /// hand-off.
         var held: Set<WindowID> = []
         /// The display frames of each running link, for its log line.
         var links: [DisplayID: LinkFrames] = [:]
@@ -302,8 +309,9 @@ private final class Onscreen: Sendable {
         state.withLock { $0.links.removeValue(forKey: display) } ?? LinkFrames()
     }
 
-    /// Placed at once, around where each window shows, and every held window goes, as the
-    /// border update hands all the rings its turn has at once.
+    /// Placed at once, around where each window shows. Every held window goes, as the border
+    /// update's first hand-off comes once each held window's ring is in it or put back
+    /// (BorderPool).
     func hand(_ rings: [WindowID: HandedRing]) {
         state.withLock { state in
             state.rings = rings.filter { state.windows[$0.key] != nil }

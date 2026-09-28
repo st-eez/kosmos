@@ -61,10 +61,18 @@ final class Borders {
         return read
     }
 
-    /// `fullscreen`: the displays that may show a native fullscreen Space (docs/borders.md).
-    func show(_ shown: [WindowID: ShownBorder], fullscreen: Set<DisplayID> = []) {
+    /// `held`: the windows Slides holds for their rings. `fullscreen`: the displays that may
+    /// show a native fullscreen Space (docs/borders.md).
+    func show(_ shown: [WindowID: ShownBorder], held: Set<WindowID> = [], fullscreen: Set<DisplayID> = []) {
         sliding = shown.filter(\.value.sliding)
-        for step in pool.show(shown, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) { apply(step) }
+        for step in pool.show(shown, held: held, fullscreen: fullscreen, make: { BorderWindow(display: $0, frame: $1) }) {
+            apply(step)
+        }
+    }
+
+    /// Whether the target's ring shows, which its slide's first display frame waits for.
+    func showsRing(of target: WindowID) -> Bool {
+        !pool.ordered(below: target).isEmpty
     }
 
     private func apply(_ step: BorderPool<BorderWindow>.Step) {
