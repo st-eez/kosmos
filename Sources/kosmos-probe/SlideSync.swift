@@ -57,8 +57,8 @@ private struct Tick {
     let slide: Int, index: Int
     let entry: Double, timestamp: Double, target: Double
     let progress: Double
-    /// When its transform went out, and when its ring's commit returned.
-    var sent = 0.0, committed = 0.0
+    /// When its transform went out, when the send returned, and when its ring's commit returned.
+    var sent = 0.0, transformed = 0.0, committed = 0.0
 }
 
 /// One captured frame: its display time and where its reader found the window and its ring,
@@ -146,6 +146,10 @@ private enum RingMode: String, CaseIterable {
         pumpEvents(0.3)
         var slidesRun: [(added: Double, ended: Double)] = []
         for number in 1...slides {
+            // Over any window raised since, as the ring's window and the backdrop sit in the
+            // desktop Space, which the window's own Space draws above.
+            backdrop.orderFrontRegardless()
+            border.window.order(.above, relativeTo: backdrop.windowNumber)
             // A start at a random point of the refresh, as a command's is.
             pumpEvents(0.25 + Double.random(in: 0..<refresh))
             let added = run.begin(number)
@@ -390,6 +394,7 @@ private final class OffMainSteps: NSObject, @unchecked Sendable {
         let shown = next.slide.shown(at: at).frame
         let sent = CACurrentMediaTime()
         kosmos_space_set_transform(space, Slide.transform(showing: shown, at: rest))
+        let transformed = CACurrentMediaTime()
         if mode != .animated {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -400,7 +405,7 @@ private final class OffMainSteps: NSObject, @unchecked Sendable {
         let committed = CACurrentMediaTime()
         ticks.withLock {
             $0.append(Tick(slide: next.number, index: next.index, entry: entry, timestamp: timestamp, target: at, progress: progress,
-                           sent: sent, committed: committed))
+                           sent: sent, transformed: transformed, committed: committed))
         }
         guard next.slide.isOver(at: at) else { return }
         link?.invalidate()
@@ -518,9 +523,11 @@ private func report(_ mode: RingMode, ticks: [Tick], slides: [(added: Double, en
     print("  first move then nothing new for a refresh or more: \(holds) of \(firsts) slides")
     let sends = ticks.filter { $0.sent > 0 }.map { ($0.sent - $0.timestamp) * 1000 }
     if !sends.isEmpty {
-        let commits = ticks.filter { $0.sent > 0 }.map { ($0.committed - $0.sent) * 1000 }
-        print(String(format: "  transform sent after the timestamp, ms: p50 %.2f, p90 %.2f, max %.2f; ring committed after it, ms: p50 %.2f, p90 %.2f, max %.2f",
-                     percentile(sends, 0.5), percentile(sends, 0.9), sends.max()!, percentile(commits, 0.5), percentile(commits, 0.9), commits.max()!))
+        let transforms = ticks.filter { $0.sent > 0 }.map { ($0.transformed - $0.sent) * 1000 }
+        let commits = ticks.filter { $0.sent > 0 }.map { ($0.committed - $0.transformed) * 1000 }
+        print(String(format: "  transform sent after the timestamp, ms: p50 %.2f, p90 %.2f, max %.2f; the send took p50 %.3f, p90 %.3f, max %.3f; the ring's transaction p50 %.3f, p90 %.3f, max %.3f",
+                     percentile(sends, 0.5), percentile(sends, 0.9), sends.max()!, percentile(transforms, 0.5), percentile(transforms, 0.9),
+                     transforms.max()!, percentile(commits, 0.5), percentile(commits, 0.9), commits.max()!))
     }
     let phases = ticks.map { ($0.entry - $0.timestamp) * 1000 }
     if !phases.isEmpty {
