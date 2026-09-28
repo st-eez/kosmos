@@ -10,9 +10,8 @@ final class Child {
     private let input = Pipe(), output = Pipe()
     private var buffer = Data()
 
-    /// `executable`: a copy of the probe, as in an app bundle; the probe itself when nil.
-    init(_ arguments: [String], executable: URL? = nil) {
-        process.executableURL = executable ?? URL(fileURLWithPath: CommandLine.arguments[0])
+    init(_ arguments: [String]) {
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
         process.arguments = arguments
         process.standardInput = input
         process.standardOutput = output
