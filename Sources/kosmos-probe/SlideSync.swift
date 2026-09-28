@@ -35,6 +35,10 @@
 //                                               vsync, the ring in an explicit CATransaction
 //                                     threadbusy
 //                                               thread, with the main thread blocked as mainbusy
+//                                     threadlocked
+//                                               thread, with the main thread holding Core
+//                                               Animation's global lock (CATransaction.lock())
+//                                               20 to 60 ms at a time
 //                                     animated  thread's transforms, with the ring moved by one
 //                                               Core Animation animation on the slide's curve,
 //                                               set as the slide starts and a refresh late, and
@@ -69,12 +73,12 @@ struct Seen: Sendable {
 }
 
 private enum RingMode: String, CaseIterable {
-    case layer, deferred, flush, busy, send300, warm, covered, window, space, mainbusy, thread, threadbusy, animated
+    case layer, deferred, flush, busy, send300, warm, covered, window, space, mainbusy, thread, threadbusy, threadlocked, animated
 
     /// The link on a thread of its own, its steps on a serial queue.
-    var offMain: Bool { self == .thread || self == .threadbusy || self == .animated }
+    var offMain: Bool { self == .thread || self == .threadbusy || self == .threadlocked || self == .animated }
     /// The main thread blocked 20 to 60 ms at a time during each slide.
-    var blocksMain: Bool { self == .mainbusy || self == .threadbusy || self == .animated }
+    var blocksMain: Bool { self == .mainbusy || self == .threadbusy || self == .threadlocked || self == .animated }
 }
 
 @MainActor func slideSync(slides: Int, modes: [String]) -> Never {
@@ -157,7 +161,9 @@ private enum RingMode: String, CaseIterable {
             while run.sliding {
                 pumpEvents(0.005)
                 guard mode.blocksMain, CACurrentMediaTime() >= block else { continue }
+                if mode == .threadlocked { CATransaction.lock() }
                 usleep(UInt32.random(in: 20_000...60_000))
+                if mode == .threadlocked { CATransaction.unlock() }
                 block = CACurrentMediaTime() + Double.random(in: 0.03..<0.12)
             }
             pumpEvents(0.1)
