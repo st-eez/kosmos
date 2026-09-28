@@ -9,8 +9,10 @@ private let slideLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "s
 
 /// Slides windows to the frames a relayout writes, and pops a new window in, through a pool
 /// of Spaces whose transforms show each window where it showed. The display links call back
-/// on a thread of their own and each display frame is stepped off the main actor, so no main
-/// actor work delays one (docs/geometry.md).
+/// on a thread of their own and each display frame is stepped off the main actor, so main
+/// actor work delays none (docs/geometry.md). The exception is a window that begins to slide
+/// with its ring showing, whose first display frame waits for its relayout's border update
+/// to hand the slide that ring (docs/borders.md).
 @MainActor
 final class Slides {
     /// `from` is where WindowServer has the window, nil while a write of Kosmos's still moves it.
