@@ -85,37 +85,43 @@
     observation with `policyWatches.removeValue(forKey: pid)?.observation.invalidate()`,
     and Swift released the tuple's app before `invalidate` ran. The Kosmos started at
     11:44 on September 28, 2026 logged 37 instances freed while observed, the first 11
-    ms after it started and 7 within 80 ms of Outlook's exit at 11:48:16. At 15:58:42,
-    as Phone began to quit, it crashed with EXC_BAD_ACCESS in `objc_msgSend` under
-    AppKit's `runningApplicationNotificationCallback` (Kosmos-2026-09-28-155851.ips). An
-    earlier version of `kosmos-probe policy` crashed so on September 27. `PolicyWatch`
-    holds the app and ends the observation in its deinit, which runs before a class
-    releases its properties, so every path that drops a watch ends the observation
-    first.
-  - `kosmos-probe policy-exits` runs children that launch, change their policy and exit, 4
-    at a time, and ends each observation at the exit source. Ended as the merge did, 3 of
-    10 debug runs of 100 children crashed with Kosmos's stack. The other 7, and 5 release
-    runs, lived, and each logged up to 98 instances freed while observed and 239 to 244
-    callbacks that threw, which AppKit logs and skips, as it sent `_hasASN:` to other
-    objects in the freed memory. With a copy of `PolicyWatch`, 6 runs of 2500 children in
-    all, debug and release, 945 of them exiting in the run loop turn of a change, logged
-    none of either and none crashed (September 28, 2026). The order of a change's
-    notification and the exit does not matter, as AppKit walks the table on the main thread
-    under the lock that removing an observer takes, and the removal takes the instance out
-    of the table.
+    ms after it logged that it started and 7 within 80 ms of Outlook's exit at 11:48:16.
+    At 15:58:42, as Phone began to quit, it crashed with EXC_BAD_ACCESS in
+    `objc_msgSend` under AppKit's `runningApplicationNotificationCallback`
+    (Kosmos-2026-09-28-155851.ips). An earlier version of `kosmos-probe policy` crashed
+    so on September 27. `PolicyWatch`, in the KosmosPolicyWatch target so that the probe
+    below runs it too, holds the app and ends the observation in its deinit, which runs
+    before a class releases its properties, so every path that drops a watch ends the
+    observation first.
+  - `kosmos-probe policy-exits` runs children that launch, change their policy and exit,
+    4 at a time, observes each with `PolicyWatch` and ends the observation at the exit
+    source. Ended as the merge did, 3 of 10 debug runs of 100 children crashed with
+    Kosmos's stack. The other 7 debug runs and 5 release runs lived, and each logged up
+    to all 100 instances freed while observed and 239 to 244 callbacks that threw, which
+    AppKit logs and skips, as it sent `_hasASN:` to other objects in the freed memory. A
+    throw ends that notification's walk, so the live instances in the table miss the
+    change too, and those runs got 4 to 7 observations, against about 248 in a run of
+    100 with `PolicyWatch`. So one instance freed while observed can keep Kosmos from
+    seeing an app become regular, before anything crashes. Kosmos logged no such throw
+    from 11:44 to 15:59 on September 28, so there the crash was the only sign. With
+    `PolicyWatch`, 6 runs of 2500 children with an identical copy of the class, debug
+    and release, and 1 of 300 with the class itself, 1059 of them exiting in the run
+    loop turn of a change, logged none of either and none crashed (September 28, 2026).
+    The order of a change's notification and the exit does not matter, as AppKit walks
+    the table on the main thread under the lock that removing an observer takes, and the
+    removal takes the instance out of the table.
   - The ceiling is a process LaunchServices did not know at its first window, which has no
     instance to observe, so only a launch notification can say it became regular.
     NSWorkspace's list gained the probe's child 40 to 180 ms after it started, long before
     its window. Observing that list, as LaunchServices learns of each process, would close
     the gap.
-  - Only `RegularApps` has a runnable check. Kosmos has no test target for KosmosApp, so no
-    test covers the wiring in Inventory and Apps that observes each app, gives Apps each
-    regular one, sweeps, stops the worker at exit and keeps the admitted windows. A
+  - Only `RegularApps` has a runnable check. Kosmos has no test target for KosmosApp, so
+    no test covers the wiring in Inventory and Apps that observes each app, gives Apps
+    each regular one, sweeps, stops the worker at exit and keeps the admitted windows. A
     KosmosApp test target would add one. `kosmos-probe policy 2 bundle titled` shows the
     wiring against a running Kosmos, with a standard window the child makes before it
-    becomes regular and one it makes as it does. `kosmos-probe policy-exits` runs a copy of
-    `PolicyWatch`, as the probe cannot import KosmosApp, so a change to Kosmos's copy needs
-    the probe's changed with it. Moving it to a module both import would end the copy.
+    becomes regular and one it makes as it does. `kosmos-probe policy-exits` runs
+    Kosmos's own `PolicyWatch`.
 - Events drive the inventory, with no timer. A 0.1 ms SkyLight sweep runs at launch, on a
   Space change, after an unlock or a wake, as yabai, rift and Amethyst do, and when an app
   becomes regular. A workspace switch posts no Space event, so it starts no sweep

@@ -4,23 +4,25 @@
 //   kosmos-probe policy-exits [cycles] [tuple]
 //                                   Runs cycles children, 300 by default, 4 at a time. Each
 //                                   launches as an accessory app with no window, makes 0 to 3
-//                                   changes of its activation policy 20 ms apart and exits: in
-//                                   the run loop turn of its last change in every other group
-//                                   of 4 cycles, and 20 ms later otherwise. Its first change is
-//                                   to regular in every other group of 8 cycles and to
-//                                   prohibited otherwise, and each next one goes back and forth
-//                                   to accessory. The probe finds each child by pid, observes
-//                                   its activationPolicy and ends the observation at the
-//                                   child's exit source, with a class that holds the app and
-//                                   ends the observation in its deinit, as Kosmos does. The
-//                                   other children's changes keep LaunchServices calling AppKit
-//                                   back throughout. Prints the counts, and how many instances
-//                                   AppKit logged as freed while observed. Sends no input and
-//                                   takes no focus. A child that is regular shows in the Dock.
+//                                   changes of its activation policy 20 ms apart and exits. In
+//                                   every other group of 4 cycles it exits in the run loop turn
+//                                   of its last change, and otherwise 20 ms later. Its first
+//                                   change is to regular in every other group of 8 cycles and
+//                                   to prohibited otherwise, and each next one goes back and
+//                                   forth to accessory. The probe finds each child by pid,
+//                                   observes its activationPolicy with Kosmos's PolicyWatch and
+//                                   ends the observation at the child's exit source, as Kosmos
+//                                   does. The other children's changes keep LaunchServices
+//                                   calling AppKit back throughout. Prints the schedule, then
+//                                   what the probe found and observed, and how many instances
+//                                   AppKit logged as freed while observed and how many of its
+//                                   callbacks threw. Sends no input and takes no focus. A child
+//                                   that is regular shows in the Dock.
 //                                   tuple holds each app and its observation in a tuple and
 //                                   ends them as the policyfix merge (6a9a3df) did, which
 //                                   crashed Kosmos on September 28, 2026.
 import AppKit
+import KosmosPolicyWatch
 import OSLog
 
 /// Launches as an accessory app, makes each change 20 ms after the last, and exits, in the
@@ -49,24 +51,11 @@ import OSLog
     exit(0)
 }
 
-/// Kosmos's PolicyWatch: the observation ends in the deinit, while the app is still held.
-private final class PolicyWatch {
-    let app: NSRunningApplication
-    private let observation: NSKeyValueObservation
-
-    init(_ app: NSRunningApplication, changed: @escaping @Sendable () -> Void) {
-        self.app = app
-        observation = app.observe(\.activationPolicy) { _, _ in changed() }
-    }
-
-    deinit { observation.invalidate() }
-}
-
 @MainActor private final class PolicyExits {
     private let cycles: Int
     private let tuple: Bool
     private let began = Date()
-    private var launched = 0, found = 0, exits = 0, atOnce = 0, made = 0, observed = 0
+    private var launched = 0, found = 0, atOnce = 0, made = 0, observed = 0
     private var children: [pid_t: Child] = [:]
     private var sources: [pid_t: any DispatchSourceProcess] = [:]
     private var watches: [pid_t: PolicyWatch] = [:]
@@ -115,7 +104,6 @@ private final class PolicyWatch {
     }
 
     private func exited(_ pid: pid_t) {
-        exits += 1
         sources.removeValue(forKey: pid)?.cancel()
         if tuple {
             // The policyfix merge's statement, which released the app before the observation ended.
@@ -131,12 +119,10 @@ private final class PolicyWatch {
     private func report() {
         let logged = appKitLog()
         print("""
-            policy-exits: \(cycles) children, 4 at a time, each observation ended \
-            \(tuple ? "as the policyfix merge did" : "by the deinit of a class that holds the app")
+            policy-exits: \(cycles) children 4 at a time, \(made) changes after launch, \(atOnce) exiting in the \
+            run loop turn of a change, each observation ended \(tuple ? "as the policyfix merge did" : "by PolicyWatch")
               found by pid before they exited: \(found)
-              changes made after launch: \(made); observations, which count the change at launch too: \(observed)
-              exits in the run loop turn of a change: \(atOnce)
-              exit sources handled: \(exits)
+              observations, which count the change at launch too: \(observed)
               instances AppKit logged as freed while observed: \(logged.map { String($0.freed) } ?? "log unreadable")
               AppKit callbacks that threw: \(logged.map { String($0.threw) } ?? "log unreadable")
               took \(String(format: "%.1f", Date().timeIntervalSince(began))) s, no crash

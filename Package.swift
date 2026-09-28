@@ -25,7 +25,13 @@ let package = Package(
         .target(name: "KosmosSkyLight", dependencies: ["CKosmos"]),
         // The recovery record and procedure, shared by the app and the guardian.
         .target(name: "KosmosRecovery", dependencies: ["CKosmos", "KosmosSkyLight"]),
-        .executableTarget(name: "KosmosApp", dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]),
+        // The observation of an app's activation policy, shared by the app and kosmos-probe so the
+        // probe runs Kosmos's own class (docs/inventory.md).
+        .target(name: "KosmosPolicyWatch"),
+        .executableTarget(
+            name: "KosmosApp",
+            dependencies: ["CKosmos", "KosmosCore", "KosmosIPC", "KosmosPolicyWatch", "KosmosRecovery", "KosmosSkyLight"]
+        ),
         // Swift Build links Foundation into every executable. Dropping unused libraries keeps it
         // out of the CLI, where loading it would add about 1.8 ms to each launch.
         .executableTarget(
@@ -51,7 +57,10 @@ let package = Package(
         // (docs/overview.md, section 6).
         .executableTarget(
             name: "kosmos-probe",
-            dependencies: ["CKosmos", "CKosmosSweep", "KosmosBench", "KosmosCore", "KosmosIPC", "KosmosRecovery", "KosmosSkyLight"]
+            dependencies: [
+                "CKosmos", "CKosmosSweep", "KosmosBench", "KosmosCore", "KosmosIPC", "KosmosPolicyWatch", "KosmosRecovery",
+                "KosmosSkyLight",
+            ]
         ),
         .testTarget(name: "KosmosBenchTests", dependencies: ["KosmosBench", "KosmosCore"]),
         .testTarget(name: "KosmosCoreTests", dependencies: ["KosmosCore"]),
