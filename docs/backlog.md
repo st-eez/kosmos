@@ -66,15 +66,22 @@ RustDesk's `--connect` process does that. Open a new RustDesk connection, and it
 tile without a restart, and the log should show `RustDesk became a regular app; sweeping for
 its windows`.
 
-## Show alt-shift-N's target sooner
+## Check alt-shift-N's slide live
 
-`move-node-to-workspace --focus-follows-window` into a hidden workspace reveals it only
-once the moved windows' writes land. 12 of 99 switches from 2026-09-25 to 2026-09-26
-waited 78 ms at the median and 240 ms at most, with nothing changing on screen meanwhile.
-The wait is the apps taking Accessibility writes, one after another for each app. The
-proposed fix reveals at once and slides each window with a pending write from its old
-tile, as a relayout on a shown workspace does. No probe has tested a window revealed from
-the holding Space while it sits in an animation Space.
+`move-node-to-workspace --focus-follows-window` now shows its target at once and slides its
+windows from their old tiles, where it used to wait for their writes to land
+([hiding.md](hiding.md)). `kosmos-probe reveal-slide` proved the reveal into an animation
+Space with a window of its own; nothing has run it with Kosmos yet.
+- Take a debug log while pressing alt-shift-N into a hidden workspace with windows, on each
+  display: `log stream --level debug --predicate 'subsystem == "io.github.st-eez.kosmos"'`.
+  It passes when the `switch to` lines show no `held` field, a `relayout: N windows slide`
+  line comes with each, and the windows show at once and slide with their borders.
+- Run `script/bench-frames.sh 20`, then `script/bench-frames.sh --slow 30 20`, from a
+  terminal with Screen Recording, hands off, about 7 minutes each. alt-shift-N and
+  alt-shift-N back now run as slide steps, which the analyzer has not measured before. It
+  passes if their `held ms` is empty, their latency at the median is within 10 ms of
+  alt-N's, their tracks start each revealed window at its old tile, and their jumps,
+  flashes and displaced frames are no more frequent than move left's and move right's.
 
 ## Decide logged items once their data is in
 

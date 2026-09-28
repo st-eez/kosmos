@@ -628,8 +628,9 @@ public struct Session: Sendable {
     }
 
     /// The windows on screen that a batch's reveal takes in, as the one
-    /// move-node-to-workspace --focus-follows-window moves or a followed rule window. Each would
-    /// land at its tile before the reveal, so a batch of its own conceals it first. One that
+    /// move-node-to-workspace --focus-follows-window moves or a followed rule window. Each that
+    /// does not slide would land at its tile while the batch waits for the revealed windows'
+    /// writes, so a batch of its own conceals it first. One that
     /// `display` does not show on its workspace's display is left out: concealed, it keeps the
     /// ordinary Space of the display it leaves, and whether its reveal shows it on the other is
     /// open (docs/hiding.md). `concealed`: Hiding has or is sending the window's conceal.

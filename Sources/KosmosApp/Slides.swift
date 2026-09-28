@@ -106,6 +106,10 @@ final class Slides {
         onscreen.state.withLock { state in state.windows[id].map { ($0.shown, $0.alpha, $0.path) } }
     }
 
+    func isSliding(_ id: WindowID) -> Bool {
+        onscreen.state.withLock { $0.windows[id] != nil }
+    }
+
     /// A change to the newest write's frame leaves the slide: WindowServer can take it after
     /// the worker read it back, while the user holds the button (docs/geometry.md).
     func changedInPress(_ id: WindowID, to frame: CGRect) {

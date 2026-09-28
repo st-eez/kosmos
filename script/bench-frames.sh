@@ -418,8 +418,8 @@ steps=(
     "slide|reopen|stub show"
 )
 moves=(
-    "instant|alt-shift-N|move-node-to-workspace --focus-follows-window $partner"
-    "instant|alt-shift-N back|move-node-to-workspace --focus-follows-window $workspace"
+    "slide|alt-shift-N|move-node-to-workspace --focus-follows-window $partner"
+    "slide|alt-shift-N back|move-node-to-workspace --focus-follows-window $workspace"
     "instant|alt-N|workspace $partner"
     "instant|alt-N back|workspace $workspace"
 )

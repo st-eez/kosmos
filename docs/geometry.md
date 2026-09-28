@@ -12,8 +12,9 @@
   report it at once; the writes a worker drops go in one report before it makes the rest.
   An app's writes run one after another, 7.6 ms each at the median and 186 ms at p99 in
   3,177 writes of September 25 and 26, 2026 (live log), and a window's slide lands, and a
-  batch that reveals it goes, only once its read back comes ([hiding.md](hiding.md)), so a
-  read back reported after the app's last write waited for all of them.
+  batch that reveals a window that does not slide goes, only once its read back comes
+  ([hiding.md](hiding.md)), so a read back reported after the app's last write waited for
+  all of them.
   `script/bench-relayout.sh` has not measured how much earlier slides land.
 - AppKit ignores a shrink that leaves a window's bottom within 25 pt of a display edge
   that another display adjoins, while the bottom is at or past that edge. A window moved
@@ -226,12 +227,14 @@
   slides to its frame over 0.38 s along easeOutQuint, cubic-bezier(0.23, 1, 0.32, 1), and a
   window opened after launch onto a shown workspace pops in from 87% of its size about its
   center and alpha 0 over 0.41 s, while its app has not ordered it in yet. Switches and
-  closes do not animate. The windows that slide are a plan's writes to windows on screen on
-  a shown workspace, other than one the user holds or presses on, of an app whose worker is
-  not backed off, from and to displays that hold no native fullscreen window or hold the
-  key window on their desktop Space. A reveal, a hidden workspace, a drag's own writes, the
-  100 ms retry and floating windows brought home jump, and so does a backed off app's
-  window, whose write waits for the app while its transform would hold it where it showed.
+  closes do not animate. A window a switch reveals with a new frame slides from its old
+  tile, as Hyprland's do ([hiding.md](hiding.md)). The windows that slide are a plan's
+  writes to windows on screen on a shown workspace and to windows its switch reveals, other
+  than one the user holds or presses on, of an app whose worker is not backed off, from and
+  to displays that hold no native fullscreen window or hold the key window on their desktop
+  Space. A hidden workspace, a drag's own writes, the 100 ms retry and floating windows
+  brought home jump, and so does a backed off app's window, whose write waits for the app
+  while its transform would hold it where it showed.
   So does a window of a shown workspace that a batch not yet done conceals, sent or still
   waiting for writes, as after a switch away and straight back, since its slide's Space
   would show it above the desktop while that batch conceals it ([hiding.md](hiding.md)).
@@ -244,6 +247,13 @@
     and every display frame is stepped on one serial queue (`kosmos.slide.frames`), so no
     main actor work delays a display frame. The main actor starts each slide, retargets it,
     and finishes it when a display frame hands it the end.
+  - A window a switch reveals starts its slide from where its row has it, its old tile,
+    and joins its Space while still in the holding Space, where it stays concealed; the
+    batch that removes it from the holding Space goes after, from the bridge queue, and
+    shows it where its slide has it by then (`kosmos-probe reveal-slide`,
+    [hiding.md](hiding.md)). A batch that waits for another window's write leaves it
+    sliding concealed. Its ring shows from the border update at the batch's completion
+    ([borders.md](borders.md)).
   - Each display frame's transforms, alphas and rings go out together a quarter of a
     refresh after the vsync that the link's callback reports, and show a refresh after the
     link's target.

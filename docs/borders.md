@@ -291,10 +291,14 @@ state, and during a slide the frame the slide shows the window at.
     its first display frame from its link, a quarter of a refresh after the next vsync. Its
     new ring window is ordered in showing nothing, and goes to the slide once the update's
     new windows are ordered in, so its ring shows a few display frames into the slide,
-    around the window, as a border shows at a focus change. A turn whose border update does
-    not run lets the held windows go at the main queue's next turn. Before each hand-off
-    `Borders` flushes the main actor's transaction, so a border window's resize commits on
-    the main thread before a display frame's transaction on the frames queue can commit it.
+    around the window, as a border shows at a focus change. A window a switch reveals has
+    no ring while concealed, so it slides from its link's first display frame too, and its
+    ring comes with the border update at its batch's completion, around where the slide
+    shows it then, as a revealed window's border comes at a switch. A turn whose border
+    update does not run lets the held windows go at the main queue's next turn. Before each
+    hand-off `Borders` flushes the main actor's transaction, so a border window's resize
+    commits on the main thread before a display frame's transaction on the frames queue can
+    commit it.
   - A step sets the rings under the lock it sends the transforms under, and the hand-off
     places each handed ring under that lock too, from where its window shows then, so a
     ring is never placed from an older display frame than the last one sent. A window the

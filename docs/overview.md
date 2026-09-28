@@ -134,9 +134,11 @@ sends its batches, to other Spaces.
    The frame ledger leaves out each target a window already has or was already sent, with
    no read from WindowServer, and only changed frames go to their apps' workers. When a
    window to reveal has a write on its way, as each window of the workspace a moved window
-   joins does, the batch waits until a row shows the write, 1 s after the write at most,
-   and a window the batch conceals is written after it. The moved window, when it stays on
-   its display, is concealed at the command and revealed with them ([hiding.md](hiding.md)).
+   joins does, it slides from its old tile, and so does the moved window from where it
+   shows ([hiding.md](hiding.md)). A window to reveal that does not slide, as with
+   animations off, holds the batch until a row shows its write, 1 s after the write at
+   most, and a moved window that stays on its display and does not slide is concealed at
+   the command and revealed with them. A window the batch conceals is written after it.
 3. The bridge queue sends the reveal of the incoming windows and the conceal of the
    outgoing windows back to back, then reads the holding Space until it shows them done.
    Revealing first shows windows of both workspaces for the length of one bridged
