@@ -662,7 +662,7 @@ public struct Session: Sendable {
     /// the row can still show where the window was, else from its row in `frames`. A window
     /// whose center is on no display stays.
     public func floatingFrames(at frames: [WindowID: CGRect],
-                               written: (WindowID) -> CGRect? = { _ in nil }) -> [WindowID: CGRect] {
+                               written: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
         var targets: [WindowID: CGRect] = [:]
         for name in shownWorkspaces {
             let own = monitor(of: name)
@@ -682,7 +682,7 @@ public struct Session: Sendable {
     public func pointerFrame(frame: (WindowID) -> CGRect?) -> CGRect? {
         guard let window = focused else { return monitor(of: focusedWorkspace).frame }
         if let tile = frames(of: focusedWorkspace)[window] { return tile }
-        return frame(window).map { floatingFrames(at: [window: $0])[window] ?? $0 }
+        return frame(window).map { floatingFrames(at: [window: $0], written: { _ in nil })[window] ?? $0 }
     }
 
     var framesBeforeFullscreen: [WindowID: CGRect] {

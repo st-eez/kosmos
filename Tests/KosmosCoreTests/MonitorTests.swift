@@ -211,19 +211,19 @@ import Testing
         let onMain = CGRect(x: 100, y: 100, width: 400, height: 300)
         // 10 is home on the main panel, 50 goes to the left panel at the same place, and 60's
         // workspace is hidden.
-        #expect(s.floatingFrames(at: [10: onMain, 50: onMain, 60: onMain]) == [50: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: onMain, 50: onMain, 60: onMain], written: { _ in nil }) == [50: CGRect(x: -1820, y: 100, width: 400, height: 300)])
         _ = s.perform(.moveNodeToMonitor(.direction(.left), focusFollowsWindow: false, wrapAround: false, window: 10))
-        #expect(s.floatingFrames(at: [10: onMain]) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: onMain], written: { _ in nil }) == [10: CGRect(x: -1820, y: 100, width: 400, height: 300)])
         // Onto a smaller display it keeps its relative place and stays inside, measured from
         // the display it is on.
         _ = s.perform(.moveNodeToMonitor(.number(3), focusFollowsWindow: false, wrapAround: false, window: 10))
-        #expect(s.floatingFrames(at: [10: CGRect(x: 960, y: 540, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: CGRect(x: 960, y: 540, width: 400, height: 300)], written: { _ in nil })
                 == [10: CGRect(x: 956, y: 1571, width: 400, height: 300)])
-        #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)])
+        #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)], written: { _ in nil })
                 == [10: CGRect(x: 200, y: 1571, width: 400, height: 300)])
-        #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)])[10]?.size == Desk.builtIn.area.size)
+        #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)], written: { _ in nil })[10]?.size == Desk.builtIn.area.size)
         // A window off every display stays.
-        #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)]).isEmpty)
+        #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)], written: { _ in nil }).isEmpty)
     }
 
     @Test func aFloatingWindowDraggedOntoAnotherDisplayJoinsItsWorkspace() {
@@ -244,7 +244,7 @@ import Testing
         #expect(plan != nil && plan?.show == [] && plan?.hide == [] && plan?.focus == nil)
         #expect(s.workspace(of: 10) == "5" && s.workspaces["5"]!.floating == [10])
         #expect(s.focusedWorkspace == "5" && s.focused == 10)
-        #expect(s.floatingFrames(at: [10: onLeft]).isEmpty)
+        #expect(s.floatingFrames(at: [10: onLeft], written: { _ in nil }).isEmpty)
     }
 
     @Test func aTiledWindowResizedByItsEdgesGoesBackToItsTile() {
