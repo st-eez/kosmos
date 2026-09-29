@@ -494,7 +494,7 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.park([1], because: .minimized)
     _ = s.park([2], because: .appHidden)
     _ = s.perform(.workspace(.named("3")))
-    let follow = s.followOnUnhide([2], keyed: 1, fallback: 2)
+    let follow = s.followOnUnhide([2], keyed: 1, fallback: 2, front: true)
     #expect(follow == nil)
     let plan = s.unpark([2], follow: follow)
     #expect(s.focusedWorkspace == "3")
@@ -507,10 +507,27 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(2, to: "2")
     _ = s.park([1, 2], because: .appHidden)
-    #expect(s.followOnUnhide([1, 2], keyed: 2, fallback: 1) == 2)
+    #expect(s.followOnUnhide([1, 2], keyed: 2, fallback: 1, front: true) == 2)
     // A dialog Kosmos does not manage, or no key window: the most recently focused one.
-    #expect(s.followOnUnhide([1, 2], keyed: 99, fallback: 1) == 1)
-    #expect(s.followOnUnhide([1, 2], keyed: nil, fallback: 1) == 1)
+    #expect(s.followOnUnhide([1, 2], keyed: 99, fallback: 1, front: true) == 1)
+    #expect(s.followOnUnhide([1, 2], keyed: nil, fallback: 1, front: true) == 1)
+}
+
+@Test func anAppUnhiddenInTheBackgroundIsNotFollowed() {
+    // Live on 2026-09-29, computer use unhid Spotify and Activity Monitor on the left panel at
+    // the end of its turn, and Kosmos followed them away from Claude on the main panel.
+    var s = Desk.session()
+    _ = s.add(1, to: "1")
+    _ = s.add(2, to: "5")
+    _ = s.adopt(1)
+    #expect(s.focused == 1 && s.isShown("5"))
+    _ = s.park([2], because: .appHidden)
+    let follow = s.followOnUnhide([2], keyed: 2, fallback: 2, front: false)
+    #expect(follow == nil)
+    let plan = s.unpark([2], follow: follow)
+    #expect(s.focused == 1 && s.focusedWorkspace == "1")
+    #expect(plan.focus == nil)
+    #expect(!s.isParked(2))
 }
 
 @Test func aWindowAdmittedParkedWaitsForItsOwnReturn() {
