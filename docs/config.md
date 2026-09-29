@@ -33,6 +33,10 @@
   rule shadows a later one: it matches the later rule's own app id and name, since names
   match by containment. A rule on the name never shadows one on the bundle identifier
   alone, whose app name is unknown.
+- An app's Open and Save panels float whatever its rule says, `float = false` included
+  ([inventory.md](inventory.md)). No rule reaches another choice Kosmos makes about a
+  window, such as which windows it manages, so none reaches this one. A rule's `workspace`
+  still applies to the panels, as to every window of the app.
 - `animations` is on by default, as in Omarchy: windows slide to the frames a relayout
   gives them, and new windows slide from where their app shows them or pop in when it has
   not shown them yet ([geometry.md](geometry.md)). `animations = false` turns both off, and

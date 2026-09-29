@@ -32,6 +32,8 @@ struct AXReport: Sendable {
 struct AXWindowInfo: Sendable {
     let subrole: String?
     var minimized: Bool
+    /// Names AppKit's Open and Save panels, which are standard windows (docs/inventory.md).
+    let identifier: String?
 }
 
 /// One app's Accessibility elements and observer, on a thread of the app's own, so a hung app
@@ -141,8 +143,10 @@ actor AppWorker {
     private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
+            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did (docs/inventory.md).
             return AXWindowInfo(subrole: try copy(element, kAXSubroleAttribute) as? String,
-                                minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false)
+                                minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false,
+                                identifier: try copy(element, kAXIdentifierAttribute) as? String)
         } catch {
             return nil
         }

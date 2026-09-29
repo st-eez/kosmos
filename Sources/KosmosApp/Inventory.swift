@@ -146,6 +146,8 @@ final class Inventory {
 
     func isMinimized(_ id: WindowID) -> Bool { ax[id]?.minimized == true }
 
+    func axIdentifier(_ id: WindowID) -> String? { ax[id]?.identifier }
+
     /// The key window report for Kosmos's own window, which no worker sends.
     func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
         handle(AXReport(pid: getpid(), kind: .focusedWindowChanged(nil), received: stamp))
@@ -285,7 +287,8 @@ final class Inventory {
             inventoryLog.info("""
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
-                subrole \(info.subrole ?? "-", privacy: .public)
+                subrole \(info.subrole ?? "-", privacy: .public) \
+                identifier \(info.identifier ?? "-", privacy: .public)
                 """)
         }
     }

@@ -139,6 +139,12 @@ public struct WindowRule: Equatable, Sendable {
         return true
     }
 
+    /// Whether a new window floats. An AppKit Open or Save panel floats whatever its rule
+    /// says (docs/config.md), and AppKit names it by its AXIdentifier (docs/inventory.md).
+    public static func floats(_ rule: WindowRule?, axIdentifier: String?) -> Bool {
+        rule?.float == true || axIdentifier == "open-panel" || axIdentifier == "save-panel"
+    }
+
     /// Whether this rule matches every window `other` matches, so `other` never applies after
     /// it (docs/config.md).
     func covers(_ other: WindowRule) -> Bool {
