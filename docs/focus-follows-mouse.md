@@ -28,8 +28,26 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   WindowServer's answer. A hit test of the model's frames would need a stacking order the
   model does not keep. The tap's callback passes a movement on to the main actor only when
   it enters another window or another display than the last movement passed on, with
-  Control up (KosmosCore's PointerGate). The gate tells the display from the event's
-  location and the session's displays, which the main actor gives it at each change.
+  Control up, and the user's hand made it (KosmosCore's PointerGate). The gate tells the
+  display from the event's location and the session's displays, which the main actor gives
+  it at each change.
+- A movement another process posted focuses nothing: the gate takes it as the place the
+  pointer landed, as after Kosmos's own move (below), so the user's next movement into
+  another window focuses that window. The tap tells it by the event's source process
+  (`eventSourceUnixProcessID`). At the desk on 2026-09-29, 74 of 74 movements of Steve's
+  hand in 45 s carried source pid 0, and a movement posted at the pointer's own place
+  carried the poster's pid, from a source of no state and from one of the HID system
+  state alike; a key or click whose pid is set to 0 before the post still shows the
+  poster's (`kosmos-probe input-source`, branch `rulefollow`). The log names each process
+  whose posted movement it ignores, once. Before this, live on 2026-09-29 at 09:26:22.4,
+  computer use's click moved the pointer onto Spotify on the left panel, Kosmos focused
+  Spotify, and computer use, which checks the front app after its move and before its
+  click, refused the click because Spotify was in front. Its click, scroll and
+  `mouse_move` post one movement to the target, and its drag an animated path from where
+  the pointer is (Claude Code 2.1.284). The ceiling: a tool
+  that posts the user's own pointer movement, as a mouse remapper can, turns hover focus
+  off for him. The upgrade is a list of such posters, once `kosmos-probe input-source`
+  shows one at the desk.
 - The main actor focuses the window only when all of these hold (KosmosCore's
   `FocusFollowsMouse.skip`, whose reason for skipping is logged):
   - It is a tiled or floating window of a workspace a display shows, or a native
