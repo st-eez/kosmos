@@ -175,8 +175,10 @@ actor AppWorker {
     }
 
     /// The split model's `WorkerStart`, `WorkerRead` and `WorkerRaise` (KosmosCore's
-    /// KeyRequest). `performing` records the echo just before AXRaise (docs/focus.md).
+    /// KeyRequest). `performing` records the echo just before AXRaise, or before `inPlace`, the
+    /// focus without a raise for a tile a floating window overlaps (docs/focus.md).
     nonisolated func focusPrivately(_ id: WindowID, isCurrent: @escaping @Sendable () -> Bool, request: KeyRequest,
+                                    inPlace: (@Sendable (_ keyWindow: WindowID) -> Bool)?,
                                     performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                     forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                                     done: @escaping @Sendable () -> Void) {
@@ -192,7 +194,14 @@ actor AppWorker {
                 else { return }
                 let stamp = ContinuousClock.now
                 performing(stamp)
-                if !worker.raiseWindow(id) { forgetRecord(stamp) }
+                // It starts from the app's key window. Ceiling: an app with none gets the raise
+                // (docs/focus.md).
+                let keyed = if let inPlace, case .some(.some(let keyWindow)) = focused {
+                    inPlace(keyWindow)
+                } else {
+                    worker.raiseWindow(id)
+                }
+                if !keyed { forgetRecord(stamp) }
             }
         }
     }

@@ -194,8 +194,9 @@
   the wait runs out, the key record goes before the worker's job, the order the wait is
   for. Each wait logs its length at info level, and a notice when it runs out, so the log
   can size the wait, or show it is needed only while a job of the app is queued.
-  - Inside the front app the key record changes nothing and only AXRaise keys a window, so
-    the worker keys it and the queue posts no key record. The worker ends a stale request,
+  - Inside the front app the key record changes nothing and only AXRaise, or the focus
+    without a raise for a tile a floating window overlaps (below), keys a window, so the
+    worker keys it and the queue posts no key record. The worker ends a stale request,
     and one whose front app already has the target focused; then, just before the raise,
     it records and raises if the request is current and the app is still front. The app
     stays front while it has no key window after its key window closed or minimized, and
@@ -232,28 +233,35 @@
     app was front and the window it had focused. The log stays until `kosmos-probe keying`
     runs its `record, then AXRaise while front and focused` order, which measures that
     read.
-  - A tile that a shown floating window overlaps gets no raise after its key record, so the
-    tile takes the keyboard and the floating window stays on top, as Hyprland keeps
-    floating windows over tiles. Steve decided this on 2026-10-02. The key record alone
-    keyed another app's window in 20 of 20 trials and put it on top in none
-    ([overview.md, section 2](overview.md#2-what-the-fork-measured)). The main actor
+  - A tile that a shown floating window overlaps is keyed without a raise, so the tile
+    takes the keyboard and the floating window stays on top, as Hyprland keeps floating
+    windows over tiles. Steve decided this on 2026-10-02. For another app no raise follows
+    the key record, which alone keyed another app's window in 20 of 20 trials and put it on
+    top in none ([overview.md, section 2](overview.md#2-what-the-fork-measured)). The main actor
     decides the overlap as it requests the focus, from frames it has: the tile's from the
     layout, and each floating window's from a write of Kosmos's still landing, else the
     inventory's last frame (`Session.floatingOverlaps`). Any overlap counts, so a tile in
     fullscreen stays under every floating window on its display. The queue logs each tile
-    it keys under a floating window. A click on the tile still brings it forward, as macOS
+    it keys without a raise. A click on the tile still brings it forward, as macOS
     does, and a floating window a tile buries comes back with `focus` in a direction
     ([tree.md](tree.md)) or Mission Control. The public path raises every window still.
-    The spec lets a floating window overlap the window of any key record (`FloatOver`):
-    no raise follows, and the window's app is exempt from `FocusOnTop` until one of its
-    windows comes to its front, as without the raise `split-user-nopostraise` fails it.
-  - Inside the front app AXRaise keys the tile and brings it over the floating window. The
-    upgrade is yabai's focus without a raise (`kosmos_make_key_in_place`, AutoRaise.mm:204
-    under FOCUS_FIRST): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
-    key window, 10 ms later one with 0x8a = 0x01 to the tile, then the private front and
-    the key record. It would replace the worker's AXRaise for such a tile, its echo
-    recorded just before, once `kosmos-probe keying 20 in-place` shows it keys the tile in
-    20 of 20 in the front app with the window order kept ([backlog.md](backlog.md)).
+    The spec lets a floating window overlap the window of any request (`FloatOver`): no
+    raise follows its key record, the front app's window is keyed without a raise, and
+    the window's app is exempt from `FocusOnTop` until one of its windows comes to its
+    front, as without the raise `split-user-nopostraise` fails it.
+  - Inside the front app, where AXRaise would bring the tile over the floating window, the
+    worker runs yabai's focus without a raise in its place, its echo recorded just before
+    (`kosmos_make_key_in_place`, AutoRaise.mm:204 under FOCUS_FIRST): an AppKit-defined
+    record (type 0x0d) with 0x8a = 0x02 to the app's key window, as the worker just read
+    it, 10 ms later one with 0x8a = 0x01 to the tile, then the private front and the key
+    record. `kosmos-probe keying 20 in-place` keyed the target in 40 of 40 trials inside
+    the front app, stacked under the key window and beside it, with the stacking order of
+    the stub windows the same before and after each (2026-10-02). The key record alone to
+    a background app kept that order in 40 of 40 trials of the same run. The worker's thread
+    sleeps the 10 ms. The kill switch guards the call, and it is no key record, so it
+    counts toward no wrong window. Ceiling: an app with no key window, as after its key
+    window closed, has nothing to start from, and the worker raises the tile; a probe of
+    the records with no key window would settle it.
   - Only the raise after a key record has its record forgotten, once the raise is done, so
     no late answer can orphan any other call; `forgetRecord` otherwise serves only a call that
     fails.
@@ -313,14 +321,17 @@
     makes it, and no debug log was kept.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
-  - A crash guard. A byte in a file mapped shared is set during each private call and
-    cleared after it, and a byte found set at launch turns the path off. The two stores
-    cost about 1.4 ns and make no system call. A kill that lands inside the call turns the
-    path off too.
+  - A crash guard. A byte in a file mapped shared is set while any private call runs, on
+    the focus queue or an app's worker, and cleared after the last, and a byte found set at
+    launch turns the path off. The count of calls running sits behind a lock: a guarded
+    call cost about 5.2 ns against 2 ns for the two stores alone (50 million calls each,
+    uncontended, 2026-10-02), with no system call. A kill that lands inside the call turns
+    the path off too.
   - Wrong windows. Only the private key record counts, which keys a background app's
-    window; inside the front app the raise keys it. A request misses when its app reports
-    another of its windows key, and neither an echo of any request nor a report of the
-    requested window arrives first, before Kosmos's next request. A background report that
+    window; inside the front app the raise, or the focus without a raise, keys it. A
+    request misses when its app reports another of its windows key, and neither an echo
+    of any request nor a report of the requested window arrives first, before Kosmos's
+    next request. A background report that
     consumes the echo leaves the count alone. A miss and a retry that misses too count as
     one miss. Five misses in a row turn the path off. On this Mac AXRaise and then the
     private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
@@ -333,7 +344,7 @@
     AutoRaise trials of September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, inside the front app, where only it keys a window, and
+- AXRaise runs on the app's worker, inside the front app, where it keys a window, and
   after the key record, which leaves another app's window where it sits in its app's
   stacking order ([overview.md, section 2](overview.md#2-what-the-fork-measured)). yabai and alt-tab raise after the record too. A hung app
   holds only its own worker.

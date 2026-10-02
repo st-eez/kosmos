@@ -37,9 +37,8 @@ CFArrayRef kosmos_window_spaces(uint32_t window) CF_RETURNS_RETAINED;
 // Inside the front app the key record alone leaves the key window as it was on macOS 27,
 // so the caller raises the window with AXRaise first (docs/focus.md).
 bool kosmos_make_key(pid_t pid, uint32_t window);
-// Inside the front app, from `keyWindow` to `window` without a raise, as yabai does. Whether
-// it keys the window and leaves the window order alone is `kosmos-probe keying 20 in-place`'s
-// to show (docs/focus.md).
+// Inside the front app, from `keyWindow` to `window` without a raise, as yabai does: it keyed
+// 40 of 40 with the window order kept (`kosmos-probe keying 20 in-place`, docs/focus.md).
 bool kosmos_make_key_in_place(pid_t pid, uint32_t window, uint32_t keyWindow);
 bool kosmos_front_without_windows(pid_t pid);
 // 0 on failure. About 1.6 us (docs/focus.md).
