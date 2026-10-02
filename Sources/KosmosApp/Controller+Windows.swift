@@ -75,7 +75,7 @@ extension Controller {
     private func place(_ id: WindowID, pid: pid_t, _ arrival: Arrival) {
         adoption.admitted(id)
         let app = inventory.appIdentity(pid)
-        let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
+        let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name, title: inventory.title(id)) }
         // A window there at launch joins the workspace of the display under it; a later one
         // joins the focused workspace, as in AeroSpace (docs/displays.md).
         let atLaunch = arrival != .reopened && inventory.wasThereAtLaunch(id)

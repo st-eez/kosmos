@@ -30,9 +30,27 @@
   Spaces. The built-in display's framebuffer has no serial. When CoreDisplay stops naming
   the framebuffer, the read returns nil and serial matchers match nothing.
 - Window rules are declarative, and the first match wins. Kosmos warns when an earlier
-  rule shadows a later one: it matches the later rule's own app id and name, since names
-  match by containment. A rule on the name never shadows one on the bundle identifier
-  alone, whose app name is unknown.
+  rule shadows a later one: it matches the later rule's own app id, name and title, since
+  names match by containment. A rule on the name never shadows one on the bundle
+  identifier alone, whose app name is unknown, and a rule on the title shadows only a later
+  one on the same title.
+- A rule's `title` matches the window's whole title, ignoring case, and the rule applies
+  only when its app matches too, so it still needs `app-id` or `app-name`. A rule of the
+  app without a title shadows it, so it goes first. The Bitwarden browser extension's
+  pop-out is a window of the browser, Google Chrome or Helium: a standard window with its
+  zoom button enabled and no AXIdentifier, so neither a rule on `com.bitwarden.desktop`
+  nor the dialog check below reaches it. A System Events watch of Chrome's and Helium's
+  windows on October 2, 2026 read every browser window titled "<page> - Google Chrome" or
+  "<page> - Helium", and the pop-out alone "Bitwarden". A match by containment, as
+  `app-name`'s, would also take a page whose title names Bitwarden. A regular expression,
+  as Hyprland's `title:` or AeroSpace's `window-title-regex-substring`, is the upgrade once
+  a rule needs a title that varies, as one naming a document does.
+- Kosmos matches a rule on the title once, as it admits the window. Chrome titles the
+  pop-out only after it shows: the watch, polling every 0.1 to 0.5 s, saw a new Chrome
+  window at 16:23:00.375 titled "NetSuite Login - Google Chrome", as the window it came
+  from, and titled "Bitwarden" at 16:23:00.949. Kosmos admitted windows 0.1 to 0.3 s after
+  they appeared that day, so a rule on the title reaches Helium's pop-out, "Bitwarden" at
+  its first sight, and misses Chrome's.
 - An app's Open and Save panels float whatever its rule says, `float = false` included
   ([inventory.md](inventory.md)). No rule reaches another choice Kosmos makes about a
   window, such as which windows it manages, so none reaches this one. A rule's `workspace`

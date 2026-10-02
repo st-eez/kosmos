@@ -150,6 +150,8 @@ final class Inventory {
 
     func zoomButtonEnabled(_ id: WindowID) -> Bool? { ax[id]?.zoomButtonEnabled }
 
+    func title(_ id: WindowID) -> String? { ax[id]?.title }
+
     /// The key window report for Kosmos's own window, which no worker sends.
     func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
         handle(AXReport(pid: getpid(), kind: .focusedWindowChanged(nil), received: stamp))

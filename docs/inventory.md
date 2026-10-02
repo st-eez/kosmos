@@ -295,6 +295,12 @@
     once such a window turns up. Whether Chromium disables the zoom button of the window a
     dragged tab makes is unmeasured. AeroSpace keeps Chrome out of its test because the
     fullscreen button is disabled then, and such a window would float here.
+- The worker reads each window's title with its other facts, for rules on the title
+  ([config.md](config.md)), one more Accessibility call for each window read. A failed
+  read counts as no title, which no rule on the title matches. `kosmos-probe window-kinds`
+  read the title of 6 windows of 6 apps in 0.018 to 0.082 ms on October 2, 2026, in two
+  runs (median of 20). Chrome and Helium were not running, so their windows' costs are
+  unmeasured.
 - A window with another subrole, as AXDialog, AXSystemDialog, AXFloatingWindow or AXUnknown,
   stays unmanaged. Kosmos never tiles it, and it stays where its app puts it. Of AeroSpace's
   71 dumps of windows at level 0 of regular apps, 17 report another subrole: 13 popups, such

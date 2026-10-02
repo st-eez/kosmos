@@ -125,13 +125,23 @@ public struct WindowRule: Equatable, Sendable {
     public var appID: String?
     /// Matches app names that contain this text, ignoring case.
     public var appName: String?
+    /// Matches the window's whole title, ignoring case, as a browser titles each window after
+    /// its page (docs/config.md).
+    public var title: String?
     /// Float the window, or tile it when false.
     public var float: Bool?
     /// Put the window on this workspace, which Kosmos shows when the window's app keyed it
     /// (AdmissionFocus).
     public var workspace: String?
 
-    public func matches(appID: String?, appName: String?) -> Bool {
+    /// `title` is nil for a window whose title did not read, which no rule on the title matches.
+    public func matches(appID: String?, appName: String?, title: String?) -> Bool {
+        guard matchesApp(appID: appID, appName: appName) else { return false }
+        guard let text = self.title else { return true }
+        return title?.lowercased() == text.lowercased()
+    }
+
+    func matchesApp(appID: String?, appName: String?) -> Bool {
         if let id = self.appID, id != appID { return false }
         if let text = self.appName {
             guard let appName, appName.lowercased().contains(text.lowercased()) else { return false }
@@ -152,7 +162,7 @@ public struct WindowRule: Equatable, Sendable {
     /// Whether this rule matches every window `other` matches, so `other` never applies after
     /// it (docs/config.md).
     func covers(_ other: WindowRule) -> Bool {
-        matches(appID: other.appID, appName: other.appName)
+        matches(appID: other.appID, appName: other.appName, title: other.title)
     }
 }
 

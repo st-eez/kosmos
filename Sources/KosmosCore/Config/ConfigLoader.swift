@@ -362,10 +362,11 @@ private struct ConfigDecoder {
         var rules: [(rule: WindowRule, position: SourcePosition, path: ValuePath)] = []
         for (index, item) in items.enumerated() {
             let rulePath = path.index(index)
-            guard let fields = table(item, rulePath, allowed: ["app-id", "app-name", "float", "workspace"]) else { continue }
+            guard let fields = table(item, rulePath, allowed: ["app-id", "app-name", "title", "float", "workspace"]) else { continue }
             var rule = WindowRule()
             if let entry = fields["app-id"] { rule.appID = string(entry.value, rulePath.key(entry.key)) }
             if let entry = fields["app-name"] { rule.appName = string(entry.value, rulePath.key(entry.key)) }
+            if let entry = fields["title"] { rule.title = string(entry.value, rulePath.key(entry.key)) }
             if let entry = fields["float"] { rule.float = boolean(entry.value, rulePath.key(entry.key)) }
             if let entry = fields["workspace"], let name = string(entry.value, rulePath.key(entry.key)) {
                 rule.workspace = name
