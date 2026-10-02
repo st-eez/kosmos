@@ -244,7 +244,9 @@
     cache holds both strings, and four other `-panel` names, which Kosmos does not float:
     `find-panel`, `spelling-panel`, `substitutions-panel` and `autofill-panel`.
   - The worker reads the identifier with the subrole and the minimized state, one more
-    Accessibility call for each window read. Against 11 windows of 10 running apps that
+    Accessibility call for each window read. A failed identifier read counts as no
+    identifier, so an app that fails it only for this attribute still has its windows
+    managed, where a failed subrole read leaves the window out. Against 11 windows of 10 running apps that
     day, each of the three reads took 0.02 to 0.15 ms (median of 20). One
     `AXUIElementCopyMultipleAttributeValues` for all three took 0.04 to 0.17 ms, less than
     the two reads before, and would take the place of the three if window reads ever cost

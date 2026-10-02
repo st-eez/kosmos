@@ -143,10 +143,11 @@ actor AppWorker {
     private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
-            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did (docs/inventory.md).
+            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did. A failed
+            // one leaves the window managed and tiled (docs/inventory.md).
             return AXWindowInfo(subrole: try copy(element, kAXSubroleAttribute) as? String,
                                 minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false,
-                                identifier: try copy(element, kAXIdentifierAttribute) as? String)
+                                identifier: (try? copy(element, kAXIdentifierAttribute)) as? String)
         } catch {
             return nil
         }
