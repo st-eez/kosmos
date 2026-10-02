@@ -54,10 +54,13 @@ extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
 
 // Names the window WindowServer weighs a background app's orderFront: against (0 for none).
 // Its handler, _XSetFrontWindow, checks no rights, yet clearing the record left where AXRaise
-// put another app's window unchanged (docs/focus-follows-mouse.md).
+// or the app's own SLSOrderFrontConditionally put its window unchanged. Sent one way, so the
+// code is the send's (docs/focus-follows-mouse.md).
 extern CGError SLSSetFrontWindow(SLSConnectionID cid, uint32_t window);
-// orderFront: of a window of the caller's own, weighed against the record at `timestamp`; an
-// allowed order makes the window the record, with that timestamp.
+// orderFront: of a window of the caller's own, weighed against the record at `timestamp` in
+// SkyLight's disassembly. Sent one way, so the code is the send's. From a background app it
+// lifted its window above none of the front app's, whatever the record
+// (docs/focus-follows-mouse.md).
 extern CGError SLSOrderFrontConditionally(SLSConnectionID cid, uint32_t window, uint64_t timestamp);
 
 #include "KosmosBridge.h"
