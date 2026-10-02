@@ -15,6 +15,8 @@ final class PointerTap: Sendable {
     private let enabled = Atomic<Bool>(false)
     private let gate = Mutex(PointerGate())
     private let heard = Atomic<Bool>(false)
+    /// Each process whose posted movement was logged.
+    private let posters = Mutex<Set<pid_t>>([])
     private let entered: @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void
 
     init?(entered: @escaping @MainActor (PointerGate.Entered, ContinuousClock.Instant) -> Void) {
@@ -76,15 +78,27 @@ final class PointerTap: Sendable {
             }
             return
         }
+        // The user's hand showed source pid 0, and a posted movement its poster's pid
+        // (docs/focus-follows-mouse.md).
+        let poster = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventSourceUnixProcessID))
         moved(over: WindowID(truncatingIfNeeded: event.getIntegerValueField(.mouseEventWindowUnderMousePointer)),
-              at: event.location, control: event.flags.contains(.maskControl))
+              at: event.location, control: event.flags.contains(.maskControl), poster: poster)
     }
 
-    private func moved(over window: WindowID, at location: CGPoint, control: Bool) {
+    private func moved(over window: WindowID, at location: CGPoint, control: Bool, poster: pid_t) {
         let stamp = ContinuousClock.now
         if !heard.exchange(true, ordering: .relaxed) { pointerLog.notice("pointer tap receiving events") }
-        guard let entered = gate.withLock({ $0.admit(window, at: location, control: control) }) else { return }
+        if poster != 0, posters.withLock({ $0.insert(poster).inserted }) {
+            pointerLog.notice("pointer movement posted by pid \(poster) (\(processName(poster), privacy: .public)) focuses nothing")
+        }
+        guard let entered = gate.withLock({ $0.admit(window, at: location, control: control, posted: poster != 0) }) else { return }
         let callback = self.entered
         onMain { callback(entered, stamp) }
     }
+}
+
+private func processName(_ pid: pid_t) -> String {
+    var name = [CChar](repeating: 0, count: 256)
+    guard proc_name(pid, &name, UInt32(name.count)) > 0 else { return "?" }
+    return name.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
 }

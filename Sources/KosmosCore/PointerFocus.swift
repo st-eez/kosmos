@@ -22,10 +22,12 @@ public struct PointerGate: Sendable {
     public init() {}
 
     /// A movement with Control held changes nothing, so the first one after Control comes up
-    /// enters the window and display under the pointer.
-    public mutating func admit(_ window: WindowID, at location: CGPoint, control: Bool) -> Entered? {
+    /// enters the window and display under the pointer. A movement another process posted, as
+    /// computer use's, is where the pointer landed and enters nothing, as after Kosmos's own
+    /// move (docs/focus-follows-mouse.md).
+    public mutating func admit(_ window: WindowID, at location: CGPoint, control: Bool, posted: Bool = false) -> Entered? {
         let display = monitors.first { $0.frame.contains(location) }?.id
-        if warpPending {
+        if warpPending || posted {
             warpPending = false
             (self.window, self.display) = (window, display)
             return nil

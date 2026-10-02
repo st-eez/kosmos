@@ -272,6 +272,18 @@
   when its Dock thumbnail unhides the app, is followed by its own return. A keyed
   fullscreen window is not followed, because macOS shows its Space, where a switch fails.
   With no managed window keyed, Kosmos follows the app's most recently focused window.
+  - Kosmos follows an unhide only while the app is the front process, read once the app's
+    worker has answered for its key window. An unhide that fronts nothing, as a script's
+    `NSRunningApplication.unhide`, Show All, or computer use unhiding the apps it hid at
+    the end of its turn, returns the windows and leaves the focus where it is. Live on
+    2026-09-29 at 09:27:24.8, computer use unhid Activity Monitor and Spotify on the left
+    panel while Claude was front on the main panel, and Kosmos focused Spotify, then
+    Activity Monitor. The spec's `Return` keys the window as it returns, so it models the
+    front case only. Unmeasured: whether macOS fronts an app before its unhide posts at a
+    Command-Tab or Dock click. If it does not, such an unhide is no longer followed here,
+    and what the app's key report then does is untested. A probe that hides a child app of
+    its own, activates it, and reads the front process at the unhide notification and after
+    a worker read would settle it.
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame. Parking asks for no focus, since macOS keys another window itself and a
     request would pull the screen out of a native fullscreen Space. A window already

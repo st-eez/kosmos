@@ -351,8 +351,11 @@ public struct Session: Sendable {
     }
 
     /// Nil for a managed `keyed` window that did not hide with the app: a minimized one follows
-    /// by its own return, and a fullscreen one keeps macOS on its Space (docs/tree.md).
-    public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?) -> WindowID? {
+    /// by its own return, and a fullscreen one keeps macOS on its Space. Nil too when the app
+    /// is not the front process: an unhide that fronts nothing, as a script's or computer
+    /// use's, or Show All, leaves the focus where it is (docs/tree.md).
+    public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?, front: Bool) -> WindowID? {
+        guard front else { return nil }
         guard let keyed, home[keyed] != nil else { return fallback }
         return windows.contains(keyed) ? keyed : nil
     }

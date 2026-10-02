@@ -41,8 +41,43 @@ what Steve has decided. Take an item out when it lands, and add new work here.
   ignore him.
 - Branch `rulefollow` (be88746, e4426e6) follows every window a rule sends to a hidden
   workspace, whoever opened it. Steve ruled that out, so it stays unmerged as a reference.
-- Left out until it's seen, focus follows mouse ignoring posted mouse moves, so computer
-  use's pointer can't hover focus a window.
+- Focus follows mouse ignores posted pointer movement since branch `computeruse`
+  ([focus-follows-mouse.md](focus-follows-mouse.md)), and Steve's own movement carried
+  source pid 0 in 74 of 74 events. The sample above still covers keys and clicks.
+
+## Keep computer use from taking over while Steve works
+
+Steve wants Claude Code's computer use to run beside him without switching workspaces or
+displays or moving his focus. Branch `computeruse` stops the two takeovers Kosmos added: its
+posted pointer moves focus nothing, and its unhide of the apps it hid at the end of each
+turn no longer pulls focus to them ([integrations.md](integrations.md)). What is left is
+computer use's own design, and Steve's choice among these. Once the branch is installed,
+check it live: after a computer use turn that clicks, the log should say `pointer movement
+posted by pid N (claude) focuses nothing` with no `pointer focuses` line at the click, and
+the `unhid` lines at the turn's end should have no `focus of` line for the unhidden apps'
+windows after them.
+- Computer use keys its target app and posts real input, so with or without Kosmos it takes
+  the keyboard focus and the pointer. Its per-app background tools (`app_screenshot`,
+  `app_click` and the rest, which act on one app's window through Accessibility "so the
+  user can keep working") are in Claude Code 2.1.284's bundle, but its CLI build answers
+  "Per-app background tools are not available in this build". Its hide before each action
+  and its animated drag are server flags (`hideBeforeAction`, `mouseAnimation`), with no
+  setting. Background tools from Anthropic are the real fix. When they come, check
+  `app_bring_to_current_space`, which moves a window between Spaces and could take a
+  concealed window out of Kosmos's holding Space.
+- Kosmos declining to follow an activation no real input preceded. It can tell: no key or
+  click with source pid 0 in the last second. It breaks computer use for a window on a
+  hidden workspace, which stays concealed where computer use can't see or click it, and
+  Kosmos's request of its own focus then fights computer use's front app check. It fits
+  new windows that agents open (the Teams item above), and not the app computer use drives.
+- Mouse-follows-focus reading its Command-Tab test from the HID state, so computer use's
+  posted keys and clicks never make Kosmos move the pointer. Waits for the input-source
+  sample above, since Karabiner or Wispr Flow may post Steve's own keys.
+- Hotkeys that another process posts, as computer use pressing alt-1, still switch
+  workspaces. Kosmos could skip a hotkey with no HID key down in the last few ms. Not
+  seen live; an agent presses Kosmos's keys only on purpose.
+- Computer use cannot drive the Claude desktop app at all, since its screenshots always
+  leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
 ## Benchmark the slide thread on real apps
 

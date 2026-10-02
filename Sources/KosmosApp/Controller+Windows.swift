@@ -1,4 +1,5 @@
 import AppKit
+import CKosmos
 import KosmosCore
 import os
 
@@ -261,8 +262,11 @@ extension Controller {
             let windows = hidden()
             // Hidden again while the worker answered: the windows wait for the next unhide.
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true, !windows.isEmpty else { return }
-            returned(windows, follow: session.followOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows)),
-                     at: received)
+            // Read after the worker's answer, the latest point. Whether a Command-Tab fronts the
+            // app before its unhide posts is unmeasured (docs/tree.md).
+            let follow = session.followOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows),
+                                                front: kosmos_front_pid() == pid)
+            returned(windows, follow: follow, at: received)
         }
     }
 
