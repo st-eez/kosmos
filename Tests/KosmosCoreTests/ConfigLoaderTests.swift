@@ -351,6 +351,18 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(WindowRule(appName: "youtube").matches(appID: "com.apple.Safari.WebApp.1234", appName: "YouTube"))
     }
 
+    /// ChatGPT's Save panel, an AXStandardWindow, tiled beside its window before this
+    /// (docs/inventory.md).
+    @Test func filePanelsFloatWhateverTheRuleSays() {
+        #expect(WindowRule.floats(nil, axIdentifier: "save-panel"))
+        #expect(WindowRule.floats(nil, axIdentifier: "open-panel"))
+        #expect(WindowRule.floats(WindowRule(appName: "chatgpt", float: false), axIdentifier: "save-panel"))
+        #expect(WindowRule.floats(WindowRule(appName: "finder", float: true), axIdentifier: "FinderWindow"))
+        #expect(!WindowRule.floats(nil, axIdentifier: nil))
+        #expect(!WindowRule.floats(WindowRule(appName: "chatgpt", workspace: "3"), axIdentifier: nil))
+        #expect(!WindowRule.floats(nil, axIdentifier: "find-panel"))
+    }
+
     @Test func diagnosticsAreInFileOrder() {
         // The loader checks [monitors] before workspaces, but reports in file order.
         let result = Config.load("config-version = 1\nworkspaces = [1]\n[monitors]\nx = {}")

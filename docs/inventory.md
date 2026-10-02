@@ -227,6 +227,34 @@
   restored a window that no read answered for and no creation report named while it
   stayed hidden, so before these reads it was never managed (live log, September 24,
   2026).
+- An AppKit Open or Save panel standing alone is managed and floats at its own frame
+  (`WindowRule.floats`, [config.md](config.md)). Its subrole is AXStandardWindow, and
+  its AXIdentifier names it. Kosmos tiled ChatGPT's Save panel for a download beside
+  ChatGPT's window (live log, September 29, 2026, 12:26:02). System Events, polled every
+  200 ms through three downloads that day, read the panel as title "Save", subrole
+  AXStandardWindow and AXIdentifier `save-panel`, and ChatGPT's main window with an empty
+  AXIdentifier.
+  - The identifiers are `save-panel` for NSSavePanel and `open-panel` for NSOpenPanel. On
+    macOS 27.0 (26A428), on September 29, 2026, panels made and never shown in a process of
+    their own, which took no focus, answered `accessibilityIdentifier()` with those names,
+    in and out of the App Sandbox, where the class stayed NSSavePanel or NSOpenPanel.
+    Those two classes override `accessibilityIdentifier`; NSRemoteSavePanel and
+    NSLocalSavePanel, which subclass NSPanel, do not. No sandboxed app's panel on screen
+    has been read, so that its window is the NSSavePanel is inferred. The dyld shared
+    cache holds both strings, and four other `-panel` names, which Kosmos does not float:
+    `find-panel`, `spelling-panel`, `substitutions-panel` and `autofill-panel`.
+  - The worker reads the identifier with the subrole and the minimized state, one more
+    Accessibility call for each window read. A failed identifier read counts as no
+    identifier, so an app that fails it only for this attribute still has its windows
+    managed, where a failed subrole read leaves the window out. Against 11 windows of 10 running apps that
+    day, each of the three reads took 0.02 to 0.15 ms (median of 20). One
+    `AXUIElementCopyMultipleAttributeValues` for all three took 0.04 to 0.17 ms, less than
+    the two reads before, and would take the place of the three if window reads ever cost
+    enough to matter.
+  - A sheet, a panel attached to its window, has that window as its WindowServer parent,
+    so it is no candidate and Kosmos leaves it alone.
+  - The ceiling: a file dialog an app builds itself, rather than with NSSavePanel or
+    NSOpenPanel, carries no such identifier and tiles unless a rule floats its app.
 - A known limit. A window on an ordinary Space that no display shows at launch, as one
   behind a native fullscreen Space, is managed only once its Space is shown, since its
   app's window list names only windows on shown Spaces. On 2026-09-24 Kosmos restarted at
