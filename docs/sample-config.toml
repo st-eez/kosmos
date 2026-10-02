@@ -230,16 +230,14 @@ workspace = '6'
 app-name = 'YouTube'
 workspace = '7'
 
-# Every Chrome window, including browser test launches, floats on workspace 4, away from
+# Every Chrome window, including browser test launches, tiles on workspace 4, away from
 # the current work.
 [[rule]]
 app-id = 'com.google.Chrome'
-float = true
 workspace = '4'
 
 [[rule]]
 app-id = 'com.google.chrome.for.testing'
-float = true
 workspace = '4'
 
 [[rule]]
