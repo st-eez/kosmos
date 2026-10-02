@@ -79,6 +79,19 @@ windows after them.
 - Computer use cannot drive the Claude desktop app at all, since its screenshots always
   leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
+## Check Kosmos fullscreen live
+
+A focus in a direction on a display with a Kosmos fullscreen window now sees that window and
+the floating windows there by their centers, never the tiles under it, and leaves the display
+when none lies that way ([tree.md](tree.md)). Tests cover Steve's scenarios of 2026-10-02;
+nothing has run them with Kosmos yet.
+- With a tile in fullscreen on the main panel and a floating window on its right half,
+  alt-right focuses the floating window and alt-right again does nothing. alt-left from the
+  floating window focuses the fullscreen tile, which stays under the floating window, and
+  the log has a `keyed under a floating window` or `keyed without a raise` line for it.
+- With no floating window, alt-left from the fullscreen tile focuses the left panel's window
+  at its edge and leaves the tile in fullscreen, and alt-right lands back on it.
+
 ## Benchmark the slide thread on real apps
 
 Slides step on their own thread since 7f32a0b. Its probes lost 0 vsyncs with the main
