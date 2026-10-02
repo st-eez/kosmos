@@ -190,6 +190,8 @@ final class Inventory {
             if !minimized, let row = windows[id] { readAX([id], pid: row.pid) }
         case .backgroundFocus(let id):
             if let id { readIfUnknown([id]) }
+        case .titleChanged(let id, let title):
+            ax[id]?.title = title
         case .frameApplied, .framesDropped:
             break
         }

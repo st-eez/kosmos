@@ -45,12 +45,30 @@
   `app-name`'s, would also take a page whose title names Bitwarden. A regular expression,
   as Hyprland's `title:` or AeroSpace's `window-title-regex-substring`, is the upgrade once
   a rule needs a title that varies, as one naming a document does.
-- Kosmos matches a rule on the title once, as it admits the window. Chrome titles the
-  pop-out only after it shows: the watch, polling every 0.1 to 0.5 s, saw a new Chrome
-  window at 16:23:00.375 titled "NetSuite Login - Google Chrome", as the window it came
-  from, and titled "Bitwarden" at 16:23:00.949. Kosmos admitted windows 0.1 to 0.3 s after
-  they appeared that day, so a rule on the title reaches Helium's pop-out, "Bitwarden" at
-  its first sight, and misses Chrome's.
+- Chrome titles the pop-out only after it shows. The watch, polling every 0.1 to 0.5 s,
+  saw a new Chrome window at 16:23:00.375 titled "NetSuite Login - Google Chrome", as the
+  window it came from, and titled "Bitwarden" at 16:23:00.949. Helium's pop-out was
+  "Bitwarden" at its first sight. Kosmos admitted windows 0.1 to 0.3 s after they appeared
+  that day, so it reads Chrome's borrowed title. For 2 s after it admits a new window of an
+  app that a rule on the title names, Kosmos observes the window's AXTitleChanged
+  ([inventory.md](inventory.md)). When the first rule that matches the new title is one on
+  the title, other than the rule that placed the window, it applies then, once, as at
+  admission (`TitleWatch`, `Session.retitled`): the window floats at the frame its app
+  showed it at, or tiles, and goes to the rule's workspace, where Kosmos follows it when it
+  has the focus. A rule without `workspace` leaves it where it is. So Chrome's pop-out
+  shows tiled for about half a second, then floats.
+  - A window the user moved, resized, floated or tiled since its admission, by a command
+    or the mouse, keeps its place, and so does a parked one. A window there at launch, one
+    the saved layout places, one its app reopens and a tab dragged out of its group have
+    their titles already, and no watch starts for them.
+  - The log names each rule that applies late with its delay, as `<id> takes the rule on
+    its title 'Bitwarden' 450 ms after its admission`. The 2 s is about three times the
+    0.6 s from Chrome's window appearing to its title. A delay in the log near 2 s calls
+    for a longer `TitleWatch.bound`.
+  - The ceilings: a title that matches only after 2 s, as from a slow page, never applies
+    its rule, and a title that changes back never undoes a rule applied. Showing a new
+    window of such an app only once its title settles would end the half second tiled, at
+    the cost of a wait for each of its windows.
 - An app's Open and Save panels float whatever its rule says, `float = false` included
   ([inventory.md](inventory.md)). No rule reaches another choice Kosmos makes about a
   window, such as which windows it manages, so none reaches this one. A rule's `workspace`

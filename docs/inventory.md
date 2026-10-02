@@ -13,7 +13,9 @@
     payloads were measured on macOS 27 and are decoded in one place, WindowServerEvent. A
     window event carries the window id first, and a Space membership event a 64 bit Space
     id, then the window id.
-  - One AX observer per app: creation, focus, main window, destroy and minimize.
+  - One AX observer per app: creation, focus, main window, destroy and minimize, and for
+    2 s after Kosmos admits a new window that a rule on the title may reach, that window's
+    title ([config.md](config.md)).
   - NSWorkspace app lifecycle events, plus a process exit source for each app. The
     inventory alone observes an app's hide and unhide: it records the departure or return
     of the app's windows, then passes the event to the controller.
@@ -297,10 +299,20 @@
     fullscreen button is disabled then, and such a window would float here.
 - The worker reads each window's title with its other facts, for rules on the title
   ([config.md](config.md)), one more Accessibility call for each window read. A failed
-  read counts as no title, which no rule on the title matches. `kosmos-probe window-kinds`
-  read the title of 6 windows of 6 apps in 0.018 to 0.082 ms on October 2, 2026, in two
-  runs (median of 20). Chrome and Helium were not running, so their windows' costs are
-  unmeasured.
+  read counts as no title, which no rule on the title matches.
+  - For 2 s after Kosmos admits a new window of an app that a rule on the title names, the
+    worker observes that window's AXTitleChanged. It reads the title as the observation
+    starts, since the title can have changed after the window's read, and at each change,
+    and reports it; the inventory keeps it, and the controller checks the rules again.
+  - `kosmos-probe window-kinds` read 6 windows of 6 apps on October 2, 2026, in two runs
+    (median of 20): 0.018 to 0.082 ms for the title, and 0.025 to 0.131 ms for an
+    AXTitleChanged registration with its removal. Each window watched costs a registration,
+    its removal and a title read, then a title read and a main actor turn at each change of
+    its title. Chrome and Helium were not running, so their windows' costs are unmeasured.
+  - Other windows' titles are not observed, so an app whose windows change title often, as
+    a terminal's, costs nothing at a change, and Kosmos keeps each such window's title from
+    its last read. A window its app reopens, or a tab dragged out of its group, is placed
+    by that title.
 - A window with another subrole, as AXDialog, AXSystemDialog, AXFloatingWindow or AXUnknown,
   stays unmanaged. Kosmos never tiles it, and it stays where its app puts it. Of AeroSpace's
   71 dumps of windows at level 0 of regular apps, 17 report another subrole: 13 popups, such

@@ -150,6 +150,22 @@ Steve's windows on 2026-10-02, so none of his apps' own has been seen.
   their button read again once the drag ends.
 - Open System Settings. It should float by rule.
 
+## Check the Bitwarden pop-out floats live
+
+Rules match a window's title since branch `titlerules`, and a rule on the title applies to a
+new window its app retitles within 2 s of its admission ([config.md](config.md)). No
+pop-out has been opened with it yet. The System Events watch that found Chrome's borrowed
+title polled, so whether Chrome and Helium post AXTitleChanged for the pop-out is
+unmeasured.
+- Add the two rules of [sample-config.toml](sample-config.toml) before the browsers' rules,
+  then pop the extension out in Chrome and in Helium while taking `log stream --level info
+  --predicate 'subsystem == "io.github.st-eez.kosmos"'`. Helium's should float at once, with
+  `<id> floats by rule`. Chrome's should tile for about half a second, then float at the
+  frame it showed at, with `<id> takes the rule on its title 'Bitwarden' N ms after its
+  admission`. If it stays tiled with no such line, Chrome posts no AXTitleChanged for it,
+  and reading its title again for the 2 s would close the gap.
+- A delay near 2 s in that line calls for a longer `TitleWatch.bound`.
+
 ## Check RustDesk live
 
 Since d514acf Kosmos observes each app's activation policy, so an app that launches as an

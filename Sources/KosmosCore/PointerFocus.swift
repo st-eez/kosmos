@@ -135,6 +135,9 @@ public enum FocusChange: Sendable {
     case keyReport(admitted: Bool)
     /// Parked windows came back. `followed`: Kosmos follows one of them, with no command since.
     case returned(followed: Bool)
+    /// A rule on the title floated, tiled or moved the focused window after its admission
+    /// (TitleWatch). `pointerOnWindow`: the pointer was on the window before.
+    case retitled(pointerOnWindow: Bool)
 }
 
 /// The user's input as the app reads it. The rule reads each only for a change that needs it.
@@ -176,6 +179,8 @@ extension FocusChange {
             return activation.bringsPointer(onDock: onDock)
         case .returned(followed: false):
             return false
+        case .retitled(let pointerOnWindow):
+            return pointerOnWindow && !input.leftButtonDown()
         }
     }
 }

@@ -201,8 +201,9 @@ float = true
 app-name = 'TLauncher'
 float = true
 
-# The Bitwarden extension's pop-out, a browser window titled "Bitwarden". Before the
-# browsers' rules below, which would hide these.
+# The Bitwarden extension's pop-out, a browser window titled "Bitwarden". Chrome titles it
+# about half a second after it shows, and Kosmos floats it then. Before the browsers' rules
+# below, which would hide these.
 [[rule]]
 app-id = 'com.google.Chrome'
 title = 'Bitwarden'

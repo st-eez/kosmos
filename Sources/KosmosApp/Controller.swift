@@ -52,6 +52,7 @@ final class Controller {
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     var rules: [WindowRule] = []
+    var titleWatch = TitleWatch()
     var mouseFollowsFocus = false
     /// The `focus-follows-mouse` command changes `enabled` until the next config load.
     var focusFollowsMouse = FocusFollowsMouse() {
@@ -235,7 +236,9 @@ final class Controller {
             return "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))"
         }
         reports.commandExecuted(receivedAt: received)
+        let focused = session.focused
         if let plan = session.perform(command, frame: { knownFrame($0) }) {
+            titleWatch.ran(command, focused: focused)
             execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: .command(command, from: source)))
         }
         return nil

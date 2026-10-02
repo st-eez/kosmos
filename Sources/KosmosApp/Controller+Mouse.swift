@@ -20,7 +20,10 @@ extension Controller {
         let button = changedAt.map { leftButton.state(at: $0) } ?? .up
         // The user moves or resizes it, unless the change is its own write landing after the
         // read back, as the other tiles' reflow at a lift lands while the user drags.
-        if button != .up { slides?.changedInPress(id, to: frame) }
+        if button != .up {
+            slides?.changedInPress(id, to: frame)
+            titleWatch.end(id)
+        }
         ledger.observe(id, frame: frame)
         // Seen smaller than its minimum, the window loses it. During a press, the mouse up
         // lays its workspace out.
@@ -190,6 +193,7 @@ extension Controller {
             return
         }
         modifierDrag = drag
+        titleWatch.end(grab.window)
         slides?.end(grab.window, "as a modifier drag took it")
         // A Dock click before this press no longer brings the pointer (ActivationInput.bringsPointer).
         clickedWindow = 0
