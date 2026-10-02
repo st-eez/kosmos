@@ -30,8 +30,15 @@
 (* Fronting another window of the app that is already key can miss,        *)
 (* leaving that app's key window as it was and reporting it again.         *)
 (*                                                                         *)
+(* An app can also key one of its windows with no input of the user's, as  *)
+(* an agent's `open -a` does (AgentOpen). Kosmos tells that from the       *)
+(* user's change by its input tap, so each report carries whether the      *)
+(* user's input made it (`own`). Kosmos follows only the user's into       *)
+(* another workspace, and requests its own focus again over another. On a  *)
+(* shown workspace it adopts either, as the implementation does.           *)
+(*                                                                         *)
 (* A fresh report of a window on the visible workspace becomes the focus.  *)
-(* Only the user reaches a hidden window, with Command-Tab or by opening   *)
+(* The user reaches a hidden window with Command-Tab or by opening         *)
 (* that window, so Kosmos follows a report into another workspace only if  *)
 (* the window was hidden when it became key. A report that repeats a       *)
 (* hidden key window while Kosmos awaits the echo of its request to that   *)
@@ -128,7 +135,9 @@ CONSTANTS
     MaxEvents,      \* bound on user inputs
     AllowClicks,    \* the user may click a visible window
     AllowCmdTab,    \* the user may Command-Tab to any other app's window
-    AllowOpen,      \* the user or an app may key a specific hidden window, as `open` or a Window menu does
+    AllowOpen,      \* the user may key a specific hidden window, as `open` or a Window menu does
+    AllowAgent,     \* an app may key one of its windows with no input of the user's, as an agent's `open -a`
+    FollowAgents,   \* Kosmos follows such a window into its workspace (the behaviour before this rule)
     AllowHover,     \* the pointer may rest in a visible window (focus follows mouse)
     AllowFallback,  \* macOS may re-key when the key window is hidden (not observed)
     AllowLeave,     \* the key window may close or minimize, or its app hide
@@ -196,7 +205,7 @@ ASSUME BackgroundRaise \in BOOLEAN /\ LateNoteCheck \in BOOLEAN /\ RaiseTimeout 
 ASSUME NoteDelay \in BOOLEAN /\ NoticeDelay \in BOOLEAN /\ HoldNotes \in BOOLEAN /\ NoticeCheck \in BOOLEAN
 ASSUME NoteFollows \in BOOLEAN /\ ReassertTakes \in BOOLEAN /\ PostRaise \in BOOLEAN
 ASSUME PostRaiseEcho \in {"none", "kept", "done"} /\ KeyOldFirst \in BOOLEAN /\ ReadsByWindow \in BOOLEAN
-ASSUME HeldDrop \in BOOLEAN
+ASSUME HeldDrop \in BOOLEAN /\ AllowAgent \in BOOLEAN /\ FollowAgents \in BOOLEAN
 
 \* No workspace window is key: Kosmos keyed its own window for an empty workspace, or macOS
 \* left no key window after a departure. Both report no window.
@@ -219,7 +228,8 @@ VARIABLES
     s,        \* the state record
     history   \* user inputs: k = `workspace k`, -1 = click, -2 = Command-Tab, -3 = key window leaves,
               \* -4 = a window returns, -5 = a hidden window opened, -6 = hover,
-              \* -7 = a background app's focused window changed
+              \* -7 = a background app's focused window changed, -8 = an app keyed a window
+              \* with no input of the user's
 
 vars == <<s, history>>
 
@@ -303,9 +313,12 @@ Init ==
                lastKey  |-> [a \in Apps |-> IF AppOf[f] = a THEN f ELSE CHOOSE w \in Win : AppOf[w] = a],
                                       \* macOS: each app's window key when it was last front,
                                       \* which a key record activates it with (KeyOldFirst)
-               lowTop   |-> {} ]      \* ghost: apps whose raise after a key record found the app
+               lowTop   |-> {},       \* ghost: apps whose raise after a key record found the app
                                       \* not yet keying the named window, until one of their
                                       \* windows comes to their front
+               agent    |-> [w |-> NoWin, shown |-> FALSE] ]
+                                      \* ghost: the window an app last keyed with no input of
+                                      \* the user's, and whether a display showed its workspace then
     /\ history = <<>>
 
 Visible == {w \in Win : ~s.hidden[w] /\ w \notin s.gone}
@@ -332,8 +345,10 @@ SeqOf(S) == IF S = {} THEN <<>> ELSE LET x == CHOOSE x \in S : TRUE IN <<x>> \o 
 \* key window Kosmos last heard of.
 Item(st, w, at, ts) == [r |-> 0, w |-> w, g |-> 0, front |-> FALSE, st |-> st, t |-> at, ts |-> ts, bg |-> FALSE,
                         hs |-> [v \in Win |-> FALSE], ko |-> FALSE]
+\* `own`: the user's input made the change, as the input tap tells (AgentOpen). macOS's own
+\* re-keys keep TRUE, the case where Kosmos's rules decide alone, as before the tap.
 Ev(w, act, at, i, hid, prev, bg, ts, ko) ==
-    [w |-> w, act |-> act, t |-> at, i |-> i, hid |-> hid, prev |-> prev, bg |-> bg, ts |-> ts, ko |-> ko]
+    [w |-> w, act |-> act, t |-> at, i |-> i, hid |-> hid, prev |-> prev, bg |-> bg, ts |-> ts, ko |-> ko, own |-> TRUE]
 \* `o` says where the change came from, for the ghosts: a background app's own change
 \* (`bg`), a user's input (`user`), and a change inside the front app, which no activation
 \* read reports (`lone`).
@@ -358,7 +373,8 @@ Notice(t, a, w, at, user) ==
     IF NoticeDelay THEN [t EXCEPT !.an = Append(@, [a |-> a, w |-> w, t |-> at, user |-> user,
                                                     ehid |-> w # NoWin /\ t.hidden[w]])]
     ELSE ActItem(t, a, w, at)
-KeyChangeBy(t, w, at, user) ==
+\* `own` reaches the report only without SplitQueue, as AgentOpen runs only there.
+KeyChangeOwn(t, w, at, user, own) ==
     IF t.osFocus = w THEN t
     ELSE LET a == AppOfX(w)
              activated == FrontApp(t) # a
@@ -371,13 +387,14 @@ KeyChangeBy(t, w, at, user) ==
                                                    THEN [n \in 1..Len(t.nq[b]) |-> [t.nq[b][n] EXCEPT !.lost = TRUE]]
                                                    ELSE t.nq[b]]]
          IN IF ~SplitQueue \/ (w = NoWin /\ ~NoticeDelay)
-            THEN [u EXCEPT !.evs = Append(@, Ev(w, activated, at, t.ne + 1, w # NoWin /\ t.hidden[w],
-                                                t.osFocus, FALSE, t.clk, FALSE)),
+            THEN [u EXCEPT !.evs = Append(@, [Ev(w, activated, at, t.ne + 1, w # NoWin /\ t.hidden[w],
+                                                 t.osFocus, FALSE, t.clk, FALSE) EXCEPT !.own = own]),
                            !.clk = IF SplitQueue THEN t.clk + 1 ELSE @]
             ELSE IF w = NoWin THEN Notice(u, a, w, at, user)
             ELSE LET v == IF t.afocus[a] # w THEN Note(u, w, at, [bg |-> FALSE, user |-> user, lone |-> ~activated])
                           ELSE u
                  IN IF activated THEN Notice(v, a, w, at, user) ELSE v
+KeyChangeBy(t, w, at, user) == KeyChangeOwn(t, w, at, user, TRUE)
 KeyChange(t, w, at) == KeyChangeBy(t, w, at, FALSE)
 
 \* macOS keys a window it chose, or the user keyed: that window is the front of its app.
@@ -511,6 +528,8 @@ DropMissed(t, ev) ==
 \* user's (with ReassertTakes, so is one it reasserts over). A focus notification of a
 \* window hidden at its stamp follows as an activation read does: the user opened a hidden
 \* window of the front app. Without NoteFollows only an activation read follows.
+\* A report Kosmos would follow that no input of the user's made is reasserted over once its
+\* grace ends, as the implementation decides it then; with FollowAgents it is followed.
 Hold(t, ev) == [t EXCEPT !.held = <<ev>>]
 Adopt(t, ev, final, miss) ==
     LET w == ev.w
@@ -525,7 +544,10 @@ Adopt(t, ev, final, miss) ==
        ELSE IF WsOf[w] \in IF AdoptShown THEN Shown(t) ELSE {t.active}   \* on screen: its display becomes the focused one
             THEN RequestFocus([taken EXCEPT !.focus = w, !.active = WsOf[w], !.mru[WsOf[w]] = w, !.gen = t.gen + 1], w, t.gen + 1)
        ELSE IF ev.hid /\ follows /\ FollowRekeys THEN StartSwitch(taken, WsOf[w], w)
-       ELSE IF ev.hid /\ follows /\ ~KeyLeft(t, ev) THEN IF wait THEN Hold(t, ev) ELSE StartSwitch(taken, WsOf[w], w)
+       ELSE IF ev.hid /\ follows /\ ~KeyLeft(t, ev)
+            THEN IF wait THEN Hold(t, ev)
+                 ELSE IF ev.own \/ FollowAgents THEN StartSwitch(taken, WsOf[w], w)
+                 ELSE Reassert(t0)   \* no input of the user's: no switch
        ELSE Reassert(t0)   \* visible mid-switch, or a re-key after the key window left
 
 \* A report stamped before the last one taken for the user's, or before the report held
@@ -1153,9 +1175,8 @@ CmdTab ==
                                                                                   !.goal = Goal(w)]
          /\ history' = Append(history, -2)
 
-\* The user or an app keys a specific hidden window, of any app: `open` on a
-\* document whose window is concealed, an app's Window menu, the Dock's window
-\* list.
+\* The user keys a specific hidden window, of any app: `open` on a document
+\* whose window is concealed, an app's Window menu, the Dock's window list.
 Open ==
     /\ AllowOpen
     /\ ~Returning /\ s.rekey = <<>>
@@ -1167,6 +1188,21 @@ Open ==
                                                                                   !.goal[DisplayOf[WsOf[w]]] = WsOf[w],
                                                                                   !.lastRaced = Races(w)]
          /\ history' = Append(history, -5)
+
+\* An app keys one of its windows, hidden or visible, with no input of the user's: an
+\* agent's or a script's `open -a`, or computer use's `open_application`. It claims nothing
+\* and leaves the workspace the user chose on each display. The input tap tells it from the
+\* user's change, so its report is not his (`own`). Without SplitQueue only.
+AgentOpen ==
+    /\ AllowAgent /\ ~SplitQueue
+    /\ ~Returning /\ s.rekey = <<>>
+    /\ Len(history) < MaxEvents
+    /\ Noticed
+    /\ \E w \in Win \ s.gone :
+         /\ w # s.osFocus
+         /\ s' = [Top(KeyChangeOwn(Fresh(s), w, Len(history) + 1, FALSE, FALSE), w)
+                    EXCEPT !.lastWin = {}, !.agent = [w |-> w, shown |-> WsOf[w] \in Shown(s)]]
+         /\ history' = Append(history, -8)
 
 \* The pointer comes to rest in a visible window. Focus follows mouse never moves the
 \* key window by itself; Kosmos's hover job does.
@@ -1261,6 +1297,7 @@ Internal == ExecMain \/ ExecBridge \/ ExecFocus \/ PostReports \/ PostNotices \/
             \/ ActNotice \/ FocusStart \/ FocusDecide \/ FocusKey \/ \E a \in Apps : Worker(a) \/ ObserverPost(a) \/ KeyNamed(a)
 
 Next == Internal \/ Fallback \/ Command \/ Click \/ CmdTab \/ Open \/ Leave \/ Return \/ Hover \/ UserBackground
+        \/ AgentOpen
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(ExecMain) /\ WF_vars(ExecBridge)
                               /\ WF_vars(ExecFocus) /\ WF_vars(PostReports) /\ WF_vars(PostNotices)
@@ -1302,6 +1339,13 @@ HonorsLastClick == Quiescent /\ s.lastWin # {} /\ ~s.lastAmb /\ ~s.lastMis /\ ~s
 \* When the key window leaves, each display keeps the workspace the user had on
 \* it. The focus may move to another display where macOS keyed a window.
 KeepsWorkspaceAfterLeave == Quiescent /\ history # <<>> /\ history[Len(history)] = -3 => s.onDisplay = s.goal
+
+\* An app that keys a window with no input of the user's brings no workspace on screen: its
+\* window's workspace shows only where it did already, or where the user asked for it. It
+\* can still take the focus, and a Command-Tab of the user's just before it with it.
+KeepsWorkspaceAfterAgent ==
+    Quiescent /\ history # <<>> /\ history[Len(history)] = -8
+    => LET k == WsOf[s.agent.w] IN s.onDisplay[DisplayOf[k]] = k => s.agent.shown \/ s.goal[DisplayOf[k]] = k
 
 OnDisplay(d) == {w \in Win : DisplayOf[WsOf[w]] = d}
 
