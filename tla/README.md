@@ -151,14 +151,18 @@ background apps also change their own focused window (`AllowBackground`). In the
 configs the main actor also notices an activation some time after it happens
 (`NoticeDelay`), with two inputs. `split-open` lets the user open a hidden window, and
 `split-displays` runs it on two displays. The split configs also check that the key window
-is the front window of its app at rest (`FocusOnTop`).
+is the front window of its app at rest (`FocusOnTop`). In `split-commands`,
+`split-user-notice` and `split-hover-notice` a floating window can overlap the window of
+any key record, and then no raise follows it (`FloatOver`), as Kosmos builds
+([docs/focus.md](../docs/focus.md)). Its app is exempt from `FocusOnTop` until one of its
+windows comes to its front.
 
 A split run was stopped after 30 minutes, and then gives the states it had checked without a
 violation. The runs that finished took less than 20 minutes each.
 
 | Config | Inputs | Checks | Result | States | Time |
 | --- | --- | --- | --- | --- | --- |
-| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 3,284,762 | 1 min 23 s |
+| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 5,113,717 | 1 min 7 s |
 | `split-user` | commands, clicks, Command-Tab; app A busy | as `split-commands`, last activation wins | stopped, no violation | 56,926,029 | 30 min |
 | `split-user-busyb` | as `split-user`, app B busy | as `split-user` | stopped, no violation | 75,422,911 | 30 min |
 | `split-user-background` | as `split-user`, background apps changing their own focused window | as `split-user` | stopped, no violation | 53,353,117 | 30 min |
@@ -167,9 +171,12 @@ violation. The runs that finished took less than 20 minutes each.
 | `split-open` | as `split-user`, and an opened hidden window | as `split-user` | stopped, no violation | 83,771,017 | 30 min |
 | `split-displays` | two displays; as `split-open` | as `split-user` | stopped, no violation | 77,845,000 | 30 min |
 | `split-leave` | as `split-user`, the key window leaving and returning as in `leave` | as `split-user`, keeps its workspace after a leave | stopped, no violation | 70,622,472 | 30 min |
-| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 4,845,286 | 1 min 28 s |
+| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 6,238,666 | 1 min 8 s |
 | `split-user-background-notice` | as `split-user-background` with two inputs, activations noticed late | as `split-user` | pass | 4,846,385 | 1 min 42 s |
-| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 5,892,013 | 2 min 11 s |
+| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 7,643,983 | 1 min 35 s |
+
+The `split-commands`, `split-user-notice` and `split-hover-notice` rows came from 4 workers
+on Steve's Mac on October 2, 2026, with `FloatOver`.
 
 Each of these runs one rule the implementation had, or one the spec had, and fails as
 expected (changes 17 to 26):

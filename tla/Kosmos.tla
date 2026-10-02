@@ -85,9 +85,10 @@
 (* background app the worker's job only orders the request behind the      *)
 (* app's earlier jobs; the queue records and posts the key record, which   *)
 (* activates the app with the window but leaves it where it sits in the    *)
-(* app's stacking order, and then the worker raises it (PostRaise). With   *)
-(* KeyOldFirst the app can first key its last key window, while that is    *)
-(* still its focused window, and the named one a step later, as Preview    *)
+(* app's stacking order, and then the worker raises it (PostRaise), unless *)
+(* a floating window overlaps it (FloatOver). With KeyOldFirst the app can *)
+(* first key its last key window, while that is still its focused window,  *)
+(* and the named one a step later, as Preview                              *)
 (* and Ghostty did live. Each side records the echo only right before its  *)
 (* own call that changes the key window. The raise after the key record    *)
 (* changes it only when the user keyed another window of the app first, so *)
@@ -178,6 +179,8 @@ CONSTANTS
     PostRaiseEcho,  \* with SplitQueue, the echo that raise leaves: "none"; "kept", recorded just
                     \* before it until a report matches it; or "done", recorded just before it
                     \* until the worker has seen the raise done
+    FloatOver,      \* with SplitQueue, a floating window may overlap the window a request names,
+                    \* and then no raise follows the queue's key record (docs/focus.md)
     KeyOldFirst,    \* with SplitQueue, a key record can activate a background app with the window
                     \* key when the app was last front, while that is still its focused window, and
                     \* key the named window a step later (live)
@@ -190,7 +193,7 @@ ASSUME RevealFirst \in BOOLEAN /\ Coalesce \in BOOLEAN /\ AllowLeave \in BOOLEAN
 ASSUME AllowReturn \in BOOLEAN /\ FollowStale \in BOOLEAN /\ Grace \in BOOLEAN
 ASSUME AllowMiss \in BOOLEAN /\ MissRule \in BOOLEAN /\ AllowQuiet \in BOOLEAN /\ WaitBound \in BOOLEAN
 ASSUME AllowOpen \in BOOLEAN /\ AllowLate \in BOOLEAN /\ AdoptShown \in BOOLEAN /\ AllowHover \in BOOLEAN
-ASSUME SplitQueue \in BOOLEAN /\ RaiseReports \in BOOLEAN /\ RaiseKeys \in BOOLEAN
+ASSUME SplitQueue \in BOOLEAN /\ RaiseReports \in BOOLEAN /\ RaiseKeys \in BOOLEAN /\ FloatOver \in BOOLEAN
 ASSUME SplitRules \in {"record-at-call", "d1be665"} /\ AllowBackground \in BOOLEAN /\ ActFrontCheck \in BOOLEAN
 ASSUME BackgroundRaise \in BOOLEAN /\ LateNoteCheck \in BOOLEAN /\ RaiseTimeout \in BOOLEAN
 ASSUME NoteDelay \in BOOLEAN /\ NoticeDelay \in BOOLEAN /\ HoldNotes \in BOOLEAN /\ NoticeCheck \in BOOLEAN
@@ -787,8 +790,11 @@ Raise(t, a, w) ==
 \* record-at-call: for a front app the queue only moves on; the worker keys. For a
 \* background app, unless the request went stale, its window left, the app came front
 \* meanwhile, or the worker is keying it, the queue records and posts the key record, and
-\* with PostRaise hands the worker the raise that follows it. An app handles key records in
-\* order, so one keys the named window of the one before it first.
+\* with PostRaise hands the worker the raise that follows it. With FloatOver a floating
+\* window may overlap the window, and no raise follows: the window stays where it sits, and
+\* its app is exempt from FocusOnTop until one of its windows comes to its front (`lowTop`).
+\* An app handles key records in order, so one keys the named window of the one before it
+\* first.
 \* d1be665: a pending request is recorded by the queue; then the key record follows.
 FocusDecide ==
     LET c == s.fcur
@@ -798,6 +804,7 @@ FocusDecide ==
         post(u) == IF PostRaise
                    THEN [u EXCEPT !.wq[a] = Append(@, [r |-> c.r, w |-> c.w, g |-> c.g, front |-> TRUE, st |-> "post"])]
                    ELSE u
+        under(u) == [u EXCEPT !.lowTop = @ \cup {a}]
     IN /\ SplitQueue
        /\ c # NoReq
        /\ c.st = "wait"
@@ -805,7 +812,9 @@ FocusDecide ==
        /\ s.named[a] = NoWin
        /\ IF SplitRules = "record-at-call"
           THEN IF c.front \/ c.g # s.gen \/ c.w \in s.gone \/ FrontApp(s) = a \/ ph = "raising" THEN s' = t
-               ELSE \E u \in KeyRecords([Record(t, c.w, c.r) EXCEPT !.kr[c.r] = "sent"], a, c.w) : s' = post(u)
+               ELSE \E u \in KeyRecords([Record(t, c.w, c.r) EXCEPT !.kr[c.r] = "sent"], a, c.w),
+                       over \in IF FloatOver THEN BOOLEAN ELSE {FALSE} :
+                       s' = IF over THEN under(u) ELSE post(u)
           ELSE s' = CASE ph = "skipped" -> t
                       [] ph = "pending" -> [Record(s, c.w, c.r) EXCEPT !.kr[c.r] = "recorded", !.fcur.st = "key"]
                       [] OTHER -> [s EXCEPT !.fcur.st = "key"]
@@ -1277,7 +1286,8 @@ Converged == Visible = ShownWins(s) \ s.gone /\ s.osFocus = s.focus
 ConvergesWhenQuiet == Quiescent => Converged /\ \A a \in Apps : s.noteHeld[a] = NoEv
 
 \* The key window is the front of its app (SplitQueue): a background app keyed by the key
-\* record alone stays behind its other windows. The ceiling of the raise after it is exempt.
+\* record alone stays behind its other windows. The ceiling of the raise after it is exempt,
+\* as is a window left under a floating window (FloatOver).
 FocusOnTop == Quiescent /\ SplitQueue /\ s.osFocus # NoWin /\ AppOf[s.osFocus] \notin s.lowTop
               => s.atop[AppOf[s.osFocus]] = s.osFocus
 
