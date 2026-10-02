@@ -180,7 +180,8 @@ CONSTANTS
                     \* before it until a report matches it; or "done", recorded just before it
                     \* until the worker has seen the raise done
     FloatOver,      \* with SplitQueue, a floating window may overlap the window a request names,
-                    \* and then no raise follows the queue's key record (docs/focus.md)
+                    \* and then no raise follows the queue's key record, and the front app's
+                    \* window is keyed without a raise (docs/focus.md)
     KeyOldFirst,    \* with SplitQueue, a key record can activate a background app with the window
                     \* key when the app was last front, while that is still its focused window, and
                     \* key the named window a step later (live)
@@ -786,6 +787,19 @@ Raise(t, a, w) ==
        ELSE IF RaiseReports THEN BackgroundFocus(u, w, Len(history))
        ELSE [u EXCEPT !.afocus[a] = w]
 
+\* yabai's focus without a raise inside the front app, for a tile a floating window overlaps
+\* (FloatOver): it keys the window and leaves it where it sits in its app's stacking order,
+\* so the app is exempt from FocusOnTop until one of its windows comes to its front
+\* (`lowTop`). In an app that lost the front first it changes the app's own focused window,
+\* as a raise there does (not measured).
+KeyInPlace(t, a, w) ==
+    LET u == [t EXCEPT !.lowTop = @ \cup {a}]
+    IN IF w \in t.gone THEN t
+       ELSE IF FrontApp(t) = a THEN KeyChange(u, w, Len(history))
+       ELSE IF t.afocus[a] = w THEN u
+       ELSE IF RaiseReports THEN BackgroundFocus(u, w, Len(history))
+       ELSE [u EXCEPT !.afocus[a] = w]
+
 \* The queue stops waiting: the job finished, or, for BusyApp, 30 ms passed.
 \* record-at-call: for a front app the queue only moves on; the worker keys. For a
 \* background app, unless the request went stale, its window left, the app came front
@@ -920,7 +934,9 @@ WorkerPost(a) ==
 \* The app performs AXRaise, and the front app when it does decides what it changes. An
 \* idle app answers; its worker then posts the key record when RaiseKeys is off. A busy
 \* app may not answer before the AX timeout: the worker moves on, keeping its record, and
-\* the raise still lands when the app gets to it (LateLand).
+\* the raise still lands when the app gets to it (LateLand). With FloatOver the worker's
+\* raise in the front app can be the focus without a raise instead. That call returns before
+\* the app handles its records, and the spec has the app handle them as the job finishes.
 WorkerLand(a) ==
     LET j == Head(s.wq[a])
         t == Finish(s, a, j)
@@ -931,6 +947,8 @@ WorkerLand(a) ==
        /\ s.wq[a] # <<>>
        /\ j.st = "land"
        /\ \/ s' = IF after = "done" THEN Raise(t, a, j.w) ELSE [Raise(s, a, j.w) EXCEPT !.wq[a][1].st = after]
+          \/ /\ FloatOver /\ RaiseKeys /\ s.kr[j.r] = "raising"
+             /\ s' = KeyInPlace(t, a, j.w)
           \/ /\ RaiseTimeout /\ a = BusyApp
              /\ s' = [t EXCEPT !.late[a] = Append(@, j.w)]
        /\ UNCHANGED history
