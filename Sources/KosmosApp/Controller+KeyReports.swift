@@ -35,7 +35,21 @@ extension Controller {
             launchedSinceEmptyWorkspaceKeyed: {
                 NSRunningApplication(processIdentifier: $0)?.launchDate.map { $0 > self.emptyWorkspaceKeyed } == true
             },
+            userCause: { self.userCause(of: $0, at: $1) },
             note: { self.log($0) })
+    }
+
+    /// Only with Input Monitoring, which a listen-only tap for keys needs, so Kosmos never asks
+    /// for it here (docs/focus.md).
+    func makeInputTap() {
+        guard inputTap == nil, managing, CGPreflightListenEventAccess() else { return }
+        inputTap = InputTap()
+    }
+
+    /// Why a change `app` made at `stamp` is the user's, or nil when no input of his could have.
+    func userCause(of app: pid_t, at stamp: ContinuousClock.Instant) -> OwnInput.Cause? {
+        guard let inputTap else { return .unheard }
+        return inputTap.cause(of: app, at: stamp)
     }
 
     func run(_ action: KeyReportIntake.Action) {
@@ -87,6 +101,37 @@ extension Controller {
                 held focus report \(String(describing: held.key), privacy: .public): \
                 \(previous) \(left ? "left" : "stayed", privacy: .public) after \((at - held.received).milliseconds, format: .fixed(precision: 3)) ms
                 """)
+        case .followed(let report, let cause):
+            controllerLog.notice("""
+                following \(String(describing: report.key), privacy: .public) of \(self.appName(report.reporter), privacy: .public): \
+                \(self.describe(cause), privacy: .public)
+                """)
+        case .notTheUsers(let report):
+            controllerLog.notice("""
+                \(String(describing: report.key), privacy: .public) of \(self.appName(report.reporter), privacy: .public) \
+                came with no key or click of the user's: its workspace stays hidden and the focus goes back
+                """)
+        }
+    }
+
+    func appName(_ pid: pid_t) -> String {
+        NSRunningApplication(processIdentifier: pid)?.localizedName ?? processName(pid)
+    }
+
+    /// The input behind a follow, for the log.
+    private func describe(_ cause: OwnInput.Cause) -> String {
+        func press(_ press: OwnInput.Press) -> String {
+            switch press {
+            case .key(let pid): "a key to \(appName(pid))"
+            case .click(let pid): "a click on \(appName(pid))"
+            case .unseenKey: "a key the input tap never saw (a hotkey, or Secure Input)"
+            }
+        }
+        func ms(_ ago: Duration) -> String { String(format: "%.0f ms", ago.milliseconds) }
+        return switch cause {
+        case .inApp(let made, let ago): "\(press(made)) \(ms(ago)) before"
+        case .opener(let made, let ago, let beforeLaunch): "\(press(made)) \(ms(ago)) before \(beforeLaunch ? "its launch" : "it")"
+        case .unheard: "the input tap hears nothing, so every change counts as the user's"
         }
     }
 }

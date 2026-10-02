@@ -215,13 +215,15 @@ extension Controller {
     }
 
     /// A command received after the return wins, and its focus is requested again, as macOS
-    /// keyed the returning window (docs/tree.md; tla/Kosmos.tla, Rejoin).
-    private func returned(_ windows: [WindowID], follow: WindowID?, at stamp: ContinuousClock.Instant) {
+    /// keyed the returning window (docs/tree.md; tla/Kosmos.tla, Rejoin). So is the focus after
+    /// a return no input of the user's made, with `reassert`.
+    private func returned(_ windows: [WindowID], follow: WindowID?, byUser: Bool = true, reassert: Bool = false,
+                          at stamp: ContinuousClock.Instant) {
         let stale = reports.isStale(stamp)
         var plan = session.unpark(windows, follow: stale ? nil : follow)
-        if stale { plan.focus = session.intent }
+        if stale || reassert { plan.focus = session.intent }
         // A Dock click or Command-Tab that brings it back picks it away from the pointer.
-        execute(plan, movePointer: movesPointer(after: .returned(followed: follow != nil && !stale)))
+        execute(plan, movePointer: movesPointer(after: .returned(followed: follow != nil && !stale && byUser)))
     }
 
     /// When the key window left too and macOS has a window to key, the focus waits for its
@@ -264,9 +266,18 @@ extension Controller {
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true, !windows.isEmpty else { return }
             // Read after the worker's answer, the latest point. Whether a Command-Tab fronts the
             // app before its unhide posts is unmeasured (docs/tree.md).
-            let follow = session.followOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows),
-                                                front: kosmos_front_pid() == pid)
-            returned(windows, follow: follow, at: received)
+            let front = kosmos_front_pid() == pid
+            let cause = front ? userCause(of: pid, at: received) : nil
+            switch session.focusOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows), front: front,
+                                         byUser: cause != nil) {
+            case .stays:
+                returned(windows, follow: nil, at: received)
+            case .follow(let window):
+                returned(windows, follow: window, byUser: cause != nil, at: received)
+            case .reassert:
+                controllerLog.notice("\(self.appName(pid), privacy: .public) unhid with no key or click of the user's: the focus goes back")
+                returned(windows, follow: nil, reassert: true, at: received)
+            }
         }
     }
 

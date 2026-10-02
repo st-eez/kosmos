@@ -26,6 +26,9 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     }),
     ("keying", "keying [rounds] [finder]", { keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder")) }),
     ("key-holder", "key-holder [seconds]", { keyHolder(seconds: $0.first.flatMap(Double.init) ?? 30) }),
+    ("input-source", "input-source [seconds] [hid]", {
+        inputSource(seconds: $0.first.flatMap(Double.init) ?? 20, hid: $0.contains("hid"))
+    }),
     ("ax-timeout", "ax-timeout", { _ in axTimeout() }),
     ("displays", "displays", { _ in displays() }),
     ("secure-input", "secure-input", { _ in secureInput() }),
@@ -107,6 +110,11 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("departures-window", nil, { _ in departuresWindow() }),
     ("tabs-window", nil, { _ in tabsWindow() }),
     ("ax-child", nil, { _ in axChild() }),
+    ("input-poster", nil, { arguments in
+        guard arguments.count >= 2, let parent = pid_t(arguments[0]) else { usage() }
+        let point = arguments.count >= 4 ? Double(arguments[2]).flatMap { x in Double(arguments[3]).map { CGPoint(x: x, y: $0) } } : nil
+        inputPoster(parent: parent, mode: arguments[1], point: point)
+    }),
     ("key-stub", nil, { keyStub($0.first ?? "S", Array($0.dropFirst())) }),
     ("border-targets", nil, { arguments in
         guard let count = arguments.first.flatMap(Int.init) else { usage() }

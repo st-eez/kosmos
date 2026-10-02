@@ -350,14 +350,26 @@ public struct Session: Sendable {
         return add(window, to: name, floating: floating, minimum: minimum, parked: reason, concealed: concealed)
     }
 
-    /// Nil for a managed `keyed` window that did not hide with the app: a minimized one follows
-    /// by its own return, and a fullscreen one keeps macOS on its Space. Nil too when the app
-    /// is not the front process: an unhide that fronts nothing, as a script's or computer
-    /// use's, or Show All, leaves the focus where it is (docs/tree.md).
-    public func followOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?, front: Bool) -> WindowID? {
-        guard front else { return nil }
-        guard let keyed, home[keyed] != nil else { return fallback }
-        return windows.contains(keyed) ? keyed : nil
+    /// Where the focus goes when an app unhides (docs/tree.md).
+    public enum UnhideFocus: Equatable, Sendable {
+        case stays
+        case follow(WindowID)
+        /// No input of the user's fronted the app, and its window returns to a hidden
+        /// workspace: Kosmos requests its intent again, so no key goes to a concealed window.
+        case reassert
+    }
+
+    /// The focus stays for a managed `keyed` window that did not hide with the app: a minimized
+    /// one follows by its own return, and a fullscreen one keeps macOS on its Space. It stays
+    /// too when the app is not the front process: an unhide that fronts nothing, as a
+    /// script's or computer use's, or Show All. An unhide no input of the user's fronted, as
+    /// `open -a` on a hidden app, is followed only onto a shown workspace (docs/tree.md).
+    public func focusOnUnhide(_ windows: [WindowID], keyed: WindowID?, fallback: WindowID?, front: Bool,
+                              byUser: Bool) -> UnhideFocus {
+        guard front else { return .stays }
+        let window: WindowID? = if let keyed, home[keyed] != nil { windows.contains(keyed) ? keyed : nil } else { fallback }
+        guard let window else { return .stays }
+        return byUser || home[window].map(isShown) == true ? .follow(window) : .reassert
     }
 
     public func isParked(_ window: WindowID) -> Bool {

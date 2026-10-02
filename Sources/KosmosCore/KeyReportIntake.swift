@@ -46,6 +46,11 @@ public struct KeyReportIntake: Sendable {
         /// At the grace's end, whether the key window before the held report left. `at`: the
         /// grace's end, before the read of whether it left.
         case heldDecided(Report, previous: WindowID, left: Bool, at: ContinuousClock.Instant)
+        /// Kosmos follows the report, by this input of the user's.
+        case followed(Report, OwnInput.Cause)
+        /// No input of the user's came before a report Kosmos would follow, so its workspace
+        /// stays hidden and Kosmos requests its intent again (docs/focus.md).
+        case notTheUsers(Report)
     }
 
     /// What the Controller knows as it decides. The closures run only when a decision needs
@@ -72,6 +77,9 @@ public struct KeyReportIntake: Sendable {
         public var userPressedJustBefore: () -> Bool
         /// The app launched after the empty workspace's window last became key.
         public var launchedSinceEmptyWorkspaceKeyed: (Int32) -> Bool
+        /// What makes a change the given app made at the given stamp the user's, or nil when no
+        /// input of his could have (OwnInput).
+        public var userCause: (Int32, ContinuousClock.Instant) -> OwnInput.Cause?
         public var note: (Note) -> Void
 
         public init(workspace: @escaping (WindowID) -> String?, isShown: @escaping (String) -> Bool,
@@ -82,6 +90,7 @@ public struct KeyReportIntake: Sendable {
                     pointer: PointerReadings,
                     userPressedJustBefore: @escaping () -> Bool,
                     launchedSinceEmptyWorkspaceKeyed: @escaping (Int32) -> Bool,
+                    userCause: @escaping (Int32, ContinuousClock.Instant) -> OwnInput.Cause?,
                     note: @escaping (Note) -> Void) {
             self.workspace = workspace
             self.isShown = isShown
@@ -97,6 +106,7 @@ public struct KeyReportIntake: Sendable {
             self.pointer = pointer
             self.userPressedJustBefore = userPressedJustBefore
             self.launchedSinceEmptyWorkspaceKeyed = launchedSinceEmptyWorkspaceKeyed
+            self.userCause = userCause
             self.note = note
         }
     }
@@ -217,8 +227,8 @@ public struct KeyReportIntake: Sendable {
     /// `placed` when Kosmos follows it to a hidden workspace, and is dropped otherwise.
     public mutating func admit(_ window: WindowID, atLaunch: Bool, at now: ContinuousClock.Instant,
                                facts: Facts, reports: FocusReports) -> (focus: AdmissionFocus, bringsPointer: Bool) {
-        let keyed = unplaced.map { $0.key == .window(window) && !reports.isStale($0.received) } ?? false
-        let focus = AdmissionFocus.decide(keyed: keyed,
+        let keyedBy = unplaced.flatMap { $0.key == .window(window) && !reports.isStale($0.received) ? $0 : nil }
+        let focus = AdmissionFocus.decide(keyed: keyedBy != nil,
                                           shown: facts.workspace(window).map(facts.isShown) == true,
                                           parked: facts.isParked(window), atLaunch: atLaunch, locked: facts.locked)
         switch focus {
@@ -234,10 +244,11 @@ public struct KeyReportIntake: Sendable {
                 unplaced = nil
             }
         }
-        // A new window its app keyed brings the pointer on any display
-        // (docs/focus-follows-mouse.md).
+        // A new window its app keyed brings the pointer on any display, when the user's input
+        // opened it (docs/focus-follows-mouse.md).
         return (focus, FocusChange.admission(focus, atLaunch: atLaunch)
-            .movesPointer(mouseFollowsFocus: facts.mouseFollowsFocus, reading: facts.pointer))
+            .movesPointer(mouseFollowsFocus: facts.mouseFollowsFocus, reading: facts.pointer)
+            && keyedBy.map { facts.userCause($0.reporter, $0.received) != nil } ?? true)
     }
 
     /// `new` takes the deselected tab's place (docs/tree.md), before the replace's plan runs.
@@ -345,14 +356,23 @@ public struct KeyReportIntake: Sendable {
         case .adopt(let window):
             return .adopt(window, bringsPointer: bringsPointer(report, facts))
         case .follow(let window):
-            return .follow(window, bringsPointer: bringsPointer(report, facts))
+            // A window an agent, a script or `open -a` keyed shows no hidden workspace, and its
+            // concealed window gets no keys (docs/focus.md).
+            guard let cause = facts.userCause(report.reporter, report.received) else {
+                facts.note(.notTheUsers(report))
+                return .requestFocus(retry: false)
+            }
+            facts.note(.followed(report, cause))
+            return .follow(window, bringsPointer: bringsPointer(report, facts, cause: cause))
         }
     }
 
     /// Command-Tab, a launcher or a Dock click brings the pointer, on the window's own display
-    /// too, and a click on the window leaves it (docs/focus-follows-mouse.md).
-    private func bringsPointer(_ report: Report, _ facts: Facts) -> Bool {
+    /// too, and a click on the window leaves it. A change no input of the user's made leaves it
+    /// (docs/focus-follows-mouse.md).
+    private func bringsPointer(_ report: Report, _ facts: Facts, cause: OwnInput.Cause? = nil) -> Bool {
         FocusChange.keyReport(admitted: report.admitted)
             .movesPointer(mouseFollowsFocus: facts.mouseFollowsFocus, reading: facts.pointer)
+            && (cause ?? facts.userCause(report.reporter, report.received)) != nil
     }
 }

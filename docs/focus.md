@@ -59,11 +59,12 @@
   - A window on a workspace that a display shows becomes the focus intent, and its
     display becomes the focused one ([displays.md](displays.md)). It is requested again, in case an
     older request of Kosmos's landed after the user's change.
-  - Only the user reaches a window that was hidden when it became key: with Command-Tab,
-    or by opening that window, as `open` on a document, an app's Window menu or the
-    Dock's window list do. Kosmos follows it to its workspace, whether a notification or an
-    activation read reports it: a window opened inside the front app has only its
-    notification (tla/README.md, change 22, `split-open-readfollows`). Whether the window
+  - The user reaches a window that was hidden when it became key with Command-Tab, or by
+    opening that window, as `open` on a document, an app's Window menu or the Dock's window
+    list do. Kosmos follows it to its workspace, whether a notification or an activation
+    read reports it: a window opened inside the front app has only its notification
+    (tla/README.md, change 22, `split-open-readfollows`). An agent, a script or `open -a`
+    reaches one too, and Kosmos follows only a report the user's own input made (below). Whether the window
     was hidden is judged at the report's stamp: the bridge queue notes when it sends each
     window's conceal and reveal, because a switch can reveal or conceal the window before
     the report is classified (change 19). Only each window's last change is kept: a report
@@ -78,8 +79,8 @@
     otherwise the read follows the re-key the notification declined (tla/README.md,
     change 24).
   - A window the front app keyed before Kosmos admitted it, as a launching app keys its
-    first window, is the user's choice too, and its report waits for the window's place
-    (`AdmissionFocus`). So does the key report of a window closed and kept, which takes a
+    first window, is the user's choice too when his input opened it (below), and its report
+    waits for the window's place (`AdmissionFocus`). So does the key report of a window closed and kept, which takes a
     place as a new window when its app opens it again ([tree.md](tree.md)). The wait ends
     at a report that would end a held report (below), of another placed window and not
     Kosmos's echo, at another window's report with no place, which replaces it, and at a
@@ -143,6 +144,91 @@
     concealed. The switch wins, and its focus is requested again. After a batch fails,
     recovery shows every workspace's windows until a switch conceals them again. A
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
+- Kosmos follows a report into a hidden workspace only when the user's own input made it.
+  Windows that agents, scripts, `open -a` or computer use open never switch a display
+  (Steve's decision, [backlog.md](backlog.md)). Over any other report it would follow,
+  Kosmos keeps its workspaces and requests its intent again, so no key goes to the
+  concealed window macOS keyed, and the log says `came with no key or click of the
+  user's`. Such a report brings no pointer ([focus-follows-mouse.md](focus-follows-mouse.md)),
+  and neither does an unhide no input of the user's made ([tree.md](tree.md)). A window
+  such an app keys on a shown workspace still becomes the focus, and the focus can move
+  to another display with it. Whether Kosmos gives that focus back waits for Steve
+  ([backlog.md](backlog.md)). Kosmos's own commands, hotkeys and hover focus switch and
+  focus directly and pass no such test. The spec's `agent` configs check it (tla/README.md,
+  change 27).
+  - The input comes from a listen-only tap at the annotated session location
+    (KosmosApp's `InputTap`), on its own thread, for key downs, modifier changes and left
+    and right mouse downs. WindowServer fills in each event's source process
+    (`eventSourceUnixProcessID`) and the process it goes to (`eventTargetUnixProcessID`).
+    A listen-only tap for keys needs Input Monitoring, so Kosmos makes the tap only with
+    that grant and never asks for it here. Without the tap, or before it hears anything,
+    every change counts as the user's, as before (`OwnInput.Cause.unheard`).
+  - `kosmos-probe input-source 90` sampled Steve's input on 2026-10-02 while he clicked,
+    typed and used Command-Tab. Of 222 events, every key down of his (72 to
+    ChatGPT, 64 to Ghostty, and 11 to the Dock, whose Command-Tab switcher takes them) and
+    every left mouse down of his carried source pid 0 and the HID system state. Logitech
+    Options+ posted nothing. BetterTouchTool posted 9 modifier changes under its own pid.
+    Steve's three-finger swipe is a BetterTouchTool gesture that posts Option-Tab for his
+    `alt-tab` binding, and the tap saw no key down from it. Kosmos's own focus records
+    showed as 16 left mouse downs under Kosmos's pid, to Activity Monitor, ChatGPT, Ghostty,
+    Helium and Spotify. Siri posted one modifier change. Steve dictates with Epos, whose
+    input the sample missed. A child process's posts carried its own pid, also when it set
+    the field to 0 before the post.
+  - What makes a change the user's (KosmosCore's `OwnInput.cause`), judged at the report's
+    stamp:
+    - A key or click of his that went to the app or a process inside its .app bundle in the
+      last 10 s. A click on Teams' call notification goes to
+      `com.microsoft.teams2.notificationcenter`, inside Microsoft Teams.app, and the meeting
+      window can come seconds later. Cmd-N in Ghostty goes to Ghostty. No measurement chose
+      10 s. Chrome keyed its first window 5.2 s after a launcher's hotkey
+      ([focus-follows-mouse.md](focus-follows-mouse.md)), and the log names the input behind
+      each follow and its age, as in `following window(70) of Google Chrome: a key to
+      Raycast 300 ms before its launch`.
+    - In the second before the report, or before the app's launch for a window that comes
+      later, the Command-Tab test's second: a click of his anywhere, as on the Dock, a
+      Finder double-click, a link in another app or a notification; a key of his that went
+      to a process that is not a regular app, as the Dock's Command-Tab switcher, Raycast's
+      panel, Spotlight (whose process is Siri) or Notification Center, all accessory apps
+      on 2026-10-02; or a key down the tap never saw (below). A modifier change counts as a
+      key. The switcher activates its app as Command comes up, a change that goes to the
+      Dock, so a switcher held open past the second still counts.
+    - A key that went to another regular app counts for nothing. Steve types into the apps
+      agents run in while they work, and in the sample a key of his came within the second
+      before most moments.
+    - Input another process posts counts for nothing, as computer use's, `osascript`'s and
+      Kosmos's own focus records.
+  - A hotkey's key never reaches the tap. The tap saw no Tab from BetterTouchTool's
+    Option-Tab, which Kosmos's hotkey took. HID counts a key down before the tap sees it
+    ([modifier-drags.md](modifier-drags.md)), so a count past the one at the tap's last key
+    down means a key the tap missed. That is a launcher's hotkey, such as Raycast's app
+    hotkeys, a key typed under Secure Input, which hides keys from taps, or a hotkey of
+    Kosmos's. The tap compares at each modifier change, since a hotkey's modifiers come up
+    after its key, and notes the missed key at HID's last key down. Kosmos compares again
+    at each decision. Unmeasured: whether HID counts a key down a hotkey takes. If it does
+    not, a launcher's hotkey that activates an app on a hidden workspace is no longer
+    followed, and the log says `came with no key or click of the user's` right after the
+    hotkey.
+  - Ceilings:
+    - An agent's new window of an app Steve pressed a key or clicked in during the last
+      10 s is followed, and so is an agent's launch in the second after a click of his
+      anywhere. Steve clicked 3 times in the 90 s sample.
+    - A key into a regular app that opens another app, as Cmd-O on an app in Finder or
+      `open` typed in a terminal, counts for nothing, so that app's window on a hidden
+      workspace is not followed. A terminal's `open` is an agent's too.
+    - Input another process posts for the user, as a BetterTouchTool gesture, counts for
+      nothing, so a gesture that posts Command-Tab is not followed. The upgrade is a list
+      of such posters, which focus follows mouse would share
+      ([focus-follows-mouse.md](focus-follows-mouse.md)).
+    - While Secure Input is on, the tap gets no keys, so each key of Steve's reads as one
+      the tap missed, and an agent's window in the second after it is followed.
+    - A press counts only when the tap stamped it before the report's stamp. The tap's
+      thread stamps it as it sees the event, and the activation reaches the main actor
+      later through NSWorkspace; no probe has timed the two.
+  - Computer use's `open_application` activates its app with no input of the user's. Its
+    window on a hidden workspace stays concealed, where computer use can neither see nor
+    click it, and Kosmos's request of its intent then fails computer use's front app check.
+    An agent shows the workspace first with `kosmos workspace N`
+    ([integrations.md](integrations.md)).
 - Five races leave Kosmos nothing to tell the cases apart. They are known limits, and the
   TLA+ spec exempts them:
   - Kosmos keys an app again before that app's activation read runs. The read finds

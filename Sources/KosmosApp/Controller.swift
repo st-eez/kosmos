@@ -58,6 +58,9 @@ final class Controller {
         didSet { updatePointerTap() }
     }
     var pointer: PointerTap?
+    /// Nil without Input Monitoring, and every window change then counts as the user's
+    /// (docs/focus.md).
+    var inputTap: InputTap?
     /// A tap made without Input Monitoring may hear nothing (docs/focus-follows-mouse.md).
     var pointerListens = false
     var wantsPointer: Bool { focusFollowsMouse.enabled && managing }
@@ -115,6 +118,7 @@ final class Controller {
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         borderWindows.onRings = { [weak self] rings in self?.slides?.hand(rings) }
         watchLeftButton()
+        makeInputTap()
         for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
         restoreLayout()
     }
