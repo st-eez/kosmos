@@ -380,6 +380,17 @@ private func desk() -> Session {
         }
     }
 
+    /// The Bitwarden pop-out floats off its tile once Chrome retitles it, and a pointer left on
+    /// the tile would focus the window there on the next bump (docs/config.md).
+    @Test func aWindowARuleOnItsTitleMovesTakesThePointerOnItAlong() {
+        let input = Input()
+        #expect(input.moves(after: .retitled(pointerOnWindow: true)))
+        #expect(!input.moves(after: .retitled(pointerOnWindow: false)))
+        #expect(!input.moves(after: .retitled(pointerOnWindow: true), mouseFollowsFocus: false))
+        input.leftButtonDown = true
+        #expect(!input.moves(after: .retitled(pointerOnWindow: true)))
+    }
+
     @Test func aReturnKosmosDoesNotFollowLeavesThePointer() {
         // A command came after the return, or Kosmos follows none of the windows.
         let input = Input()

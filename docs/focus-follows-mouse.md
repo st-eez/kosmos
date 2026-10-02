@@ -156,6 +156,11 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     key down within the second. A window its app keys later, as a meeting app's or one
     opened with `open -g` when its app comes front minutes after, is judged by the
     Command-Tab test.
+  - A new window that a rule on its title floats, tiles or moves after its admission
+    ([config.md](config.md)) takes the pointer along when the pointer was on it and the
+    left button is up, as a hotkey's `move` does (`FocusChange.retitled`). Chrome's
+    Bitwarden pop-out floats off the tile the pointer was brought to, and the window left
+    under the pointer would take the focus on the next bump.
   - A window that was there when Kosmos launched leaves the pointer where it is, so it
     stays put at startup. No admission moves the pointer while the left button is down
     (`NSEvent.pressedMouseButtons`): a native tab dragged out of its group, as Finder's

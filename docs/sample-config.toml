@@ -173,9 +173,9 @@ ctrl-alt-s = 'profile single'
 
 # Window rules. The first rule that matches a new window applies, and Kosmos warns about a
 # rule an earlier one hides. app-id matches the bundle identifier; app-name matches names
-# containing the text, ignoring case. Open and Save panels, and windows whose zoom button is
-# disabled, as most apps' settings windows, float without a rule; float = false tiles the
-# latter.
+# containing the text, ignoring case; title, with either, matches the window's whole title,
+# ignoring case. Open and Save panels, and windows whose zoom button is disabled, as most
+# apps' settings windows, float without a rule; float = false tiles the latter.
 [[rule]]
 app-name = 'Finder'
 float = true
@@ -199,6 +199,19 @@ float = true
 
 [[rule]]
 app-name = 'TLauncher'
+float = true
+
+# The Bitwarden extension's pop-out, a browser window titled "Bitwarden". Chrome titles it
+# about half a second after it shows, and Kosmos floats it then. Before the browsers' rules
+# below, which would hide these.
+[[rule]]
+app-id = 'com.google.Chrome'
+title = 'Bitwarden'
+float = true
+
+[[rule]]
+app-id = 'net.imput.helium'
+title = 'Bitwarden'
 float = true
 
 # Daily apps on fixed workspaces. A rule applies to new windows; a window moved by hand

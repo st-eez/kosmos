@@ -19,6 +19,8 @@ struct AXReport: Sendable {
         case framesDropped([WindowID])
         /// The app started, or answers again after a timeout: reads that failed can be made again.
         case answering
+        /// A new window's title, as Kosmos began to watch it and at each change (TitleWatch).
+        case titleChanged(WindowID, String?)
     }
 
     let pid: pid_t
@@ -37,6 +39,8 @@ struct AXWindowInfo: Sendable {
     /// Nil for no zoom button. AppKit disables it on a window that cannot be resized, as a
     /// settings window (docs/inventory.md).
     let zoomButtonEnabled: Bool?
+    /// For rules on the title (docs/config.md).
+    var title: String?
 }
 
 /// One app's Accessibility elements and observer, on a thread of the app's own, so a hung app
@@ -146,16 +150,46 @@ actor AppWorker {
     private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
-            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did, and the
-            // zoom button's two 0.04 to 0.10 ms together. A failed read of either leaves the
-            // window managed and tiled (docs/inventory.md).
+            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did, the
+            // title's 0.02 to 0.08 ms, and the zoom button's two 0.04 to 0.10 ms together. A
+            // failed read of the identifier or the button leaves the window managed and tiled,
+            // and one of the title counts as no title (docs/inventory.md).
             return AXWindowInfo(subrole: try copy(element, kAXSubroleAttribute) as? String,
                                 minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false,
                                 identifier: (try? copy(element, kAXIdentifierAttribute)) as? String,
-                                zoomButtonEnabled: zoomButtonEnabled(element))
+                                zoomButtonEnabled: zoomButtonEnabled(element),
+                                title: (try? copy(element, kAXTitleAttribute)) as? String)
         } catch {
             return nil
         }
+    }
+
+    /// Reports the title once the observation is on, as it can have changed since the window's
+    /// read. The registration and its removal took 0.03 to 0.13 ms together (docs/inventory.md).
+    nonisolated func watchTitle(_ id: WindowID) {
+        executor.perform {
+            self.assumeIsolated { worker in
+                guard let element = worker.elements[id] else { return }
+                _ = worker.observe(element, kAXTitleChangedNotification)
+                worker.reportTitle(id, element)
+            }
+        }
+    }
+
+    nonisolated func unwatchTitle(_ id: WindowID) {
+        executor.perform {
+            self.assumeIsolated { worker in
+                guard let observer = worker.observer, let element = worker.elements[id] else { return }
+                _ = worker.ax { AXObserverRemoveNotification(observer, element, kAXTitleChangedNotification as CFString) }
+            }
+        }
+    }
+
+    /// A read that gets no answer reports nothing, so the title known stays.
+    private func reportTitle(_ id: WindowID, _ element: AXUIElement) {
+        let title: String?
+        do { title = try copy(element, kAXTitleAttribute) as? String } catch { return }
+        send(.titleChanged(id, title))
     }
 
     private func zoomButtonEnabled(_ window: AXUIElement) -> Bool? {
@@ -441,6 +475,8 @@ actor AppWorker {
             }
         case kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification:
             if let id = id(of: element) { send(.minimized(id, notification == kAXWindowMiniaturizedNotification)) }
+        case kAXTitleChangedNotification:
+            if let id = elements.first(where: { CFEqual($0.value, element) })?.key { reportTitle(id, element) }
         default:
             break
         }

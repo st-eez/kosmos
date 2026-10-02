@@ -69,9 +69,10 @@ prefix.
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
-  workspaces a profile leaves out, and window rules.
+  workspaces a profile leaves out, and window rules, those on a window's title too.
   Code: `KosmosCore/Config/`, `KosmosCore/Session+Profiles.swift`,
-  `KosmosApp/ConfigFile.swift`, `KosmosSkyLight/DisplayIdentity.swift`,
+  `KosmosCore/TitleWatch.swift`, `KosmosApp/ConfigFile.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosSkyLight/DisplayIdentity.swift`,
   `kosmos-probe/Displays.swift`.
 - [onboarding.md](onboarding.md): the status item, the setup window that asks for
   permissions, and launch at login.
