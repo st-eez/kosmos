@@ -53,7 +53,8 @@ extern void SLSMoveWindowsToManagedSpace(SLSConnectionID cid, CFArrayRef windows
 extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
 
 // Names the window WindowServer weighs a background app's orderFront: against (0 for none).
-// Its handler, _XSetFrontWindow, checks no rights (kosmos-probe float-raise).
+// Its handler, _XSetFrontWindow, checks no rights, yet clearing the record left where AXRaise
+// put another app's window unchanged (docs/focus-follows-mouse.md).
 extern CGError SLSSetFrontWindow(SLSConnectionID cid, uint32_t window);
 // orderFront: of a window of the caller's own, weighed against the record at `timestamp`; an
 // allowed order makes the window the record, with that timestamp.

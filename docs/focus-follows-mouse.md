@@ -277,15 +277,34 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     so the tile comes up over any floating window it overlaps, which Hyprland keeps
     on top. Focusing or clicking a tile does the same. With SIP on, no process can set the
     level of another app's window, and raising the floating windows again after the raise
-    would key one of the front app's, or reorder only a background app's own windows. A
-    Space shown above the desktop's keeps a floating window on top, and covers every menu
-    and all system UI too (`kosmos-probe float-layer`, at tag `archive/floatprobe`). A covered
-    floating window stays in reach of `focus` in a direction ([tree.md](tree.md)), where hover
-    cannot reach it. If it bothers in practice, the path is yabai's
-    `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
-    (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
-    key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
-    the key record. It would replace AXRaise on the worker, and the raise after a key
-    record, for a hover focus of a tile, the echo recorded just before, once
+    would key one of the front app's and put a background app's directly below the tile.
+    AXRaise is AppKit's makeKeyAndOrderFront:, which in an app that is not active orders
+    front conditionally, and WindowServer (`_compareTimesAndApps`, `_safeTestAndOrder`) and
+    WindowManager.app each keep the window last recorded as front and order such a window
+    just below it (AppKit and SkyLight disassembly, WindowManager.app's strings, macOS 27
+    26A428). A Space shown above the desktop's keeps a floating window on top, and covers
+    every menu and all system UI too (`kosmos-probe float-layer`, at tag
+    `archive/floatprobe`). A covered floating window stays in reach of `focus` in a
+    direction ([tree.md](tree.md)), where hover cannot reach it. If it bothers in practice,
+    the path is yabai's `window_manager_focus_window_without_raise`, which AutoRaise carries
+    under FOCUS_FIRST (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a =
+    0x02 to the app's key window, 10 ms later one with 0x8a = 0x01 to the target, then the
+    private front and the key record. It would replace AXRaise on the worker, and the raise
+    after a key record, for a hover focus of a tile, the echo recorded just before, once
     `kosmos-probe keying` shows it keys 20 of 20 in the front app with the window order
     unchanged.
+    - `kosmos-probe float-raise 5` (branch `floatraise`, October 2, 2026) raised a window
+      of a background child app with AXRaise while Ghostty was front, alone and after each
+      of these: clearing WindowServer's record with `SLSSetFrontWindow`, whose handler
+      checks no rights; setting the record to the child's window; making a window of the
+      probe's own the record with a far future timestamp through
+      `SLSOrderFrontConditionally`. In all 30 trials that raised it, 5 per case, the window
+      stood directly below Ghostty's frontmost window 0.3 s and 1 s later, and a second
+      child's window raised after it, with or without the record cleared again, went
+      directly below Ghostty's too. No call changed the front process, the key focus
+      process or any key window, and clearing the record alone moved nothing.
+    - The run cannot tell whether WindowServer ignored the record calls from a connection
+      that owns no such window or WindowManager.app's own record decided, since it read no
+      return codes. Clearing the record and then ordering a window of the probe's own front
+      conditionally, sent to the back first, would separate the two, as that order skips
+      AppKit and WindowManager.app.

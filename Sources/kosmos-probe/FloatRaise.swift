@@ -6,7 +6,9 @@
 // window front conditionally. WindowServer's _compareTimesAndApps refuses that while the window
 // it last recorded as front belongs to the front process, and _safeTestAndOrder then orders the
 // window just below that one. With no recorded window it allows the order. SLSSetFrontWindow
-// sets the record, and its handler checks no rights (SkyLight on macOS 27, 26A428).
+// sets the record, and its handler checks no rights (SkyLight on macOS 27, 26A428). The first
+// run found every raise still landing directly below the front app's window
+// (docs/focus-follows-mouse.md).
 //
 //   kosmos-probe float-raise [trials]
 //                                   Two child apps that are never front, B (accessory) and C
