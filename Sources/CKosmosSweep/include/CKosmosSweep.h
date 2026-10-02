@@ -66,3 +66,5 @@ int64_t kosmos_sweep_perform(int index, uint32_t window);
 // frame, alpha, level, sublevel, transform, locked bounds and ordering. The window's owner
 // calls this between sweep calls.
 void kosmos_sweep_reset(uint32_t window, CGRect rest);
+
+#include "Peek.h"

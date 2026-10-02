@@ -39,8 +39,8 @@ prefix.
   `KosmosCore/FrameLedger.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosRecovery/`, `KosmosSkyLight/Displays.swift`,
   `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`, `kosmos-probe/RevealSlide.swift`,
-  `kosmos-probe/Handover.swift`, `kosmos-probe/MissionControl.swift`, `script/install.sh`,
-  `tla/Handover.tla`.
+  `kosmos-probe/Handover.swift`, `kosmos-probe/MissionControl.swift`, `kosmos-probe/Peek.swift`,
+  `CKosmosSweep/Peek.m`, `script/install.sh`, `tla/Handover.tla`.
 - [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, which
   reports the user's own input made, the private focus path with its kill switch and
   public fallback, departures, and the empty workspace's window.
