@@ -52,5 +52,9 @@ extern void SLSMoveWindowsToManagedSpace(SLSConnectionID cid, CFArrayRef windows
 
 extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
 
+// Names the window WindowServer weighs a background app's orderFront: against (0 for none).
+// Its handler, _XSetFrontWindow, checks no rights (kosmos-probe float-raise).
+extern CGError SLSSetFrontWindow(SLSConnectionID cid, uint32_t window);
+
 #include "KosmosBridge.h"
 #include "KosmosBar.h"

@@ -68,6 +68,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let count = arguments.first.flatMap(Int.init)
         revealSlide(trials: count ?? 10, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
+    ("float-raise", "float-raise [trials]", { floatRaise(trials: $0.first.flatMap(Int.init) ?? 10) }),
     ("ca-lock", "ca-lock [trials] [busy]", { caLock(trials: $0.first.flatMap(Int.init) ?? 20, busy: $0.contains("busy")) }),
     ("slide-links", "slide-links [slides] [mode...]", { arguments in
         let count = arguments.first.flatMap(Int.init)
@@ -84,6 +85,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         apiSweepCall(index: index, window: window)
     }),
     ("panel", nil, { _ in showPanel() }),
+    ("raise-stub", nil, { raiseStub($0) }),
     ("clamp-window", nil, { _ in clampWindow() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),
     ("handover-creator", nil, { arguments in
