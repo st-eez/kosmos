@@ -79,6 +79,18 @@ windows after them.
 - Computer use cannot drive the Claude desktop app at all, since its screenshots always
   leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
+## Keep a floating window over a tile of the front app
+
+- Steve decided on 2026-10-02 that a focus Kosmos makes keys a tile a floating window
+  overlaps without bringing it forward, so the floating window stays on top. Kosmos does
+  that for a tile of another app ([focus.md](focus.md)). Inside the front app only AXRaise
+  keys a window, so a hover, `focus` or switch to such a tile still brings it over the
+  floating window.
+- yabai's focus without a raise would replace the worker's AXRaise for such a tile
+  ([focus.md](focus.md)). It goes in once `kosmos-probe keying` shows it keys the tile in
+  20 of 20 in the front app with the window order kept. Steve agreed to that run, which
+  takes the keyboard focus while it runs.
+
 ## Benchmark the slide thread on real apps
 
 Slides step on their own thread since 7f32a0b. Its probes lost 0 vsyncs with the main

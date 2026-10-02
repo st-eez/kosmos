@@ -213,8 +213,9 @@
     its focused window, so it never raises over a window the user chose since. Every
     private request for a background app's window gets this raise, whatever made it: a
     focus command, the focus after a switch, a move that follows its window, the next
-    window after a departure, a reassert, or the pointer ([focus-follows-mouse.md](focus-follows-mouse.md)). The window then
-    comes up over the windows it overlaps, other apps' floating windows included. The
+    window after a departure, a reassert, or the pointer ([focus-follows-mouse.md](focus-follows-mouse.md)),
+    unless a floating window overlaps its tile (below). The window then comes up over the
+    windows it overlaps. The
     raise does not check that the request is current: with that check, a hover on the same
     window made the raise stale, the new request found the window key and raised nothing,
     and the window stayed behind its app's other windows (`FocusOnTop` failed
@@ -231,6 +232,28 @@
     app was front and the window it had focused. The log stays until `kosmos-probe keying`
     runs its `record, then AXRaise while front and focused` order, which measures that
     read.
+  - A tile that a shown floating window overlaps gets no raise after its key record, so the
+    tile takes the keyboard and the floating window stays on top, as Hyprland keeps
+    floating windows over tiles. Steve decided this on 2026-10-02. The key record alone
+    keyed another app's window in 20 of 20 trials and put it on top in none
+    ([overview.md, section 2](overview.md#2-what-the-fork-measured)). The main actor
+    decides the overlap as it requests the focus, from frames it has: the tile's from the
+    layout, and each floating window's from a write of Kosmos's still landing, else the
+    inventory's last frame (`Session.floatingOverlaps`). Any overlap counts, so a tile in
+    fullscreen stays under every floating window on its display. The queue logs each tile
+    it keys under a floating window. A click on the tile still brings it forward, as macOS
+    does, and a floating window a tile buries comes back with `focus` in a direction
+    ([tree.md](tree.md)) or Mission Control. The public path raises every window still.
+    The spec lets a floating window overlap the window of any key record (`FloatOver`):
+    no raise follows, and the window's app is exempt from `FocusOnTop` until one of its
+    windows comes to its front, as without the raise `split-user-nopostraise` fails it.
+  - Inside the front app AXRaise keys the tile and brings it over the floating window. The
+    upgrade is yabai's focus without a raise (AutoRaise.mm:204 under FOCUS_FIRST): an
+    AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's key window, 10 ms later
+    one with 0x8a = 0x01 to the tile, then the private front and the key record. It would
+    replace the worker's AXRaise for such a tile, its echo recorded just before, once
+    `kosmos-probe keying` shows it keys the tile in 20 of 20 in the front app with the
+    window order kept ([backlog.md](backlog.md)).
   - Only the raise after a key record has its record forgotten, once the raise is done, so
     no late answer can orphan any other call; `forgetRecord` otherwise serves only a call that
     fails.

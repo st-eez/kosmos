@@ -10,7 +10,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   app and after the key record for another app ([focus.md](focus.md)). A floating window the
   pointer enters comes up over the tiled windows it overlaps, whichever app was front. The
   pointer is over a part of the window that was on top already, and the raise brings up
-  the rest.
+  the rest. A tile of another app that a floating window overlaps gets no raise: it takes
+  the keyboard and stays under the floating window ([focus.md](focus.md)).
 - Focusing another app's window activates the app, which costs macOS about 94 ms of CPU
   outside Kosmos ([overview.md, section 2](overview.md#2-what-the-fork-measured)), so a pointer swept across windows of several apps activates
   each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
@@ -290,20 +291,14 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     leave the key window with the front process, so the key holder check leaves them to
     this. If the live test shows it, one SkyLight window list read per window entered, for
     a window at the pop-up menu level on screen, would keep the menu open.
-  - Keeping floating windows over a tile the pointer enters. Inside the front app only
-    AXRaise keys a window, and for another app AXRaise follows the key record ([focus.md](focus.md)),
-    so the tile comes up over any floating window it overlaps, which Hyprland keeps
-    on top. Focusing or clicking a tile does the same. With SIP on, no process can set the
+  - Keeping floating windows over a tile of the front app the pointer enters. Inside the
+    front app only AXRaise keys a window ([focus.md](focus.md)), so the tile comes up over
+    any floating window it overlaps, which Hyprland keeps on top. Clicking a tile does the
+    same, as macOS raises it. With SIP on, no process can set the
     level of another app's window, and raising the floating windows again after the raise
     would key one of the front app's, or reorder only a background app's own windows. A
     Space shown above the desktop's keeps a floating window on top, and covers every menu
     and all system UI too (`kosmos-probe float-layer`, at tag `archive/floatprobe`). A covered
     floating window stays in reach of `focus` in a direction ([tree.md](tree.md)), where hover
-    cannot reach it. If it bothers in practice, the path is yabai's
-    `window_manager_focus_window_without_raise`, which AutoRaise carries under FOCUS_FIRST
-    (AutoRaise.mm:204): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
-    key window, 10 ms later one with 0x8a = 0x01 to the target, then the private front and
-    the key record. It would replace AXRaise on the worker, and the raise after a key
-    record, for a hover focus of a tile, the echo recorded just before, once
-    `kosmos-probe keying` shows it keys 20 of 20 in the front app with the window order
-    unchanged.
+    cannot reach it. The path is yabai's focus without a raise in place of the worker's
+    AXRaise ([focus.md](focus.md), [backlog.md](backlog.md)).

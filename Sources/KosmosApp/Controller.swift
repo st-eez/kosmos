@@ -517,8 +517,9 @@ final class Controller {
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
+        let underFloating = if case .window(let id) = target { session.floatingOverlaps(id, frame: knownFrame) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately, concealed: concealed,
-                           emptyWorkspace: emptyWorkspace,
+                           underFloating: underFloating, emptyWorkspace: emptyWorkspace,
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },

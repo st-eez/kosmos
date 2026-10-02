@@ -17,9 +17,10 @@ final class FocusQueue: Sendable {
     /// The private path for a window runs the split model's `FocusStart`, `FocusDecide` and
     /// `WorkerPost` (tla/Kosmos.tla; KosmosCore's KeyRequest). Each side records the echo
     /// through `performing` right before its own call that changes the key window; recording
-    /// at the request failed TLC (docs/focus.md). `emptyWorkspace` is the window `.noWindow` keys.
+    /// at the request failed TLC (docs/focus.md). `underFloating`: a floating window overlaps
+    /// the target's tile. `emptyWorkspace` is the window `.noWindow` keys.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
-                 emptyWorkspace: EmptyWorkspaceWindow.Target?,
+                 underFloating: Bool, emptyWorkspace: EmptyWorkspaceWindow.Target?,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
                  forgetRecord: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         let generation = current.add(1, ordering: .relaxed).newValue
@@ -33,6 +34,9 @@ final class FocusQueue: Sendable {
                 let keyed: WindowID
                 switch key {
                 case .window(let id):
+                    // Ceiling: inside the front app only AXRaise keys a window, so a tile comes up
+                    // over a floating window that overlaps it. yabai's focus without a raise is the
+                    // upgrade, once `kosmos-probe keying` shows it keys in place (docs/focus.md).
                     let request = KeyRequest(appWasFront: front)
                     Self.wait(for: worker, id, isCurrent, request, performing: raising, forgetRecord: forgettingRecord)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
@@ -57,9 +61,13 @@ final class FocusQueue: Sendable {
                 let performed = killSwitch.guarded { kosmos_make_key(pid, keyed) }
                 if performed {
                     // `WorkerPost`: the key record leaves the window where it sits in its app's
-                    // stacking order.
+                    // stacking order, so a tile a floating window overlaps stays under it.
                     if case .window(let id) = key {
-                        worker?.raiseAfterKeyRecord(id, performing: raising, raised: forgettingRecord)
+                        if underFloating {
+                            focusLog.info("\(id) keyed under a floating window that overlaps it")
+                        } else {
+                            worker?.raiseAfterKeyRecord(id, performing: raising, raised: forgettingRecord)
+                        }
                     }
                     return
                 }
