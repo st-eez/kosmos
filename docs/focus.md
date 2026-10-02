@@ -248,12 +248,12 @@
     no raise follows, and the window's app is exempt from `FocusOnTop` until one of its
     windows comes to its front, as without the raise `split-user-nopostraise` fails it.
   - Inside the front app AXRaise keys the tile and brings it over the floating window. The
-    upgrade is yabai's focus without a raise (AutoRaise.mm:204 under FOCUS_FIRST): an
-    AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's key window, 10 ms later
-    one with 0x8a = 0x01 to the tile, then the private front and the key record. It would
-    replace the worker's AXRaise for such a tile, its echo recorded just before, once
-    `kosmos-probe keying` shows it keys the tile in 20 of 20 in the front app with the
-    window order kept ([backlog.md](backlog.md)).
+    upgrade is yabai's focus without a raise (`kosmos_make_key_in_place`, AutoRaise.mm:204
+    under FOCUS_FIRST): an AppKit-defined record (type 0x0d) with 0x8a = 0x02 to the app's
+    key window, 10 ms later one with 0x8a = 0x01 to the tile, then the private front and
+    the key record. It would replace the worker's AXRaise for such a tile, its echo
+    recorded just before, once `kosmos-probe keying 20 in-place` shows it keys the tile in
+    20 of 20 in the front app with the window order kept ([backlog.md](backlog.md)).
   - Only the raise after a key record has its record forgotten, once the raise is done, so
     no late answer can orphan any other call; `forgetRecord` otherwise serves only a call that
     fails.

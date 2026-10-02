@@ -87,9 +87,9 @@ windows after them.
   keys a window, so a hover, `focus` or switch to such a tile still brings it over the
   floating window.
 - yabai's focus without a raise would replace the worker's AXRaise for such a tile
-  ([focus.md](focus.md)). It goes in once `kosmos-probe keying` shows it keys the tile in
-  20 of 20 in the front app with the window order kept. Steve agreed to that run, which
-  takes the keyboard focus while it runs.
+  ([focus.md](focus.md)). It goes in once `kosmos-probe keying 20 in-place` shows it keys
+  the tile in 20 of 20 in the front app with the window order kept. Steve agreed to that
+  run, which takes the keyboard focus while it runs.
 
 ## Benchmark the slide thread on real apps
 

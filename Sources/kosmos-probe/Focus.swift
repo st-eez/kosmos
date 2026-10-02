@@ -1,11 +1,12 @@
 // How a window is made key, and which process holds focus (docs/focus.md).
 //
-//   kosmos-probe keying [rounds] [finder]
+//   kosmos-probe keying [rounds] [finder] [in-place]
 //                                   Keys windows of stub apps in each order of the key record
 //                                   and AXRaise, activates apps the public and private ways,
 //                                   keys an invisible window as an empty workspace would, and
 //                                   fronts an app whose windows are concealed. finder also
-//                                   fronts Finder, moving none of its windows. The stubs'
+//                                   fronts Finder, moving none of its windows. in-place runs
+//                                   only the focus without a raise, in each case. The stubs'
 //                                   windows sit at the bottom right. It takes keyboard focus
 //                                   while it runs and hands it back. Needs Accessibility for
 //                                   the terminal.
@@ -203,13 +204,13 @@ final class FocusNotes: @unchecked Sendable {
     }
 }
 
-@MainActor func keying(rounds: Int, finder: Bool) {
+@MainActor func keying(rounds: Int, finder: Bool, inPlace: Bool) {
     _ = NSApplication.shared   // the concealed cases' bridged operations need an AppKit client
     guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
     // Focus goes back to this app and window at the end.
     let before = NSWorkspace.shared.frontmostApplication?.processIdentifier
     let beforeWindow = before.flatMap(focusedWindow(of:))
-    let keying = Keying(rounds: max(rounds, 1))
+    let keying = Keying(rounds: max(rounds, 1), orders: inPlace ? [.inPlace] : Keying.Order.allCases)
     defer {
         keying.a.child.terminate()
         keying.b.child.terminate()
@@ -217,13 +218,15 @@ final class FocusNotes: @unchecked Sendable {
     }
     keying.wait(0.5)
     keying.orders()
-    keying.selfActivation()
-    // S has no window, as Kosmos has none.
-    let s = KeyStub("S", [])
-    defer { s.child.terminate() }
-    keying.activations(from: s, finder: finder)
-    keying.invisibleWindow(of: s)
-    keying.concealed(frontingFrom: s)
+    if !inPlace {
+        keying.selfActivation()
+        // S has no window, as Kosmos has none.
+        let s = KeyStub("S", [])
+        defer { s.child.terminate() }
+        keying.activations(from: s, finder: finder)
+        keying.invisibleWindow(of: s)
+        keying.concealed(frontingFrom: s)
+    }
     print("\nsummary: a hit keys the target window in the app that holds it; a miss leaves another window key")
     for line in keying.summary { print("  " + line) }
 }
@@ -239,17 +242,22 @@ final class FocusNotes: @unchecked Sendable {
         /// target is its focused window, read just after the record.
         case postRaise = "record, then AXRaise while front and focused"
         case raiseOnly = "AXRaise alone"
+        /// yabai's focus without a raise inside the front app, to the key window AX names, and
+        /// the key record alone in a background app.
+        case inPlace = "focus without raise"
     }
 
     let rounds: Int
+    let orderList: [Order]
     // A1 and A2 overlap, A3 sits apart, and B1 covers parts of A1 and A2.
     let a = KeyStub("A", ["0,0", "60,40", "300,0"])
     let b = KeyStub("B", ["30,20"])
     let notes = FocusNotes()
     var summary: [String] = []
 
-    init(rounds: Int) {
+    init(rounds: Int, orders: [Order]) {
         self.rounds = rounds
+        orderList = orders
         notes.watch(a.pid)
         notes.watch(b.pid)
     }
@@ -268,7 +276,14 @@ final class FocusNotes: @unchecked Sendable {
             raise = (start, elapsed(start))
         }
         if order == .raiseFirst || order == .raiseOnly { raiseWindow() }
-        if order != .raiseOnly, !kosmos_make_key(stub.pid, window) { print("  kosmos_make_key failed for \(stub.label(window))") }
+        if order == .inPlace {
+            let key = kosmos_front_pid() == stub.pid ? focusedWindow(of: stub.pid) : nil
+            if !(key.map { kosmos_make_key_in_place(stub.pid, window, $0) } ?? kosmos_make_key(stub.pid, window)) {
+                print("  \(key == nil ? "kosmos_make_key" : "kosmos_make_key_in_place") failed for \(stub.label(window))")
+            }
+        } else if order != .raiseOnly, !kosmos_make_key(stub.pid, window) {
+            print("  kosmos_make_key failed for \(stub.label(window))")
+        }
         if order == .raiseAfter { raiseWindow() }
         if order == .postRaise {
             let focused = focusedWindow(of: stub.pid), front = kosmos_front_pid() == stub.pid
@@ -283,6 +298,13 @@ final class FocusNotes: @unchecked Sendable {
     }
 
     func front(_ stub: KeyStub) -> Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == stub.pid }
+
+    /// The stubs' windows on screen, front to back.
+    func stacking() -> [UInt32] {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let stubs = Set(a.windows + b.windows)
+        return list.compactMap { ($0[kCGWindowNumber as String] as? Int).map(UInt32.init) }.filter(stubs.contains)
+    }
 
     func onTop(_ window: UInt32, over others: [UInt32]) -> Bool {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
@@ -313,11 +335,11 @@ final class FocusNotes: @unchecked Sendable {
             ("back into A after A2 was key: A2, B1, then A1", [(a, a.windows[1]), (b, b.windows[0])], (a, a.windows[0]),
              [a.windows[1], b.windows[0]]),
         ]
-        var hits: [String: Int] = [:], raised: [String: Int] = [:], trials: [String: Int] = [:]
+        var hits: [String: Int] = [:], raised: [String: Int] = [:], kept: [String: Int] = [:], trials: [String: Int] = [:]
         var raiseTimes: [Double] = []
         for round in 1...rounds {
             for test in cases {
-                for order in Order.allCases {
+                for order in orderList {
                     // A case whose setup did not key is skipped.
                     for step in test.setup { focus(step.stub, step.window, .raiseFirst) }
                     let last = test.setup.last!
@@ -326,7 +348,9 @@ final class FocusNotes: @unchecked Sendable {
                         continue
                     }
                     let mark = notes.entries.count
+                    let before = stacking()
                     let raise = focus(test.target.stub, test.target.window, order)
+                    let isKept = stacking() == before
                     if let raise { raiseTimes.append(raise.ms) }
                     let isFront = front(test.target.stub)
                     let appKey = test.target.stub.appKey()
@@ -337,18 +361,21 @@ final class FocusNotes: @unchecked Sendable {
                     trials[row, default: 0] += 1
                     if isKey { hits[row, default: 0] += 1 }
                     if isOnTop { raised[row, default: 0] += 1 }
+                    if isKept { kept[row, default: 0] += 1 }
                     let raiseTime = raise.map { String(format: ", AXRaise %.2f ms", $0.ms) } ?? ""
                     print("round \(round), \(row): \(isKey ? "keyed" : "NOT KEYED") (front \(isFront ? "yes" : "no"), "
                           + "app key \(test.target.stub.label(appKey)), AX focused \(test.target.stub.label(axFocused))), "
-                          + "\(isOnTop ? "on top" : "not on top")\(raiseTime); focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
+                          + "\(isOnTop ? "on top" : "not on top"), \(isKept ? "order kept" : "order changed")\(raiseTime); "
+                          + "focus notes: \(notesSince(mark, raisedAt: raise?.raised))")
                 }
             }
         }
         for test in cases {
-            for order in Order.allCases {
+            for order in orderList {
                 let row = "\(test.name) | \(order.rawValue)"
                 let hit = hits[row] ?? 0, runs = trials[row] ?? 0
-                summary.append("\(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs)")
+                summary.append("\(row): \(hit) hits, \(runs - hit) misses, on top \(raised[row] ?? 0) of \(runs), "
+                               + "order kept \(kept[row] ?? 0) of \(runs)")
             }
         }
         if !raiseTimes.isEmpty {

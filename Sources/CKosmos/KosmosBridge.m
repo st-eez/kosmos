@@ -243,6 +243,26 @@ bool kosmos_make_key(pid_t pid, uint32_t window) {
     return SLPSPostEventRecordTo(&psn, bytes) == kCGErrorSuccess;
 }
 
+// yabai's window_manager_focus_window_without_raise, which AutoRaise carries under
+// FOCUS_FIRST (AutoRaise.mm:204): AppKit-defined records (type 0x0d), 0x8a = 0x02 to the key
+// window and, 10 ms later, 0x8a = 0x01 to the target, then the key record.
+bool kosmos_make_key_in_place(pid_t pid, uint32_t window, uint32_t keyWindow) {
+    ProcessSerialNumber psn;
+    if (!processForPID(pid, &psn)) return false;
+    uint8_t bytes[0x100] = {0};
+    bytes[0x04] = 0xf8;
+    bytes[0x08] = 0x0d;
+    bytes[0x8a] = 0x02;
+    memcpy(bytes + 0x3c, &keyWindow, sizeof(uint32_t));
+    if (SLPSPostEventRecordTo(&psn, bytes) != kCGErrorSuccess) return false;
+    // yabai: some apps are confused by the two records at once.
+    usleep(10000);
+    bytes[0x8a] = 0x01;
+    memcpy(bytes + 0x3c, &window, sizeof(uint32_t));
+    if (SLPSPostEventRecordTo(&psn, bytes) != kCGErrorSuccess) return false;
+    return kosmos_make_key(pid, window);
+}
+
 pid_t kosmos_front_pid(void) {
     ProcessSerialNumber psn = {0};
     pid_t pid = 0;
