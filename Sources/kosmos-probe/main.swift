@@ -24,7 +24,9 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("policy-exits", "policy-exits [cycles] [tuple]", {
         policyExits(cycles: $0.first.flatMap(Int.init) ?? 300, tuple: $0.contains("tuple"))
     }),
-    ("keying", "keying [rounds] [finder]", { keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder")) }),
+    ("keying", "keying [rounds] [finder] [in-place]", {
+        keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder"), inPlace: $0.contains("in-place"))
+    }),
     ("key-holder", "key-holder [seconds]", { keyHolder(seconds: $0.first.flatMap(Double.init) ?? 30) }),
     ("input-source", "input-source [seconds] [hid]", {
         inputSource(seconds: $0.first.flatMap(Double.init) ?? 20, hid: $0.contains("hid"))

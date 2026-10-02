@@ -701,6 +701,15 @@ public struct Session: Sendable {
         return frame(window).map { floatingFrames(at: [window: $0], written: { _ in nil })[window] ?? $0 }
     }
 
+    /// Whether a shown floating window, at `frame`, overlaps the tile of `window`, so the focus
+    /// keys the tile without bringing it forward (docs/focus.md). False for a floating window,
+    /// and for a window of a hidden workspace.
+    public func floatingOverlaps(_ window: WindowID, frame: (WindowID) -> CGRect?) -> Bool {
+        guard let name = home[window], isShown(name), !isFloating(window),
+              let tile = frames(of: name)[window] else { return false }
+        return shownFloatingWindows.contains { frame($0).map { !$0.intersection(tile).isEmpty } ?? false }
+    }
+
     var framesBeforeFullscreen: [WindowID: CGRect] {
         var frames: [WindowID: CGRect] = [:]
         for workspace in workspaces.values {

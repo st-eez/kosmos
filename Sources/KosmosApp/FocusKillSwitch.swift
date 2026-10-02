@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Synchronization
 
 private let switchLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "focus")
 
@@ -13,6 +14,8 @@ final class FocusKillSwitch: @unchecked Sendable {
     }
 
     private let bytes: UnsafeMutablePointer<UInt8>
+    /// The private calls running now.
+    private let inside = Mutex(0)
 
     init(url: URL) {
         let size = 2
@@ -44,10 +47,19 @@ final class FocusKillSwitch: @unchecked Sendable {
 
     var offReason: Reason? { Reason(rawValue: bytes[1]) }
 
-    /// Focus queue only.
+    /// The focus queue's calls and an app worker's can overlap, so the byte stays set until the
+    /// last one returns: about 5 ns a call uncontended (docs/focus.md).
     func guarded(_ call: () -> Bool) -> Bool {
-        bytes[0] = 1
-        defer { bytes[0] = 0 }
+        inside.withLock { count in
+            count += 1
+            bytes[0] = 1
+        }
+        defer {
+            inside.withLock { count in
+                count -= 1
+                if count == 0 { bytes[0] = 0 }
+            }
+        }
         return call()
     }
 
