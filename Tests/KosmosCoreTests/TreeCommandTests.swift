@@ -65,11 +65,13 @@ import Testing
     #expect(workspace.focus(.left, from: 9) == nil)
 }
 
-@Test func focusInDirectionEndsFullscreen() {
+/// A fullscreen window covers the display, so no window of its workspace lies past it, and it
+/// stays in fullscreen (docs/tree.md).
+@Test func focusInDirectionFromAFullscreenWindowIsAtTheEdge() {
     var workspace = Workspace("h[1 2]")
     workspace.toggleFullscreen(1)
-    #expect(workspace.focus(.right, from: 1) == 2)
-    #expect(workspace.fullscreenWindow == nil)
+    #expect(workspace.focus(.right, from: 1) == nil)
+    #expect(workspace.fullscreenWindow == 1 && workspace.focusedWindow == 1)
 }
 
 // MARK: Focus in a direction with floating windows
