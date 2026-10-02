@@ -79,7 +79,8 @@ extension Controller {
         // joins the focused workspace, as in AeroSpace (docs/displays.md).
         let atLaunch = arrival != .reopened && inventory.wasThereAtLaunch(id)
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
-        let floats = WindowRule.floats(rule, axIdentifier: inventory.axIdentifier(id))
+        let float = WindowRule.floats(rule, axIdentifier: inventory.axIdentifier(id), zoomButtonEnabled: inventory.zoomButtonEnabled(id))
+        let floats = float != nil
         let workspace = arrival == .detached ? nil : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero
         let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id), minimized: inventory.isMinimized(id),
@@ -93,9 +94,8 @@ extension Controller {
         let floating = session.isFloating(id)
         if let saved {
             controllerLog.info("\(id) back on \(saved, privacy: .public) as the saved layout had it\(floating ? ", floating" : "", privacy: .public)")
-        } else if floating, let frame = inventory.windows[id]?.frame {
-            let why = rule?.float == true ? "by rule" : "as a file panel"
-            controllerLog.info("\(id) floats \(why, privacy: .public) at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
+        } else if let float, let frame = inventory.windows[id]?.frame {
+            controllerLog.info("\(id) floats \(float.rawValue, privacy: .public) at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts, reports: reports)
         if focus == .adopt { plan.frames.merge(session.adopt(id).frames) { $1 } }

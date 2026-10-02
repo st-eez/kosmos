@@ -43,13 +43,12 @@
   a window lands would depend on the order apps answer Accessibility. The cost: after a
   relaunch, a key window that a rule or the saved layout puts on a hidden workspace is
   concealed, and Kosmos keys the focused workspace's window.
-- A window a rule floats, and an Open or Save panel ([inventory.md](inventory.md)), joins
-  its workspace's floating windows and never the tree, so it keeps the frame its app gave
-  it and no tile moves, on a hidden workspace and at launch too. Kosmos logs that frame at
-  admission. A new Finder window on the left panel had come
-  up at the tile a third window beside Preview and Ghostty would have had, behind
-  Ghostty's tile, when Kosmos tiled a ruled window before floating it (live log,
-  September 25, 2026).
+- A window a rule floats, an Open or Save panel, or a dialog ([inventory.md](inventory.md))
+  joins its workspace's floating windows and never the tree, so it keeps the frame its app
+  gave it and no tile moves, on a hidden workspace and at launch too. Kosmos logs that frame
+  and why it floats at admission. A new Finder window on the left panel had come up at the
+  tile a third window beside Preview and Ghostty would have had, behind Ghostty's tile,
+  when Kosmos tiled a ruled window before floating it (live log, September 25, 2026).
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which

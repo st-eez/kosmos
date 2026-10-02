@@ -34,6 +34,9 @@ struct AXWindowInfo: Sendable {
     var minimized: Bool
     /// Names AppKit's Open and Save panels, which are standard windows (docs/inventory.md).
     let identifier: String?
+    /// Nil for no zoom button. AppKit disables it on a window that cannot be resized, as a
+    /// settings window (docs/inventory.md).
+    let zoomButtonEnabled: Bool?
 }
 
 /// One app's Accessibility elements and observer, on a thread of the app's own, so a hung app
@@ -143,14 +146,21 @@ actor AppWorker {
     private func info(_ id: WindowID) -> AXWindowInfo? {
         guard let element = elements[id] else { return nil }
         do {
-            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did. A failed
-            // one leaves the window managed and tiled (docs/inventory.md).
+            // The identifier's read took 0.02 to 0.15 ms, as each of the other two did, and the
+            // zoom button's two 0.04 to 0.10 ms together. A failed read of either leaves the
+            // window managed and tiled (docs/inventory.md).
             return AXWindowInfo(subrole: try copy(element, kAXSubroleAttribute) as? String,
                                 minimized: try copy(element, kAXMinimizedAttribute) as? Bool ?? false,
-                                identifier: (try? copy(element, kAXIdentifierAttribute)) as? String)
+                                identifier: (try? copy(element, kAXIdentifierAttribute)) as? String,
+                                zoomButtonEnabled: zoomButtonEnabled(element))
         } catch {
             return nil
         }
+    }
+
+    private func zoomButtonEnabled(_ window: AXUIElement) -> Bool? {
+        guard let button = try? copy(window, kAXZoomButtonAttribute) else { return nil }
+        return (try? copy(button as! AXUIElement, kAXEnabledAttribute)) as? Bool
     }
 
     nonisolated var answers: Bool { !backedOff.load(ordering: .relaxed) }

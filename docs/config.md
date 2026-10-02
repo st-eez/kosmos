@@ -37,6 +37,13 @@
   ([inventory.md](inventory.md)). No rule reaches another choice Kosmos makes about a
   window, such as which windows it manages, so none reaches this one. A rule's `workspace`
   still applies to the panels, as to every window of the app.
+- A window whose zoom button is disabled, as most settings and About windows, floats as a
+  dialog unless its app's rule says `float = false` ([inventory.md](inventory.md)), so a
+  rule that sets only `workspace` leaves it floating. AppKit names the file panels above,
+  so they float whatever the rule says. A disabled zoom button can mislead, as AeroSpace's
+  test of the fullscreen button misled on Activity Monitor, VS Code and VLC, and a rule
+  keeps an app's windows tiled when it does. A dialog its app lets be resized, as System
+  Settings, floats only by a rule, as in [sample-config.toml](sample-config.toml).
 - `animations` is on by default, as in Omarchy: windows slide to the frames a relayout
   gives them, and new windows slide from where their app shows them or pop in when it has
   not shown them yet ([geometry.md](geometry.md)). `animations = false` turns both off, and

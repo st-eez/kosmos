@@ -24,7 +24,7 @@ import Testing
         #expect(config.bindings.count == 64)
         #expect(config.focusFollowsMouse.enabled)
         #expect(config.focusFollowsMouse.ignoreApps == ["Google Chrome for Testing"])
-        #expect(config.rules.count == 18)
+        #expect(config.rules.count == 19)
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "office-va24e", "laptop"])
         #expect(config.gaps.inner == 10)
         #expect(config.animations)

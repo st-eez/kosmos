@@ -19,7 +19,7 @@ prefix.
   `KosmosCore/LockState.swift`, `KosmosCore/Sweeps.swift`, `KosmosCore/Tabs.swift`,
   `KosmosCore/RegularApps.swift`, `KosmosPolicyWatch/PolicyWatch.swift`,
   `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Events.swift`, `kosmos-probe/Policy.swift`,
-  `kosmos-probe/PolicyExits.swift`.
+  `kosmos-probe/PolicyExits.swift`, `kosmos-probe/WindowKinds.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.

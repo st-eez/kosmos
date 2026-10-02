@@ -173,9 +173,16 @@ ctrl-alt-s = 'profile single'
 
 # Window rules. The first rule that matches a new window applies, and Kosmos warns about a
 # rule an earlier one hides. app-id matches the bundle identifier; app-name matches names
-# containing the text, ignoring case.
+# containing the text, ignoring case. Open and Save panels, and windows whose zoom button is
+# disabled, as most apps' settings windows, float without a rule; float = false tiles the
+# latter.
 [[rule]]
 app-name = 'Finder'
+float = true
+
+# System Settings lets its window be resized, so only a rule floats it.
+[[rule]]
+app-id = 'com.apple.systempreferences'
 float = true
 
 [[rule]]
