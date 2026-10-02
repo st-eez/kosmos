@@ -41,18 +41,18 @@ prefix.
   `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`, `kosmos-probe/RevealSlide.swift`,
   `kosmos-probe/Handover.swift`, `kosmos-probe/MissionControl.swift`, `script/install.sh`,
   `tla/Handover.tla`.
-- [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, the
-  private focus path with its kill switch and public fallback, departures, and the empty
-  workspace's window.
+- [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, which
+  reports the user's own input made, the private focus path with its kill switch and
+  public fallback, departures, and the empty workspace's window.
   Code: `KosmosApp/FocusQueue.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/FocusKillSwitch.swift`, `KosmosApp/EmptyWorkspaceWindow.swift`,
   `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+KeyReports.swift`, `KosmosApp/Controller+Windows.swift`,
-  `KosmosApp/UserInput.swift`, `KosmosCore/FocusReports.swift`,
-  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/KeyRequest.swift`,
+  `KosmosApp/UserInput.swift`, `KosmosApp/InputTap.swift`, `KosmosCore/FocusReports.swift`,
+  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/OwnInput.swift`, `KosmosCore/KeyRequest.swift`,
   `KosmosCore/FocusRead.swift`, `KosmosCore/FocusMisses.swift`,
   `KosmosCore/Departures.swift`, `KosmosCore/ConcealHistory.swift`,
-  `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
+  `kosmos-probe/Focus.swift`, `kosmos-probe/InputSource.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, the layout kept across restarts, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,

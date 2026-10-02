@@ -159,11 +159,12 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     stays put at startup. No admission moves the pointer while the left button is down
     (`NSEvent.pressedMouseButtons`): a native tab dragged out of its group, as Finder's
     or Ghostty's, is admitted a pairing window after its order-in, with the drag still
-    on. The ceiling: Kosmos does not tell who opened a window, so an
-    agent's or a script's new window that its app keys brings the pointer too, as it
-    takes the focus or brings the follow. If that pulls the pointer away while Steve
-    works, the rule can ask for a key or a click in the seconds before the app launched
-    or opened the window.
+    on.
+  - A key report or a new window that no input of the user's made, as an agent's, a
+    script's or `open -a`'s, leaves the pointer where it is, whatever the tests above
+    say ([focus.md](focus.md) tells it by the input tap). The Command-Tab test reads the
+    combined session state, which counts the keys and clicks other processes post, and
+    Steve's typing in another app passed it whenever an agent's app came front.
   - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
     window it activates the same way. Left on the Dock, the pointer would focus every
     window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and

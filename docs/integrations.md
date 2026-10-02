@@ -38,11 +38,14 @@
 - **Claude Code's computer use.** It drives the real pointer, keyboard and front app, so
   Kosmos sees its actions as input. What it does, from Claude Code 2.1.284's bundled code
   and `computer-use-swift.node`, and the live log of 2026-09-29:
-  - `open_application` activates the app, and Kosmos follows its key window into a hidden
-    workspace as it follows a Command-Tab: at 09:22:14.9 it opened Claude, and Kosmos
-    switched the main panel to workspace 1. Computer use needs that follow. A concealed
-    window's row sits 100,000 points off every display ([hiding.md](hiding.md)), so
-    computer use finds no display for it and can neither capture nor click it.
+  - `open_application` activates the app with no input of the user's, so Kosmos no longer
+    follows its key window into a hidden workspace ([focus.md](focus.md)). Before that, at
+    09:22:14.9 it opened Claude, and Kosmos switched the main panel to workspace 1. A
+    concealed window's row sits 100,000 points off every display ([hiding.md](hiding.md)),
+    so computer use finds no display for it and can neither capture nor click it, and
+    Kosmos's request of its own focus fails computer use's front app check. To drive an
+    app on a hidden workspace, the agent runs `kosmos workspace N` first, a command
+    Kosmos carries out as any other. An app on a shown workspace stays front and works.
   - Before each action and screenshot it hides every app it has no grant for that has a
     window on the display it works on, and unhides them at the end of its turn. Kosmos
     returns their windows and keeps the focus ([tree.md](tree.md)).

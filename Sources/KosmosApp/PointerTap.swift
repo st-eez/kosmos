@@ -96,9 +96,3 @@ final class PointerTap: Sendable {
         onMain { callback(entered, stamp) }
     }
 }
-
-private func processName(_ pid: pid_t) -> String {
-    var name = [CChar](repeating: 0, count: 256)
-    guard proc_name(pid, &name, UInt32(name.count)) > 0 else { return "?" }
-    return name.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
-}

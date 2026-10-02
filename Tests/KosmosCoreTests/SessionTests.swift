@@ -494,9 +494,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.park([1], because: .minimized)
     _ = s.park([2], because: .appHidden)
     _ = s.perform(.workspace(.named("3")))
-    let follow = s.followOnUnhide([2], keyed: 1, fallback: 2, front: true)
-    #expect(follow == nil)
-    let plan = s.unpark([2], follow: follow)
+    #expect(s.focusOnUnhide([2], keyed: 1, fallback: 2, front: true, byUser: true) == .stays)
+    let plan = s.unpark([2], follow: nil)
     #expect(s.focusedWorkspace == "3")
     #expect(plan.hide == [2] && plan.show.isEmpty)
     #expect(s.isParked(1))
@@ -507,10 +506,29 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.add(1)
     _ = s.add(2, to: "2")
     _ = s.park([1, 2], because: .appHidden)
-    #expect(s.followOnUnhide([1, 2], keyed: 2, fallback: 1, front: true) == 2)
+    #expect(s.focusOnUnhide([1, 2], keyed: 2, fallback: 1, front: true, byUser: true) == .follow(2))
     // A dialog Kosmos does not manage, or no key window: the most recently focused one.
-    #expect(s.followOnUnhide([1, 2], keyed: 99, fallback: 1, front: true) == 1)
-    #expect(s.followOnUnhide([1, 2], keyed: nil, fallback: 1, front: true) == 1)
+    #expect(s.focusOnUnhide([1, 2], keyed: 99, fallback: 1, front: true, byUser: true) == .follow(1))
+    #expect(s.focusOnUnhide([1, 2], keyed: nil, fallback: 1, front: true, byUser: true) == .follow(1))
+}
+
+@Test func anUnhideNoInputOfTheUsersFrontedShowsNoHiddenWorkspace() {
+    // `open -a` on a hidden app unhides and fronts it. Its window on a shown workspace is
+    // followed with no switch, and one on a hidden workspace leaves Kosmos's focus where it was.
+    var s = Desk.session()
+    _ = s.add(1, to: "1")
+    _ = s.add(2, to: "5")
+    _ = s.add(3, to: "6")
+    _ = s.adopt(1)
+    #expect(s.isShown("5") && !s.isShown("6"))
+    _ = s.park([2, 3], because: .appHidden)
+    #expect(s.focusOnUnhide([2, 3], keyed: 3, fallback: 2, front: true, byUser: false) == .reassert)
+    #expect(s.focusOnUnhide([2, 3], keyed: 2, fallback: 3, front: true, byUser: false) == .follow(2))
+    #expect(s.focusOnUnhide([2, 3], keyed: 3, fallback: 2, front: true, byUser: true) == .follow(3))
+    var plan = s.unpark([2, 3], follow: nil)
+    plan.focus = s.intent
+    #expect(s.focused == 1 && s.focusedWorkspace == "1" && s.isShown("5") && !s.isShown("6"))
+    #expect(plan.focus == .window(1) && plan.hide == [3])
 }
 
 @Test func anAppUnhiddenInTheBackgroundIsNotFollowed() {
@@ -522,9 +540,8 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     _ = s.adopt(1)
     #expect(s.focused == 1 && s.isShown("5"))
     _ = s.park([2], because: .appHidden)
-    let follow = s.followOnUnhide([2], keyed: 2, fallback: 2, front: false)
-    #expect(follow == nil)
-    let plan = s.unpark([2], follow: follow)
+    #expect(s.focusOnUnhide([2], keyed: 2, fallback: 2, front: false, byUser: true) == .stays)
+    let plan = s.unpark([2], follow: nil)
     #expect(s.focused == 1 && s.focusedWorkspace == "1")
     #expect(plan.focus == nil)
     #expect(!s.isParked(2))

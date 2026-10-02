@@ -15,6 +15,7 @@ private let chrome: Int32 = 500
 private let activityMonitor: Int32 = 600
 private let moonlight: Int32 = 700
 private let claude: Int32 = 800
+private let teams: Int32 = 900
 
 private func ms(_ milliseconds: Int) -> ContinuousClock.Instant { t0 + .milliseconds(milliseconds) }
 
@@ -53,12 +54,15 @@ private struct Replay {
     var pickedAway = false
     var pressedJustBefore = false
     var launchedSinceEmptyWorkspaceKeyed: Set<Int32> = []
+    /// Apps whose changes no input of the user's made, as an agent's `open -a` (OwnInput).
+    var openedByAgents: Set<Int32> = []
     let log = Log()
 
     var facts: KeyReportIntake.Facts {
         let windows = windows, shown = shown, parked = parked, closedByApp = closedByApp, concealed = concealed
         let conceals = conceals, left = left, log = log, leftButtonDown = leftButtonDown, pickedAway = pickedAway
         let pressedJustBefore = pressedJustBefore, launched = launchedSinceEmptyWorkspaceKeyed
+        let openedByAgents = openedByAgents
         return KeyReportIntake.Facts(
             workspace: { windows[$0]?.workspace }, isShown: { shown.contains($0) }, isParked: { parked.contains($0) },
             closedByApp: { closedByApp.contains($0) },
@@ -68,6 +72,7 @@ private struct Replay {
             pointer: PointerReadings(focusOnAnotherDisplay: { false }, leftButtonDown: { leftButtonDown },
                                      activation: { (pickedAway ? commandTab : click, onDock: false) }),
             userPressedJustBefore: { pressedJustBefore }, launchedSinceEmptyWorkspaceKeyed: { launched.contains($0) },
+            userCause: { app, _ in openedByAgents.contains(app) ? nil : .opener(.key(target: 0), ago: .zero, beforeLaunch: false) },
             note: { log.notes.append($0) })
     }
 
@@ -512,6 +517,66 @@ private struct Replay {
     replay.windows[71] = ("4", chrome)
     #expect(replay.admit(71, at: 50).focus == .placedHidden)
     #expect(replay.placed(71) == .requestFocus(retry: false))
+}
+
+@Test func aWindowAnAgentOpenedOnARulesHiddenWorkspaceSwitchesNothing() {
+    // Agents launch Chrome for Testing, whose rule sends its windows to workspace 4, while Steve
+    // works on workspace 8 (docs/focus.md). The window stays concealed, the pointer stays, and
+    // Kosmos keys its intent again, so no key goes to the concealed window.
+    var replay = Replay(windows: [80: ("8", claude)], shown: ["1", "8"])
+    replay.openedByAgents = [chrome]
+    _ = replay.heard(.window(80), from: claude, at: -100)
+    #expect(replay.heard(.window(70), from: chrome, at: 10) == .none)
+    replay.windows[70] = ("4", chrome)
+    let admission = replay.admit(70, at: 20)
+    #expect(admission.focus == .placedHidden && !admission.bringsPointer)
+    #expect(replay.placed(70) == .requestFocus(retry: false))
+    #expect(replay.intent == .window(80))
+    // A report after the admission, before its conceal lands, too.
+    replay.windows[71] = ("4", chrome)
+    #expect(replay.admit(71, at: 30).focus == .placedHidden)
+    #expect(replay.heard(.window(71), from: chrome, at: 40) == .requestFocus(retry: false))
+    let refused = replay.log.notes.compactMap { note -> KeyWindow? in
+        if case .notTheUsers(let report) = note { report.key } else { nil }
+    }
+    #expect(refused == [.window(70), .window(71)])
+    // The user's own launch of it is followed.
+    replay.openedByAgents = []
+    #expect(replay.heard(.window(72), from: chrome, at: 50) == .none)
+    replay.windows[72] = ("4", chrome)
+    #expect(replay.admit(72, at: 60).focus == .placedHidden)
+    #expect(replay.placed(72) == .follow(72, bringsPointer: true))
+}
+
+@Test func anAgentsActivationOfAConcealedWindowSwitchesNothing() {
+    // `open -a 'Microsoft Teams'` with Teams on hidden workspace 5: macOS keys its concealed
+    // window, and once the grace ends Kosmos keys its intent again.
+    var replay = Replay(windows: [11: ("1", ghostty), 50: ("5", teams)], concealed: [50])
+    replay.openedByAgents = [teams]
+    replay.pickedAway = true
+    _ = replay.heard(.window(11), from: ghostty, at: -100)
+    #expect(replay.heard(.window(50), from: teams, at: 10, read: true) == .hold(1))
+    #expect(replay.expire(1) == .requestFocus(retry: false))
+    #expect(replay.intent == .window(11))
+    // The user's Command-Tab to it is followed, with the pointer.
+    replay.openedByAgents = []
+    #expect(replay.heard(.window(11), from: ghostty, at: 200) == .adopt(11, bringsPointer: true))
+    #expect(replay.heard(.window(50), from: teams, at: 300, read: true) == .hold(2))
+    #expect(replay.expire(2) == .follow(50, bringsPointer: true))
+}
+
+@Test func anAgentsWindowOnAShownWorkspaceTakesTheFocusAndLeavesThePointer() {
+    // Whether Kosmos gives the focus back here waits for Steve (docs/backlog.md). Steve's
+    // typing elsewhere reads as a Command-Tab to the clock test, and moves the pointer no more.
+    var replay = Replay(windows: [11: ("1", ghostty), 12: ("1", helium)])
+    replay.openedByAgents = [helium]
+    replay.pickedAway = true
+    _ = replay.heard(.window(11), from: ghostty, at: -100)
+    #expect(replay.heard(.window(12), from: helium, at: 10) == .adopt(12, bringsPointer: false))
+    #expect(replay.heard(.window(13), from: helium, at: 20) == .none)
+    replay.windows[13] = ("1", helium)
+    let admission = replay.admit(13, at: 30)
+    #expect(admission.focus == .adopt && !admission.bringsPointer)
 }
 
 @Test func aReportBeforeTheAdmissionsConcealLandsIsFollowedAtOnceAndOneAfterAsACommandTab() {

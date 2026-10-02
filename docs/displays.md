@@ -32,11 +32,11 @@
   `silent` (Hyprland wiki, Window Rules).
   With `mouse-follows-focus` the pointer comes along
   ([focus-follows-mouse.md](focus-follows-mouse.md)). A window its app opens in the
-  background changes no workspace. The ceiling: a launch by an agent or a script that
-  brings the app front also follows, since its app keys the window as one the user
-  launched does, and Kosmos does not tell who asked for a launch. The upgrade path is a
-  `silent` rule option, as Hyprland's `workspace N silent`, added when a real case needs
-  it.
+  background changes no workspace, and neither does one an agent, a script or `open -a`
+  opened: with no input of the user's before it, it stays concealed on its workspace and
+  Kosmos keys its focus again ([focus.md](focus.md)). A `silent` rule option, as
+  Hyprland's `workspace N silent`, would keep the user's own launches from switching too,
+  and waits for a real case.
   Kosmos's launch sweep follows no window. The key window it finds becomes the focus if
   its workspace is shown, and a follow during the sweep would change the workspace a
   display shows while the sweep still places windows by the display under them, so where

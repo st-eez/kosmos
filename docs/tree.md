@@ -284,6 +284,11 @@
     and what the app's key report then does is untested. A probe that hides a child app of
     its own, activates it, and reads the front process at the unhide notification and after
     a worker read would settle it.
+  - An unhide that fronts the app with no input of the user's before it, as `open -a` on a
+    hidden app, is followed only onto a shown workspace, with no switch and no pointer
+    move. When the window returns to a hidden workspace, Kosmos returns the windows and
+    requests its intent again, so no key goes to the concealed window macOS keyed
+    (`Session.focusOnUnhide`, [focus.md](focus.md)).
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame. Parking asks for no focus, since macOS keys another window itself and a
     request would pull the screen out of a native fullscreen Space. A window already

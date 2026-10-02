@@ -3,6 +3,50 @@
 Open work on Kosmos, most urgent first. Each item says what is known, what settles it and
 what Steve has decided. Take an item out when it lands, and add new work here.
 
+## Decide whether an agent's window on a shown workspace keeps the focus
+
+Steve decided that windows agents, scripts, `open -a` or computer use open never switch a
+display or take focus, and that Kosmos follows Hyprland for his own: a new window a rule
+sends to a hidden workspace shows that workspace and takes focus. Since branch
+`agentfocus` Kosmos follows a report into a hidden workspace only when his own input made
+it, and over any other it keeps its workspaces and keys his window again
+([focus.md](focus.md)). A window such an app keys on a shown workspace still takes the
+keyboard, and the focused display with it when it is on another display, since macOS has
+activated its app. Giving that focus back breaks computer use, which needs its app front
+for each click ([integrations.md](integrations.md)). The choices:
+- Leave it. Agents' apps on shown workspaces take the focus, with no switch and no pointer
+  move, and computer use works on any app a display shows.
+- Give the focus back always. Computer use then fails on every app, as its front app check
+  finds Steve's app after each `open_application`.
+- Give the focus back unless a process posted input in the last few seconds. Kosmos sees
+  computer use's input under its own process (`claude`, or Codex's `ChatGPT Computer Use`).
+  The first `open_application` of a turn comes before any posted input, so it would still
+  lose the focus once.
+- Give the focus back only when the window is on another display than Steve's focus.
+  Computer use then works on the display Steve works on.
+- Also open: an agent's launch of an app with no window on an empty workspace keeps the
+  keys there, as the empty workspace takes any app launched since it was keyed for the
+  user's choice ([focus.md](focus.md)). The same test of the user's input would key the
+  empty workspace's window again.
+
+## Check the follow of the user's own input live
+
+Kosmos follows a report into a hidden workspace only when the input tap ties it to Steve's
+own key or click ([focus.md](focus.md)). Run
+`log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` and bring up an app whose
+windows sit on a hidden workspace each of these ways. Each passes when the log says
+`following window(N) of <app>: <input> N ms before` and the display switches:
+- Command-Tab (`a key to Dock`), a Dock click (`a click on Dock`), Raycast's panel (`a key
+  to Raycast`), Spotlight, a Finder double-click, and a link clicked in another app.
+- A Raycast app hotkey, as Opt-Shift-S for Spotify: `a key the input tap never saw`. If the
+  log says `came with no key or click of the user's` instead, HID does not count a key a
+  hotkey takes, and focus.md's unmeasured case needs another source for hotkeys.
+- Chrome launched from Raycast, whose first window comes seconds later: `before its launch`.
+- Then run `sleep 5; open -a <app>` in a terminal for an app on a hidden workspace, and keep
+  typing in another app. It passes when the log says `came with no key or click of the
+  user's`, the display stays, and the keys keep going to the app typed in. An agent's
+  Chrome for Testing launch should do the same.
+
 ## Follow a Teams meeting window accepted from a call notification
 
 - Steve accepts an incoming Teams call from its notification, and the meeting window opens
@@ -22,40 +66,31 @@ what Steve has decided. Take an item out when it lands, and add new work here.
     at once.
 - To settle it, take a debug log of a real call:
   `log stream --level debug --predicate 'subsystem == "io.github.st-eez.kosmos"'`.
+  Since branch `agentfocus` the follow also needs the accept's click, which goes to the
+  notification service inside Teams' bundle and counts for 10 s. The log's `following`
+  line names it; a `came with no key or click of the user's` line means the meeting window
+  came later than that.
 - FaceTime goes wrong the other way (Steve, 2026-09-28). An incoming FaceTime call opens
   FaceTime's window while the call's notification is still showing, before he accepts.
-  Take a debug log of an incoming FaceTime call alongside the Teams one.
-- Steve's decisions:
-  - Kosmos follows Hyprland. A new window a rule sends to a hidden workspace shows that
-    workspace and takes focus.
-  - Windows that agents, scripts, `open -a` or computer use open never switch a display
-    or take focus.
-- The design so far ties the follow to Steve's last real click going to the window's app or
-  a helper inside its .app bundle. A posted event carries its poster's pid in
-  `eventSourceUnixProcessID`, and setting the field to 0 before posting doesn't hide it
-  (`kosmos-probe input-source`, branch `rulefollow`, uncommitted). Before building, sample
-  Steve's real input once with `.build/debug/kosmos-probe input-source 60` in
-  `~/Projects/Personal/kosmos-wt-rulefollow`, while he clicks, types, uses Command-Tab and
-  dictates with Wispr Flow. Karabiner-Elements, Logitech Options+, BetterTouchTool or
-  Wispr Flow may post his input under their own pid, and a rule of pid 0 alone would then
-  ignore him.
+  Take a debug log of an incoming FaceTime call alongside the Teams one. A window on a
+  hidden workspace no longer takes the display with no input of Steve's before it.
 - Branch `rulefollow` (be88746, e4426e6) follows every window a rule sends to a hidden
   workspace, whoever opened it. Steve ruled that out, so it stays unmerged as a reference.
-- Focus follows mouse ignores posted pointer movement since branch `computeruse`
-  ([focus-follows-mouse.md](focus-follows-mouse.md)), and Steve's own movement carried
-  source pid 0 in 74 of 74 events. The sample above still covers keys and clicks.
 
 ## Keep computer use from taking over while Steve works
 
 Steve wants Claude Code's computer use to run beside him without switching workspaces or
 displays or moving his focus. Branch `computeruse` stops the two takeovers Kosmos added: its
 posted pointer moves focus nothing, and its unhide of the apps it hid at the end of each
-turn no longer pulls focus to them ([integrations.md](integrations.md)). What is left is
-computer use's own design, and Steve's choice among these. Once the branch is installed,
-check it live: after a computer use turn that clicks, the log should say `pointer movement
-posted by pid N (claude) focuses nothing` with no `pointer focuses` line at the click, and
-the `unhid` lines at the turn's end should have no `focus of` line for the unhidden apps'
-windows after them.
+turn no longer pulls focus to them ([integrations.md](integrations.md)). Branch
+`agentfocus` stops its `open_application` from switching to a hidden workspace, which
+leaves computer use unable to drive an app there until the agent runs
+`kosmos workspace N`. What is left is computer use's own design, the focus item above, and
+Steve's choice among these. Once the branches are installed, check them live: after a
+computer use turn that clicks, the log should say `pointer movement posted by pid N
+(claude) focuses nothing` with no `pointer focuses` line at the click, and the `unhid`
+lines at the turn's end should have no `focus of` line for the unhidden apps' windows
+after them.
 - Computer use keys its target app and posts real input, so with or without Kosmos it takes
   the keyboard focus and the pointer. Its per-app background tools (`app_screenshot`,
   `app_click` and the rest, which act on one app's window through Accessibility "so the
@@ -65,17 +100,11 @@ windows after them.
   setting. Background tools from Anthropic are the real fix. When they come, check
   `app_bring_to_current_space`, which moves a window between Spaces and could take a
   concealed window out of Kosmos's holding Space.
-- Kosmos declining to follow an activation no real input preceded. It can tell: no key or
-  click with source pid 0 in the last second. It breaks computer use for a window on a
-  hidden workspace, which stays concealed where computer use can't see or click it, and
-  Kosmos's request of its own focus then fights computer use's front app check. It fits
-  new windows that agents open (the Teams item above), and not the app computer use drives.
-- Mouse-follows-focus reading its Command-Tab test from the HID state, so computer use's
-  posted keys and clicks never make Kosmos move the pointer. Waits for the input-source
-  sample above, since Karabiner or Wispr Flow may post Steve's own keys.
 - Hotkeys that another process posts, as computer use pressing alt-1, still switch
-  workspaces. Kosmos could skip a hotkey with no HID key down in the last few ms. Not
-  seen live; an agent presses Kosmos's keys only on purpose.
+  workspaces, and should. BetterTouchTool posts Option-Tab for Steve's three-finger swipe,
+  his `alt-tab` binding ([focus.md](focus.md), the sample of 2026-10-02), so a hotkey gate
+  on HID or on the source process would break the swipe. An agent presses Kosmos's keys
+  only on purpose.
 - Computer use cannot drive the Claude desktop app at all, since its screenshots always
   leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
