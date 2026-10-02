@@ -122,6 +122,21 @@ Nothing has measured it with real apps yet.
   landing write, and the frame line's `rings` field under 1 ms. A `rings` value over 1 ms
   means main actor work holds Core Animation's lock, and geometry.md gives the upgrade.
 
+## Check dialogs float live
+
+A standard window whose zoom button is disabled now floats as a dialog
+([inventory.md](inventory.md)). No dialog was open when `kosmos-probe window-kinds` read
+Steve's windows on 2026-10-02, so none of his apps' own has been seen.
+- Open the Settings and About windows of the apps he uses, ChatGPT's and Ghostty's among
+  them. Each should float at its own frame, and the log should show `<id> floats as a
+  dialog`. `.build/debug/kosmos-probe window-kinds` lists each open window with its buttons
+  and what Kosmos does with it before any rule. One that tiles has its zoom button
+  enabled, and a rule floats its app.
+- Drag a tab out of Chrome and out of Helium. The new window should tile. If it floats as a
+  dialog, Chromium disables the zoom button during the drag, and Chromium's windows need
+  their button read again once the drag ends.
+- Open System Settings. It should float by rule.
+
 ## Check RustDesk live
 
 Since d514acf Kosmos observes each app's activation policy, so an app that launches as an

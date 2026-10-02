@@ -354,13 +354,33 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
     /// ChatGPT's Save panel, an AXStandardWindow, tiled beside its window before this
     /// (docs/inventory.md).
     @Test func filePanelsFloatWhateverTheRuleSays() {
-        #expect(WindowRule.floats(nil, axIdentifier: "save-panel"))
-        #expect(WindowRule.floats(nil, axIdentifier: "open-panel"))
-        #expect(WindowRule.floats(WindowRule(appName: "chatgpt", float: false), axIdentifier: "save-panel"))
-        #expect(WindowRule.floats(WindowRule(appName: "finder", float: true), axIdentifier: "FinderWindow"))
-        #expect(!WindowRule.floats(nil, axIdentifier: nil))
-        #expect(!WindowRule.floats(WindowRule(appName: "chatgpt", workspace: "3"), axIdentifier: nil))
-        #expect(!WindowRule.floats(nil, axIdentifier: "find-panel"))
+        func floats(_ rule: WindowRule?, _ identifier: String?) -> FloatReason? {
+            WindowRule.floats(rule, axIdentifier: identifier, zoomButtonEnabled: true)
+        }
+        #expect(floats(nil, "save-panel") == .filePanel)
+        #expect(floats(nil, "open-panel") == .filePanel)
+        #expect(floats(WindowRule(appName: "chatgpt", float: false), "save-panel") == .filePanel)
+        #expect(floats(WindowRule(appName: "finder", float: true), "FinderWindow") == .rule)
+        #expect(floats(nil, nil) == nil)
+        #expect(floats(WindowRule(appName: "chatgpt", workspace: "3"), nil) == nil)
+        #expect(floats(nil, "find-panel") == nil)
+    }
+
+    /// Raycast's and Calendar's settings and Ghostty's About window have their zoom button
+    /// disabled; Activity Monitor and System Settings have it enabled and no fullscreen
+    /// button; Ghostty with its title bar off has no buttons (docs/inventory.md).
+    @Test func windowsWithADisabledZoomButtonFloatUnlessTheRuleSaysTile() {
+        func floats(_ rule: WindowRule?, _ zoom: Bool?) -> FloatReason? {
+            WindowRule.floats(rule, axIdentifier: nil, zoomButtonEnabled: zoom)
+        }
+        #expect(floats(nil, false) == .dialog)
+        #expect(floats(WindowRule(appName: "raycast", workspace: "3"), false) == .dialog)
+        #expect(floats(WindowRule(appName: "raycast", float: true), false) == .rule)
+        #expect(floats(WindowRule(appName: "raycast", float: false), false) == nil)
+        #expect(floats(nil, true) == nil)
+        #expect(floats(nil, nil) == nil)
+        #expect(WindowRule.floats(WindowRule(appName: "chatgpt", float: false), axIdentifier: "save-panel",
+                                  zoomButtonEnabled: false) == .filePanel)
     }
 
     @Test func diagnosticsAreInFileOrder() {

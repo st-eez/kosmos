@@ -48,6 +48,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         benchFrames(arguments[0], display: arguments[1], real: arguments.dropFirst(2).first == "real")
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
+    ("window-kinds", "window-kinds", { _ in windowKinds() }),
     ("borders", "borders", { _ in borders() }),
     ("constraints", "constraints", { _ in constraints() }),
     ("border-space", "border-space", { _ in borderSpace() }),

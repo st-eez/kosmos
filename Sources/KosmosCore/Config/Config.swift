@@ -139,10 +139,14 @@ public struct WindowRule: Equatable, Sendable {
         return true
     }
 
-    /// Whether a new window floats. An AppKit Open or Save panel floats whatever its rule
-    /// says (docs/config.md), and AppKit names it by its AXIdentifier (docs/inventory.md).
-    public static func floats(_ rule: WindowRule?, axIdentifier: String?) -> Bool {
-        rule?.float == true || axIdentifier == "open-panel" || axIdentifier == "save-panel"
+    /// Why a new window floats, or nil when it tiles (docs/config.md). AppKit names an Open or
+    /// Save panel by its AXIdentifier, and disables the zoom button of a window its app keeps
+    /// from being resized, which `zoomButtonEnabled` gives, nil for no button
+    /// (docs/inventory.md).
+    public static func floats(_ rule: WindowRule?, axIdentifier: String?, zoomButtonEnabled: Bool?) -> FloatReason? {
+        if axIdentifier == "open-panel" || axIdentifier == "save-panel" { return .filePanel }
+        if let float = rule?.float { return float ? .rule : nil }
+        return zoomButtonEnabled == false ? .dialog : nil
     }
 
     /// Whether this rule matches every window `other` matches, so `other` never applies after
@@ -150,6 +154,13 @@ public struct WindowRule: Equatable, Sendable {
     func covers(_ other: WindowRule) -> Bool {
         matches(appID: other.appID, appName: other.appName)
     }
+}
+
+/// Why `WindowRule.floats` floats a window, as Kosmos logs it.
+public enum FloatReason: String, Sendable {
+    case rule = "by rule"
+    case filePanel = "as a file panel"
+    case dialog = "as a dialog"
 }
 
 /// Settings for one set of connected displays. A key the profile leaves out keeps the base

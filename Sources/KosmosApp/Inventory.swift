@@ -148,6 +148,8 @@ final class Inventory {
 
     func axIdentifier(_ id: WindowID) -> String? { ax[id]?.identifier }
 
+    func zoomButtonEnabled(_ id: WindowID) -> Bool? { ax[id]?.zoomButtonEnabled }
+
     /// The key window report for Kosmos's own window, which no worker sends.
     func ownWindowKeyed(at stamp: ContinuousClock.Instant) {
         handle(AXReport(pid: getpid(), kind: .focusedWindowChanged(nil), received: stamp))
@@ -288,7 +290,8 @@ final class Inventory {
                 \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
                 \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
                 subrole \(info.subrole ?? "-", privacy: .public) \
-                identifier \(info.identifier ?? "-", privacy: .public)
+                identifier \(info.identifier ?? "-", privacy: .public) \
+                zoom button \(info.zoomButtonEnabled.map { $0 ? "enabled" : "disabled" } ?? "-", privacy: .public)
                 """)
         }
     }
