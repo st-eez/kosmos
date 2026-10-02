@@ -55,6 +55,9 @@ extern AXError _AXUIElementGetWindow(AXUIElementRef element, uint32_t *window);
 // Names the window WindowServer weighs a background app's orderFront: against (0 for none).
 // Its handler, _XSetFrontWindow, checks no rights (kosmos-probe float-raise).
 extern CGError SLSSetFrontWindow(SLSConnectionID cid, uint32_t window);
+// orderFront: of a window of the caller's own, weighed against the record at `timestamp`; an
+// allowed order makes the window the record, with that timestamp.
+extern CGError SLSOrderFrontConditionally(SLSConnectionID cid, uint32_t window, uint64_t timestamp);
 
 #include "KosmosBridge.h"
 #include "KosmosBar.h"
