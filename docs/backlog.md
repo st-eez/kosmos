@@ -108,19 +108,27 @@ after them.
 - Computer use cannot drive the Claude desktop app at all, since its screenshots always
   leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
-## Decide whether to build `kosmos peek`
+## Decide where agents' windows go
 
-An agent driving an app on a hidden workspace through CuaDriver can act through
-Accessibility, but its screenshots of the concealed window fail. `kosmos-probe peek`
-(2026-10-02, [hiding.md](hiding.md)) found that a peek works only with the window in an
-animation Space at alpha 1 under a cover of Kosmos's own that shows a capture of the screen
-taken just before: the first screenshot, done about 0.1 s after the window joined that
-Space, was current, after about 0.1 s to put the cover up. At alpha 0 the captures came back
-transparent, and at alpha 0.01 at opacity 3 of 255. `kosmos peek <window> -- <command>`
-would hold such a peek while the command runs. Open: whether the cover takes the mouse,
-how long real apps take to draw after the occlusion change (Discord showed black for about
-a second on September 25, 2026), and whether a running capture stream can feed the cover
-faster than a fresh capture.
+Parked by Steve on 2026-10-02. Kosmos puts a window an agent opens on the focused
+workspace, so it shows over Steve's work without taking focus (CuaDriver's Calculator on
+workspace 2, 2026-10-02). On a hidden workspace an agent can act through Accessibility,
+but its screenshots of the concealed window fail, and Steve rules out hiding agents'
+windows for that reason: agents need screenshots. Options looked at:
+- A virtual display (BetterDisplay) holding a workspace for agents: windows draw and
+  capture, Steve never sees it. Untested: CuaDriver there, keeping the pointer off it.
+- A workspace for agents whose windows park in a screen corner instead of the holding
+  Space, so they keep drawing: a second hiding path, slower switches, slivers in a corner.
+- `kosmos park` and `unpark` called by agents: Steve found it fragile, since an agent that
+  forgets leaves a window parked.
+- `kosmos peek <window> -- <command>`: `kosmos-probe peek` (2026-10-02,
+  [hiding.md](hiding.md)) found a peek works only with the window in an animation Space at
+  alpha 1 under a cover of Kosmos's own showing a capture of the screen taken just before.
+  The first screenshot, about 0.1 s after the window joined that Space, was current, after
+  about 0.1 s to put the cover up. At alpha 0 the captures came back transparent, and at
+  alpha 0.01 at opacity 3 of 255. Open: whether the cover takes the mouse, and how long real
+  apps take to draw after the occlusion change (Discord showed black for about a second on
+  September 25, 2026).
 
 ## Check Kosmos fullscreen live
 
