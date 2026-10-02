@@ -108,6 +108,20 @@ after them.
 - Computer use cannot drive the Claude desktop app at all, since its screenshots always
   leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
+## Decide whether to build `kosmos peek`
+
+An agent driving an app on a hidden workspace through CuaDriver can act through
+Accessibility, but its screenshots of the concealed window fail. `kosmos-probe peek`
+(2026-10-02, [hiding.md](hiding.md)) found that a peek works only with the window in an
+animation Space at alpha 1 under a cover of Kosmos's own that shows a capture of the screen
+taken just before: the first screenshot, done about 0.1 s after the window joined that
+Space, was current, after about 0.1 s to put the cover up. At alpha 0 the captures came back
+transparent, and at alpha 0.01 at opacity 3 of 255. `kosmos peek <window> -- <command>`
+would hold such a peek while the command runs. Open: whether the cover takes the mouse,
+how long real apps take to draw after the occlusion change (Discord showed black for about
+a second on September 25, 2026), and whether a running capture stream can feed the cover
+faster than a fresh capture.
+
 ## Check Kosmos fullscreen live
 
 A focus in a direction on a display with a Kosmos fullscreen window now sees that window and
