@@ -7,10 +7,11 @@
 // it last recorded as front belongs to the front process, and _safeTestAndOrder then orders the
 // window just below that one. With no recorded window it allows the order. SLSSetFrontWindow
 // sets the record, and its handler checks no rights (SkyLight on macOS 27, 26A428). The first
-// run found every raise still landing directly below the front app's window
-// (docs/focus-follows-mouse.md).
+// run found every raise still landing directly below the front app's window, and the direct
+// run found the child's own conditional order lifting its window above none of the front
+// app's, whatever the record (docs/focus-follows-mouse.md).
 //
-//   kosmos-probe float-raise [trials]
+//   kosmos-probe float-raise [trials] [direct]
 //                                   Two child apps that are never front, B (accessory) and C
 //                                   (prohibited), open one small window each at the bottom
 //                                   left of the built-in display, C's overlapping B's. W is
@@ -37,6 +38,19 @@
 //                                   children's own key windows. 10 trials by default. The end,
 //                                   Ctrl-C included, sets the record back to W and quits the
 //                                   children. Needs Accessibility for the terminal.
+//                                   direct: B orders B1 front conditionally through its own
+//                                   connection, which skips AppKit and WindowManager.app, and
+//                                   no AX call runs. Each case logs the code of every SkyLight
+//                                   call and sets the record back to W after its readings:
+//                                     control    record W
+//                                     clear      record cleared by the probe
+//                                     childclear record cleared by B
+//                                     childown   record set to B1 by B
+//                                     probecond  record cleared by the probe, which then
+//                                                orders B1 itself
+//                                   SLSSetFrontWindow and SLSOrderFrontConditionally send
+//                                   one way, so their codes are the send's (SkyLight's client
+//                                   stubs, macOS 27 26A428).
 import AppKit
 import CKosmos
 
@@ -45,14 +59,20 @@ private enum RaiseCase: String, CaseIterable {
     case control, clear, own, still, both, once, barrier
 }
 
-@MainActor func floatRaise(trials: Int) -> Never {
-    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+/// Each case of a direct trial, in the order they run.
+private enum OrderCase: String, CaseIterable {
+    case control, clear, childclear, childown, probecond
+}
+
+@MainActor func floatRaise(trials: Int, direct: Bool) -> Never {
+    guard direct || AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
     let app = NSApplication.shared
     app.setActivationPolicy(.prohibited)
     let probe = FloatRaise()
     floatRaiseCleanup = probe.finish
     signal(SIGINT) { _ in DispatchQueue.main.async { MainActor.assumeIsolated { floatRaiseCleanup?(); exit(130) } } }
-    probe.run(trials: max(trials, 1))
+    guard probe.w != nil else { print("the front app has no window on screen"); probe.finish(); exit(1) }
+    if direct { probe.runDirect(trials: max(trials, 1)) } else { probe.run(trials: max(trials, 1)) }
     probe.finish()
     exit(0)
 }
@@ -110,12 +130,7 @@ private enum RaiseCase: String, CaseIterable {
                 }
                 let ms = elapsed(start)
                 var line = String(format: "trial %d %-8@ %.2f ms:", trial, raiseCase.rawValue as NSString, ms)
-                for (index, wait) in [0.0, 0.3, 0.7].enumerated() {
-                    settle(wait)
-                    let reading = read()
-                    line += " [\(["now", "0.3s", "1s"][index]) \(reading.text)]"
-                    if index == 2, reading.b1AboveW { above[raiseCase, default: []].append(trial) }
-                }
+                if readThrice(&line, focus: true) { above[raiseCase, default: []].append(trial) }
                 print(line)
             }
         }
@@ -123,14 +138,43 @@ private enum RaiseCase: String, CaseIterable {
         for raiseCase in RaiseCase.allCases { print("  \(raiseCase.rawValue): \(above[raiseCase]?.count ?? 0) of \(trials)") }
     }
 
+    func runDirect(trials: Int) {
+        let cid = SLSMainConnectionID()
+        var above: [OrderCase: [Int]] = [:]
+        for trial in 1...trials {
+            for orderCase in OrderCase.allCases {
+                var codes = "W \(prepare().rawValue)"
+                switch orderCase {
+                case .control: break
+                case .clear, .probecond: codes += " clear \(SLSSetFrontWindow(cid, 0).rawValue)"
+                case .childclear: b.send("front 0"); codes += " B clear \(b.line())"
+                case .childown: b.send("front \(b1)"); codes += " B own \(b.line())"
+                }
+                settle(0.05)   // the probe's record call and B's order reach WindowServer on separate connections
+                if orderCase == .probecond {
+                    codes += " order \(SLSOrderFrontConditionally(cid, b1, 0).rawValue)"
+                } else {
+                    b.send("order"); codes += " B order \(b.line())"
+                }
+                var line = String(format: "trial %d %-10@ %@:", trial, orderCase.rawValue as NSString, codes as NSString)
+                if readThrice(&line, focus: false) { above[orderCase, default: []].append(trial) }
+                line += " W \(SLSSetFrontWindow(cid, w ?? 0).rawValue)"
+                print(line)
+            }
+        }
+        print("\nB1 above W at 1 s:")
+        for orderCase in OrderCase.allCases { print("  \(orderCase.rawValue): \(above[orderCase]?.count ?? 0) of \(trials)") }
+    }
+
     /// Both children's windows to the back of the normal level, K to the front, and the record
     /// to W.
-    func prepare() {
+    @discardableResult func prepare() -> CGError {
         b.send("back"); _ = b.line()
         c.send("back"); _ = c.line()
         k.orderFrontRegardless()
-        SLSSetFrontWindow(SLSMainConnectionID(), w ?? 0)
+        let result = SLSSetFrontWindow(SLSMainConnectionID(), w ?? 0)
         settle(0.1)
+        return result
     }
 
     func raise(_ child: Child, _ window: UInt32) {
@@ -144,18 +188,30 @@ private enum RaiseCase: String, CaseIterable {
         let b1AboveW: Bool
     }
 
-    func read() -> Reading {
+    /// Appends readings at once, 0.3 s and 1 s later to `line`, and returns whether B1 stood
+    /// above W at 1 s. `focus` reads the front app's focused window, an AX call to that app.
+    func readThrice(_ line: inout String, focus: Bool) -> Bool {
+        var aboveW = false
+        for (index, wait) in [0.0, 0.3, 0.7].enumerated() {
+            settle(wait)
+            let reading = read(focus: focus)
+            line += " [\(["now", "0.3s", "1s"][index]) \(reading.text)]"
+            aboveW = reading.b1AboveW
+        }
+        return aboveW
+    }
+
+    func read(focus: Bool) -> Reading {
         let order = FloatRaise.order()
         func index(_ id: UInt32?) -> Int? { id.flatMap { id in order.firstIndex { $0.id == id } } }
         let ib = index(b1), ic = index(c1), iw = index(w), ik = index(UInt32(k.windowNumber))
         let front = kosmos_front_pid(), keyFocus = kosmos_key_focus_pid()
-        let focused = focusedWindow(of: frontPid)
+        let focused = focus ? " W-app focused \(focusedWindow(of: frontPid).map(String.init) ?? "none")" : ""
         b.send("key"); let bKey = b.line()
         c.send("key"); let cKey = c.line()
         let place = "B1 #\(ib.map(String.init) ?? "-") C1 #\(ic.map(String.init) ?? "-") W #\(iw.map(String.init) ?? "-")"
             + " K #\(ik.map(String.init) ?? "-")"
-        let focus = "front \(front == frontPid ? "same" : String(front)) keyfocus \(keyFocus) W-app focused \(focused.map(String.init) ?? "none")"
-        let text = "\(place); \(focus); B key \(bKey) C key \(cKey)"
+        let text = "\(place); front \(front == frontPid ? "same" : String(front)) keyfocus \(keyFocus)\(focused); B key \(bKey) C key \(cKey)"
         return Reading(text: text, b1AboveW: ib != nil && iw != nil && ib! < iw!)
     }
 
@@ -174,15 +230,19 @@ private enum RaiseCase: String, CaseIterable {
     func finish() {
         guard !finished else { return }
         finished = true
-        SLSSetFrontWindow(SLSMainConnectionID(), w ?? 0)
+        if let w { SLSSetFrontWindow(SLSMainConnectionID(), w) }
         b.terminate()
         c.terminate()
     }
 }
 
 /// A 120 by 90 window at an "x,y" offset from the bottom left of the built-in display's visible
-/// frame, in an app that is never front. Answers "back" (orderBack:), and "key" with the
-/// window AppKit holds key, or 0. Exits when its standard input closes.
+/// frame, in an app that is never front. Answers "back" (orderBack:), "key" with the
+/// window AppKit holds key, or 0, and with the code of the call through its own connection,
+/// "front <window>" (SLSSetFrontWindow) and "order" (SLSOrderFrontConditionally of its
+/// window at timestamp 0, which decides none of the direct cases in _compareTimesAndApps and
+/// leaves the record's timestamp at 0, as SLSSetFrontWindow does). Exits when its standard
+/// input closes.
 @MainActor func raiseStub(_ arguments: [String]) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(arguments.first == "prohibited" ? .prohibited : .accessory)
@@ -203,7 +263,11 @@ private enum RaiseCase: String, CaseIterable {
                     switch line {
                     case "back": window.orderBack(nil); return "ok"
                     case "key": return String(NSApp.keyWindow?.windowNumber ?? 0)
-                    default: return "?"
+                    case "order":
+                        return String(SLSOrderFrontConditionally(SLSMainConnectionID(), UInt32(window.windowNumber), 0).rawValue)
+                    default:
+                        guard line.hasPrefix("front "), let id = UInt32(line.dropFirst(6)) else { return "?" }
+                        return String(SLSSetFrontWindow(SLSMainConnectionID(), id).rawValue)
                     }
                 }
             }

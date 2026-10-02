@@ -68,7 +68,9 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let count = arguments.first.flatMap(Int.init)
         revealSlide(trials: count ?? 10, modes: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
-    ("float-raise", "float-raise [trials]", { floatRaise(trials: $0.first.flatMap(Int.init) ?? 10) }),
+    ("float-raise", "float-raise [trials] [direct]", { arguments in
+        floatRaise(trials: arguments.first.flatMap(Int.init) ?? 10, direct: arguments.contains("direct"))
+    }),
     ("ca-lock", "ca-lock [trials] [busy]", { caLock(trials: $0.first.flatMap(Int.init) ?? 20, busy: $0.contains("busy")) }),
     ("slide-links", "slide-links [slides] [mode...]", { arguments in
         let count = arguments.first.flatMap(Int.init)
