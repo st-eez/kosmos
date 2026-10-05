@@ -1,6 +1,6 @@
 # TLA+ spec of the workspace switch
 
-The code implements changes 1 to 18 below, and the parts of changes 19 to 26 that
+The code implements changes 1 to 18 and 27 below, and the parts of changes 19 to 26 that
 [docs/focus.md](../docs/focus.md) describes; its Deferred list names the rules of those
 changes the code leaves out, change 21's drop of change 12's miss rule among them.
 
@@ -11,9 +11,10 @@ actor, the bridge queue that reveals and conceals windows through the holding Sp
 the focus queue. macOS sits between them: it keys the requested window and reports every
 key window change to the main actor later. The user issues workspace commands, clicks
 visible windows, uses Command-Tab, and closes, minimizes or hides the key window, then
-brings it back. The user or an app can also open a specific hidden window. WindowServer
-can report a window gone a moment after macOS keyed the next one, and fronting another
-window of the key app can miss.
+brings it back. The user can also open a specific hidden window, and an app can key one of
+its windows with no input of the user's, as an agent's `open -a` does. WindowServer can
+report a window gone a moment after macOS keyed the next one, and fronting another window
+of the key app can miss.
 
 Each display shows one workspace, and each workspace belongs on one display, as the
 active profile assigns them ([docs/displays.md](../docs/displays.md)). A window of
@@ -67,11 +68,18 @@ deletes its state directory when TLC exits.
 | `displays-miss-leave` | two displays; as `miss-leave` | as `displays-leave` | pass | 2,680,857 | 40 | 45 s |
 | `displays-focused` | as `displays-user`, adopting only windows of the focused workspace as before | last activation wins | fails, expected | 4,853 | 7 | 1 s |
 | `displays-fallback` | two displays; as `fallback` | convergence, last command wins, settles | fails, expected | 8,182 | 12 | 2 s |
+| `agent` | as `user`, and an app keying a window with no input of the user's | as `user`, and that window brings no workspace on screen | pass | 478,586 | 29 | 4 s |
+| `agent-settles` | as `agent` | every disturbance settles (liveness) | pass | 478,586 | 29 | 20 s |
+| `displays-agent` | two displays; as `agent` | as `agent` | pass | 128,760 | 29 | 1 s |
+| `agent-follow` | as `agent`, following that window into its workspace as before | that window brings no workspace on screen | fails, expected | 94,064 | 11 | 1 s |
 
 Every run in this file's tables used TLC with 4 workers in a cloud session with 4 CPUs, on
 September 26, 2026; the numbers before came from 8 workers on a 12 core Linux machine. A
 failing run's state count depends on the order the workers take states in. The depths of
-passing runs come from the earlier runs, which found the same state counts.
+passing runs come from the earlier runs, which found the same state counts. The `agent`
+rows came from 4 workers on Steve's Mac on October 2, 2026, where every passing config of
+the table above found the state count it gives, and every failing one failed as expected,
+with change 27 in the spec.
 
 `mixed`, `conceal-first`, `fallback-user` and `displays-fallback` record trade-offs, and
 the others record the behaviour this model replaced:
@@ -114,6 +122,9 @@ the others record the behaviour this model replaced:
   leaves native fullscreen. If the user runs a workspace command before Kosmos handles
   the return, following the return takes Kosmos away from the workspace the command
   chose.
+- **`agent-follow`.** An app keys a window on a hidden workspace with no input of the
+  user's, as an agent's `open -a` does. Following it switches the display to that
+  workspace, away from the one the user had.
 
 The key window leaves, and a window returns, only after Kosmos has had and decided the
 reports before it. Kosmos handles one in milliseconds, far below the time a person needs to
@@ -151,14 +162,18 @@ background apps also change their own focused window (`AllowBackground`). In the
 configs the main actor also notices an activation some time after it happens
 (`NoticeDelay`), with two inputs. `split-open` lets the user open a hidden window, and
 `split-displays` runs it on two displays. The split configs also check that the key window
-is the front window of its app at rest (`FocusOnTop`).
+is the front window of its app at rest (`FocusOnTop`). In `split-commands`,
+`split-user-notice` and `split-hover-notice` a floating window can overlap the window of
+any request (`FloatOver`), as Kosmos builds ([docs/focus.md](../docs/focus.md)): no raise
+follows its key record, and inside the front app it is keyed without a raise. Its app is
+exempt from `FocusOnTop` until one of its windows comes to its front.
 
 A split run was stopped after 30 minutes, and then gives the states it had checked without a
 violation. The runs that finished took less than 20 minutes each.
 
 | Config | Inputs | Checks | Result | States | Time |
 | --- | --- | --- | --- | --- | --- |
-| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 3,284,762 | 1 min 23 s |
+| `split-commands` | commands; app A busy | convergence, last command wins, key window on top, recovery path | pass | 5,216,504 | 1 min 10 s |
 | `split-user` | commands, clicks, Command-Tab; app A busy | as `split-commands`, last activation wins | stopped, no violation | 56,926,029 | 30 min |
 | `split-user-busyb` | as `split-user`, app B busy | as `split-user` | stopped, no violation | 75,422,911 | 30 min |
 | `split-user-background` | as `split-user`, background apps changing their own focused window | as `split-user` | stopped, no violation | 53,353,117 | 30 min |
@@ -167,9 +182,12 @@ violation. The runs that finished took less than 20 minutes each.
 | `split-open` | as `split-user`, and an opened hidden window | as `split-user` | stopped, no violation | 83,771,017 | 30 min |
 | `split-displays` | two displays; as `split-open` | as `split-user` | stopped, no violation | 77,845,000 | 30 min |
 | `split-leave` | as `split-user`, the key window leaving and returning as in `leave` | as `split-user`, keeps its workspace after a leave | stopped, no violation | 70,622,472 | 30 min |
-| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 4,845,286 | 1 min 28 s |
+| `split-user-notice` | as `split-user` with two inputs, activations noticed late | as `split-user` | pass | 6,251,361 | 1 min 10 s |
 | `split-user-background-notice` | as `split-user-background` with two inputs, activations noticed late | as `split-user` | pass | 4,846,385 | 1 min 42 s |
-| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 5,892,013 | 2 min 11 s |
+| `split-hover-notice` | as `split-hover` with two inputs, activations noticed late | as `split-user` | pass | 7,688,482 | 1 min 25 s |
+
+The `split-commands`, `split-user-notice` and `split-hover-notice` rows came from 4 workers
+on Steve's Mac on October 2, 2026, with `FloatOver`.
 
 Each of these runs one rule the implementation had, or one the spec had, and fails as
 expected (changes 17 to 26):
@@ -638,3 +656,19 @@ change that removed it:
     on workspace 1, Kosmos's older request keyed the empty workspace's window after it,
     and its echo moved the key on, so the grace dropped the Command-Tab. Change 25 answers
     Ghostty's report, and the drop is gone.
+27. **Windows agents open.** An app can key one of its windows with no input of the
+    user's, as an agent's `open -a` does (`AgentOpen`). Following it as a Command-Tab, as
+    before (`agent-follow`, `FollowAgents`), switched the display to that window's hidden
+    workspace. Each report now carries whether the user's input made it (`own`), as
+    Kosmos's input tap tells ([docs/focus.md](../docs/focus.md)), and once the grace ends
+    Kosmos reasserts its focus over a report it would follow that is not the user's. The
+    first statement of the check, that every display shows the workspace the user last
+    chose, failed in `agent`: the user Command-Tabbed to w3 on hidden workspace 2, an agent
+    keyed w1 on the shown workspace before Kosmos took the Command-Tab's report, and
+    Kosmos adopted w1, macOS's last key window. That is the focus an agent's window still
+    takes on a shown workspace, which waits for Steve ([docs/backlog.md](../docs/backlog.md)),
+    so `KeepsWorkspaceAfterAgent` checks that the agent's window brings no workspace on
+    screen. `AgentOpen` runs without `SplitQueue` only: the test sits in `Adopt`, which
+    both models share, and the split model would need `own` carried through its
+    notifications, notices and worker reads. macOS's own re-keys keep `own` true, where
+    the rules before the tap decide alone; the tap can only turn a follow into a reassert.

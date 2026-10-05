@@ -24,8 +24,13 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("policy-exits", "policy-exits [cycles] [tuple]", {
         policyExits(cycles: $0.first.flatMap(Int.init) ?? 300, tuple: $0.contains("tuple"))
     }),
-    ("keying", "keying [rounds] [finder]", { keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder")) }),
+    ("keying", "keying [rounds] [finder] [in-place]", {
+        keying(rounds: $0.first.flatMap(Int.init) ?? 3, finder: $0.contains("finder"), inPlace: $0.contains("in-place"))
+    }),
     ("key-holder", "key-holder [seconds]", { keyHolder(seconds: $0.first.flatMap(Double.init) ?? 30) }),
+    ("input-source", "input-source [seconds] [hid]", {
+        inputSource(seconds: $0.first.flatMap(Double.init) ?? 20, hid: $0.contains("hid"))
+    }),
     ("ax-timeout", "ax-timeout", { _ in axTimeout() }),
     ("displays", "displays", { _ in displays() }),
     ("secure-input", "secure-input", { _ in secureInput() }),
@@ -45,6 +50,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         benchFrames(arguments[0], display: arguments[1], real: arguments.dropFirst(2).first == "real")
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
+    ("window-kinds", "window-kinds", { _ in windowKinds() }),
     ("borders", "borders", { _ in borders() }),
     ("constraints", "constraints", { _ in constraints() }),
     ("border-space", "border-space", { _ in borderSpace() }),
@@ -80,6 +86,11 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
     }),
+    ("peek", "peek [trials] [clear|faint|clipped|below...] [cua]", { arguments in
+        let count = arguments.first.flatMap(Int.init)
+        let rest = arguments.dropFirst(count == nil ? 0 : 1)
+        peek(trials: count ?? 5, variants: rest.filter { $0 != "cua" }, cua: rest.contains("cua"))
+    }),
     ("api-sweep", "api-sweep [--list] [--check] [--out <path>] [--from <i>] [--to <i>]", { apiSweep($0) }),
     ("api-sweep-window", nil, { _ in apiSweepWindow() }),
     ("api-sweep-call", nil, { arguments in
@@ -94,6 +105,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         handoverCreator(window, kill: arguments.contains("kill"))
     }),
+    ("peek-window", nil, { _ in peekWindow() }),
     ("landing-window", nil, { _ in landingWindow() }),
     ("reveal-window", nil, { _ in revealWindow() }),
     ("moving-window", nil, { movingWindow(onscreen: $0.contains("onscreen")) }),
@@ -111,6 +123,11 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("departures-window", nil, { _ in departuresWindow() }),
     ("tabs-window", nil, { _ in tabsWindow() }),
     ("ax-child", nil, { _ in axChild() }),
+    ("input-poster", nil, { arguments in
+        guard arguments.count >= 2, let parent = pid_t(arguments[0]) else { usage() }
+        let point = arguments.count >= 4 ? Double(arguments[2]).flatMap { x in Double(arguments[3]).map { CGPoint(x: x, y: $0) } } : nil
+        inputPoster(parent: parent, mode: arguments[1], point: point)
+    }),
     ("key-stub", nil, { keyStub($0.first ?? "S", Array($0.dropFirst())) }),
     ("border-targets", nil, { arguments in
         guard let count = arguments.first.flatMap(Int.init) else { usage() }

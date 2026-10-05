@@ -173,9 +173,16 @@ ctrl-alt-s = 'profile single'
 
 # Window rules. The first rule that matches a new window applies, and Kosmos warns about a
 # rule an earlier one hides. app-id matches the bundle identifier; app-name matches names
-# containing the text, ignoring case.
+# containing the text, ignoring case; title, with either, matches the window's whole title,
+# ignoring case. Open and Save panels, and windows whose zoom button is disabled, as most
+# apps' settings windows, float without a rule; float = false tiles the latter.
 [[rule]]
 app-name = 'Finder'
+float = true
+
+# System Settings lets its window be resized, so only a rule floats it.
+[[rule]]
+app-id = 'com.apple.systempreferences'
 float = true
 
 [[rule]]
@@ -194,10 +201,24 @@ float = true
 app-name = 'TLauncher'
 float = true
 
+# The Bitwarden extension's pop-out, a browser window titled "Bitwarden". Chrome titles it
+# about half a second after it shows, and Kosmos floats it then. Before the browsers' rules
+# below, which would hide these.
+[[rule]]
+app-id = 'com.google.Chrome'
+title = 'Bitwarden'
+float = true
+
+[[rule]]
+app-id = 'net.imput.helium'
+title = 'Bitwarden'
+float = true
+
 # Daily apps on fixed workspaces. A rule applies to new windows; a window moved by hand
 # stays where it is. Launching or activating an app whose new window a rule sends to a
 # hidden workspace switches to that workspace, as a Hyprland workspace rule without
-# `silent` does. A window an app opens in the background leaves the workspaces alone.
+# `silent` does. A window an app opens in the background leaves the workspaces alone, and
+# so does one an agent, a script or `open -a` opens.
 [[rule]]
 app-id = 'com.mitchellh.ghostty'
 workspace = '1'
@@ -223,16 +244,14 @@ workspace = '6'
 app-name = 'YouTube'
 workspace = '7'
 
-# Every Chrome window, including browser test launches, floats on workspace 4, away from
+# Every Chrome window, including browser test launches, tiles on workspace 4, away from
 # the current work.
 [[rule]]
 app-id = 'com.google.Chrome'
-float = true
 workspace = '4'
 
 [[rule]]
 app-id = 'com.google.chrome.for.testing'
-float = true
 workspace = '4'
 
 [[rule]]

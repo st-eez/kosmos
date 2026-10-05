@@ -16,6 +16,7 @@ extension Controller {
 
     func renewPointerTapAfterGrant() {
         guard CGPreflightListenEventAccess() else { pointerListens = false; return }
+        makeInputTap()
         guard wantsPointer, !pointerListens else { return }
         makePointerTap(listening: true)
         pointer?.setEnabled(true)

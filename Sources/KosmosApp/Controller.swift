@@ -52,12 +52,16 @@ final class Controller {
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     var rules: [WindowRule] = []
+    var titleWatch = TitleWatch()
     var mouseFollowsFocus = false
     /// The `focus-follows-mouse` command changes `enabled` until the next config load.
     var focusFollowsMouse = FocusFollowsMouse() {
         didSet { updatePointerTap() }
     }
     var pointer: PointerTap?
+    /// Nil without Input Monitoring, and every window change then counts as the user's
+    /// (docs/focus.md).
+    var inputTap: InputTap?
     /// A tap made without Input Monitoring may hear nothing (docs/focus-follows-mouse.md).
     var pointerListens = false
     var wantsPointer: Bool { focusFollowsMouse.enabled && managing }
@@ -115,6 +119,7 @@ final class Controller {
         borderWindows.onAccentChange = { [weak self] in self?.updateBorders() }
         borderWindows.onRings = { [weak self] rings in self?.slides?.hand(rings) }
         watchLeftButton()
+        makeInputTap()
         for monitor in session.monitors { _ = emptyWorkspace(on: monitor) }
         restoreLayout()
     }
@@ -231,7 +236,9 @@ final class Controller {
             return "no workspace \(missing); the workspaces are \(session.names.joined(separator: " "))"
         }
         reports.commandExecuted(receivedAt: received)
+        let focused = session.focused
         if let plan = session.perform(command, frame: { knownFrame($0) }) {
+            titleWatch.ran(command, focused: focused)
             execute(plan, since: received, fromCommand: true, movePointer: movesPointer(after: .command(command, from: source)))
         }
         return nil
@@ -517,8 +524,9 @@ final class Controller {
         }
         guard let pid else { return }
         let concealed = if case .window(let id) = target { hiding.isConcealed(id) } else { false }
+        let underFloating = if case .window(let id) = target { session.floatingOverlaps(id, frame: knownFrame) } else { false }
         focusQueue.request(target, pid: pid, worker: inventory.worker(pid), privately: privately, concealed: concealed,
-                           emptyWorkspace: emptyWorkspace,
+                           underFloating: underFloating, emptyWorkspace: emptyWorkspace,
                            performing: { [weak self] stamp, path in
                                self?.performing(target, pid: pid, path: path, retry: retry, at: stamp)
                            },

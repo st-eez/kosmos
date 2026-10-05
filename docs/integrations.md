@@ -35,6 +35,32 @@
   - With Kosmos not running, the CLI exits 1 and says so, as for every command. Before a
     config has loaded, as while Accessibility is missing, Kosmos answers that no hotkeys are
     registered.
+- **Claude Code's computer use.** It drives the real pointer, keyboard and front app, so
+  Kosmos sees its actions as input. What it does, from Claude Code 2.1.284's bundled code
+  and `computer-use-swift.node`, and the live log of 2026-09-29:
+  - `open_application` activates the app with no input of the user's, so Kosmos no longer
+    follows its key window into a hidden workspace ([focus.md](focus.md)). Before that, at
+    09:22:14.9 it opened Claude, and Kosmos switched the main panel to workspace 1. A
+    concealed window's row sits 100,000 points off every display ([hiding.md](hiding.md)),
+    so computer use finds no display for it and can neither capture nor click it, and
+    Kosmos's request of its own focus fails computer use's front app check. To drive an
+    app on a hidden workspace, the agent runs `kosmos workspace N` first, a command
+    Kosmos carries out as any other. An app on a shown workspace stays front and works.
+  - Before each action and screenshot it hides every app it has no grant for that has a
+    window on the display it works on, and unhides them at the end of its turn. Kosmos
+    returns their windows and keeps the focus ([tree.md](tree.md)).
+  - Before each click it moves the pointer to the target, then checks that a granted app
+    is front. Its movement focuses nothing ([focus-follows-mouse.md](focus-follows-mouse.md)).
+  - Its screenshots leave out the Claude desktop app even when it is granted. Its own
+    capture (`screenshot.captureExcluding`), called on 2026-09-29 with Kosmos running,
+    showed Spotify, Activity Monitor and Ghostty when granted and left the main panel
+    black with Claude granted and on screen. So computer use cannot drive the Claude
+    desktop app, Kosmos or not. Its clicks map onto the display of its last screenshot
+    that succeeded, which that morning was the left panel.
+  - It counts Kosmos as an app to hide when a border shows on its display, and its
+    `request_access` found no app named Kosmos. Borders stay on screen through an app hide
+    (`canHide = false`, [borders.md](borders.md)), and its capture leaves out every app it
+    has no grant for, so the hide changes nothing.
 - **Switching from another window manager.** Install Kosmos.app to /Applications and the CLI
   on the PATH; grant Accessibility to Kosmos itself; launch it at login; turn off the other
   window manager's login item and the helpers Kosmos has replaced by then (profile

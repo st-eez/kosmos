@@ -13,7 +13,9 @@
     payloads were measured on macOS 27 and are decoded in one place, WindowServerEvent. A
     window event carries the window id first, and a Space membership event a 64 bit Space
     id, then the window id.
-  - One AX observer per app: creation, focus, main window, destroy and minimize.
+  - One AX observer per app: creation, focus, main window, destroy and minimize, and for
+    2 s after Kosmos admits a new window that a rule on the title may reach, that window's
+    title ([config.md](config.md)).
   - NSWorkspace app lifecycle events, plus a process exit source for each app. The
     inventory alone observes an app's hide and unhide: it records the departure or return
     of the app's windows, then passes the event to the controller.
@@ -214,7 +216,7 @@
   Kosmos acts on them at the unlock. The sweep then admits and removes windows without
   reporting their order again.
 - A new window becomes managed when it is ordered in, has no parent window, sits at level 0
-  and passes the popup and dialog checks. Apps whose AX is late get ten retries 100 ms
+  and its subrole is AXStandardWindow. Apps whose AX is late get ten retries 100 ms
   apart, as yabai and Hammerspoon do, then one every 0.5 s. A window whose AX facts no
   read has returned is read again when its app's worker reports it created, reports that
   the app answers again, or reports the window focused, when its app unhides, when it is
@@ -227,6 +229,103 @@
   restored a window that no read answered for and no creation report named while it
   stayed hidden, so before these reads it was never managed (live log, September 24,
   2026).
+- An AppKit Open or Save panel standing alone is managed and floats at its own frame
+  (`WindowRule.floats`, [config.md](config.md)). Its subrole is AXStandardWindow, and
+  its AXIdentifier names it. Kosmos tiled ChatGPT's Save panel for a download beside
+  ChatGPT's window (live log, September 29, 2026, 12:26:02). System Events, polled every
+  200 ms through three downloads that day, read the panel as title "Save", subrole
+  AXStandardWindow and AXIdentifier `save-panel`, and ChatGPT's main window with an empty
+  AXIdentifier.
+  - The identifiers are `save-panel` for NSSavePanel and `open-panel` for NSOpenPanel. On
+    macOS 27.0 (26A428), on September 29, 2026, panels made and never shown in a process of
+    their own, which took no focus, answered `accessibilityIdentifier()` with those names,
+    in and out of the App Sandbox, where the class stayed NSSavePanel or NSOpenPanel.
+    Those two classes override `accessibilityIdentifier`; NSRemoteSavePanel and
+    NSLocalSavePanel, which subclass NSPanel, do not. No sandboxed app's panel on screen
+    has been read, so that its window is the NSSavePanel is inferred. The dyld shared
+    cache holds both strings, and four other `-panel` names, which Kosmos does not float:
+    `find-panel`, `spelling-panel`, `substitutions-panel` and `autofill-panel`.
+  - The worker reads the identifier with the subrole and the minimized state, one more
+    Accessibility call for each window read. A failed identifier read counts as no
+    identifier, so an app that fails it only for this attribute still has its windows
+    managed, where a failed subrole read leaves the window out. Against 11 windows of 10 running apps that
+    day, each of the three reads took 0.02 to 0.15 ms (median of 20). One
+    `AXUIElementCopyMultipleAttributeValues` for all three took 0.04 to 0.17 ms, less than
+    the two reads before, and would take the place of the three if window reads ever cost
+    enough to matter.
+  - A sheet, a panel attached to its window, has that window as its WindowServer parent,
+    so it is no candidate and Kosmos leaves it alone.
+  - The ceiling: a file dialog an app builds itself, rather than with NSSavePanel or
+    NSOpenPanel, carries no such identifier and tiles unless a rule floats its app.
+- A standard window whose zoom button is there and disabled floats at its own frame as a
+  dialog, unless its app's rule says `float = false` (`WindowRule.floats`,
+  [config.md](config.md)). AppKit disables the button on a window without the resizable
+  style, and Chromium on one it will not let be resized or maximized
+  (`ApplyNSWindowSizeConstraints` in ui/gfx/mac/nswindow_frame_controls.mm). Hyprland,
+  which Omarchy runs, floats a window that cannot be resized too, which it reads from equal
+  minimum and maximum sizes (`CWindow::suggestsFloat`).
+  - On macOS 27.0 (26A428), on October 2, 2026, windows made and never shown in a process
+    of their own answered AXEnabled false for the zoom button without the resizable style
+    and true with it, for NSWindow and NSPanel alike. A minimum size equal to the maximum
+    left it enabled.
+  - AeroSpace's Accessibility dumps (`axDumps/` at 74a1bf17e8, October 1, 2026, from macOS
+    15 to 27 where they name it) hold 54 standard windows at level 0 of regular apps. The
+    zoom button is disabled on 6, all dialogs: Calendar's and Mail's settings, Raycast's
+    Settings, Ghostty's About, Calculator, and Safari's Google sign in window. Each main
+    window there has it enabled, or has no buttons, as Ghostty with its window decorations
+    off.
+  - `kosmos-probe window-kinds` read the 7 windows of Steve's 7 regular apps that day.
+    Each was a main window with its zoom button enabled and AXSize settable, and no
+    settings, About or Get Info window was open.
+  - AeroSpace floats a window whose fullscreen button is missing or disabled, and names in
+    code the apps whose main windows have none (`isDialogHeuristic` in
+    Sources/AppBundle/model/AxUiElementWindowType.swift). Steve's Activity Monitor window
+    has none, nor do VLC's and VS Code's with `window.nativeFullScreen` off, and each keeps
+    its zoom button enabled. AeroSpace names Activity Monitor and VS Code, and floats VLC's
+    main window.
+  - The worker reads the button and its AXEnabled with the subrole, two Accessibility
+    calls more for each window read, which took 0.04 to 0.10 ms together for Steve's 7
+    windows (median of 20). A missing button or a failed read leaves the window tiled.
+    Kosmos decides at admission, as for a rule, so a window the saved layout has keeps its
+    place.
+  - The ceilings. A dialog its app lets be resized tiles, as System Settings, whose zoom
+    button AeroSpace's dump of macOS 26.1 reads enabled, IntelliJ's Rebase dialog and
+    Archive Utility's progress window. A rule floats such an app, as
+    [sample-config.toml](sample-config.toml) floats System Settings. A window its app holds
+    to one size by equal minimum and maximum sizes tiles too; WindowServer's constraints,
+    from which the inventory reads the minimum ([geometry.md](geometry.md)), would show it,
+    once such a window turns up. Whether Chromium disables the zoom button of the window a
+    dragged tab makes is unmeasured. AeroSpace keeps Chrome out of its test because the
+    fullscreen button is disabled then, and such a window would float here.
+- The worker reads each window's title with its other facts, for rules on the title
+  ([config.md](config.md)), one more Accessibility call for each window read. A failed
+  read counts as no title, which no rule on the title matches.
+  - For 2 s after Kosmos admits a new window of an app that a rule on the title names, the
+    worker observes that window's AXTitleChanged. It reads the title as the observation
+    starts, since the title can have changed after the window's read, and at each change,
+    and reports it; the inventory keeps it, and the controller checks the rules again.
+  - `kosmos-probe window-kinds` read 6 windows of 6 apps on October 2, 2026, in two runs
+    (median of 20): 0.018 to 0.082 ms for the title, and 0.025 to 0.131 ms for an
+    AXTitleChanged registration with its removal. Each window watched costs a registration,
+    its removal and a title read, then a title read and a main actor turn at each change of
+    its title. Chrome and Helium were not running, so their windows' costs are unmeasured.
+  - Other windows' titles are not observed, so an app whose windows change title often, as
+    a terminal's, costs nothing at a change, and Kosmos keeps each such window's title from
+    its last read. A window its app reopens, or a tab dragged out of its group, is placed
+    by that title.
+- A window with another subrole, as AXDialog, AXSystemDialog, AXFloatingWindow or AXUnknown,
+  stays unmanaged. Kosmos never tiles it, and it stays where its app puts it. Of AeroSpace's
+  71 dumps of windows at level 0 of regular apps, 17 report another subrole: 13 popups, such
+  as Chrome's find bar, Xcode's Open Quickly and Emacs's child frames; qutebrowser's main
+  window with its decorations off; and 3 dialogs, Xcode's Settings (AXDialog), Transmission's
+  inspector (AXFloatingWindow) and Firefox's video in its own fullscreen (AXUnknown).
+  AeroSpace manages such windows as floating windows behind a popup test with exceptions
+  named by app (`isWindowHeuristic`).
+  - The ceiling is that such a dialog does not hide with its workspace, gets no border, and
+    is passed by focus commands and focus follows mouse. A close button that is there and
+    enabled holds for Xcode's Settings and Transmission's inspector and for none of the 13
+    popups, so managing these windows as floating would start from it, once a dialog left
+    over another workspace shows up often enough to matter.
 - A known limit. A window on an ordinary Space that no display shows at launch, as one
   behind a native fullscreen Space, is managed only once its Space is shown, since its
   app's window list names only windows on shown Spaces. On 2026-09-24 Kosmos restarted at

@@ -32,23 +32,23 @@
   `silent` (Hyprland wiki, Window Rules).
   With `mouse-follows-focus` the pointer comes along
   ([focus-follows-mouse.md](focus-follows-mouse.md)). A window its app opens in the
-  background changes no workspace. The ceiling: a launch by an agent or a script that
-  brings the app front also follows, since its app keys the window as one the user
-  launched does, and Kosmos does not tell who asked for a launch. The upgrade path is a
-  `silent` rule option, as Hyprland's `workspace N silent`, added when a real case needs
-  it.
+  background changes no workspace, and neither does one an agent, a script or `open -a`
+  opened: with no input of the user's before it, it stays concealed on its workspace and
+  Kosmos keys its focus again ([focus.md](focus.md)). A `silent` rule option, as
+  Hyprland's `workspace N silent`, would keep the user's own launches from switching too,
+  and waits for a real case.
   Kosmos's launch sweep follows no window. The key window it finds becomes the focus if
   its workspace is shown, and a follow during the sweep would change the workspace a
   display shows while the sweep still places windows by the display under them, so where
   a window lands would depend on the order apps answer Accessibility. The cost: after a
   relaunch, a key window that a rule or the saved layout puts on a hidden workspace is
   concealed, and Kosmos keys the focused workspace's window.
-- A window a rule floats joins its workspace's floating windows and never the tree, so it
-  keeps the frame its app gave it and no tile moves, on a hidden workspace and at launch
-  too. Kosmos logs that frame at admission. A new Finder window on the left panel had come
-  up at the tile a third window beside Preview and Ghostty would have had, behind
-  Ghostty's tile, when Kosmos tiled a ruled window before floating it (live log,
-  September 25, 2026).
+- A window a rule floats, an Open or Save panel, or a dialog ([inventory.md](inventory.md))
+  joins its workspace's floating windows and never the tree, so it keeps the frame its app
+  gave it and no tile moves, on a hidden workspace and at launch too. Kosmos logs that frame
+  and why it floats at admission. A new Finder window on the left panel had come up at the
+  tile a third window beside Preview and Ghostty would have had, behind Ghostty's tile,
+  when Kosmos tiled a ruled window before floating it (live log, September 25, 2026).
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which
@@ -120,7 +120,9 @@
     AeroSpace's monitor patterns by name.
   - `focus` and `move` with `--boundaries all-monitors-outer-frame` cross to the display
     in the direction at the edge of the workspace. `focus` is at the edge when no
-    window, floating or tiled, stands in the direction ([tree.md](tree.md)), and then focuses
+    window, floating or tiled, stands in the direction, or on a workspace with a fullscreen
+    window, none of it and its floating windows by their centers ([tree.md](tree.md)), and
+    then focuses
     the window over there on that display's workspace, as tree.md says; `move` moves the
     window there and follows it. A floating window is always at the edge, as it has no
     place in the tree. It stays floating where the floating check below puts it, and one

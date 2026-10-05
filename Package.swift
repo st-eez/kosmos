@@ -43,8 +43,9 @@ let package = Package(
         // The frame analysis of script/bench-frames.sh, apart from the screen capture so tests
         // can feed it frames (docs/geometry.md).
         .target(name: "KosmosBench", dependencies: ["KosmosCore"]),
-        // The api-sweep probe's table of private window calls and the code that performs one.
-        // Only kosmos-probe depends on it, so the sweep's calls stay out of the app.
+        // The api-sweep probe's table of private window calls and the code that performs one,
+        // and the peek probe's Space reads and shape write. Only kosmos-probe depends on it,
+        // so these calls stay out of the app.
         .target(
             name: "CKosmosSweep",
             cSettings: [.unsafeFlags(["-fobjc-arc"])],

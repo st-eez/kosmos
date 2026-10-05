@@ -19,7 +19,7 @@ prefix.
   `KosmosCore/LockState.swift`, `KosmosCore/Sweeps.swift`, `KosmosCore/Tabs.swift`,
   `KosmosCore/RegularApps.swift`, `KosmosPolicyWatch/PolicyWatch.swift`,
   `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Events.swift`, `kosmos-probe/Policy.swift`,
-  `kosmos-probe/PolicyExits.swift`.
+  `kosmos-probe/PolicyExits.swift`, `kosmos-probe/WindowKinds.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.
@@ -39,20 +39,20 @@ prefix.
   `KosmosCore/FrameLedger.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosRecovery/`, `KosmosSkyLight/Displays.swift`,
   `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`, `kosmos-probe/RevealSlide.swift`,
-  `kosmos-probe/Handover.swift`, `kosmos-probe/MissionControl.swift`, `script/install.sh`,
-  `tla/Handover.tla`.
-- [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, the
-  private focus path with its kill switch and public fallback, departures, and the empty
-  workspace's window.
+  `kosmos-probe/Handover.swift`, `kosmos-probe/MissionControl.swift`, `kosmos-probe/Peek.swift`,
+  `CKosmosSweep/Peek.m`, `script/install.sh`, `tla/Handover.tla`.
+- [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, which
+  reports the user's own input made, the private focus path with its kill switch and
+  public fallback, departures, and the empty workspace's window.
   Code: `KosmosApp/FocusQueue.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/FocusKillSwitch.swift`, `KosmosApp/EmptyWorkspaceWindow.swift`,
   `KosmosApp/Apps.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+KeyReports.swift`, `KosmosApp/Controller+Windows.swift`,
-  `KosmosApp/UserInput.swift`, `KosmosCore/FocusReports.swift`,
-  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/KeyRequest.swift`,
+  `KosmosApp/UserInput.swift`, `KosmosApp/InputTap.swift`, `KosmosCore/FocusReports.swift`,
+  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/OwnInput.swift`, `KosmosCore/KeyRequest.swift`,
   `KosmosCore/FocusRead.swift`, `KosmosCore/FocusMisses.swift`,
   `KosmosCore/Departures.swift`, `KosmosCore/ConcealHistory.swift`,
-  `kosmos-probe/Focus.swift`, `tla/Kosmos.tla`.
+  `kosmos-probe/Focus.swift`, `kosmos-probe/InputSource.swift`, `tla/Kosmos.tla`.
 - [tree.md](tree.md): the tree's invariants and operations, windows that return from a
   minimize, a hide or native fullscreen, the layout kept across restarts, and native tabs.
   Code: `KosmosCore/Tree.swift`, `KosmosCore/Workspace.swift`,
@@ -69,9 +69,10 @@ prefix.
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
-  workspaces a profile leaves out, and window rules.
+  workspaces a profile leaves out, and window rules, those on a window's title too.
   Code: `KosmosCore/Config/`, `KosmosCore/Session+Profiles.swift`,
-  `KosmosApp/ConfigFile.swift`, `KosmosSkyLight/DisplayIdentity.swift`,
+  `KosmosCore/TitleWatch.swift`, `KosmosApp/ConfigFile.swift`,
+  `KosmosApp/Controller+Windows.swift`, `KosmosSkyLight/DisplayIdentity.swift`,
   `kosmos-probe/Displays.swift`.
 - [onboarding.md](onboarding.md): the status item, the setup window that asks for
   permissions, and launch at login.
@@ -86,7 +87,8 @@ prefix.
   Code: `KosmosApp/PointerTap.swift`, `KosmosCore/PointerFocus.swift`,
   `KosmosApp/Controller+Pointer.swift`, `KosmosApp/Controller+KeyReports.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/UserInput.swift`,
-  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/Config/Config.swift`.
+  `KosmosCore/KeyReportIntake.swift`, `KosmosCore/Config/Config.swift`,
+  `kosmos-probe/FloatRaise.swift`.
 - [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,

@@ -19,23 +19,57 @@ extension Workspace {
     /// the edge of the workspace (docs/tree.md).
     mutating func focus(_ direction: Direction, from window: WindowID, frame: (WindowID) -> CGRect?,
                         in rect: CGRect, gaps: Gaps, minimums: [WindowID: CGSize]) -> WindowID? {
-        let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
-        let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
-        guard let path = seen.neighbor(of: window, direction) else { return nil }
-        let target = seen.overThere(in: seen.root.node(at: path), direction, from: frames[window], frames: frames)
+        let target: WindowID
+        if fullscreenWindow != nil {
+            // The nearest that way, then the most recently focused.
+            let covers = covers(frame, in: rect)
+            guard let here = covers.first(where: { $0.window == window }) else { return nil }
+            func distance(_ cover: Cover) -> CGFloat { hypot(cover.center.x - here.center.x, cover.center.y - here.center.y) }
+            guard let nearest = covers.filter({ $0.lies(direction, of: here) })
+                .min(by: { distance($0) != distance($1) ? distance($0) < distance($1) : $0.stamp > $1.stamp })
+            else { return nil }
+            target = nearest.window
+        } else {
+            let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
+            let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
+            guard let path = seen.neighbor(of: window, direction) else { return nil }
+            target = seen.overThere(in: seen.root.node(at: path), direction, from: frames[window], frames: frames)
+        }
         focus(target)
         return target
     }
 
     /// Focuses the window a focus in the direction reaches as it enters from `source`, the
-    /// frame it leaves on another display (docs/tree.md). A fullscreen window covers every
-    /// edge, so its workspace keeps its focus.
+    /// frame it leaves on another display (docs/tree.md).
     mutating func enter(_ direction: Direction, from source: CGRect?, frame: (WindowID) -> CGRect?, in rect: CGRect,
                         gaps: Gaps, minimums: [WindowID: CGSize]) {
+        if fullscreenWindow != nil {
+            // The nearest the edge it enters by lie in the direction of no other; of them, the
+            // most recently focused.
+            let covers = covers(frame, in: rect)
+            let edge = covers.filter { cover in !covers.contains { cover.lies(direction, of: $0) } }
+            focus(edge.max { $0.stamp < $1.stamp }!.window)
+            return
+        }
         let frames = onScreen(frame, in: rect, gaps: gaps, minimums: minimums)
         let seen = withFloatingTiled(frames, in: rect, gaps: gaps)
-        guard fullscreenWindow == nil, !seen.root.children.isEmpty else { return }
+        guard !seen.root.children.isEmpty else { return }
         focus(seen.overThere(in: Node(kind: .container(seen.root), weight: 1), direction, from: source, frames: frames))
+    }
+
+    /// While a fullscreen window covers the display, a focus in a direction sees it, at the
+    /// center of `rect`, and the floating windows, at their centers, and never the tiles under
+    /// it (docs/tree.md).
+    private func covers(_ frame: (WindowID) -> CGRect?, in rect: CGRect) -> [Cover] {
+        let fullscreen = fullscreenWindow!
+        var covers = [Cover(window: fullscreen, center: CGPoint(x: rect.midX, y: rect.midY), isFullscreen: true,
+                            stamp: stamps[fullscreen] ?? 0)]
+        for window in floating where window != fullscreen {
+            guard let frame = frame(window) else { continue }
+            covers.append(Cover(window: window, center: CGPoint(x: frame.midX, y: frame.midY), isFullscreen: false,
+                                stamp: stamps[window] ?? 0))
+        }
+        return covers
     }
 
     /// Tiles where the layout puts them, and floating windows where `frame` does. While the
@@ -303,6 +337,23 @@ extension Workspace {
         root.children = windows.map { Node(kind: .window($0), weight: 1 / Double(windows.count)) }
         edits += 1
         check()
+    }
+}
+
+/// A window a focus in a direction sees while a fullscreen window covers the display.
+private struct Cover {
+    let window: WindowID
+    let center: CGPoint
+    let isFullscreen: Bool
+    let stamp: UInt64
+
+    /// Whether it lies in the direction from `other`, by their centers. A floating window
+    /// centered with the fullscreen window lies right of it and below it, so presses one way
+    /// never come back to a window (docs/tree.md).
+    func lies(_ direction: Direction, of other: Cover) -> Bool {
+        let (mine, theirs) = direction.orientation == .horizontal ? (center.x, other.center.x) : (center.y, other.center.y)
+        if mine != theirs { return direction.isForward == (mine > theirs) }
+        return center == other.center && isFullscreen != other.isFullscreen && direction.isForward == other.isFullscreen
     }
 }
 

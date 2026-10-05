@@ -1,4 +1,5 @@
 import AppKit
+import CKosmos
 import KosmosCore
 import os
 
@@ -74,12 +75,14 @@ extension Controller {
     private func place(_ id: WindowID, pid: pid_t, _ arrival: Arrival) {
         adoption.admitted(id)
         let app = inventory.appIdentity(pid)
-        let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name) }
+        let rule = rules.first { $0.matches(appID: app.bundleID, appName: app.name, title: inventory.title(id)) }
         // A window there at launch joins the workspace of the display under it; a later one
         // joins the focused workspace, as in AeroSpace (docs/displays.md).
         let atLaunch = arrival != .reopened && inventory.wasThereAtLaunch(id)
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
-        let floats = rule?.float == true, workspace = arrival == .detached ? nil : rule?.workspace
+        let float = WindowRule.floats(rule, axIdentifier: inventory.axIdentifier(id), zoomButtonEnabled: inventory.zoomButtonEnabled(id))
+        let floats = float != nil
+        let workspace = arrival == .detached ? nil : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero
         let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id), minimized: inventory.isMinimized(id),
                                             appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true)
@@ -89,11 +92,16 @@ extension Controller {
             : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason,
                           concealed: hiding.isConcealed(id))
         guard var plan = placed else { return }
+        // A window there at launch, in the saved layout, reopened or out of a tab group has its
+        // title already.
+        if arrival == .admitted, !atLaunch, saved == nil, TitleWatch.watches(rules, appID: app.bundleID, appName: app.name) {
+            watchTitle(id, pid: pid, rule: rule)
+        }
         let floating = session.isFloating(id)
         if let saved {
             controllerLog.info("\(id) back on \(saved, privacy: .public) as the saved layout had it\(floating ? ", floating" : "", privacy: .public)")
-        } else if floating, let frame = inventory.windows[id]?.frame {
-            controllerLog.info("\(id) floats by rule at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
+        } else if let float, let frame = inventory.windows[id]?.frame {
+            controllerLog.info("\(id) floats \(float.rawValue, privacy: .public) at its own frame, \(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)), \(Int(frame.minY))")
         }
         let (focus, bringsPointer) = intake.admit(id, atLaunch: atLaunch, at: .now, facts: reportFacts, reports: reports)
         if focus == .adopt { plan.frames.merge(session.adopt(id).frames) { $1 } }
@@ -109,7 +117,43 @@ extension Controller {
         run(action)
     }
 
+    /// Its app can retitle it into a rule on the title (docs/config.md).
+    private func watchTitle(_ id: WindowID, pid: pid_t, rule: WindowRule?) {
+        titleWatch.admitted(id, rule: rule, frame: inventory.windows[id]?.frame, at: .now)
+        inventory.worker(pid)?.watchTitle(id)
+        after(TitleWatch.bound) { controller in
+            controller.titleWatch.end(id)
+            controller.inventory.worker(pid)?.unwatchTitle(id)
+        }
+    }
+
+    /// A rule on the title that only the new title matches applies now, as at admission. The
+    /// pointer on the window goes with it, as a hotkey's `move` brings it (docs/config.md,
+    /// docs/focus-follows-mouse.md).
+    private func retitled(_ id: WindowID) {
+        guard let pid = owner[id] else { return }
+        let app = inventory.appIdentity(pid)
+        let first = rules.first { $0.matches(appID: app.bundleID, appName: app.name, title: inventory.title(id)) }
+        guard let (rule, watch) = titleWatch.retitled(id, rule: first, at: .now) else { return }
+        let delay = (ContinuousClock.now - watch.admitted).milliseconds
+        let title = rule.title ?? ""
+        let float = WindowRule.floats(rule, axIdentifier: inventory.axIdentifier(id), zoomButtonEnabled: inventory.zoomButtonEnabled(id))
+        let pointerOn = knownFrame(id).map { frame in CGEvent(source: nil).map { frame.contains($0.location) } ?? false } == true
+        guard let plan = session.retitled(id, floating: float != nil, frame: watch.frame, to: rule.workspace) else {
+            controllerLog.notice("\(id) takes the rule on its title '\(title, privacy: .public)' \(delay, format: .fixed(precision: 0)) ms after its admission, which changes nothing")
+            return
+        }
+        let floating = session.isFloating(id)
+        controllerLog.notice("""
+            \(id) takes the rule on its title '\(title, privacy: .public)' \(delay, format: .fixed(precision: 0)) ms after its \
+            admission: \(floating ? "floats" : "tiles", privacy: .public) on workspace \(self.session.workspace(of: id) ?? "?", privacy: .public)
+            """)
+        execute(plan, movePointer: session.focused == id && movesPointer(after: .retitled(pointerOnWindow: pointerOn)),
+                floatingCheck: floating)
+    }
+
     private func forget(_ id: WindowID) {
+        titleWatch.end(id)
         owner[id] = nil
         recent.removeAll { $0 == id }
         tabs.forget(id)
@@ -214,13 +258,15 @@ extension Controller {
     }
 
     /// A command received after the return wins, and its focus is requested again, as macOS
-    /// keyed the returning window (docs/tree.md; tla/Kosmos.tla, Rejoin).
-    private func returned(_ windows: [WindowID], follow: WindowID?, at stamp: ContinuousClock.Instant) {
+    /// keyed the returning window (docs/tree.md; tla/Kosmos.tla, Rejoin). So is the focus after
+    /// a return no input of the user's made, with `reassert`.
+    private func returned(_ windows: [WindowID], follow: WindowID?, byUser: Bool = true, reassert: Bool = false,
+                          at stamp: ContinuousClock.Instant) {
         let stale = reports.isStale(stamp)
         var plan = session.unpark(windows, follow: stale ? nil : follow)
-        if stale { plan.focus = session.intent }
+        if stale || reassert { plan.focus = session.intent }
         // A Dock click or Command-Tab that brings it back picks it away from the pointer.
-        execute(plan, movePointer: movesPointer(after: .returned(followed: follow != nil && !stale)))
+        execute(plan, movePointer: movesPointer(after: .returned(followed: follow != nil && !stale && byUser)))
     }
 
     /// When the key window left too and macOS has a window to key, the focus waits for its
@@ -261,8 +307,20 @@ extension Controller {
             let windows = hidden()
             // Hidden again while the worker answered: the windows wait for the next unhide.
             guard NSRunningApplication(processIdentifier: pid)?.isHidden != true, !windows.isEmpty else { return }
-            returned(windows, follow: session.followOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows)),
-                     at: received)
+            // Read after the worker's answer, the latest point. Whether a Command-Tab fronts the
+            // app before its unhide posts is unmeasured (docs/tree.md).
+            let front = kosmos_front_pid() == pid
+            let cause = front ? userCause(of: pid, at: received) : nil
+            switch session.focusOnUnhide(windows, keyed: keyed, fallback: mostRecent(windows), front: front,
+                                         byUser: cause != nil) {
+            case .stays:
+                returned(windows, follow: nil, at: received)
+            case .follow(let window):
+                returned(windows, follow: window, byUser: cause != nil, at: received)
+            case .reassert:
+                controllerLog.notice("\(self.appName(pid), privacy: .public) unhid with no key or click of the user's: the focus goes back")
+                returned(windows, follow: nil, reassert: true, at: received)
+            }
         }
     }
 
@@ -310,6 +368,8 @@ extension Controller {
             // Forgotten, so their targets are not pending for good and the next writes are whole.
             for id in ids { ledger.forget(id) }
             sendReadyBatches()
+        case .titleChanged(let id, _):
+            retitled(id)
         case .windowCreated, .windowDestroyed, .answering:
             break
         }

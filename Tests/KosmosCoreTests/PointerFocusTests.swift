@@ -75,6 +75,17 @@ private func into(_ window: UInt32, display: DisplayID? = nil) -> PointerGate.En
             == [nil, nil, into(7, display: 2)])
     }
 
+    @Test func aMovementAnotherProcessPostedEntersNothing() {
+        // Live on 2026-09-29, computer use's click moved the pointer from Claude on the main
+        // panel over Spotify on the left one, and Kosmos focused Spotify.
+        var gate = gate()
+        #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
+        let posted = [(8, -1200), (8, -1150), (9, -500)].map { gate.admit($0.0, at: CGPoint(x: $0.1, y: 500), control: false, posted: true) }
+        #expect(posted == [nil, nil, nil])
+        // The user's hand then moves inside the window it left the pointer in, and on into another.
+        #expect(entered([(9, -490, false), (8, -1200, false)], gate: &gate) == [nil, into(8)])
+    }
+
     @Test func theMovementAfterAMoveWithControlHeldEntersNothingEither() {
         var gate = gate()
         #expect(entered([(7, 100, false)], gate: &gate) == [into(7, display: 2)])
@@ -367,6 +378,17 @@ private func desk() -> Session {
             #expect(input.moves(after: change), "\(change)")
             #expect(input.read == [.activation, .activation, .activation], "\(change)")
         }
+    }
+
+    /// The Bitwarden pop-out floats off its tile once Chrome retitles it, and a pointer left on
+    /// the tile would focus the window there on the next bump (docs/config.md).
+    @Test func aWindowARuleOnItsTitleMovesTakesThePointerOnItAlong() {
+        let input = Input()
+        #expect(input.moves(after: .retitled(pointerOnWindow: true)))
+        #expect(!input.moves(after: .retitled(pointerOnWindow: false)))
+        #expect(!input.moves(after: .retitled(pointerOnWindow: true), mouseFollowsFocus: false))
+        input.leftButtonDown = true
+        #expect(!input.moves(after: .retitled(pointerOnWindow: true)))
     }
 
     @Test func aReturnKosmosDoesNotFollowLeavesThePointer() {

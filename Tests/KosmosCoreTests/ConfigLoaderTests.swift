@@ -344,11 +344,110 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
 
     @Test func ruleMatching() {
         let rule = WindowRule(appID: "com.google.Chrome", appName: "chrome")
-        #expect(rule.matches(appID: "com.google.Chrome", appName: "Google Chrome"))
-        #expect(!rule.matches(appID: "com.google.Chrome", appName: "Brave Browser"))
-        #expect(!rule.matches(appID: "com.google.chrome", appName: "Google Chrome"))
-        #expect(!rule.matches(appID: nil, appName: "Google Chrome"))
-        #expect(WindowRule(appName: "youtube").matches(appID: "com.apple.Safari.WebApp.1234", appName: "YouTube"))
+        #expect(rule.matches(appID: "com.google.Chrome", appName: "Google Chrome", title: "Inbox - Google Chrome"))
+        #expect(!rule.matches(appID: "com.google.Chrome", appName: "Brave Browser", title: nil))
+        #expect(!rule.matches(appID: "com.google.chrome", appName: "Google Chrome", title: nil))
+        #expect(!rule.matches(appID: nil, appName: "Google Chrome", title: nil))
+        #expect(WindowRule(appName: "youtube").matches(appID: "com.apple.Safari.WebApp.1234", appName: "YouTube", title: nil))
+    }
+
+    /// The Bitwarden extension's pop-out is a browser window titled "Bitwarden"; the browser's
+    /// own windows are titled "<page> - Google Chrome" (docs/config.md).
+    @Test func aRuleOnTheTitleMatchesTheWholeTitleOfItsAppsWindows() {
+        let rule = WindowRule(appID: "com.google.Chrome", title: "Bitwarden", float: true)
+        #expect(rule.matches(appID: "com.google.Chrome", appName: "Google Chrome", title: "Bitwarden"))
+        #expect(rule.matches(appID: "com.google.Chrome", appName: "Google Chrome", title: "BITWARDEN"))
+        #expect(!rule.matches(appID: "com.google.Chrome", appName: "Google Chrome", title: "Bitwarden Vault - Google Chrome"))
+        #expect(!rule.matches(appID: "com.google.Chrome", appName: "Google Chrome", title: "NetSuite Login - Google Chrome"))
+        // A title that did not read matches no rule on the title.
+        #expect(!rule.matches(appID: "com.google.Chrome", appName: "Google Chrome", title: nil))
+        #expect(!rule.matches(appID: "net.imput.helium", appName: "Helium", title: "Bitwarden"))
+    }
+
+    @Test func rulesTakeATitleInTheBaseConfigAndInProfiles() throws {
+        let body = """
+        [[rule]]
+        app-id = 'com.google.Chrome'
+        title = 'Bitwarden'
+        float = true
+
+        [[profile]]
+        name = 'p'
+        [[profile.rule]]
+        app-id = 'net.imput.helium'
+        title = 'Bitwarden'
+        workspace = '2'
+        """
+        let result = load(body)
+        #expect(result.diagnostics.isEmpty)
+        let config = try #require(result.config)
+        #expect(config.rules == [WindowRule(appID: "com.google.Chrome", title: "Bitwarden", float: true)])
+        #expect(config.profiles[0].rules == [WindowRule(appID: "net.imput.helium", title: "Bitwarden", workspace: "2")])
+        // The title narrows a rule on the app, and alone it is no rule.
+        #expect(load("[[rule]]\ntitle = 'Bitwarden'\nfloat = true").diagnostics == [
+            "3:3: error: rule[0]: a rule needs app-id or app-name",
+        ])
+    }
+
+    /// A rule without a title hides a later one of its app with a title, and a rule on the
+    /// title hides only a later one on the same title.
+    @Test func aRuleOnTheTitleGoesBeforeItsAppsOtherRules() {
+        let body = """
+        [[rule]]
+        app-id = 'com.google.Chrome'
+        title = 'Bitwarden'
+        float = true
+
+        [[rule]]
+        app-id = 'com.google.Chrome'
+        workspace = '2'
+
+        [[rule]]
+        app-id = 'com.google.Chrome'
+        title = 'bitwarden'
+        workspace = '3'
+
+        [[rule]]
+        app-id = 'com.google.Chrome'
+        title = 'Gmail'
+        float = true
+        """
+        #expect(load(body).diagnostics == [
+            "12:3: warning: rule[2]: this rule never applies: rule[0] on line 3 matches every window it matches",
+            "17:3: warning: rule[3]: this rule never applies: rule[1] on line 8 matches every window it matches",
+        ])
+    }
+
+    /// ChatGPT's Save panel, an AXStandardWindow, tiled beside its window before this
+    /// (docs/inventory.md).
+    @Test func filePanelsFloatWhateverTheRuleSays() {
+        func floats(_ rule: WindowRule?, _ identifier: String?) -> FloatReason? {
+            WindowRule.floats(rule, axIdentifier: identifier, zoomButtonEnabled: true)
+        }
+        #expect(floats(nil, "save-panel") == .filePanel)
+        #expect(floats(nil, "open-panel") == .filePanel)
+        #expect(floats(WindowRule(appName: "chatgpt", float: false), "save-panel") == .filePanel)
+        #expect(floats(WindowRule(appName: "finder", float: true), "FinderWindow") == .rule)
+        #expect(floats(nil, nil) == nil)
+        #expect(floats(WindowRule(appName: "chatgpt", workspace: "3"), nil) == nil)
+        #expect(floats(nil, "find-panel") == nil)
+    }
+
+    /// Raycast's and Calendar's settings and Ghostty's About window have their zoom button
+    /// disabled; Activity Monitor and System Settings have it enabled and no fullscreen
+    /// button; Ghostty with its title bar off has no buttons (docs/inventory.md).
+    @Test func windowsWithADisabledZoomButtonFloatUnlessTheRuleSaysTile() {
+        func floats(_ rule: WindowRule?, _ zoom: Bool?) -> FloatReason? {
+            WindowRule.floats(rule, axIdentifier: nil, zoomButtonEnabled: zoom)
+        }
+        #expect(floats(nil, false) == .dialog)
+        #expect(floats(WindowRule(appName: "raycast", workspace: "3"), false) == .dialog)
+        #expect(floats(WindowRule(appName: "raycast", float: true), false) == .rule)
+        #expect(floats(WindowRule(appName: "raycast", float: false), false) == nil)
+        #expect(floats(nil, true) == nil)
+        #expect(floats(nil, nil) == nil)
+        #expect(WindowRule.floats(WindowRule(appName: "chatgpt", float: false), axIdentifier: "save-panel",
+                                  zoomButtonEnabled: false) == .filePanel)
     }
 
     @Test func diagnosticsAreInFileOrder() {
@@ -488,8 +587,8 @@ private func load(_ body: String) -> (config: Config?, diagnostics: [String]) {
         #expect(setup.workspaceDisplays == ["1": 3, "2": 3])
         #expect(setup.mergeWorkspaces == ["3": "1", "4": "2"])
         #expect(setup.rules.map(\.appID) == ["spotify", "spotify", "chrome"])
-        #expect(setup.rules.first { $0.matches(appID: "spotify", appName: nil) }?.workspace == "2")
-        #expect(setup.rules.first { $0.matches(appID: "chrome", appName: nil) }?.workspace == "1")
+        #expect(setup.rules.first { $0.matches(appID: "spotify", appName: nil, title: nil) }?.workspace == "2")
+        #expect(setup.rules.first { $0.matches(appID: "chrome", appName: nil, title: nil) }?.workspace == "1")
     }
 
     @Test func noMatchingProfileLeavesTheBaseConfig() throws {

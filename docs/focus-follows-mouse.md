@@ -10,7 +10,8 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   app and after the key record for another app ([focus.md](focus.md)). A floating window the
   pointer enters comes up over the tiled windows it overlaps, whichever app was front. The
   pointer is over a part of the window that was on top already, and the raise brings up
-  the rest.
+  the rest. A tile that a floating window overlaps gets no raise: it takes the keyboard
+  and stays under the floating window ([focus.md](focus.md)).
 - Focusing another app's window activates the app, which costs macOS about 94 ms of CPU
   outside Kosmos ([overview.md, section 2](overview.md#2-what-the-fork-measured)), so a pointer swept across windows of several apps activates
   each of them. Steve accepted that cost, since in a tiling layout the pointer crosses
@@ -28,8 +29,26 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
   WindowServer's answer. A hit test of the model's frames would need a stacking order the
   model does not keep. The tap's callback passes a movement on to the main actor only when
   it enters another window or another display than the last movement passed on, with
-  Control up (KosmosCore's PointerGate). The gate tells the display from the event's
-  location and the session's displays, which the main actor gives it at each change.
+  Control up, and the user's hand made it (KosmosCore's PointerGate). The gate tells the
+  display from the event's location and the session's displays, which the main actor gives
+  it at each change.
+- A movement another process posted focuses nothing: the gate takes it as the place the
+  pointer landed, as after Kosmos's own move (below), so the user's next movement into
+  another window focuses that window. The tap tells it by the event's source process
+  (`eventSourceUnixProcessID`). At the desk on 2026-09-29, 74 of 74 movements of Steve's
+  hand in 45 s carried source pid 0, and a movement posted at the pointer's own place
+  carried the poster's pid, from a source of no state and from one of the HID system
+  state alike; a key or click whose pid is set to 0 before the post still shows the
+  poster's (`kosmos-probe input-source`, branch `rulefollow`). The log names each process
+  whose posted movement it ignores, once. Before this, live on 2026-09-29 at 09:26:22.4,
+  computer use's click moved the pointer onto Spotify on the left panel, Kosmos focused
+  Spotify, and computer use, which checks the front app after its move and before its
+  click, refused the click because Spotify was in front. Its click, scroll and
+  `mouse_move` post one movement to the target, and its drag an animated path from where
+  the pointer is (Claude Code 2.1.284). The ceiling: a tool
+  that posts the user's own pointer movement, as a mouse remapper can, turns hover focus
+  off for him. The upgrade is a list of such posters, once `kosmos-probe input-source`
+  shows one at the desk.
 - The main actor focuses the window only when all of these hold (KosmosCore's
   `FocusFollowsMouse.skip`, whose reason for skipping is logged):
   - It is a tiled or floating window of a workspace a display shows, or a native
@@ -137,15 +156,21 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     key down within the second. A window its app keys later, as a meeting app's or one
     opened with `open -g` when its app comes front minutes after, is judged by the
     Command-Tab test.
+  - A new window that a rule on its title floats, tiles or moves after its admission
+    ([config.md](config.md)) takes the pointer along when the pointer was on it and the
+    left button is up, as a hotkey's `move` does (`FocusChange.retitled`). Chrome's
+    Bitwarden pop-out floats off the tile the pointer was brought to, and the window left
+    under the pointer would take the focus on the next bump.
   - A window that was there when Kosmos launched leaves the pointer where it is, so it
     stays put at startup. No admission moves the pointer while the left button is down
     (`NSEvent.pressedMouseButtons`): a native tab dragged out of its group, as Finder's
     or Ghostty's, is admitted a pairing window after its order-in, with the drag still
-    on. The ceiling: Kosmos does not tell who opened a window, so an
-    agent's or a script's new window that its app keys brings the pointer too, as it
-    takes the focus or brings the follow. If that pulls the pointer away while Steve
-    works, the rule can ask for a key or a click in the seconds before the app launched
-    or opened the window.
+    on.
+  - A key report or a new window that no input of the user's made, as an agent's, a
+    script's or `open -a`'s, leaves the pointer where it is, whatever the tests above
+    say ([focus.md](focus.md) tells it by the input tap). The Command-Tab test reads the
+    combined session state, which counts the keys and clicks other processes post, and
+    Steve's typing in another app passed it whenever an agent's app came front.
   - A click on the Dock picks an app as Command-Tab does, and the pointer goes to the
     window it activates the same way. Left on the Dock, the pointer would focus every
     window it crossed on the way up. Steve clicked Teams in the Dock on 2026-09-25, and
@@ -272,27 +297,18 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     leave the key window with the front process, so the key holder check leaves them to
     this. If the live test shows it, one SkyLight window list read per window entered, for
     a window at the pop-up menu level on screen, would keep the menu open.
-  - Keeping floating windows over a tile the pointer enters. Inside the front app only
-    AXRaise keys a window, and for another app AXRaise follows the key record ([focus.md](focus.md)),
-    so the tile comes up over any floating window it overlaps, which Hyprland keeps
-    on top. Focusing or clicking a tile does the same. With SIP on, no process can set the
-    level of another app's window, and raising the floating windows again after the raise
-    would key one of the front app's and put a background app's directly below the tile.
-    AXRaise is AppKit's makeKeyAndOrderFront:, which in an app that is not active orders
-    front conditionally. WindowServer (`_compareTimesAndApps`, `_safeTestAndOrder`) and
-    WindowManager.app each keep a record of the window last ordered front (AppKit and
-    SkyLight disassembly, WindowManager.app's strings, macOS 27 26A428), and WindowServer's
-    changed no outcome in the two probes below. A Space shown above the desktop's keeps a
-    floating window on top, and covers every menu and all system UI too (`kosmos-probe
-    float-layer`, at tag `archive/floatprobe`). A covered floating window stays in reach of
-    `focus` in a direction ([tree.md](tree.md)), where hover cannot reach it. If it bothers
-    in practice, the path is yabai's `window_manager_focus_window_without_raise`, which
-    AutoRaise carries under FOCUS_FIRST (AutoRaise.mm:204): an AppKit-defined record (type
-    0x0d) with 0x8a = 0x02 to the app's key window, 10 ms later one with 0x8a = 0x01 to the
-    target, then the private front and the key record. It would replace AXRaise on the
-    worker, and the raise after a key record, for a hover focus of a tile, the echo
-    recorded just before, once `kosmos-probe keying` shows it keys 20 of 20 in the front
-    app with the window order unchanged.
+  - Keeping floating windows over a tile the user clicks, which macOS raises. With SIP on,
+    no process can set the level of another app's window, and raising the floating windows
+    again after the raise would key one of the front app's and put a background app's
+    directly below the tile. AXRaise is AppKit's makeKeyAndOrderFront:, which in an app
+    that is not active orders front conditionally. WindowServer (`_compareTimesAndApps`,
+    `_safeTestAndOrder`) and WindowManager.app each keep a record of the window last
+    ordered front (AppKit and SkyLight disassembly, WindowManager.app's strings, macOS 27
+    26A428), and WindowServer's changed no outcome in the two probes below. A Space shown
+    above the desktop's keeps a floating window on top, and covers every menu and all
+    system UI too (`kosmos-probe float-layer`, at tag `archive/floatprobe`). A covered
+    floating window stays in reach of `focus` in a direction ([tree.md](tree.md)), where
+    hover cannot reach it.
     - `kosmos-probe float-raise 5` (branch `floatraise`, October 2, 2026) raised a window
       of a background child app with AXRaise while Ghostty was front, alone and after each
       of these: clearing WindowServer's record with `SLSSetFrontWindow`, whose handler
@@ -318,5 +334,4 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     - So WindowServer's record decides nothing a background app's own order does, and
       AXRaise's place directly below the tile comes from AppKit or WindowManager.app, whose
       record Kosmos has no call to set. With SIP on, no call found keeps a floating window
-      above another app's tile. The Space above the desktop's and focus without a raise,
-      both above, remain.
+      above another app's tile, so the Space above the desktop's remains the only way.

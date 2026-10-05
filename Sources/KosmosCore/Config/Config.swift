@@ -125,13 +125,23 @@ public struct WindowRule: Equatable, Sendable {
     public var appID: String?
     /// Matches app names that contain this text, ignoring case.
     public var appName: String?
+    /// Matches the window's whole title, ignoring case, as a browser titles each window after
+    /// its page (docs/config.md).
+    public var title: String?
     /// Float the window, or tile it when false.
     public var float: Bool?
     /// Put the window on this workspace, which Kosmos shows when the window's app keyed it
     /// (AdmissionFocus).
     public var workspace: String?
 
-    public func matches(appID: String?, appName: String?) -> Bool {
+    /// `title` is nil for a window whose title did not read, which no rule on the title matches.
+    public func matches(appID: String?, appName: String?, title: String?) -> Bool {
+        guard matchesApp(appID: appID, appName: appName) else { return false }
+        guard let text = self.title else { return true }
+        return title?.lowercased() == text.lowercased()
+    }
+
+    func matchesApp(appID: String?, appName: String?) -> Bool {
         if let id = self.appID, id != appID { return false }
         if let text = self.appName {
             guard let appName, appName.lowercased().contains(text.lowercased()) else { return false }
@@ -139,11 +149,28 @@ public struct WindowRule: Equatable, Sendable {
         return true
     }
 
+    /// Why a new window floats, or nil when it tiles (docs/config.md). AppKit names an Open or
+    /// Save panel by its AXIdentifier, and disables the zoom button of a window its app keeps
+    /// from being resized, which `zoomButtonEnabled` gives, nil for no button
+    /// (docs/inventory.md).
+    public static func floats(_ rule: WindowRule?, axIdentifier: String?, zoomButtonEnabled: Bool?) -> FloatReason? {
+        if axIdentifier == "open-panel" || axIdentifier == "save-panel" { return .filePanel }
+        if let float = rule?.float { return float ? .rule : nil }
+        return zoomButtonEnabled == false ? .dialog : nil
+    }
+
     /// Whether this rule matches every window `other` matches, so `other` never applies after
     /// it (docs/config.md).
     func covers(_ other: WindowRule) -> Bool {
-        matches(appID: other.appID, appName: other.appName)
+        matches(appID: other.appID, appName: other.appName, title: other.title)
     }
+}
+
+/// Why `WindowRule.floats` floats a window, as Kosmos logs it.
+public enum FloatReason: String, Sendable {
+    case rule = "by rule"
+    case filePanel = "as a file panel"
+    case dialog = "as a dialog"
 }
 
 /// Settings for one set of connected displays. A key the profile leaves out keeps the base

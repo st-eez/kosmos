@@ -67,10 +67,10 @@ import Testing
         #expect(plan.frames[3] == Self.own && plan.focus == .window(1))
     }
 
-    @Test func focusInADirectionOntoATileEndsIt() {
+    @Test func focusInADirectionReachesNoTileUnderIt() {
         var s = Self.session()
-        let plan = s.perform(.focus(.left), frame: { $0 == 3 ? Self.display : nil })
-        #expect(plan?.focus == .window(1) && plan?.frames[3] == Self.own)
+        #expect(s.perform(.focus(.left), frame: { $0 == 3 ? Self.display : nil }) == nil)
+        #expect(s.workspaces["1"]!.fullscreenWindow == 3)
     }
 
     @Test func aNewWindowEndsItWhenKosmosAdoptsItsFocus() {

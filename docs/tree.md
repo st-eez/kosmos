@@ -153,6 +153,36 @@
     this, Kosmos adopting a key window macOS reported, as at Command-Tab to another tile,
     ended a tiled window's fullscreen and wrote no frame until the next plan, so that window
     kept the display under the one raised.
+  - While a window of the workspace is in fullscreen, tiled or floating, a focus in a
+    direction sees that window and the workspace's floating windows, never the tiles under
+    it, and compares their centers. The fullscreen window's center is the display area's.
+    Steve decided this on 2026-10-02.
+    - From any of them the focus goes to the nearest of those whose center lies that way,
+      by the distance between centers, the most recently focused on a tie. A floating window centered exactly with the
+      fullscreen window lies right of it and below it. Each press one way goes to a center
+      further that way, so presses never loop: with a floating window on the right half,
+      right goes from the fullscreen window to it and then to the next display, and left
+      from it goes back to the fullscreen window.
+    - With none that way, `--boundaries all-monitors-outer-frame` goes on to the display in
+      the direction, from the focused window's frame, which for the fullscreen window is
+      the display's area, and with no display there nothing happens
+      ([displays.md](displays.md)). The window stays in fullscreen throughout.
+    - A focus that comes in from another display lands on the one whose center is nearest
+      the edge it crosses, the most recently focused on a tie.
+    - The fullscreen window takes the keyboard without coming forward over a floating
+      window that overlaps it, as any tile does, at a focus in a direction, a hover or a
+      switch back to its workspace, and a floating window focused comes up
+      ([focus.md](focus.md)). At a click, an app's activation or a new dialog, macOS brings
+      the clicked window, the app's key window or the dialog forward, and Kosmos adopts the
+      focus. So the floating windows stay in reach after a click brings the fullscreen
+      window over them. `fullscreen` toggled off asks for no focus, so they stay on top of
+      the layout too.
+    - Hyprland's `CWindowQuery::inDirection` takes the monitor's box as a fullscreen
+      window's frame and needs a window whose edge meets it, so from a fullscreen window it
+      reaches only other displays (src/desktop/state/WindowQuery.cpp, Hyprland main at
+      8e9a538). Steve asked for the floating windows too.
+    - Before, the focus walked the tree from the fullscreen window or a floating window,
+      reached a tile under the fullscreen window and ended the fullscreen.
   - The frame goes back on its workspace's display: as it was where its center is on that
     display, else moved there as the floating check moves a window
     ([displays.md](displays.md)), or into the area from off every display. So a window that
@@ -169,12 +199,15 @@
     fullscreen window its floating size back, centered on the pointer
     (`binds:drag_center_window`, src/layout/supplementary/DragController.cpp); Kosmos
     keeps the frame the drag gives it.
-  - Kosmos keeps its tiled rules where Hyprland differs. Hyprland's `movetoworkspace` takes
-    the window out of fullscreen and puts it back in on the workspace it moves to
-    (`CGlobalWindowController::moveWindowToWorkspace`), and Omarchy sets
-    `misc:on_focus_under_fullscreen` to 1, so a tile focused under a fullscreen window
-    takes the fullscreen over (default/hypr/looknfeel.lua in basecamp/omarchy at e1614f2).
-    Kosmos ends fullscreen at both, for tiled and floating windows alike.
+  - A focus that reaches a tile under a fullscreen window some other way, as Command-Tab, a
+    click, a notification or an app activation, ends the fullscreen, lays the workspace out
+    and focuses the tile. That is Hyprland's default, `misc:on_focus_under_fullscreen = 2`
+    (`onFullscreenWorkspaceFocusWindow` in src/desktop/state/FocusState.cpp). Omarchy sets
+    it to 1, so the tile takes the fullscreen over (default/hypr/looknfeel.lua in
+    basecamp/omarchy at e1614f2), and Steve chose Hyprland's default on 2026-10-02.
+  - Hyprland's `movetoworkspace` takes the window out of fullscreen and puts it back in on
+    the workspace it moves to (`CGlobalWindowController::moveWindowToWorkspace`). Kosmos
+    ends fullscreen there, for tiled and floating windows alike.
   - A profile that merges away a workspace keeps its floating fullscreen window in
     fullscreen on the workspace it joins, with its frame from before, when that workspace
     has no fullscreen window (`Session.carry`). Steve's laptop profile merges 6 to 0 into 1
@@ -201,7 +234,8 @@
   and Chrome from a Ghostty in the top half, which Finder does not overlap. The workspace's
   floating windows count as tiles, as AeroSpace's `focus` counts them (FocusCommand.swift,
   `makeFloatingWindowsSeenAsTiling`, at 5f08f9c), so the keyboard reaches a floating window
-  a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)).
+  a tile covers ([focus-follows-mouse.md](focus-follows-mouse.md)). A workspace with a
+  fullscreen window compares centers instead (above).
   - Each floating window stands in the container of the tile under its center, just
     before that tile, or just after it when its center is at or past the tile's center
     along the container. The tile under a center is the one whose share of the tiling
@@ -237,8 +271,8 @@
     workspace there the same way, with that whole workspace as the sibling and the frame
     the focused window has on its own display, so it lands at the edge it crosses. That
     workspace's floating windows count as tiles, as above. A workspace with a fullscreen
-    window keeps its focus, since that window covers every edge, and an empty workspace
-    takes the focus with no window. From an empty workspace, with no window to overlap,
+    window takes the focus by centers, as above, and an empty workspace takes the focus
+    with no window. From an empty workspace, with no window to overlap,
     the most recently focused window at the edge takes the focus.
   - Before this, the focus went into the sibling by focus order, the child holding the
     most recently focused window at each level, and into another display's workspace by
@@ -272,6 +306,23 @@
   when its Dock thumbnail unhides the app, is followed by its own return. A keyed
   fullscreen window is not followed, because macOS shows its Space, where a switch fails.
   With no managed window keyed, Kosmos follows the app's most recently focused window.
+  - Kosmos follows an unhide only while the app is the front process, read once the app's
+    worker has answered for its key window. An unhide that fronts nothing, as a script's
+    `NSRunningApplication.unhide`, Show All, or computer use unhiding the apps it hid at
+    the end of its turn, returns the windows and leaves the focus where it is. Live on
+    2026-09-29 at 09:27:24.8, computer use unhid Activity Monitor and Spotify on the left
+    panel while Claude was front on the main panel, and Kosmos focused Spotify, then
+    Activity Monitor. The spec's `Return` keys the window as it returns, so it models the
+    front case only. Unmeasured: whether macOS fronts an app before its unhide posts at a
+    Command-Tab or Dock click. If it does not, such an unhide is no longer followed here,
+    and what the app's key report then does is untested. A probe that hides a child app of
+    its own, activates it, and reads the front process at the unhide notification and after
+    a worker read would settle it.
+  - An unhide that fronts the app with no input of the user's before it, as `open -a` on a
+    hidden app, is followed only onto a shown workspace, with no switch and no pointer
+    move. When the window returns to a hidden workspace, Kosmos returns the windows and
+    requests its intent again, so no key goes to the concealed window macOS keyed
+    (`Session.focusOnUnhide`, [focus.md](focus.md)).
   - Until then the window is parked: switches neither conceal nor reveal it, and it gets
     no frame. Parking asks for no focus, since macOS keys another window itself and a
     request would pull the screen out of a native fullscreen Space. A window already

@@ -392,3 +392,49 @@
     there, and the only windows Kosmos had not recorded were JankyBorders' border windows,
     which follow the windows they border into the holding Space and out again (September
     25, 2026).
+- A screenshot of a concealed window fails, so an agent that drives a hidden workspace's
+  app in the background, as with CuaDriver, cannot see it. A peek would show the window on
+  its display without the user seeing it, long enough for a screenshot, then conceal it
+  again. `kosmos-probe peek` on 2026-10-02 (macOS 27 26A428, the built-in display at 2x)
+  measured peeks of a child app's panel that stops drawing while its occlusion state is not
+  visible, as Chromium does, 5 trials a variant. Each peek added the panel to a Space of
+  the probe's, then removed it from the probe's holding Space, and the reverse after; each
+  batch landed within 13 ms. A peek works only under a cover, below.
+  - Concealed for 3 s, the panel's occlusion state stayed hidden and it drew nothing.
+    ScreenCaptureKit's capture of the window alone failed ("Failed to start stream due to
+    audio/video capture failure"), `screencapture -l` printed "could not create image from
+    window", and CuaDriver's `get_window_state` answered "No content produced".
+  - In an animation Space at level 1, the panel's app saw its occlusion state turn visible
+    1 to 13 ms after the add and drew at once, and saw it turn hidden 2 to 7 ms after the
+    peek ended. It got no other notification: no key, screen or Space change.
+  - Captures take the Space's alpha. At alpha 0 every capture of the panel was transparent,
+    from ScreenCaptureKit, `screencapture -l` and CuaDriver alike, and the screen around it
+    did not change by one level. At alpha 0.01 the first capture held the current count,
+    86 to 110 ms after the add, but at opacity 3 of 255, which no agent can read, and the
+    screen changed by up to 3 levels of 255 over the panel.
+  - The Space's shape, set to one point at the panel's top left, read back and clipped
+    nothing: at alpha 0.01 the screen and the captures were as without it.
+  - In a Space at level -1, under the desktop Space at level 0, at alpha 1 and with the
+    panel stripped of its ordinary Space, the desktop picture covered it and the screen did
+    not change. Its occlusion state stayed hidden, so every capture was opaque and stale,
+    showing the panel's last draw.
+  - In an animation Space at alpha 1 scaled to show the panel at 1/400 of its size, the
+    occlusion state turned visible and it drew, but captures follow the scale: one pixel at
+    opacity 144, and that pixel showed on screen.
+  - Under a cover, the peek worked. The cover is a window of the probe's own in a Space at
+    level 2, not opaque, so WindowServer does not count the panel under it as hidden, and it
+    shows a capture of the screen taken just before the peek. With the panel in an animation
+    Space at alpha 1 under it, the occlusion state turned visible 2 to 6 ms after the add,
+    and the first ScreenCaptureKit capture, begun 1 ms after the add, was opaque and current
+    in 5 of 5, done 81 to 99 ms after the add. `screencapture -l` and CuaDriver were current
+    too. The screen changed by at most 1 level of 255, the cover capture's round trip through
+    sRGB. The cover took 78 to 135 ms to come up, 30 ms of it a wait for its contents.
+  - WindowServer's hit test (`NSWindow.windowNumber(at:)`) at the panel's center named the
+    panel only under the cover, in 5 of 5, since the cover ignores the mouse; at alpha 0 and
+    0.01 it named the window of Steve's under the panel. Real clicks are untested, since a
+    posted click would reach Steve's windows.
+  - The cover's costs: about 0.1 s before each peek, the area under it frozen until the peek
+    ends, so a change there shows late, and a click there reaching the peeked app unless
+    the cover takes the mouse. A real app can take longer to draw after the occlusion change
+    than the probe's panel: Discord showed black for about a second when its workspace came
+    back on September 25, 2026.

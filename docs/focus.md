@@ -59,11 +59,12 @@
   - A window on a workspace that a display shows becomes the focus intent, and its
     display becomes the focused one ([displays.md](displays.md)). It is requested again, in case an
     older request of Kosmos's landed after the user's change.
-  - Only the user reaches a window that was hidden when it became key: with Command-Tab,
-    or by opening that window, as `open` on a document, an app's Window menu or the
-    Dock's window list do. Kosmos follows it to its workspace, whether a notification or an
-    activation read reports it: a window opened inside the front app has only its
-    notification (tla/README.md, change 22, `split-open-readfollows`). Whether the window
+  - The user reaches a window that was hidden when it became key with Command-Tab, or by
+    opening that window, as `open` on a document, an app's Window menu or the Dock's window
+    list do. Kosmos follows it to its workspace, whether a notification or an activation
+    read reports it: a window opened inside the front app has only its notification
+    (tla/README.md, change 22, `split-open-readfollows`). An agent, a script or `open -a`
+    reaches one too, and Kosmos follows only a report the user's own input made (below). Whether the window
     was hidden is judged at the report's stamp: the bridge queue notes when it sends each
     window's conceal and reveal, because a switch can reveal or conceal the window before
     the report is classified (change 19). Only each window's last change is kept: a report
@@ -78,8 +79,8 @@
     otherwise the read follows the re-key the notification declined (tla/README.md,
     change 24).
   - A window the front app keyed before Kosmos admitted it, as a launching app keys its
-    first window, is the user's choice too, and its report waits for the window's place
-    (`AdmissionFocus`). So does the key report of a window closed and kept, which takes a
+    first window, is the user's choice too when his input opened it (below), and its report
+    waits for the window's place (`AdmissionFocus`). So does the key report of a window closed and kept, which takes a
     place as a new window when its app opens it again ([tree.md](tree.md)). The wait ends
     at a report that would end a held report (below), of another placed window and not
     Kosmos's echo, at another window's report with no place, which replaces it, and at a
@@ -143,6 +144,91 @@
     concealed. The switch wins, and its focus is requested again. After a batch fails,
     recovery shows every workspace's windows until a switch conceals them again. A
     click on one is then the user's, and Kosmos follows it as it follows a Command-Tab.
+- Kosmos follows a report into a hidden workspace only when the user's own input made it.
+  Windows that agents, scripts, `open -a` or computer use open never switch a display
+  (Steve's decision, [backlog.md](backlog.md)). Over any other report it would follow,
+  Kosmos keeps its workspaces and requests its intent again, so no key goes to the
+  concealed window macOS keyed, and the log says `came with no key or click of the
+  user's`. Such a report brings no pointer ([focus-follows-mouse.md](focus-follows-mouse.md)),
+  and neither does an unhide no input of the user's made ([tree.md](tree.md)). A window
+  such an app keys on a shown workspace still becomes the focus, and the focus can move
+  to another display with it. Whether Kosmos gives that focus back waits for Steve
+  ([backlog.md](backlog.md)). Kosmos's own commands, hotkeys and hover focus switch and
+  focus directly and pass no such test. The spec's `agent` configs check it (tla/README.md,
+  change 27).
+  - The input comes from a listen-only tap at the annotated session location
+    (KosmosApp's `InputTap`), on its own thread, for key downs, modifier changes and left
+    and right mouse downs. WindowServer fills in each event's source process
+    (`eventSourceUnixProcessID`) and the process it goes to (`eventTargetUnixProcessID`).
+    A listen-only tap for keys needs Input Monitoring, so Kosmos makes the tap only with
+    that grant and never asks for it here. Without the tap, or before it hears anything,
+    every change counts as the user's, as before (`OwnInput.Cause.unheard`).
+  - `kosmos-probe input-source 90` sampled Steve's input on 2026-10-02 while he clicked,
+    typed and used Command-Tab. Of 222 events, every key down of his (72 to
+    ChatGPT, 64 to Ghostty, and 11 to the Dock, whose Command-Tab switcher takes them) and
+    every left mouse down of his carried source pid 0 and the HID system state. Logitech
+    Options+ posted nothing. BetterTouchTool posted 9 modifier changes under its own pid.
+    Steve's three-finger swipe is a BetterTouchTool gesture that posts Option-Tab for his
+    `alt-tab` binding, and the tap saw no key down from it. Kosmos's own focus records
+    showed as 16 left mouse downs under Kosmos's pid, to Activity Monitor, ChatGPT, Ghostty,
+    Helium and Spotify. Siri posted one modifier change. Steve dictates with Epos, whose
+    input the sample missed. A child process's posts carried its own pid, also when it set
+    the field to 0 before the post.
+  - What makes a change the user's (KosmosCore's `OwnInput.cause`), judged at the report's
+    stamp:
+    - A key or click of his that went to the app or a process inside its .app bundle in the
+      last 10 s. A click on Teams' call notification goes to
+      `com.microsoft.teams2.notificationcenter`, inside Microsoft Teams.app, and the meeting
+      window can come seconds later. Cmd-N in Ghostty goes to Ghostty. No measurement chose
+      10 s. Chrome keyed its first window 5.2 s after a launcher's hotkey
+      ([focus-follows-mouse.md](focus-follows-mouse.md)), and the log names the input behind
+      each follow and its age, as in `following window(70) of Google Chrome: a key to
+      Raycast 300 ms before its launch`.
+    - In the second before the report, or before the app's launch for a window that comes
+      later, the Command-Tab test's second: a click of his anywhere, as on the Dock, a
+      Finder double-click, a link in another app or a notification; a key of his that went
+      to a process that is not a regular app, as the Dock's Command-Tab switcher, Raycast's
+      panel, Spotlight (whose process is Siri) or Notification Center, all accessory apps
+      on 2026-10-02; or a key down the tap never saw (below). A modifier change counts as a
+      key. The switcher activates its app as Command comes up, a change that goes to the
+      Dock, so a switcher held open past the second still counts.
+    - A key that went to another regular app counts for nothing. Steve types into the apps
+      agents run in while they work, and in the sample a key of his came within the second
+      before most moments.
+    - Input another process posts counts for nothing, as computer use's, `osascript`'s and
+      Kosmos's own focus records.
+  - A hotkey's key never reaches the tap. The tap saw no Tab from BetterTouchTool's
+    Option-Tab, which Kosmos's hotkey took. HID counts a key down before the tap sees it
+    ([modifier-drags.md](modifier-drags.md)), so a count past the one at the tap's last key
+    down means a key the tap missed. That is a launcher's hotkey, such as Raycast's app
+    hotkeys, a key typed under Secure Input, which hides keys from taps, or a hotkey of
+    Kosmos's. The tap compares at each modifier change, since a hotkey's modifiers come up
+    after its key, and notes the missed key at HID's last key down. Kosmos compares again
+    at each decision. Unmeasured: whether HID counts a key down a hotkey takes. If it does
+    not, a launcher's hotkey that activates an app on a hidden workspace is no longer
+    followed, and the log says `came with no key or click of the user's` right after the
+    hotkey.
+  - Ceilings:
+    - An agent's new window of an app Steve pressed a key or clicked in during the last
+      10 s is followed, and so is an agent's launch in the second after a click of his
+      anywhere. Steve clicked 3 times in the 90 s sample.
+    - A key into a regular app that opens another app, as Cmd-O on an app in Finder or
+      `open` typed in a terminal, counts for nothing, so that app's window on a hidden
+      workspace is not followed. A terminal's `open` is an agent's too.
+    - Input another process posts for the user, as a BetterTouchTool gesture, counts for
+      nothing, so a gesture that posts Command-Tab is not followed. The upgrade is a list
+      of such posters, which focus follows mouse would share
+      ([focus-follows-mouse.md](focus-follows-mouse.md)).
+    - While Secure Input is on, the tap gets no keys, so each key of Steve's reads as one
+      the tap missed, and an agent's window in the second after it is followed.
+    - A press counts only when the tap stamped it before the report's stamp. The tap's
+      thread stamps it as it sees the event, and the activation reaches the main actor
+      later through NSWorkspace; no probe has timed the two.
+  - Computer use's `open_application` activates its app with no input of the user's. Its
+    window on a hidden workspace stays concealed, where computer use can neither see nor
+    click it, and Kosmos's request of its intent then fails computer use's front app check.
+    An agent shows the workspace first with `kosmos workspace N`
+    ([integrations.md](integrations.md)).
 - Five races leave Kosmos nothing to tell the cases apart. They are known limits, and the
   TLA+ spec exempts them:
   - Kosmos keys an app again before that app's activation read runs. The read finds
@@ -194,8 +280,9 @@
   the wait runs out, the key record goes before the worker's job, the order the wait is
   for. Each wait logs its length at info level, and a notice when it runs out, so the log
   can size the wait, or show it is needed only while a job of the app is queued.
-  - Inside the front app the key record changes nothing and only AXRaise keys a window, so
-    the worker keys it and the queue posts no key record. The worker ends a stale request,
+  - Inside the front app the key record changes nothing and only AXRaise, or the focus
+    without a raise for a tile a floating window overlaps (below), keys a window, so the
+    worker keys it and the queue posts no key record. The worker ends a stale request,
     and one whose front app already has the target focused; then, just before the raise,
     it records and raises if the request is current and the app is still front. The app
     stays front while it has no key window after its key window closed or minimized, and
@@ -213,8 +300,9 @@
     its focused window, so it never raises over a window the user chose since. Every
     private request for a background app's window gets this raise, whatever made it: a
     focus command, the focus after a switch, a move that follows its window, the next
-    window after a departure, a reassert, or the pointer ([focus-follows-mouse.md](focus-follows-mouse.md)). The window then
-    comes up over the windows it overlaps, other apps' floating windows included. The
+    window after a departure, a reassert, or the pointer ([focus-follows-mouse.md](focus-follows-mouse.md)),
+    unless a floating window overlaps its tile (below). The window then comes up over the
+    windows it overlaps. The
     raise does not check that the request is current: with that check, a hover on the same
     window made the raise stale, the new request found the window key and raised nothing,
     and the window stayed behind its app's other windows (`FocusOnTop` failed
@@ -231,6 +319,35 @@
     app was front and the window it had focused. The log stays until `kosmos-probe keying`
     runs its `record, then AXRaise while front and focused` order, which measures that
     read.
+  - A tile that a shown floating window overlaps is keyed without a raise, so the tile
+    takes the keyboard and the floating window stays on top, as Hyprland keeps floating
+    windows over tiles. Steve decided this on 2026-10-02. For another app no raise follows
+    the key record, which alone keyed another app's window in 20 of 20 trials and put it on
+    top in none ([overview.md, section 2](overview.md#2-what-the-fork-measured)). The main actor
+    decides the overlap as it requests the focus, from frames it has: the tile's from the
+    layout, and each floating window's from a write of Kosmos's still landing, else the
+    inventory's last frame (`Session.floatingOverlaps`). Any overlap counts, so a tile in
+    fullscreen stays under every floating window on its display. The queue logs each tile
+    it keys without a raise. A click on the tile still brings it forward, as macOS
+    does, and a floating window a tile buries comes back with `focus` in a direction
+    ([tree.md](tree.md)) or Mission Control. The public path raises every window still.
+    The spec lets a floating window overlap the window of any request (`FloatOver`): no
+    raise follows its key record, the front app's window is keyed without a raise, and
+    the window's app is exempt from `FocusOnTop` until one of its windows comes to its
+    front, as without the raise `split-user-nopostraise` fails it.
+  - Inside the front app, where AXRaise would bring the tile over the floating window, the
+    worker runs yabai's focus without a raise in its place, its echo recorded just before
+    (`kosmos_make_key_in_place`, AutoRaise.mm:204 under FOCUS_FIRST): an AppKit-defined
+    record (type 0x0d) with 0x8a = 0x02 to the app's key window, as the worker just read
+    it, 10 ms later one with 0x8a = 0x01 to the tile, then the private front and the key
+    record. `kosmos-probe keying 20 in-place` keyed the target in 40 of 40 trials inside
+    the front app, stacked under the key window and beside it, with the stacking order of
+    the stub windows the same before and after each (2026-10-02). The key record alone to
+    a background app kept that order in 40 of 40 trials of the same run. The worker's thread
+    sleeps the 10 ms. The kill switch guards the call, and it is no key record, so it
+    counts toward no wrong window. Ceiling: an app with no key window, as after its key
+    window closed, has nothing to start from, and the worker raises the tile; a probe of
+    the records with no key window would settle it.
   - Only the raise after a key record has its record forgotten, once the raise is done, so
     no late answer can orphan any other call; `forgetRecord` otherwise serves only a call that
     fails.
@@ -290,14 +407,17 @@
     makes it, and no debug log was kept.
 - The private path has a kill switch with two triggers. Once off, it stays off across
   restarts until `kosmos reload-config`, and the status item names the cause.
-  - A crash guard. A byte in a file mapped shared is set during each private call and
-    cleared after it, and a byte found set at launch turns the path off. The two stores
-    cost about 1.4 ns and make no system call. A kill that lands inside the call turns the
-    path off too.
+  - A crash guard. A byte in a file mapped shared is set while any private call runs, on
+    the focus queue or an app's worker, and cleared after the last, and a byte found set at
+    launch turns the path off. The count of calls running sits behind a lock: a guarded
+    call cost about 5.2 ns against 2 ns for the two stores alone (50 million calls each,
+    uncontended, 2026-10-02), with no system call. A kill that lands inside the call turns
+    the path off too.
   - Wrong windows. Only the private key record counts, which keys a background app's
-    window; inside the front app the raise keys it. A request misses when its app reports
-    another of its windows key, and neither an echo of any request nor a report of the
-    requested window arrives first, before Kosmos's next request. A background report that
+    window; inside the front app the raise, or the focus without a raise, keys it. A
+    request misses when its app reports another of its windows key, and neither an echo
+    of any request nor a report of the requested window arrives first, before Kosmos's
+    next request. A background report that
     consumes the echo leaves the count alone. A miss and a retry that misses too count as
     one miss. Five misses in a row turn the path off. On this Mac AXRaise and then the
     private sequence keyed the right window in 60 of 60 AutoRaise trials, 9 of them
@@ -310,7 +430,7 @@
     AutoRaise trials of September 8, 2026).
     A request with no report neither misses nor clears the count, so a record that changes
     nothing, as the record alone did inside the active app, goes uncounted.
-- AXRaise runs on the app's worker, inside the front app, where only it keys a window, and
+- AXRaise runs on the app's worker, inside the front app, where it keys a window, and
   after the key record, which leaves another app's window where it sits in its app's
   stacking order ([overview.md, section 2](overview.md#2-what-the-fork-measured)). yabai and alt-tab raise after the record too. A hung app
   holds only its own worker.

@@ -17,9 +17,10 @@ final class FocusQueue: Sendable {
     /// The private path for a window runs the split model's `FocusStart`, `FocusDecide` and
     /// `WorkerPost` (tla/Kosmos.tla; KosmosCore's KeyRequest). Each side records the echo
     /// through `performing` right before its own call that changes the key window; recording
-    /// at the request failed TLC (docs/focus.md). `emptyWorkspace` is the window `.noWindow` keys.
+    /// at the request failed TLC (docs/focus.md). `underFloating`: a floating window overlaps
+    /// the target's tile. `emptyWorkspace` is the window `.noWindow` keys.
     func request(_ key: KeyWindow, pid: pid_t, worker: AppWorker?, privately: Bool, concealed: Bool,
-                 emptyWorkspace: EmptyWorkspaceWindow.Target?,
+                 underFloating: Bool, emptyWorkspace: EmptyWorkspaceWindow.Target?,
                  performing: @escaping @MainActor (_ stamp: ContinuousClock.Instant, _ path: FocusPath) -> Void,
                  forgetRecord: @escaping @MainActor (ContinuousClock.Instant) -> Void) {
         let generation = current.add(1, ordering: .relaxed).newValue
@@ -33,8 +34,19 @@ final class FocusQueue: Sendable {
                 let keyed: WindowID
                 switch key {
                 case .window(let id):
+                    // Inside the front app yabai's focus without a raise keys a tile a floating window
+                    // overlaps: 40 of 40 with the window order kept (`kosmos-probe keying 20 in-place`,
+                    // docs/focus.md).
+                    var inPlace: (@Sendable (_ keyWindow: WindowID) -> Bool)?
+                    if underFloating {
+                        inPlace = { [killSwitch] keyWindow in
+                            focusLog.info("\(id) keyed without a raise under a floating window that overlaps it")
+                            return killSwitch.guarded { kosmos_make_key_in_place(pid, id, keyWindow) }
+                        }
+                    }
                     let request = KeyRequest(appWasFront: front)
-                    Self.wait(for: worker, id, isCurrent, request, performing: raising, forgetRecord: forgettingRecord)
+                    Self.wait(for: worker, id, isCurrent, request, inPlace: inPlace, performing: raising,
+                              forgetRecord: forgettingRecord)
                     guard request.queueKeys(isCurrent: isCurrent(), appIsFront: kosmos_front_pid() == pid) else { return }
                     keyed = id
                 case .noWindow:
@@ -57,9 +69,13 @@ final class FocusQueue: Sendable {
                 let performed = killSwitch.guarded { kosmos_make_key(pid, keyed) }
                 if performed {
                     // `WorkerPost`: the key record leaves the window where it sits in its app's
-                    // stacking order.
+                    // stacking order, so a tile a floating window overlaps stays under it.
                     if case .window(let id) = key {
-                        worker?.raiseAfterKeyRecord(id, performing: raising, raised: forgettingRecord)
+                        if underFloating {
+                            focusLog.info("\(id) keyed under a floating window that overlaps it")
+                        } else {
+                            worker?.raiseAfterKeyRecord(id, performing: raising, raised: forgettingRecord)
+                        }
                     }
                     return
                 }
@@ -81,13 +97,14 @@ final class FocusQueue: Sendable {
     /// No measurement chose the 30 ms, and the log gives each wait to choose it
     /// (docs/focus.md). A slow app's job finishes on its own.
     private static func wait(for worker: AppWorker?, _ id: WindowID, _ isCurrent: @escaping @Sendable () -> Bool,
-                             _ request: KeyRequest,
+                             _ request: KeyRequest, inPlace: (@Sendable (_ keyWindow: WindowID) -> Bool)?,
                              performing: @escaping @Sendable (ContinuousClock.Instant) -> Void,
                              forgetRecord: @escaping @Sendable (ContinuousClock.Instant) -> Void) {
         guard let worker else { return }
         let start = ContinuousClock.now
         let finished = DispatchSemaphore(value: 0)
-        worker.focusPrivately(id, isCurrent: isCurrent, request: request, performing: performing, forgetRecord: forgetRecord) {
+        worker.focusPrivately(id, isCurrent: isCurrent, request: request, inPlace: inPlace, performing: performing,
+                              forgetRecord: forgetRecord) {
             finished.signal()
         }
         if finished.wait(timeout: .now() + .milliseconds(30)) == .timedOut {
@@ -102,7 +119,8 @@ final class FocusQueue: Sendable {
 enum FocusPath: Sendable {
     /// Activates a background app with the named window. Only these count toward the kill switch.
     case keyRecord
-    /// Inside the front app, where it keys the window: AXRaise, or AppKit for Kosmos's own.
+    /// Inside the front app, where it keys the window: AXRaise, the focus without a raise for a
+    /// tile a floating window overlaps, or AppKit for Kosmos's own.
     case raise
     /// The public activation, which lets the app choose its key window.
     case activation

@@ -24,11 +24,22 @@ import Testing
         #expect(config.bindings.count == 64)
         #expect(config.focusFollowsMouse.enabled)
         #expect(config.focusFollowsMouse.ignoreApps == ["Google Chrome for Testing"])
-        #expect(config.rules.count == 18)
+        #expect(config.rules.count == 21)
         #expect(config.profiles.map(\.name) == ["home", "single", "office", "office-va24e", "laptop"])
         #expect(config.gaps.inner == 10)
         #expect(config.animations)
         #expect(config.borders == BorderSettings(width: 2, active: BorderColor(hex: "#7aa2f7")!, inactive: .clear))
+    }
+
+    @Test func theBitwardenPopOutFloatsAndTheBrowsersOtherWindowsKeepTheirWorkspaces() throws {
+        let rules = try config().rules
+        func rule(_ appID: String, _ appName: String, _ title: String) -> WindowRule? {
+            rules.first { $0.matches(appID: appID, appName: appName, title: title) }
+        }
+        #expect(rule("com.google.Chrome", "Google Chrome", "Bitwarden")?.float == true)
+        #expect(rule("net.imput.helium", "Helium", "Bitwarden")?.float == true)
+        #expect(rule("com.google.Chrome", "Google Chrome", "NetSuite Login - Google Chrome")?.workspace == "4")
+        #expect(rule("net.imput.helium", "Helium", "Bitwarden Vault - Helium")?.workspace == "3")
     }
 
     @Test func home() throws {
@@ -90,7 +101,7 @@ import Testing
         #expect(setup.workspaces == ["1", "2", "3", "4", "5"])
         #expect(setup.mergeWorkspaces == ["6": "1", "7": "2", "8": "3", "9": "4", "0": "5"])
         func workspace(_ appID: String?, _ appName: String) -> String? {
-            setup.rules.first { $0.matches(appID: appID, appName: appName) }?.workspace
+            setup.rules.first { $0.matches(appID: appID, appName: appName, title: nil) }?.workspace
         }
         #expect(workspace("com.spotify.client", "Spotify") == "4")
         #expect(workspace("com.apple.Safari.WebApp.1234", "YouTube") == "4")
