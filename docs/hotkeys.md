@@ -81,9 +81,10 @@
     animation ticks on the main thread, which Kosmos keeps free for switches. It carries no
     text, as it ignores the mouse; the status menu names the holder and the bindings that
     wait.
-  - It shows on the display the model has focused, 10 pt below the top center of the
-    tiling area, clear of a terminal's own badge in its window's corner and of a centered
-    password dialog. Only a Secure Input change and its own 0.5 s wait write to it, and
+  - It shows on the display the model has focused, 10 pt in from the top right corner of
+    the tiling area, where macOS shows notifications, clear of a centered password
+    dialog. A terminal that holds Secure Input from the top right tile has its own badge
+    in the same corner of its window, under Kosmos's. Only a Secure Input change and its own 0.5 s wait write to it, and
     nothing in a switch does, so when the focus moves to another display it stays where
     it is until Secure Input turns off. While Kosmos only observes or waits for
     Accessibility, it registers no hotkeys and shows no badge.
@@ -96,7 +97,7 @@
     not regular, and Kosmos is an accessory app, so the badge is never tiled, bordered
     or tracked. A window at a level other than 0 is no candidate either
     ([inventory.md](inventory.md)).
-  - `Kosmos secure-input-preview [seconds]` shows it at the top center of the main display
+  - `Kosmos secure-input-preview [seconds]` shows it in the top right corner of the main display
     without taking focus or the mouse, and prints its window number for `screencapture -l`.
     An offscreen render leaves out the glow's blur and mask, so a preview is the way to see
     it. Nothing has shown it during a real hold yet ([backlog.md](backlog.md)).

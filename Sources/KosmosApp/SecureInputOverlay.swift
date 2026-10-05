@@ -35,13 +35,9 @@ final class SecureInputOverlay {
         DispatchQueue.main.asyncAfter(deadline: .now() + (due - now).milliseconds / 1000, execute: next)
     }
 
-    /// At the top center of the tiling area, clear of a terminal's own badge in its window's
-    /// corner and of a centered password dialog.
     private func show(on monitor: Monitor) {
         guard !window.isVisible else { return }
-        let area = NSScreen.flipped(monitor.tilingArea)
-        let size = BadgeView.size
-        window.setFrameOrigin(NSPoint(x: (area.midX - size / 2).rounded(), y: area.maxY - BadgeView.inset - size))
+        window.setFrameOrigin(BadgeView.origin(in: NSScreen.flipped(monitor.tilingArea)))
         window.orderFrontRegardless()
         log.notice("secure input badge shown on display \(monitor.id)")
     }
@@ -53,8 +49,14 @@ final class SecureInputOverlay {
 /// animation ticks on the main thread, which Kosmos keeps for switches.
 private final class BadgeView: NSView {
     static let size: CGFloat = 35
-    /// From the tiling area's top edge, as Ghostty's sits from its window's corner.
+    /// From the area's top right corner, as Ghostty's sits from its window's.
     static let inset: CGFloat = 10
+
+    /// In the top right corner of `area`, where macOS shows notifications, clear of a
+    /// centered password dialog.
+    static func origin(in area: NSRect) -> NSPoint {
+        NSPoint(x: area.maxX - inset - size, y: area.maxY - inset - size)
+    }
 
     private let glow = CALayer()
     private let spin = CAGradientLayer()
@@ -152,7 +154,7 @@ private final class BadgeWindow: NSWindow {
 // MARK: Preview
 
 extension SecureInputOverlay {
-    /// Shows the badge for `seconds` at the top center of the main display, without taking
+    /// Shows the badge for `seconds` in the top right corner of the main display, without taking
     /// focus or the mouse, and prints its window number for `screencapture -l`. The glow's blur
     /// and mask need WindowServer, which an offscreen render leaves out.
     static func preview(_ arguments: [String]) -> Int32 {
@@ -164,8 +166,7 @@ extension SecureInputOverlay {
         app.setActivationPolicy(.accessory)
         let window = BadgeWindow()
         let area = NSScreen.main?.visibleFrame ?? .zero
-        window.setFrameOrigin(NSPoint(x: (area.midX - BadgeView.size / 2).rounded(),
-                                      y: area.maxY - BadgeView.inset - BadgeView.size))
+        window.setFrameOrigin(BadgeView.origin(in: area))
         window.orderFrontRegardless()
         print(window.windowNumber)
         fflush(stdout)
