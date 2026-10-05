@@ -171,7 +171,10 @@ final class Controller {
         }
     }
 
-    func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display]) {
+    /// `cause`: why, which ends every peek, as the resync lays out the workspaces again.
+    func apply(_ setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], cause: Peeks.Outcome) {
+        peekGiveWay(nil, cause)
+        peeking.displaysChanging = false
         slides?.endAll("at a reload, a display change, a wake or an unlock")
         rules = setup.rules
         profile = setup.profile
@@ -293,7 +296,7 @@ final class Controller {
         let (show, hide) = (windows.show, windows.hide)
         if resyncs { needsResync = false }
         // Ended first, so their batches go ahead of this plan's (docs/hiding.md).
-        if !peeking.peeks.isEmpty { peeksGiveWay(show: show, hide: hide) }
+        if !peeking.peeks.isEmpty { peeksGiveWay(show: show, hide: hide, resync: resyncs) }
         let taken = session.entering(show: show, hide: hide, frames: plan.frames.keys,
                                      concealed: hiding.isConcealedOrConcealing,
                                      display: { inventory.windows[$0].flatMap { session.display(under: $0.frame) } })

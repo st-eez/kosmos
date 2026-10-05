@@ -27,7 +27,8 @@
     command ends it at once. The socket is close on exec, so the command never holds it
     open.
   - A response's stderr says why a peek did not happen, or ended before the command, and
-    the CLI prints it.
+    the CLI prints it: a lock, a display change not yet applied, or a config reload, for
+    example.
   - The CLI waits up to 30 s for the first answer, as a peek waits behind others of up to
     10 s each. Should Kosmos not answer, the command runs without a peek and the CLI says
     so; with Kosmos not running it says nothing, as nothing is concealed.

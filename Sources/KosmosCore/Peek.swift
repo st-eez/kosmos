@@ -54,7 +54,8 @@ public struct Peeks: Sendable {
         case running
     }
 
-    public enum Outcome: Equatable, Sendable {
+    /// Why a peek ended, as its log line and the CLI name it.
+    public enum Outcome: Equatable, Sendable, CustomStringConvertible {
         /// The CLI reported the command's end.
         case finished
         /// The CLI closed the connection first.
@@ -70,14 +71,49 @@ public struct Peeks: Sendable {
         case notRevealed
         /// A switch showed its workspace.
         case shown
-        /// A resync after a failed batch concealed it again.
+        /// The resync after a failed batch concealed it again.
         case resynced
-        /// It closed, or left the screen as a deselected tab.
+        /// Another plan concealed it again.
+        case concealedAgain
+        /// It closed.
         case closed
+        /// It left the screen as a deselected tab, and the tab selected takes its frame back.
+        case replaced
         case locked
         case screensSlept
         case displaysChanged
+        /// A display change waits for its apply, after which the displays are known.
+        case displaysChanging
+        /// The resyncs that lay the workspaces out again.
+        case reloaded, profileApplied, woke
         case quit
+
+        public var description: String {
+            switch self {
+            case .finished: "the command ended"
+            case .clientGone: "the CLI closed its connection first"
+            case .timedOut: "the command ran past \(Peeks.timeout)"
+            case .notConcealed: "Kosmos does not conceal the window"
+            case .noEdge: "another display lies past each side of the window's display"
+            case .refused(let frame?):
+                "the window took \(Int(frame.minX)), \(Int(frame.minY)) in place of its frame past the display's edge"
+            case .refused(nil): "no row showed the window past the display's edge within \(Peeks.moveBound)"
+            case .notRevealed: "the window did not leave the holding Space"
+            case .shown: "a switch showed its workspace"
+            case .resynced: "the resync after a failed batch concealed it again"
+            case .concealedAgain: "a plan concealed it again"
+            case .closed: "the window closed"
+            case .replaced: "the window left the screen as a deselected tab"
+            case .locked: "the session locked"
+            case .screensSlept: "the displays slept"
+            case .displaysChanged: "the displays changed"
+            case .displaysChanging: "the displays are changing"
+            case .reloaded: "the config reloaded"
+            case .profileApplied: "a display profile was applied"
+            case .woke: "the session unlocked or the displays woke"
+            case .quit: "Kosmos quit"
+            }
+        }
     }
 
     public struct Peek: Equatable, Sendable {
@@ -213,13 +249,104 @@ public struct Peeks: Sendable {
         return peek
     }
 
-    /// A window that closed left every Space, so it is neither concealed nor moved again.
+    /// A window that closed or was deselected as a tab left every Space, so it is not concealed
+    /// again. The tab selected in a deselected tab's place has its frame, so it gets the rest.
     private func end(_ peek: Peek, _ outcome: Outcome) -> Action {
         if outcome == .closed { return .end(peek, outcome, conceal: false, rest: nil) }
+        if outcome == .replaced { return .end(peek, outcome, conceal: false, rest: peek.phase == .waiting ? nil : peek.rest) }
         return switch peek.phase {
         case .waiting: .end(peek, outcome, conceal: false, rest: nil)
         case .moving: .end(peek, outcome, conceal: false, rest: peek.rest)
         case .revealing, .settling, .running: .end(peek, outcome, conceal: true, rest: peek.rest)
         }
+    }
+}
+
+extension Peeks {
+    /// What the controller reads when a peek's turn comes.
+    public struct Facts: Sendable {
+        public var locked = false
+        /// A display change not yet applied: a display the session has may be gone, and a new
+        /// one may lie past an edge.
+        public var displaysChanging = false
+        /// Kosmos conceals it on a hidden workspace, no batch not done reveals it, it is not
+        /// parked, and its app answers.
+        public var concealed = false
+        /// Where Kosmos's newest write puts it, else where its row has it.
+        public var frame: CGRect?
+        /// When a write of Kosmos's already sent to it counts as landed, while no row has shown
+        /// it.
+        public var landingUntil: ContinuousClock.Instant?
+        /// The frame of its workspace's display, and those of the other displays.
+        public var display = CGRect.null
+        public var others: [CGRect] = []
+
+        public init(locked: Bool = false, displaysChanging: Bool = false, concealed: Bool = false, frame: CGRect? = nil,
+                    landingUntil: ContinuousClock.Instant? = nil, display: CGRect = .null, others: [CGRect] = []) {
+            (self.locked, self.displaysChanging, self.concealed, self.frame) = (locked, displaysChanging, concealed, frame)
+            (self.landingUntil, self.display, self.others) = (landingUntil, display, others)
+        }
+    }
+
+    /// A display change not yet applied refuses the peek, and the command runs without it: an
+    /// edge chosen from the old displays could lie on one that arrived, which would show the
+    /// window whole. A write of Kosmos's still landing holds it: until a row shows that write,
+    /// a row at the edge could be one from before it, as after a peek of the window just before.
+    /// A peek's end still under way holds nothing, as the next edge write joins its write back,
+    /// which waits for the end's batch.
+    public static func prepare(_ facts: Facts) -> Preparation {
+        if facts.locked { return .none(.locked) }
+        if facts.displaysChanging { return .none(.displaysChanging) }
+        guard facts.concealed, let rest = facts.frame else { return .none(.notConcealed) }
+        if let until = facts.landingUntil { return .later(until: until) }
+        guard let found = PeekEdge.frame(rest.size, on: facts.display, besides: facts.others) else { return .none(.noEdge) }
+        return .ready(rest: rest, edge: found.frame)
+    }
+}
+
+/// The frames peeked windows go back to, kept until they are written (docs/hiding.md).
+public struct PeekFrames: Sendable {
+    /// Targets Kosmos wrote for the window of the peek under way, which would show it there.
+    private var later: [WindowID: CGRect] = [:]
+    /// Write backs not yet sent to their apps: held behind the end's batch, or by a lock.
+    public private(set) var owed: [WindowID: CGRect] = [:]
+
+    public init() {}
+
+    /// `targets` less `peeked`'s, whose newest target waits for its peek's end.
+    public mutating func holding(_ targets: [WindowID: CGRect], peeked: WindowID?) -> [WindowID: CGRect] {
+        guard let peeked, let target = targets[peeked] else { return targets }
+        later[peeked] = target
+        var others = targets
+        others[peeked] = nil
+        return others
+    }
+
+    /// The frame a peek's end writes back, owed until `sent`: the newest target held while
+    /// the peek was under way, else `rest`. Nil, owing nothing, without a rest.
+    public mutating func ended(_ window: WindowID, rest: CGRect?) -> CGRect? {
+        let held = later.removeValue(forKey: window)
+        guard let rest else { return nil }
+        owed[window] = held ?? rest
+        return held ?? rest
+    }
+
+    /// The write back went to its app.
+    public mutating func sent(_ window: WindowID) {
+        owed[window] = nil
+    }
+
+    /// A deselected tab's write back goes to the tab selected in its place.
+    public mutating func replaced(_ old: WindowID, by new: WindowID) -> CGRect? {
+        guard let frame = owed.removeValue(forKey: old) else { return nil }
+        owed[new] = frame
+        return frame
+    }
+
+    /// Every write back not sent, as one a lock dropped, whatever ended its peek. The displays'
+    /// apply at the unlock writes them.
+    public mutating func takeOwed() -> [WindowID: CGRect] {
+        defer { owed = [:] }
+        return owed
     }
 }

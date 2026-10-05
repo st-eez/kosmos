@@ -490,7 +490,12 @@
   in `Peeks` (KosmosCore) and `Controller+Peek.swift`:
   - waits behind any other peek, and while a frame write of Kosmos's to the window is still
     landing, as the write back of a peek of it just before: until a row shows that write, a
-    row at the edge could be one from before it;
+    row at the edge could be one from before it (`Peeks.prepare`);
+  - is refused, and the command runs without it, while a display change waits for its apply,
+    0.5 s after the change at most: an edge chosen from the displays the session still has
+    could lie on a display that arrived, which would show the window whole there. Waiting
+    for the apply would hold the command up to half a second for a peek a lock or sleep may
+    end anyway, and the CLI says why, so an agent can try again;
   - writes a frame past its display's right edge, else its left, with one column of points
     on the display, its top 40 points down and no part on another display (`PeekEdge`),
     while the window is still concealed, and waits for a row to show it there, 1 s at most.
@@ -509,22 +514,34 @@
     the peek gave it an ordinary Space, in a batch of its own sent ahead of the batches
     waiting (`BatchOrder.addSent`), then writes its frame back, which waits for that batch.
     A target Kosmos wrote for the window meanwhile, as at a relayout of its workspace, would
-    show it there, so it waits for the end and replaces the frame written back.
+    show it there, so it waits for the end and replaces the frame written back
+    (`PeekFrames`).
 - A peek ends at once in the way its step can be undone. Before the window leaves the
   holding Space only its frame goes back; after, it goes back into the holding Space, then
   its frame. It ends when:
   - a plan shows its workspace. The end's batch goes ahead of the switch's, the frame
     written back waits for it, and the switch waits for that write to land, as for any
     window it reveals with a write on its way, so the window shows at its tile;
-  - a resync after a failed batch conceals it again;
-  - it closes, or leaves the screen as a deselected tab, which leaves it as it is, since
-    either left every Space;
+  - the displays are applied again, which lays the workspaces out again: at a config reload,
+    a profile command, the unlock or a wake, and a display change's apply. The resync after
+    a failed batch conceals it again too. The log line and the CLI name which;
+  - it closes, which leaves it as it is, since it left every Space;
+  - it leaves the screen as a deselected tab, which leaves every Space too. The tab selected
+    in its place takes its frame, the edge's, and the plan that replaces it conceals it, so
+    that tab gets the frame written back once that plan's batch is done. Written to nothing,
+    a floating tab group would show at the edge when its workspace shows, as a switch writes
+    only tiles;
   - the session locks, the displays sleep, the screen parameters change or Kosmos quits.
     At a lock the batch still goes, as after the lock during the probe's run of 2026-10-05
-    the next switch failed (above), and the write back waits for the unlock;
+    the next switch failed (above);
   - the CLI closes its connection, or the command runs past 10 s, about 20 times
     CuaDriver's `get_window_state` (458 ms). A slower command's captures after that fail,
     and the CLI says the peek ended early.
+- A write back is owed until it goes to its app (`PeekFrames`). A lock drops writes, so one
+  a lock catches, at the end or when the end's batch is done after a peek that ended for
+  another reason, is written when the displays are applied at the unlock. Dropped, it would
+  leave the window at its edge frame: a switch writes only tiles, so a floating window would
+  show there, and the next peek of it would take the edge for its rest frame.
 - A peek keys, raises and focuses nothing, and moves neither the pointer nor a workspace.
   One line at notice level logs each: the window, its app, the edge, how it ended, the
   command's exit status and how long each step took, as

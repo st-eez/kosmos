@@ -169,8 +169,9 @@ its id, and CuaDriver's `list_windows` its pid. Each check reads
   after the peek with `capture_id` and `debug_image_out`, then wrapped in `kosmos peek`,
   where the point lies past the display's edge, and record which lands. If neither does,
   agents click hidden windows by `element_token`, which Cua says works on hidden windows.
-- A lock during `kosmos peek <id> -- sleep 5`: the log line says "the session locked", and
-  after the unlock the next switch confirms with no recovery.
+- A lock during `kosmos peek <id> -- sleep 5`, with the window floating: the log line says
+  "the session locked", after the unlock the next switch confirms with no recovery, and the
+  window shows at its own frame when its workspace shows, not at the edge.
 
 ## Check Kosmos fullscreen live
 

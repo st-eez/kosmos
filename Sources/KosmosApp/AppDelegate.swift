@@ -196,11 +196,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyProfile(_ name: String) -> Response {
         guard config.profiles.contains(where: { $0.name == name }) else { return failure("no profile named '\(name)'") }
         forcedProfile = name
-        applyDisplays()
+        applyDisplays(.profileApplied)
         return Response()
     }
 
-    private func applyDisplays() {
+    /// `cause` ends every peek (Controller.apply).
+    private func applyDisplays(_ cause: Peeks.Outcome) {
         guard let controller else { return }
         let displays = ConfigFile.displays()
         guard !displays.isEmpty else { return log.notice("no displays listed; the ones read before stay") }
@@ -211,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             displayIDs = ids
         }
         let setup = config.setup(for: displays, profile: forcedProfile, keeping: controller.profile)
-        controller.apply(setup, barDisplays: ConfigFile.barDisplays(displays))
+        controller.apply(setup, barDisplays: ConfigFile.barDisplays(displays), cause: cause)
     }
 
     /// While the session is locked or the displays sleep, the resync after the unlock or wake
@@ -224,8 +225,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A gone display's link stops firing, so its slides would hold their windows displaced
         // until the change applies (docs/geometry.md).
         controller?.slides?.endAll("at a display change")
-        // A frame past an edge can lie on a display that arrives (docs/hiding.md).
+        // A frame past an edge can lie on a display that arrives, so peeks end and wait for the
+        // apply (docs/hiding.md).
         controller?.peekGiveWay(nil, .displaysChanged)
+        controller?.peeking.displaysChanging = true
         displayChange?.cancel()
         let apply = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
@@ -233,7 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.displayChange = nil
                 guard !self.inventory.sessionLocked, !self.screensAsleep, let before = self.controller?.session.monitors
                 else { return }
-                self.applyDisplays()
+                self.applyDisplays(.displaysChanged)
                 guard let after = self.controller?.session.monitors else { return }
                 log.notice("display change applied: \(Self.changed(from: before, to: after), privacy: .public) changed")
             }
@@ -268,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         forcedProfile = nil
         // At launch the Controller starts with this setup, and a resync would key the empty
         // workspace window for a session the inventory has not filled yet.
-        if !atLaunch { applyDisplays() }
+        if !atLaunch { applyDisplays(.reloaded) }
         controller.mouseFollowsFocus = config.mouseFollowsFocus
         controller.focusFollowsMouse = config.focusFollowsMouse
         controller.mouseModifier = config.mouseModifier
@@ -329,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         inventory.sweep()
-        applyDisplays()
+        applyDisplays(.woke)
     }
 
     private func showSetup(_ state: Onboarding.State, takingKey: Bool) {

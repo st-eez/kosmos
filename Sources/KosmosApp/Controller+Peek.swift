@@ -11,13 +11,11 @@ struct PeekBook {
     var records: [Int: PeekRecord] = [:]
     /// Why Kosmos ended a peek before its CLI reported the command's end.
     var endedEarly: [Int: Peeks.Outcome] = [:]
-    /// Writes back that a lock held, sent at the unlock.
-    var owed: [WindowID: CGRect] = [:]
+    var frames = PeekFrames()
     /// When `next` runs again for a peek waiting for a write to land.
     var retryAt: ContinuousClock.Instant?
-    /// A target written for the peek's window while it was under way, which its end writes in
-    /// place of the frame it had.
-    var later: [WindowID: CGRect] = [:]
+    /// A display change not yet applied, which refuses peeks (Peeks.prepare).
+    var displaysChanging = false
 }
 
 /// When each step of a peek came, for its log line.
@@ -57,15 +55,26 @@ extension Controller {
         stepPeeks { $0.giveWay(window, outcome) }
     }
 
-    /// Before a plan's batches, which a peek's end goes ahead of (docs/hiding.md).
-    func peeksGiveWay(show: [WindowID], hide: [WindowID]) {
+    /// Before a plan's batches, which a peek's end goes ahead of (docs/hiding.md). `resync`:
+    /// the plan is the resync after a failed batch.
+    func peeksGiveWay(show: [WindowID], hide: [WindowID], resync: Bool) {
         for window in peeking.peeks.windows {
             if show.contains(window) {
                 peekGiveWay(window, .shown)
             } else if hide.contains(window) {
-                peekGiveWay(window, .resynced)
+                peekGiveWay(window, resync ? .resynced : .concealedAgain)
             }
         }
+    }
+
+    /// A deselected tab's peek ends, and the tab selected in its place, which has its frame,
+    /// takes the write back once `concealed`, the plan that conceals it, has gone.
+    func peekTabReplaced(_ old: WindowID, by new: WindowID, concealed: () -> Void) {
+        peekGiveWay(old, .replaced)
+        concealed()
+        guard let frame = peeking.frames.replaced(old, by: new) else { return }
+        writeFrames([new: frame])
+        if !sessionLocked { peeking.frames.sent(new) }
     }
 
     /// A row of the window, from its change event or the one last read, after the ledger saw
@@ -91,43 +100,38 @@ extension Controller {
 
     /// The targets less the window of the peek under way, whose target waits for its end.
     func holdingPeeked(_ targets: [WindowID: CGRect]) -> [WindowID: CGRect] {
-        guard let peek = peeking.peeks.active, let target = targets[peek.window] else { return targets }
-        peeking.later[peek.window] = target
-        var others = targets
-        others[peek.window] = nil
-        return others
+        guard let peeked = peeking.peeks.active?.window, targets[peeked] != nil else { return targets }
+        return peeking.frames.holding(targets, peeked: peeked)
     }
 
-    /// At the unlock, before the resync's plan.
+    /// When the displays are applied, as at the unlock, before the resync's plan: the write
+    /// backs a lock dropped (PeekFrames.takeOwed).
     func writeOwedPeekFrames() {
-        guard !peeking.owed.isEmpty else { return }
-        let owed = peeking.owed.filter { hiding.isConcealed($0.key) }
-        peeking.owed = [:]
-        writeFrames(owed)
+        guard !peeking.frames.owed.isEmpty else { return }
+        writeFrames(peeking.frames.takeOwed().filter { hiding.isConcealed($0.key) })
     }
 
-    /// A peek's end still under way is no obstacle: the next peek's edge write joins its write
-    /// back, which waits for it, and its Space change queues behind it. A write already sent
-    /// is: until a row shows it, a row at the edge could be one from before it.
     private func preparePeek(_ window: WindowID) -> Peeks.Preparation {
-        if sessionLocked { return .none(.locked) }
-        guard managing, hiding.canConceal, hiding.isConcealed(window), !order.reveals(window),
-              let name = session.workspace(of: window), !session.isShown(name), !session.isParked(window),
-              owner[window].flatMap(inventory.worker)?.answers == true, let rest = knownFrame(window)
-        else { return .none(.notConcealed) }
+        let name = session.workspace(of: window)
+        let concealed = managing && hiding.canConceal && hiding.isConcealed(window) && !order.reveals(window)
+            && name.map { !session.isShown($0) } == true && !session.isParked(window)
+            && owner[window].flatMap(inventory.worker)?.answers == true
+        let monitor = name.map { session.monitor(of: $0) }
         let now = ContinuousClock.now
-        if ledger.isLanding(window, at: now), let until = ledger.landingEnds(window) { return .later(until: until) }
-        let monitor = session.monitor(of: name)
-        let others = session.monitors.filter { $0.id != monitor.id }.map(\.frame)
-        guard let found = PeekEdge.frame(rest.size, on: monitor.frame, besides: others) else { return .none(.noEdge) }
-        return .ready(rest: rest, edge: found.frame)
+        return Peeks.prepare(Peeks.Facts(
+            locked: sessionLocked, displaysChanging: peeking.displaysChanging, concealed: concealed, frame: knownFrame(window),
+            landingUntil: ledger.isLanding(window, at: now) ? ledger.landingEnds(window) : nil, display: monitor?.frame ?? .null,
+            others: session.monitors.filter { $0.id != monitor?.id }.map(\.frame)))
     }
 
     /// The step's actions run before the next peek is prepared, which reads the frame an end
-    /// writes back. `preparePeek` reads the model only, as `peeking` is in use while it runs.
+    /// writes back. `preparePeek` reads only what `next` leaves alone.
     private func stepPeeks(_ step: (inout Peeks) -> [Peeks.Action]) {
         perform(step(&peeking.peeks))
-        perform(peeking.peeks.next { self.preparePeek($0) })
+        var peeks = peeking.peeks
+        let actions = peeks.next { preparePeek($0) }
+        peeking.peeks = peeks
+        perform(actions)
     }
 
     private func perform(_ actions: [Peeks.Action]) {
@@ -169,21 +173,24 @@ extension Controller {
     /// The window goes back into the holding Space in a batch of its own, sent ahead of the
     /// batches waiting, and its write back waits for that batch, as does a switch that shows it
     /// (BatchOrder.addSent). While locked the batch still goes, as a lock or display change with
-    /// the window out made the next batch fail on 2026-10-05, and the write waits for the unlock.
+    /// the window out made the next batch fail on 2026-10-05. A write back that a lock drops,
+    /// here or when the batch is done, stays owed until the unlock (PeekFrames).
     private func endPeek(_ peek: Peeks.Peek, _ outcome: Peeks.Outcome, conceal: Bool, rest: CGRect?) {
         if let waiting = peeking.waiting.removeValue(forKey: peek.number) {
             // The command runs without the peek.
             let quiet = outcome == .notConcealed || outcome == .shown
-            waiting.resume(returning: quiet ? Response() : Response(stderr: "kosmos: no peek: \(Self.describe(outcome))"))
+            waiting.resume(returning: quiet ? Response() : Response(stderr: "kosmos: no peek: \(outcome)"))
         } else if outcome != .finished && outcome != .clientGone {
             peeking.endedEarly[peek.number] = outcome
         }
         let ended = ContinuousClock.now
+        let back = peeking.frames.ended(peek.window, rest: rest)
         if conceal {
             let batch = order.addSent(hide: [peek.window])
             hiding.apply(show: [], on: [:], hide: [peek.window], stripping: []) { [weak self] result, _ in
                 guard let self else { return }
                 sendWrites(order.done(batch.number))
+                if !sessionLocked { peeking.frames.sent(peek.window) }
                 sendReadyBatches()
                 if case .failed = result {
                     controllerLog.error("the conceal after a peek of \(peek.window) failed; recovery ran")
@@ -192,9 +199,10 @@ extension Controller {
                 logPeek(peek, outcome, ended: ended, concealed: result)
             }
         }
-        let later = peeking.later.removeValue(forKey: peek.window)
-        if let rest = rest.map({ later ?? $0 }) {
-            if sessionLocked { peeking.owed[peek.window] = rest } else { writeFrames([peek.window: rest]) }
+        // A deselected tab's goes to the tab selected in its place (peekTabReplaced).
+        if let back, outcome != .replaced {
+            writeFrames([peek.window: back])
+            if !conceal && !sessionLocked { peeking.frames.sent(peek.window) }
         }
         if !conceal { logPeek(peek, outcome, ended: ended, concealed: nil) }
     }
@@ -204,7 +212,7 @@ extension Controller {
         if let args, args.count == 2, args[0] == "ended" { peeking.records[number]?.status = args[1] }
         stepPeeks { $0.ended(number, args == nil ? .clientGone : .finished) }
         guard let early = peeking.endedEarly.removeValue(forKey: number) else { return Response() }
-        return Response(stderr: "kosmos: the peek ended before the command did: \(Self.describe(early))")
+        return Response(stderr: "kosmos: the peek ended before the command did: \(early)")
     }
 
     private func logPeek(_ peek: Peeks.Peek, _ outcome: Peeks.Outcome, ended: ContinuousClock.Instant, concealed: Hiding.Outcome?) {
@@ -225,30 +233,10 @@ extension Controller {
         }
         controllerLog.notice("""
             peek of \(peek.window) (\(self.appName(peek.window) ?? "?", privacy: .public))\
-            \(record.place.isEmpty ? "" : " " + record.place, privacy: .public): \(Self.describe(outcome), privacy: .public)\
+            \(record.place.isEmpty ? "" : " " + record.place, privacy: .public): \(outcome.description, privacy: .public)\
             \(record.status.map { ", exit \($0)" } ?? "", privacy: .public); \
             \(String(format: "%.3f", (ended - record.asked).milliseconds), privacy: .public) ms in all: \
             \(steps.joined(separator: ", "), privacy: .public)\(back, privacy: .public)
             """)
-    }
-
-    static func describe(_ outcome: Peeks.Outcome) -> String {
-        switch outcome {
-        case .finished: "the command ended"
-        case .clientGone: "the CLI closed its connection first"
-        case .timedOut: "the command ran past \(Peeks.timeout)"
-        case .notConcealed: "Kosmos does not conceal the window"
-        case .noEdge: "another display lies past each side of the window's display"
-        case .refused(let frame?): "the window took \(Int(frame.minX)), \(Int(frame.minY)) in place of its frame past the display's edge"
-        case .refused(nil): "no row showed the window past the display's edge within \(Peeks.moveBound)"
-        case .notRevealed: "the window did not leave the holding Space"
-        case .shown: "a switch showed its workspace"
-        case .resynced: "a resync concealed it again"
-        case .closed: "the window closed"
-        case .locked: "the session locked"
-        case .screensSlept: "the displays slept"
-        case .displaysChanged: "the displays changed"
-        case .quit: "Kosmos quit"
-        }
     }
 }

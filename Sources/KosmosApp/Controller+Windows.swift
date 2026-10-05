@@ -233,11 +233,12 @@ extension Controller {
         tabs.replaced(old, with: new)
         // A deselected tab leaves every Space, and the tab selected lands on its ordinary
         // Space whatever was concealed (kosmos-probe tabs); the plan conceals it afresh.
-        peekGiveWay(old, .closed)
-        hiding.forget([old, new])
-        ledger.forget(new)
-        intake.tabReplaced(old, with: new, concealing: plan.hide.contains(new))
-        execute(plan)
+        peekTabReplaced(old, by: new) {
+            hiding.forget([old, new])
+            ledger.forget(new)
+            intake.tabReplaced(old, with: new, concealing: plan.hide.contains(new))
+            execute(plan)
+        }
         // macOS can report the new tab key before it has a place: the user's or the app's
         // choice, whose key window before it, the deselected tab, did not depart (docs/tree.md).
         windowPlaced(new)

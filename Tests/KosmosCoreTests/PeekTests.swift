@@ -140,7 +140,8 @@ private func running() -> (Peeks, Int) {
     #expect(peeks.isEmpty)
 }
 
-@Test(arguments: [Peeks.Outcome.shown, .resynced, .locked, .screensSlept, .displaysChanged, .quit, .clientGone])
+@Test(arguments: [Peeks.Outcome.shown, .resynced, .concealedAgain, .locked, .screensSlept, .displaysChanged, .reloaded,
+                  .profileApplied, .woke, .quit, .clientGone])
 func eachPhaseEndsAsItCanBeUndone(outcome: Peeks.Outcome) {
     // Waiting: nothing to undo.
     var (peeks, first) = running()
@@ -198,4 +199,93 @@ func eachPhaseEndsAsItCanBeUndone(outcome: Peeks.Outcome) {
     #expect(peeks.settled(number).isEmpty)
     #expect(peeks.landed(number, frame: edge).isEmpty)
     #expect(peeks.moveEnded(number).isEmpty)
+}
+
+// MARK: Preparing a peek
+
+private let facts = Peeks.Facts(concealed: true, frame: rest, display: main)
+
+@Test func aConcealedWindowWithNoWriteLandingIsReady() {
+    #expect(Peeks.prepare(facts) == .ready(rest: rest, edge: edge))
+    var shown = facts
+    shown.concealed = false
+    #expect(Peeks.prepare(shown) == .none(.notConcealed))
+    var boxedIn = facts
+    boxedIn.others = [rightOfMain, leftOfMain]
+    #expect(Peeks.prepare(boxedIn) == .none(.noEdge))
+    var locked = facts
+    locked.locked = true
+    #expect(Peeks.prepare(locked) == .none(.locked))
+}
+
+@Test func aPeekWaitsForAWriteOfKosmossStillLanding() {
+    // As the write back of a peek of the window just before: a row at the edge could predate it.
+    var landing = facts
+    let until = ContinuousClock.now + .milliseconds(800)
+    landing.landingUntil = until
+    #expect(Peeks.prepare(landing) == .later(until: until))
+}
+
+@Test func aDisplayChangeNotYetAppliedRefusesThePeek() {
+    // An edge from the old displays could lie on one that arrived.
+    var changing = facts
+    changing.displaysChanging = true
+    #expect(Peeks.prepare(changing) == .none(.displaysChanging))
+}
+
+// MARK: Frames written back
+
+@Test func aRelayoutTargetForThePeekedWindowWaitsAndIsWrittenBackInPlaceOfItsRest() {
+    var frames = PeekFrames()
+    let tile = CGRect(x: 10, y: 35, width: 945, height: 1035)
+    let other = CGRect(x: 965, y: 35, width: 945, height: 1035)
+    #expect(frames.holding([7: tile, 8: other], peeked: 7) == [8: other])
+    #expect(frames.holding([7: tile, 8: other], peeked: nil) == [7: tile, 8: other])
+    #expect(frames.ended(7, rest: rest) == tile)
+    // Held once only.
+    #expect(frames.ended(7, rest: rest) == rest)
+}
+
+@Test(arguments: [Peeks.Outcome.screensSlept, .displaysChanged, .finished, .timedOut, .locked])
+func aWriteBackALockDropsIsOwedUntilTheUnlockWhateverEndedThePeek(outcome: Peeks.Outcome) {
+    var (peeks, number) = running()
+    guard case .end(_, outcome, true, let back?)? = only(peeks.ended(number, outcome)) else { Issue.record("no write back"); return }
+    var frames = PeekFrames()
+    #expect(frames.ended(7, rest: back) == rest)
+    // A lock before the end's batch is done drops the write, so nothing is sent.
+    #expect(frames.takeOwed() == [7: rest])
+    #expect(frames.takeOwed().isEmpty)
+    // Sent with no lock, it is owed no longer.
+    _ = frames.ended(7, rest: back)
+    frames.sent(7)
+    #expect(frames.owed.isEmpty)
+}
+
+@Test func aClosedWindowOwesNothing() {
+    var frames = PeekFrames()
+    _ = frames.holding([7: rest], peeked: 7)
+    #expect(frames.ended(7, rest: nil) == nil)
+    #expect(frames.owed.isEmpty)
+    #expect(frames.ended(7, rest: edge) == edge)
+}
+
+@Test func theTabSelectedInADeselectedTabsPlaceTakesItsRest() {
+    var (peeks, _) = running()
+    guard case .end(_, .replaced, false, rest?)? = only(peeks.giveWay(7, .replaced)) else { Issue.record("no rest"); return }
+    var frames = PeekFrames()
+    _ = frames.ended(7, rest: rest)
+    #expect(frames.replaced(7, by: 9) == rest)
+    #expect(frames.owed == [9: rest])
+    #expect(frames.replaced(7, by: 9) == nil)
+    // A waiting peek's window was never moved.
+    var waiting = Peeks()
+    _ = waiting.request(7)
+    guard case .end(_, .replaced, false, nil)? = only(waiting.giveWay(7, .replaced)) else { Issue.record("moved"); return }
+}
+
+@Test func eachResyncNamesItsOwnCause() {
+    let causes: [Peeks.Outcome] = [.resynced, .concealedAgain, .reloaded, .profileApplied, .woke, .displaysChanged]
+    #expect(Set(causes.map(\.description)).count == causes.count)
+    #expect(Peeks.Outcome.resynced.description.contains("failed batch"))
+    #expect(!Peeks.Outcome.reloaded.description.contains("failed batch"))
 }
