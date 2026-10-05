@@ -60,10 +60,11 @@ prefix.
   `KosmosCore/Tabs.swift`, `KosmosCore/SavedLayout.swift`, `KosmosApp/LayoutFile.swift`,
   `KosmosApp/Controller+Windows.swift`, `kosmos-probe/Tree.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
-  shows Secure Input and its holder.
+  shows Secure Input and its holder, in the status item and a badge.
   Code: `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,
   `KosmosCore/Config/KeyCombo.swift`, `KosmosCore/Config/KeyboardLayout.swift`,
-  `KosmosApp/AppDelegate.swift`, `kosmos-probe/SecureInput.swift`.
+  `KosmosApp/AppDelegate.swift`, `KosmosApp/SecureInputOverlay.swift`,
+  `KosmosCore/SecureInputHold.swift`, `kosmos-probe/SecureInput.swift`.
 - [ipc.md](ipc.md): the socket, the CLI and the snapshots pushed to SketchyBar.
   Code: `KosmosIPC/`, `kosmos/main.swift`, `KosmosCore/Query.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,

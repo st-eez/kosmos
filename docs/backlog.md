@@ -36,16 +36,23 @@ own key or click ([focus.md](focus.md)). Run
 `log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` and bring up an app whose
 windows sit on a hidden workspace each of these ways. Each passes when the log says
 `following window(N) of <app>: <input> N ms before` and the display switches:
-- Command-Tab (`a key to Dock`), a Dock click (`a click on Dock`), Raycast's panel (`a key
-  to Raycast`), Spotlight, a Finder double-click, and a link clicked in another app.
-- A Raycast app hotkey, as Opt-Shift-S for Spotify: `a key the input tap never saw`. If the
-  log says `came with no key or click of the user's` instead, HID does not count a key a
-  hotkey takes, and focus.md's unmeasured case needs another source for hotkeys.
+- A Dock click (`a click on Dock`), Raycast's panel (`a key to Raycast`), Spotlight, a
+  Finder double-click, and a link clicked in another app.
 - Chrome launched from Raycast, whose first window comes seconds later: `before its launch`.
-- Then run `sleep 5; open -a <app>` in a terminal for an app on a hidden workspace, and keep
-  typing in another app. It passes when the log says `came with no key or click of the
-  user's`, the display stays, and the keys keep going to the app typed in. An agent's
-  Chrome for Testing launch should do the same.
+- An agent's Chrome for Testing launch on a hidden workspace, while Steve types in another
+  app. It passes when the log says `came with no key or click of the user's`, the display
+  stays, and the keys keep going to the app typed in.
+
+Passed so far:
+- Command-Tab: `following window(72287) of Ghostty: a key to Dock 9 ms before it` and five
+  more like it on 2026-10-05.
+- A hotkey of another app, as Raycast's for Spotify: `following window(50323) of Spotify: a
+  key the input tap never saw (a hotkey, or Secure Input) 13 ms before it` on 2026-10-05, so
+  HID leaves out a key a hotkey takes, as focus.md expects.
+- Cmd-H on an app, then Command-Tab back to it: followed (Steve, 2026-10-02).
+- `sleep 5; open -a "Microsoft Outlook"` with Outlook on hidden workspace 5: `window(50335)
+  of Microsoft Outlook came with no key or click of the user's: its workspace stays hidden
+  and the focus goes back` at 16:02:28 on 2026-10-02, and the keys went back to Ghostty.
 
 ## Follow a Teams meeting window accepted from a call notification
 
@@ -86,8 +93,8 @@ turn no longer pulls focus to them ([integrations.md](integrations.md)). Branch
 `agentfocus` stops its `open_application` from switching to a hidden workspace, which
 leaves computer use unable to drive an app there until the agent runs
 `kosmos workspace N`. What is left is computer use's own design, the focus item above, and
-Steve's choice among these. Once the branches are installed, check them live: after a
-computer use turn that clicks, the log should say `pointer movement posted by pid N
+Steve's choice among these. Both branches are installed since 3cce7a2 (2026-10-02), and
+nothing has checked them live yet: after a computer use turn that clicks, the log should say `pointer movement posted by pid N
 (claude) focuses nothing` with no `pointer focuses` line at the click, and the `unhid`
 lines at the turn's end should have no `focus of` line for the unhidden apps' windows
 after them.
@@ -171,6 +178,24 @@ Steve's windows on 2026-10-02, so none of his apps' own has been seen.
   dialog, Chromium disables the zoom button during the drag, and Chromium's windows need
   their button read again once the drag ends.
 - Open System Settings. It should float by rule.
+- Calculator floated as it opened (Steve, 2026-10-02).
+
+## Check the Secure Input badge live
+
+Kosmos shows a lock badge of its own once a Secure Input hold lasts 0.5 s
+([hotkeys.md](hotkeys.md)). Unit tests cover when it shows, and `Kosmos
+secure-input-preview` showed the badge on 2026-10-05, but no real hold has. Run
+`log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` during each check.
+- Run `sudo -k; sudo -v` in Ghostty and leave the password prompt open. It passes when, about
+  half a second later, the badge shows 10 pt below the top center of the focused display's
+  tiling area with its glow turning, the keys keep going to Ghostty, and the badge goes as
+  the prompt ends. The log shows `secure input on, held by Ghostty`, then `secure input
+  badge shown on display N`, then `secure input off`.
+- A brief hold shows nothing. Most of Steve's holds last about 35 ms, so through ordinary
+  use, each `secure input on` line followed by `secure input off` within half a second
+  should have no `badge shown` line between them, and no badge should flash.
+- Run the `sudo` check again in a native fullscreen Ghostty window. The badge should show
+  over it.
 
 ## Watch a title rule apply on a retitle
 
@@ -286,6 +311,13 @@ The finished experiments and every branch merged into main were deleted on 2026-
   while TLC runs in the cloud.
 - `rulefollow` is the Teams follow reference above.
 - `live` is the worktree the install script builds from. Keep it.
+- Merged into main since then, each with its worktree under `.claude/worktrees`, to delete
+  once Steve agrees: `agentfocus`, `computeruse`, `dialogs`, `filepanels`, `floathover`,
+  `fullscreen`, `peekprobe`, `revealslide`, `titlerules` and ten of the
+  `worktree-agent-*` branches, all but the one `secureoverlay` started from. `floatraise`
+  joins them once it is merged.
+- `kosmos-wt-rulefollow` has an uncommitted copy of `kosmos-probe input-source`, the same
+  file as main's, and its two entries in the probe's `main.swift`. Drop them.
 
 ## Deferred by Steve
 

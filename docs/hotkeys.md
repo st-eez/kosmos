@@ -63,8 +63,42 @@
   Secure Input turns off and on again.
 - While Secure Input is on, the status item shows a lock, names the holder and says which
   bindings wait, and the log records each change. For a holder with no windows of its own,
-  WindowServer names the frontmost app instead. Showing it in the bar, for a Mac that hides
-  the menu bar, is a later option: the snapshot can gain a field without a new version.
+  WindowServer names the frontmost app instead.
+- Steve's menu bar hides itself, so a badge of Kosmos's own
+  (`KosmosApp/SecureInputOverlay.swift`) shows a lock on screen once a hold has lasted
+  0.5 s, and goes as soon as Secure Input turns off. On 2026-09-28 Secure Input was held 27
+  times in about four hours, mostly for about 35 ms and at most 8.4 s, so a badge at every
+  hold would flicker. `SecureInputHold` in KosmosCore decides when it shows, and its tests
+  cover a brief hold, a new holder and a hold that follows a brief one.
+  - It follows Ghostty's Secure Input badge (`macos/Sources/Features/Secure
+    Input/SecureInputOverlay.swift`), at its size, 35 pt with 12 pt corners and a grey
+    edge: a lock over a purple and blue glow at the edges, blurred, which turns once every
+    2 s and pulses. Ghostty's glow is cyan, blue and yellow and its icon a shield, so the
+    two read apart. It keeps the dark look in light mode too, so it reads the same in both.
+    Core Animation runs the turn and the pulse in WindowServer, where Ghostty's SwiftUI
+    animation ticks on the main thread, which Kosmos keeps free for switches. It carries no
+    text, as it ignores the mouse; the status menu names the holder and the bindings that
+    wait.
+  - It shows on the display the model has focused, 10 pt below the top center of the
+    tiling area, clear of a terminal's own badge in its window's corner and of a centered
+    password dialog. Only a Secure Input change and its own 0.5 s wait write to it, and
+    nothing in a switch does, so when the focus moves to another display it stays where
+    it is until Secure Input turns off. While Kosmos only observes or waits for
+    Accessibility, it registers no hotkeys and shows no badge.
+  - Its window is set up as a border's ([borders.md](borders.md)): borderless, never key or
+    main, ignoring the mouse, hidden in Mission Control and out of the window cycle, and
+    kept on screen when Hide Others in another app hides Kosmos. It also joins every Space
+    and shows beside another app's native fullscreen window (`.canJoinAllSpaces` and
+    `.fullScreenAuxiliary`). Its level is the status bar's, above floating windows, modal
+    panels and the menu bar when it shows. The inventory admits no window of an app that is
+    not regular, and Kosmos is an accessory app, so the badge is never tiled, bordered
+    or tracked. A window at a level other than 0 is no candidate either
+    ([inventory.md](inventory.md)).
+  - `Kosmos secure-input-preview [seconds]` shows it at the top center of the main display
+    without taking focus or the mouse, and prints its window number for `screencapture -l`.
+    An offscreen render leaves out the glow's blur and mask, so a preview is the way to see
+    it. Nothing has shown it during a real hold yet ([backlog.md](backlog.md)).
+- The bar could show Secure Input too: the snapshot can gain a field without a new version.
 - A reload does not warn about bindings that stop. They stop only while Secure Input is
   on, and the sample config binds 34 of them on purpose by the rule above, so the warning
   would come with every reload.
