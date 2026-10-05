@@ -183,19 +183,18 @@ Steve's windows on 2026-10-02, so none of his apps' own has been seen.
 ## Check the Secure Input badge live
 
 Kosmos shows a lock badge of its own once a Secure Input hold lasts 0.5 s
-([hotkeys.md](hotkeys.md)). Unit tests cover when it shows, and `Kosmos
-secure-input-preview` showed the badge on 2026-10-05, but no real hold has. Run
-`log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` during each check.
-- Run `sudo -k; sudo -v` in Ghostty and leave the password prompt open. It passes when, about
-  half a second later, the badge shows 10 pt below the top center of the focused display's
-  tiling area with its glow turning, the keys keep going to Ghostty, and the badge goes as
-  the prompt ends. The log shows `secure input on, held by Ghostty`, then `secure input
-  badge shown on display N`, then `secure input off`.
+([hotkeys.md](hotkeys.md)). On 2026-10-05 Chrome's NetSuite password field held Secure
+Input four times from 11:03:28, and each time the badge showed on display 2 between
+0.53 and 0.56 s later and went as the hold ended (log), on the display Steve had focused
+(his screenshot). Left to check, with
+`log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` running:
 - A brief hold shows nothing. Most of Steve's holds last about 35 ms, so through ordinary
   use, each `secure input on` line followed by `secure input off` within half a second
   should have no `badge shown` line between them, and no badge should flash.
-- Run the `sudo` check again in a native fullscreen Ghostty window. The badge should show
-  over it.
+- With the badge up, alt-1 types into the password field and switches nothing, as
+  hotkeys.md's rule says.
+- Run `sudo -k; sudo -v` in a native fullscreen Ghostty window. The badge should show over
+  it.
 
 ## Watch a title rule apply on a retitle
 

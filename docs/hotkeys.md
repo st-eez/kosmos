@@ -42,8 +42,10 @@
   key. That rule is inferred from Y, comma and keypad 1: the other keys were not each
   tested, and Space types a character too, yet its Option hotkey fired. By that rule, 34
   of the sample config's 52 bindings stop (alt and alt-shift on letters, digits, equal and
-  minus), and the ctrl-alt bindings keep working. Tab and the arrows cannot be tested
-  while Kosmos runs, because it holds them; like Return and Delete, they should keep
+  minus), and the ctrl-alt bindings keep working. The probe cannot test Tab and the
+  arrows while Kosmos runs, because Kosmos holds them. Live on 2026-10-05, Steve's
+  alt-arrows kept moving the focus while Chrome's NetSuite password field held Secure
+  Input (from 11:03:28). Tab is still untested, and like Return and Delete it should keep
   working.
 - WindowServer sends event 752 when Secure Input turns on and 753 when it turns off,
   whichever process changes it, and 753 when the last holder exits (measured September 24,
