@@ -86,10 +86,10 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         borderWatch(window, seconds: arguments.dropFirst().first.flatMap(Double.init) ?? 60)
     }),
-    ("peek", "peek [trials] [clear|faint|clipped|below...] [cua]", { arguments in
+    ("peek", "peek [trials] [plain|corner|clear|faint|clipped|below|tiny|covered...] [panel] "
+        + "[chrome|finder|textedit|electron[=<app>]...] [workspace=<name>] [cua]", { arguments in
         let count = arguments.first.flatMap(Int.init)
-        let rest = arguments.dropFirst(count == nil ? 0 : 1)
-        peek(trials: count ?? 5, variants: rest.filter { $0 != "cua" }, cua: rest.contains("cua"))
+        peek(trials: count ?? 5, arguments: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
     ("api-sweep", "api-sweep [--list] [--check] [--out <path>] [--from <i>] [--to <i>]", { apiSweep($0) }),
     ("api-sweep-window", nil, { _ in apiSweepWindow() }),

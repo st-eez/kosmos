@@ -438,3 +438,32 @@
     the cover takes the mouse. A real app can take longer to draw after the occlusion change
     than the probe's panel: Discord showed black for about a second when its workspace came
     back on September 25, 2026.
+  - Since branch `peekreal` the probe has two more variants and peeks real apps' windows;
+    neither has run yet. `plain` removes the window from the holding Space with nothing over
+    it, so the user sees it at its frame: the baseline for how long an app takes to draw
+    again. `corner` first moves the concealed window so that only its corner point stays on
+    its display, as AeroSpace hid windows, then removes it from the holding Space with no
+    cover. It takes the first bottom corner, else top corner, past which no other display
+    lies on either edge, since a window between two displays shows on the other one. Its
+    capture of the screen is the 80 points around that point. Each trial reads the front app,
+    its key window, Kosmos's focus and display, and the pointer before and after it.
+  - `chrome`, `finder`, `textedit` and `electron[=<app>]` run `plain`, `corner` and `covered`
+    on a window the probe opens without activating its app: a page in Chrome for Testing
+    that draws the panel's cells from the wall clock, a Finder window on a folder whose file
+    the probe renames before each trial, a TextEdit document whose text it sets through
+    Accessibility before each trial, read back with Vision, and an Electron app it launches,
+    Obsidian by default, whose capture counts as current when it is not black and differs
+    from the last one. Kosmos manages every such window and no rule leaves one out
+    ([inventory.md](inventory.md)), so the probe lets Kosmos conceal it: Kosmos admits it, as
+    a window of the focused workspace or the one its rule names, then `kosmos
+    move-node-to-workspace --window-id` sends it to an empty workspace that no display shows,
+    and each peek takes it out of Kosmos's holding Space and puts it back. Kosmos leaves out
+    a concealed window's change events ([geometry.md](geometry.md)), so the corner move goes
+    unanswered, and a batch confirms only the windows it names. A switch that shows the
+    workspace during a peek reveals the window as Kosmos has it, so after each conceal the
+    probe takes the window out of the holding Space again when the workspace is shown, and
+    stops. A resync after an unlock or a wake conceals every hidden window again, and one
+    during a peek would fail its batch, so recovery would show every concealed window until
+    the next switch. The probe leaves each window at its own frame in the holding Space, and
+    quits the apps it launched, closes the windows it opened in apps already running, and
+    removes its files, at the end and at Ctrl-C.

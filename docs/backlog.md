@@ -137,6 +137,24 @@ windows for that reason: agents need screenshots. Options looked at:
   apps take to draw after the occlusion change (Discord showed black for about a second on
   September 25, 2026).
 
+## Peek real apps' windows
+
+Branch `peekreal` adds `plain` and `corner` to `kosmos-probe peek`, and peeks windows of
+Chrome for Testing, Finder, TextEdit and an Electron app that Kosmos itself conceals on a
+hidden workspace ([hiding.md](hiding.md)). None has run. Run with Steve at the desk, with
+Screen Recording and Accessibility for the terminal and CuaDriver's daemon running:
+- `kosmos-probe peek 5 plain corner covered` settles, on the probe's panel, whether a window
+  moved past a display corner turns visible, draws, and captures whole and current, with
+  `screencapture -l` and CuaDriver too, and what the screen shows there.
+- `kosmos-probe peek 5 chrome textedit finder electron cua` settles how long each real app
+  takes from the peek to a current capture in each of `plain`, `corner` and `covered`,
+  whether the captures are opaque and whole, and that the front app, key window, Kosmos's
+  focus and the pointer stay. Chrome for Testing, which stops drawing while occluded, and
+  the Electron app decide whether the cover's 0.1 s is enough or a peek needs to wait for
+  the app.
+- The results go in hiding.md, and choose between `covered` and `corner` for
+  `kosmos peek <window> -- <command>` in the item above.
+
 ## Check Kosmos fullscreen live
 
 A focus in a direction on a display with a Kosmos fullscreen window now sees that window and
