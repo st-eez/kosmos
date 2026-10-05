@@ -41,6 +41,10 @@ struct TestServer {
         allowedUID: uid_t = getuid(),
         handler: @escaping @MainActor ([String]) async -> Response = testCommands
     ) throws {
+        try self.init(allowedUID: allowedUID, replying: { Reply(await handler($0)) })
+    }
+
+    init(allowedUID: uid_t = getuid(), replying handler: @escaping @MainActor ([String]) async -> Reply) throws {
         directory = makeTemporaryDirectory()
         socketPath = directory + "/ipc.sock"
         let log = log
@@ -61,4 +65,16 @@ func waitUntil(_ condition: () async -> Bool) async throws {
         guard ContinuousClock.now < deadline else { throw TimedOut() }
         try await Task.sleep(for: .milliseconds(5))
     }
+}
+
+/// Answers `peek 5` with a held response whose hold records how it ended in `ends`, and any
+/// other request as `testCommands` does.
+func peekServer(ends: Lines, note: String = "") throws -> TestServer {
+    try TestServer(replying: { args in
+        guard args == ["peek", "5"] else { return Reply(await testCommands(args)) }
+        return Reply(Response(stdout: "ignored")) { args in
+            ends.append(args?.joined(separator: " ") ?? "closed")
+            return Response(stderr: note)
+        }
+    })
 }

@@ -111,6 +111,18 @@ final class Hiding {
         }
     }
 
+    /// Takes a concealed window out of its holding Space for a peek, adding it first to an
+    /// ordinary Space of `display` when it has none. It stays concealed in the ledger, and the
+    /// batch that conceals or reveals it next puts it back or lets it go (docs/hiding.md).
+    /// `done` gets whether it left.
+    func peek(_ window: WindowID, on display: CGDirectDisplayID?, done: @escaping @MainActor (Bool) -> Void) {
+        let store = self.store
+        bridge.async {
+            let out = store.peek(window, on: display)
+            onMain { done(out) }
+        }
+    }
+
     /// Forgets windows that left the holding Space on their own, as a deselected native tab
     /// does; kept, a batch would fail to find them there (docs/tree.md).
     func forget(_ windows: [WindowID]) {
@@ -172,6 +184,9 @@ private final class HidingStore: @unchecked Sendable {
     private var state: RecoveryRecord?
     private var space: SpaceID = 0
     private var ledger = ConcealLedger()
+    /// Windows the ledger holds that a peek took out of their concealing Space, and whether
+    /// each was stripped of its ordinary Space.
+    private var peeked: [WindowID: Bool] = [:]
     private var loaded = false
     /// Read on the main actor too.
     let history = Mutex(ConcealHistory())
@@ -209,23 +224,8 @@ private final class HidingStore: @unchecked Sendable {
         guard case (var batch, let sent)? = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
         let touched = batch.touched
         guard let any = touched.first else { return (true, sent, nil, batch.strip.count) }
-        // A Space whose read fails is left out, which proves nothing.
-        func members() -> [SpaceID: Set<WindowID>] {
-            var members: [SpaceID: Set<WindowID>] = [:]
-            for space in touched {
-                if let list = SkyLight.windows(in: space) { members[space] = Set(list) }
-            }
-            return members
-        }
-        // Direct reads show the operations once WindowServer applied them; the barrier also
-        // waits behind WindowManager.app, so it goes only once the direct reads run out of time
-        // (docs/hiding.md).
-        let deadline = ContinuousClock.now + Self.directReadsBeforeBarrier
-        var confirmed = batch.isDone(members: members())
-        while !confirmed && ContinuousClock.now < deadline {
-            usleep(100)
-            confirmed = batch.isDone(members: members())
-        }
+        func members() -> [SpaceID: Set<WindowID>] { Self.members(of: touched) }
+        let confirmed = Self.readUntilDone(batch)
         if !confirmed {
             // A window that closed or was ordered out after its row read leaves the batch; a
             // failed row query leaves every window in, so recovery runs (docs/hiding.md).
@@ -244,6 +244,48 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     private static let directReadsBeforeBarrier: Duration = .milliseconds(10)
+
+    /// A Space whose read fails is left out, which proves nothing.
+    private static func members(of spaces: Set<SpaceID>) -> [SpaceID: Set<WindowID>] {
+        var members: [SpaceID: Set<WindowID>] = [:]
+        for space in spaces {
+            if let list = SkyLight.windows(in: space) { members[space] = Set(list) }
+        }
+        return members
+    }
+
+    /// Direct reads show the operations once WindowServer applied them; the barrier also waits
+    /// behind WindowManager.app, so it goes only once the direct reads run out of time
+    /// (docs/hiding.md).
+    private static func readUntilDone(_ batch: ConcealLedger.Batch) -> Bool {
+        let deadline = ContinuousClock.now + directReadsBeforeBarrier
+        var done = batch.isDone(members: members(of: batch.touched))
+        while !done && ContinuousClock.now < deadline {
+            usleep(100)
+            done = batch.isDone(members: members(of: batch.touched))
+        }
+        return done
+    }
+
+    /// As a reveal takes the window out, but the ledger keeps it (docs/hiding.md). False when
+    /// it did not leave; the peek's end puts it back either way.
+    func peek(_ window: WindowID, on display: CGDirectDisplayID?) -> Bool {
+        guard load(), let held = ledger.entries[window] else { return false }
+        var batch = ledger.batch(show: [window], hide: [], into: space, isOnAnySpace: Self.isOnAnySpace)
+        peeked[window] = !batch.adds.isEmpty
+        if !batch.adds.isEmpty {
+            let displays = Displays.current()
+            let original = state!.windows.first { $0.id == window }?.originalSpace
+            guard let destination = displays.ordinarySpace(on: display, original: original) else { return false }
+            Self.add([window], to: destination, exclusively: true)
+            guard kosmos_barrier(held) else { return false }
+            batch.removals = batch.removals(landed: displays.isInOrdinarySpace)
+        }
+        guard batch.removals[held]?.contains(window) == true else { return false }
+        var ids = [window]
+        kosmos_remove_windows(held, &ids, 1)
+        return Self.readUntilDone(batch) || (kosmos_barrier(held) && batch.isDone(members: Self.members(of: [held])))
+    }
 
     private func send(show: [WindowID], on showDisplays: [WindowID: CGDirectDisplayID], hide: [WindowID],
                       stripping: Set<WindowID>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
@@ -282,6 +324,13 @@ private final class HidingStore: @unchecked Sendable {
         history.withLock { $0.changed(batch.fresh, concealed: true, at: .now) }
         Self.add(batch.fresh.filter { !batch.strip.contains($0) }, to: space, exclusively: false)
         Self.add(batch.strip, to: space, exclusively: true)
+        // A peeked window this batch conceals goes back to its Space, stripped again if the peek
+        // gave it an ordinary one; one it reveals is out already.
+        for window in show where peeked[window] != nil { peeked[window] = nil }
+        for (window, held) in batch.mustBeIn {
+            guard let stripped = peeked.removeValue(forKey: window) else { continue }
+            Self.add([window], to: held, exclusively: stripped)
+        }
         return (batch, .now)
     }
 
@@ -299,6 +348,7 @@ private final class HidingStore: @unchecked Sendable {
     func forget(_ windows: [WindowID]) {
         guard load() else { return }
         ledger.forget(windows)
+        for window in windows { peeked[window] = nil }
         history.withLock { history in windows.forEach { history.forget($0) } }
         guard var next = state, next.windows.contains(where: { windows.contains($0.id) }) else { return }
         next.windows.removeAll { windows.contains($0.id) }
@@ -371,6 +421,7 @@ private final class HidingStore: @unchecked Sendable {
         let outcome = Recovery.run(file: record, keepingAnimationSpaces: keeping, sparing: sparing)
         hidingLog.notice("recovery: \(String(describing: outcome), privacy: .public)")
         history.withLock { $0.forgetAll() }   // recovery's reveals are not in the history
+        peeked = [:]   // out already, as recovery leaves them
         loaded = false
         if !load() {
             // Every batch fails at load() and recovers again, so this ledger decides nothing.

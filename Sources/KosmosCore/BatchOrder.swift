@@ -15,7 +15,9 @@ public struct BatchOrder: Sendable {
     /// Oldest first: the first `sent` went to Hiding and are not done, and the rest wait.
     private var batches: [Batch] = []
     private var sent = 0
-    /// The newest batch's, so a batch can tell whether a newer one came.
+    private var numbered = 0
+    /// The newest switch batch's, so a batch can tell whether a newer one came. A peek's end
+    /// leaves it, as no switch's focus waits on it.
     public private(set) var lastNumber = 0
     /// Writes to windows a batch not yet done conceals.
     private var held: [WindowID: Write] = [:]
@@ -30,11 +32,25 @@ public struct BatchOrder: Sendable {
     /// Whether a batch not yet done, sent or waiting, conceals the window.
     public func conceals(_ id: WindowID) -> Bool { conceals(batches[...], id) }
 
+    /// Whether a batch not yet done, sent or waiting, reveals the window.
+    public func reveals(_ id: WindowID) -> Bool { batches.contains { $0.show.contains(id) } }
+
     /// Before the plan's writes, which wait for it.
     public mutating func add(show: [WindowID], hide: [WindowID]) -> Batch {
-        lastNumber += 1
-        let batch = Batch(number: lastNumber, show: show, hide: hide)
+        numbered += 1
+        lastNumber = numbered
+        let batch = Batch(number: numbered, show: show, hide: hide)
         batches.append(batch)
+        return batch
+    }
+
+    /// A peek's end, which puts its window back in the holding Space: sent at once, ahead of
+    /// the batches waiting, before its write back, which waits for it (docs/hiding.md).
+    public mutating func addSent(hide: [WindowID]) -> Batch {
+        numbered += 1
+        let batch = Batch(number: numbered, show: [], hide: hide)
+        batches.insert(batch, at: sent)
+        sent += 1
         return batch
     }
 

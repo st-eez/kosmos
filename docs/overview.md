@@ -78,7 +78,8 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
   leaves recovery to a Kosmos named in the lock file. Kosmos watches the guardian and respawns it a second after it exits, and hides
   windows only while it is alive. A fourth exit within 10 s turns hiding off
   (`GuardianRestarts`).
-- **kosmos**, the CLI, a client without AppKit for scripts and status bar clicks.
+- **kosmos**, the CLI, a client without AppKit for scripts, status bar clicks and agents'
+  peeks at concealed windows ([ipc.md](ipc.md)).
 
 ### 4.2 Threads and queues
 

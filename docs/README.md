@@ -33,14 +33,15 @@ prefix.
   `kosmos-probe/SlideSync.swift`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, the handover
-  across a restart, and Mission Control.
+  across a restart, Mission Control, and peeks of concealed windows for screenshots.
   Code: `KosmosApp/Hiding.swift`, `KosmosApp/Guardian.swift`,
   `kosmos-guardian/main.swift`, `KosmosCore/ConcealLedger.swift`, `KosmosCore/BatchOrder.swift`,
   `KosmosCore/FrameLedger.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosRecovery/`, `KosmosSkyLight/Displays.swift`,
   `CKosmos/KosmosBridge.m`, `kosmos-probe/Hiding.swift`, `kosmos-probe/RevealSlide.swift`,
   `kosmos-probe/Handover.swift`, `kosmos-probe/MissionControl.swift`, `kosmos-probe/Peek.swift`,
-  `kosmos-probe/PeekApps.swift`, `CKosmosSweep/Peek.m`, `script/install.sh`, `tla/Handover.tla`.
+  `kosmos-probe/PeekApps.swift`, `CKosmosSweep/Peek.m`, `KosmosCore/Peek.swift`,
+  `KosmosApp/Controller+Peek.swift`, `script/install.sh`, `tla/Handover.tla`.
 - [focus.md](focus.md): the focus intent, how Kosmos classifies key window reports, which
   reports the user's own input made, the private focus path with its kill switch and
   public fallback, departures, and the empty workspace's window.
@@ -65,8 +66,9 @@ prefix.
   `KosmosCore/Config/KeyCombo.swift`, `KosmosCore/Config/KeyboardLayout.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/SecureInputOverlay.swift`,
   `KosmosCore/SecureInputHold.swift`, `kosmos-probe/SecureInput.swift`.
-- [ipc.md](ipc.md): the socket, the CLI and the snapshots pushed to SketchyBar.
-  Code: `KosmosIPC/`, `kosmos/main.swift`, `KosmosCore/Query.swift`,
+- [ipc.md](ipc.md): the socket, the CLI, `kosmos peek`'s held request and the snapshots
+  pushed to SketchyBar.
+  Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `KosmosCore/Query.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,

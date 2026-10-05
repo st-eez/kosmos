@@ -128,25 +128,49 @@ windows for that reason: agents need screenshots. Options looked at:
   Space, so they keep drawing: a second hiding path, slower switches, slivers in a corner.
 - `kosmos park` and `unpark` called by agents: Steve found it fragile, since an agent that
   forgets leaves a window parked.
-- `kosmos peek <window> -- <command>`: `kosmos-probe peek` (2026-10-02,
-  [hiding.md](hiding.md)) found a peek works only with the window in an animation Space at
-  alpha 1 under a cover of Kosmos's own showing a capture of the screen taken just before.
-  The first screenshot, about 0.1 s after the window joined that Space, was current, after
-  about 0.1 s to put the cover up. At alpha 0 the captures came back transparent, and at
-  alpha 0.01 at opacity 3 of 255. Open: whether the cover takes the mouse, and how long real
-  apps take to draw after the occlusion change (Discord showed black for about a second on
-  September 25, 2026).
+- `kosmos peek <window> -- <command>`, built on branch `peek` (below): the window shows
+  past its display's edge, with one column on screen, while the command captures it
+  ([hiding.md](hiding.md)). Open: how long real apps take to draw after the occlusion
+  change (Discord showed black for about a second on September 25, 2026).
 
-## Build `kosmos capture` on the edge peek
+## Check `kosmos peek` live
 
-`kosmos-probe peek` on 2026-10-05 found that a concealed window moved past a display's edge,
-with one column of points on it, captures whole and current in 74 to 118 ms, with nothing
-else on screen changing ([hiding.md](hiding.md)). That gives agents screenshots of windows
-on hidden workspaces. Left to settle:
-- Steve's choice to build `kosmos capture <window> <file>` on it, and where it sits in
-  Kosmos's batches, so a switch, display change or lock never races a peek.
-- A changing page in an Electron app, since Obsidian's static page proved nothing, and
-  Finder, whose window the probe never got in time.
+Branch `peek` adds `kosmos peek <window id> -- <command>`, which shows a window Kosmos
+conceals past its display's edge while the command runs ([hiding.md](hiding.md),
+[ipc.md](ipc.md)). Tests cover its steps, its protocol and the CLI; nothing has run it with
+Kosmos yet. Install the branch, then put a TextEdit window on a hidden workspace with
+`kosmos move-node-to-workspace --window-id <id> <workspace>`; `kosmos list-windows` gives
+its id, and CuaDriver's `list_windows` its pid. Each check reads
+`log show --last 5m --predicate 'subsystem == "io.github.st-eez.kosmos" AND eventMessage BEGINSWITH "peek of"'`.
+- A Cua `get_window_state` screenshot of the hidden window comes back current. Change the
+  document's text through Accessibility or Cua's `set_value` first, then run
+  `kosmos peek <id> -- cua-driver call get_window_state '{"pid":<pid>,"window_id":<id>,"session":"peek","screenshot_out_file":"/tmp/kosmos-peek.png"}'`.
+  It passes when the PNG shows the new text, whole and opaque, the screen changes only in
+  one column at the display's edge, the front app and key window stay as they were, and the
+  log line ends "the command ended, exit 0" with "concealed again". The same call without
+  `kosmos peek` answers "No content produced".
+- A visible window's call passes straight through: the same call wrapped in `kosmos peek`
+  for a window of the shown workspace takes as long as without it, within a few
+  milliseconds (time both with `time`), and logs no `peek of` line.
+- A switch to the window's workspace during a long peek gives way: run
+  `kosmos peek <id> -- sleep 5` and switch to the workspace within the 5 s. It passes when
+  the window shows at its tile, never at the edge, the log line says "a switch showed its
+  workspace" before the switch line, the CLI prints "the peek ended before the command did:
+  a switch showed its workspace" and exits 0 after the 5 s, and the switch after it
+  confirms.
+- A Cua pixel click grounded on a peeked screenshot lands on the right control after the
+  peek ended. Cua's WORKFLOW.md ("Pixel coordinates") and `cua-driver describe click` say a
+  window target's `x` and `y` are pixels of that `get_window_state` PNG, top left origin,
+  which the driver scales back and turns into a point on screen from the window's place,
+  and that the pixel path "needs a visible on-screen window to anchor the conversion".
+  So the coordinates are window relative in the call and screen relative once posted, and
+  on the concealed window after the peek the click may be refused or land where the window
+  is not. Try the click
+  after the peek with `capture_id` and `debug_image_out`, then wrapped in `kosmos peek`,
+  where the point lies past the display's edge, and record which lands. If neither does,
+  agents click hidden windows by `element_token`, which Cua says works on hidden windows.
+- A lock during `kosmos peek <id> -- sleep 5`: the log line says "the session locked", and
+  after the unlock the next switch confirms with no recovery.
 
 ## Check Kosmos fullscreen live
 

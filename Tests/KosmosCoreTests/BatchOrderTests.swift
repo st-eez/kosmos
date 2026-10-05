@@ -182,3 +182,24 @@ private func write(_ frame: CGRect) -> BatchOrder.Write { (.frame(frame), frame)
     // The first batch's end releases the write, and the reveal is checked again then.
     #expect(order.recheck(landing: { _ in false }, ends: { _ in t0 }) == nil)
 }
+
+@Test func aPeeksEndGoesAheadOfTheBatchesWaitingAndHoldsItsWriteBackAndTheSwitchThatShowsIt() {
+    var order = BatchOrder()
+    // A switch waits for window 1's write while window 7 is out for a peek.
+    let waiting = order.add(show: [1], hide: [2])
+    #expect(order.ready { $0 == 1 }.isEmpty)
+    let end = order.addSent(hide: [7])
+    #expect(order.lastNumber == waiting.number)
+    #expect(order.conceals(7) && !order.reveals(7))
+    #expect(order.reveals(1) && !order.reveals(2))
+    // Its write back waits for it, and a switch that shows 7 waits for that write.
+    #expect(order.write([7: write(a)]).isEmpty)
+    let shows = order.add(show: [7], hide: [])
+    #expect(order.lastNumber == shows.number)
+    #expect(order.ready { _ in false } == [waiting])
+    #expect(order.ready { _ in false }.isEmpty)
+    let released = order.done(end.number)
+    #expect(released[7]?.target == a)
+    #expect(order.ready { $0 == 7 }.isEmpty)
+    #expect(order.ready { _ in false } == [shows])
+}

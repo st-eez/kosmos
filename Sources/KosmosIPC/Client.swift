@@ -2,11 +2,37 @@ import Darwin
 
 /// No dispatch queues or tasks, which keeps the CLI's launch near a bare Swift binary's.
 public enum IPCClient {
-    private static let timeout = Duration.seconds(5)
+    static let timeout = Duration.seconds(5)
 
+    /// A held response's connection closes on return, which releases the server's hold.
     public static func send(_ args: [String], socketPath: String) throws(IPCError) -> Response {
+        try open(args, socketPath: socketPath, timeout: timeout).response
+    }
+
+    /// Sends a request whose response the server may hold (`Reply.hold`): `held` then keeps the
+    /// connection until its `end` or its release (docs/ipc.md).
+    public static func open(_ args: [String], socketPath: String,
+                            timeout: Duration) throws(IPCError) -> (response: Response, held: HeldRequest?) {
         let deadline = ContinuousClock.now + timeout
         let connection = try ClientConnection(socketPath: socketPath)
+        try connection.write(frame(Request(args: args).encoded), deadline: deadline)
+        guard let body = try connection.readFrame(deadline: deadline) else { throw IPCError.closed }
+        let response = try Response(decoding: body)
+        return (response, response.held ? HeldRequest(connection) : nil)
+    }
+}
+
+/// The connection of a held response. Released without `end`, it closes, which ends the hold.
+public final class HeldRequest {
+    private let connection: ClientConnection
+
+    init(_ connection: ClientConnection) {
+        self.connection = connection
+    }
+
+    /// Sends the request that ends the hold, and returns the server's last response.
+    public func end(_ args: [String]) throws(IPCError) -> Response {
+        let deadline = ContinuousClock.now + IPCClient.timeout
         try connection.write(frame(Request(args: args).encoded), deadline: deadline)
         guard let body = try connection.readFrame(deadline: deadline) else { throw IPCError.closed }
         return try Response(decoding: body)
@@ -32,6 +58,8 @@ final class ClientConnection {
                 ? IPCError.notRunning(socketPath: socketPath) : IPCError.system("connect \(socketPath)", code)
         }
         _ = fcntl(fd, F_SETFL, O_NONBLOCK)
+        // A command the CLI runs must not keep the connection open past the CLI's exit.
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
     }
 
     deinit {

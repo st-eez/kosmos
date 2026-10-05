@@ -25,7 +25,7 @@ final class Controller {
     private let bar = BarPush()
     /// Batches wait here for their windows' writes, and writes for their windows' conceals
     /// (docs/hiding.md).
-    private var order = BatchOrder()
+    var order = BatchOrder()
     private var switches: [Int: Switch] = [:]
     private var recheckAt: ContinuousClock.Instant?
     var owner: [WindowID: pid_t] = [:]
@@ -105,6 +105,7 @@ final class Controller {
     private var layoutWritePending = false
     /// The windows taken over concealed at launch until their admission (docs/hiding.md).
     var adoption = Adoption()
+    var peeking = PeekBook()
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -189,6 +190,7 @@ final class Controller {
         // macOS can move windows while locked or asleep, and moves a leaving display's, so
         // every frame is written again.
         ledger = FrameLedger()
+        writeOwedPeekFrames()
         resync(displaysChanged: session.monitors != displaysBefore)
     }
 
@@ -290,6 +292,8 @@ final class Controller {
         let windows = resyncs ? session.resyncPlan(layingOutHidden: false) : plan
         let (show, hide) = (windows.show, windows.hide)
         if resyncs { needsResync = false }
+        // Ended first, so their batches go ahead of this plan's (docs/hiding.md).
+        if !peeking.peeks.isEmpty { peeksGiveWay(show: show, hide: hide) }
         let taken = session.entering(show: show, hide: hide, frames: plan.frames.keys,
                                      concealed: hiding.isConcealedOrConcealing,
                                      display: { inventory.windows[$0].flatMap { session.display(under: $0.frame) } })
@@ -422,10 +426,13 @@ final class Controller {
         writeFrames(targets)
     }
 
-    /// The targets written, with those already in place left out.
+    /// The targets written, with those already in place left out. A window out for a peek,
+    /// which a write would show at its target, takes it at the peek's end (docs/hiding.md).
     @discardableResult
-    func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:]) -> [WindowID: CGRect] {
+    func writeFrames(_ targets: [WindowID: CGRect], sliding: [WindowID: Slides.Motion] = [:],
+                     ownPeek: Bool = false) -> [WindowID: CGRect] {
         guard !sessionLocked else { return [:] }
+        let targets = ownPeek ? targets : holdingPeeked(targets)
         let entries = ledger.writes(for: targets).reduce(into: [WindowID: BatchOrder.Write]()) { entries, write in
             entries[write.key] = (write.value, targets[write.key]!)
         }
@@ -436,7 +443,7 @@ final class Controller {
 
     /// A write that goes to no worker, or comes while locked, is forgotten, so its target is
     /// not left pending.
-    private func sendWrites(_ writes: [WindowID: BatchOrder.Write]) {
+    func sendWrites(_ writes: [WindowID: BatchOrder.Write]) {
         let now = ContinuousClock.now
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] }) {
             guard !sessionLocked, let worker = pid.flatMap(inventory.worker) else {

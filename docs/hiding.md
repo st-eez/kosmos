@@ -483,3 +483,55 @@
       13:45:36, Kosmos's next switch failed its batch, and recovery showed every concealed
       window until the following switch, the resync risk above. A peek of Kosmos's must
       give way to a display change or lock.
+- `kosmos peek <window id> -- <command>` runs the `corner` peek past an edge around a
+  command, as an agent's CuaDriver screenshot ([ipc.md](ipc.md) has the protocol). For a
+  window Kosmos does not conceal, as one on a shown workspace, one it does not manage or an
+  unknown id, it answers at once and the command runs as it is. A concealed window's peek,
+  in `Peeks` (KosmosCore) and `Controller+Peek.swift`:
+  - waits behind any other peek, and while a frame write of Kosmos's to the window is still
+    landing, as the write back of a peek of it just before: until a row shows that write, a
+    row at the edge could be one from before it;
+  - writes a frame past its display's right edge, else its left, with one column of points
+    on the display, its top 40 points down and no part on another display (`PeekEdge`),
+    while the window is still concealed, and waits for a row to show it there, 1 s at most.
+    A read back anywhere else ends the peek, as AppKit kept the window on its display;
+  - takes the window out of its holding Space on the bridge queue, after adding a window
+    with no ordinary Space to one of its display's, as a reveal does
+    (`HidingStore.peek`). The ledger keeps it as concealed, so batches, recovery and the
+    controller treat it as before: its change events are left out as a concealed window's
+    ([geometry.md](geometry.md)), and the frame ledger has both writes as Kosmos's own;
+  - waits 160 ms for its app to draw, then lets the command run. Kosmos cannot see another
+    app draw, and the probe's captures were current 74 to 118 ms after the peek at the
+    median and 156 ms at most. An app slower to draw, as Discord black for about a second,
+    gives a stale or black capture; Kosmos capturing the window until a capture is drawn
+    and stops changing would remove that;
+  - when the command ends, puts the window back into its holding Space, stripped again if
+    the peek gave it an ordinary Space, in a batch of its own sent ahead of the batches
+    waiting (`BatchOrder.addSent`), then writes its frame back, which waits for that batch.
+    A target Kosmos wrote for the window meanwhile, as at a relayout of its workspace, would
+    show it there, so it waits for the end and replaces the frame written back.
+- A peek ends at once in the way its step can be undone. Before the window leaves the
+  holding Space only its frame goes back; after, it goes back into the holding Space, then
+  its frame. It ends when:
+  - a plan shows its workspace. The end's batch goes ahead of the switch's, the frame
+    written back waits for it, and the switch waits for that write to land, as for any
+    window it reveals with a write on its way, so the window shows at its tile;
+  - a resync after a failed batch conceals it again;
+  - it closes, or leaves the screen as a deselected tab, which leaves it as it is, since
+    either left every Space;
+  - the session locks, the displays sleep, the screen parameters change or Kosmos quits.
+    At a lock the batch still goes, as after the lock during the probe's run of 2026-10-05
+    the next switch failed (above), and the write back waits for the unlock;
+  - the CLI closes its connection, or the command runs past 10 s, about 20 times
+    CuaDriver's `get_window_state` (458 ms). A slower command's captures after that fail,
+    and the CLI says the peek ended early.
+- A peek keys, raises and focuses nothing, and moves neither the pointer nor a workspace.
+  One line at notice level logs each: the window, its app, the edge, how it ended, the
+  command's exit status and how long each step took, as
+  `log show --last 10m --predicate 'subsystem == "io.github.st-eez.kosmos" AND eventMessage BEGINSWITH "peek of"'`
+  lists.
+- Ceilings: a quit or crash during a peek leaves the window at its edge frame, where
+  recovery shows it with one column on screen until the next Kosmos lays it out; the quit
+  writing the frame back and waiting for its read back would remove that. A click on the
+  column during a peek hits the window, as the probe's hit test found; what Kosmos does with
+  the key report that follows is untested.

@@ -9,6 +9,7 @@ guard !args.isEmpty else {
     fputs("usage: kosmos <command> [args...]\n", stderr)
     exit(2)
 }
+if args[0] == "peek" { peek(Array(args.dropFirst()), socketPath: socketPath) }
 
 do throws(IPCError) {
     let response = try IPCClient.send(args, socketPath: socketPath)

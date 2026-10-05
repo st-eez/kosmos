@@ -24,6 +24,7 @@ extension Controller {
         case .frameChange(let id, let old, let frame, let changedAt):
             let landed = ledger.seen(id, frame: frame)
             if landed { sendReadyBatches() }
+            peekSaw(id, frame: frame)
             frameChanged(id, from: old, to: frame, changedAt: changedAt, landed: landed)
             updateBorders()
         case .reordered(let id):
@@ -153,6 +154,7 @@ extension Controller {
     }
 
     private func forget(_ id: WindowID) {
+        peekGiveWay(id, .closed)
         titleWatch.end(id)
         owner[id] = nil
         recent.removeAll { $0 == id }
@@ -231,6 +233,7 @@ extension Controller {
         tabs.replaced(old, with: new)
         // A deselected tab leaves every Space, and the tab selected lands on its ordinary
         // Space whatever was concealed (kosmos-probe tabs); the plan conceals it afresh.
+        peekGiveWay(old, .closed)
         hiding.forget([old, new])
         ledger.forget(new)
         intake.tabReplaced(old, with: new, concealing: plan.hide.contains(new))
@@ -363,6 +366,7 @@ extension Controller {
             }
             // WindowServer can take the frame before the read back comes (docs/hiding.md).
             if let row = inventory.windows[id] { ledger.seen(id, frame: row.frame) }
+            peekAnswered(id, target: target, readBack: readBack)
             sendReadyBatches()
         case .framesDropped(let ids):
             // Forgotten, so their targets are not pending for good and the next writes are whole.

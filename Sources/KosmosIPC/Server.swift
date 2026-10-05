@@ -10,7 +10,7 @@ public actor IPCServer {
     private let socketPath: String
     private let allowedUID: uid_t
     private let log: @Sendable (String) -> Void
-    private let handler: @MainActor ([String]) async -> Response
+    private let handler: @MainActor ([String]) async -> Reply
     private let listenerFD: Int32
     private let listener: any DispatchSourceRead
     private var connections: [Int: Connection] = [:]
@@ -26,9 +26,18 @@ public actor IPCServer {
     public init(
         socketPath: String,
         log: @escaping @Sendable (String) -> Void,
-        handler: @escaping @MainActor ([String]) async -> Response
+        handler: @escaping @MainActor ([String]) async -> Reply
     ) throws(IPCError) {
         try self.init(socketPath: socketPath, allowedUID: getuid(), log: log, handler: handler)
+    }
+
+    /// For a handler that holds no connection.
+    public init(
+        socketPath: String,
+        log: @escaping @Sendable (String) -> Void,
+        handler: @escaping @MainActor ([String]) async -> Response
+    ) throws(IPCError) {
+        try self.init(socketPath: socketPath, allowedUID: getuid(), log: log) { Reply(await handler($0)) }
     }
 
     /// Tests pass another uid to exercise the rejection path.
@@ -37,6 +46,15 @@ public actor IPCServer {
         allowedUID: uid_t,
         log: @escaping @Sendable (String) -> Void,
         handler: @escaping @MainActor ([String]) async -> Response
+    ) throws(IPCError) {
+        try self.init(socketPath: socketPath, allowedUID: allowedUID, log: log) { Reply(await handler($0)) }
+    }
+
+    init(
+        socketPath: String,
+        allowedUID: uid_t,
+        log: @escaping @Sendable (String) -> Void,
+        handler: @escaping @MainActor ([String]) async -> Reply
     ) throws(IPCError) {
         try secureDirectory(of: socketPath)
         let listenerFD = try listen(at: socketPath)
@@ -61,9 +79,18 @@ public actor IPCServer {
     }
 
     private final class Connection {
+        enum Phase {
+            case request
+            /// The handler runs, or its response is on its way.
+            case answering
+            /// After a held response, until the client's next request or its close.
+            case held(@MainActor @Sendable ([String]?) -> Response)
+        }
+
         let io: DispatchIO
         var decoder = FrameDecoder()
-        var awaitingRequest = true
+        var phase = Phase.request
+        var clientClosed = false
 
         init(io: DispatchIO) {
             self.io = io
@@ -117,45 +144,84 @@ public actor IPCServer {
 
     private func received(_ data: DispatchData?, done: Bool, from id: Int) {
         guard let connection = connections[id] else { return }
-        if let data, connection.awaitingRequest {
-            connection.decoder.append(data)
+        if let data { connection.decoder.append(data) }
+        if done { connection.clientClosed = true }
+        proceed(id)
+    }
+
+    private func proceed(_ id: Int) {
+        guard let connection = connections[id] else { return }
+        switch connection.phase {
+        case .request:
             do {
-                if let body = try connection.decoder.next() { handle(body, from: connection, id: id) }
+                if let body = try connection.decoder.next() { return handle(body, from: connection, id: id) }
             } catch {
-                reply(Response(error), to: id)
+                return reply(Reply(Response(error)), to: id)
             }
-        }
-        // A client that closes its end while its command runs still gets the response.
-        if done && connection.awaitingRequest {
-            disconnect(id)
+            if connection.clientClosed { disconnect(id) }
+        case .answering:
+            // A client that closes its end while its command runs still gets the response.
+            break
+        case .held(let hold):
+            let args: [String]?
+            do {
+                guard let body = try connection.decoder.next() else {
+                    guard connection.clientClosed else { return }
+                    return release(id, hold, args: nil)
+                }
+                args = try Request(decoding: body).args
+            } catch {
+                args = nil
+            }
+            release(id, hold, args: args)
         }
     }
 
     private func handle(_ body: [UInt8], from connection: Connection, id: Int) {
         do {
             let request = try Request(decoding: body)
-            connection.awaitingRequest = false
+            connection.phase = .answering
             Task {
-                let response = await handler(request.args)
-                reply(response, to: id)
+                let reply = await handler(request.args)
+                self.reply(reply, to: id)
             }
         } catch {
-            reply(Response(error), to: id)
+            reply(Reply(Response(error)), to: id)
         }
     }
 
-    private func reply(_ response: Response, to id: Int) {
-        guard let connection = connections[id] else { return }
-        connection.awaitingRequest = false
+    /// A held response keeps the connection once written; a failed write, as to a client gone,
+    /// releases the hold at once.
+    private func reply(_ reply: Reply, to id: Int) {
+        guard let connection = connections[id] else {
+            if let hold = reply.hold { Task { @MainActor in _ = hold(nil) } }
+            return
+        }
+        connection.phase = .answering
+        var response = reply.response
+        response.held = reply.hold != nil
         let data = frame(response.encoded).withUnsafeBytes { DispatchData(bytes: $0) }
-        connection.io.write(offset: 0, data: data, queue: queue) { [weak self] done, _, _ in
+        connection.io.write(offset: 0, data: data, queue: queue) { [weak self] done, _, error in
             guard done else { return }
-            self?.assumeIsolated { $0.disconnect(id) }
+            self?.assumeIsolated { server in
+                guard let hold = reply.hold else { return server.disconnect(id) }
+                guard error == 0, let connection = server.connections[id] else { return server.release(id, hold, args: nil) }
+                connection.phase = .held(hold)
+                server.proceed(id)
+            }
+        }
+    }
+
+    private func release(_ id: Int, _ hold: @escaping @MainActor @Sendable ([String]?) -> Response, args: [String]?) {
+        connections[id]?.phase = .answering
+        Task {
+            let response = await hold(args)
+            self.reply(Reply(response), to: id)
         }
     }
 
     private func requestDeadlinePassed(for id: Int) {
-        if connections[id]?.awaitingRequest == true { disconnect(id) }
+        if case .request? = connections[id]?.phase { disconnect(id) }
     }
 
     private func disconnect(_ id: Int) {

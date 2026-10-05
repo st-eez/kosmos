@@ -94,6 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         let handingOver = handover.handsOver(at: .now, guardianReady: guardian.isReady)
         server?.stop()
+        // Its window goes back into the holding Space ahead of the handover or recovery below.
+        controller?.peekGiveWay(nil, .quit)
         // The last second of changes has no write yet.
         controller?.writeLayout(wait: true)
         // Slides end first, so recovery finds the pool's Spaces empty.
@@ -113,12 +115,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             server = try IPCServer(socketPath: kosmosSocketPath(), log: { message in
                 log.notice("ipc: \(message, privacy: .public)")
-            }) { [weak self] arguments in
-                self?.respond(to: arguments) ?? Response(exitCode: 1, stderr: "kosmos: shutting down")
+            }) { [weak self] arguments -> Reply in
+                guard let self else { return Reply(Response(exitCode: 1, stderr: "kosmos: shutting down")) }
+                return await reply(to: arguments)
             }
         } catch {
             log.error("socket not started: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    private func reply(to arguments: [String]) async -> Reply {
+        guard arguments.first == "peek" else { return Reply(respond(to: arguments)) }
+        guard arguments.count == 2, let window = WindowID(arguments[1]) else {
+            return Reply(failure("peek takes a window id: kosmos peek <window id> -- <command> [args...]"))
+        }
+        // Waiting for Accessibility, or observing only, Kosmos conceals nothing.
+        guard let controller, controller.managing else { return Reply(Response()) }
+        return await controller.peek(window)
     }
 
     private func respond(to arguments: [String]) -> Response {
@@ -211,6 +224,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A gone display's link stops firing, so its slides would hold their windows displaced
         // until the change applies (docs/geometry.md).
         controller?.slides?.endAll("at a display change")
+        // A frame past an edge can lie on a display that arrives (docs/hiding.md).
+        controller?.peekGiveWay(nil, .displaysChanged)
         displayChange?.cancel()
         let apply = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
@@ -310,6 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inventory.sessionLocked = locked
         guard !locked else {
             controller?.forgetPresses()
+            controller?.peekGiveWay(nil, .locked)
             return
         }
         inventory.sweep()
@@ -401,7 +417,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let center = NSWorkspace.shared.notificationCenter
         for (name, asleep) in [(NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false)] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.screensAsleep = asleep }
+                MainActor.assumeIsolated {
+                    self?.screensAsleep = asleep
+                    if asleep { self?.controller?.peekGiveWay(nil, .screensSlept) }
+                }
             }
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,

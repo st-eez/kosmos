@@ -130,6 +130,62 @@ import Testing
     }
 }
 
+@Suite struct HeldRequestTests {
+    @Test func aHeldResponseKeepsTheConnectionForTheClientsNextRequest() throws {
+        let ends = Lines()
+        let test = try peekServer(ends: ends, note: "kosmos: ended early")
+        defer { test.stop() }
+        let (response, held) = try IPCClient.open(["peek", "5"], socketPath: test.socketPath, timeout: .seconds(5))
+        #expect(response == Response(stdout: "ignored", held: true))
+        let end = try #require(held)
+        #expect(ends.all.isEmpty)
+        #expect(try end.end(["ended", "3"]) == Response(stderr: "kosmos: ended early"))
+        #expect(ends.all == ["ended 3"])
+        // Other clients go on meanwhile, and get no hold.
+        let (plain, none) = try IPCClient.open(["ping"], socketPath: test.socketPath, timeout: .seconds(5))
+        #expect(plain == Response(stdout: "pong") && none == nil)
+    }
+
+    @Test func aClientThatClosesReleasesTheHold() async throws {
+        let ends = Lines()
+        let test = try peekServer(ends: ends)
+        defer { test.stop() }
+        var held = try IPCClient.open(["peek", "5"], socketPath: test.socketPath, timeout: .seconds(5)).held
+        #expect(held != nil)
+        held = nil
+        try await waitUntil { ends.all == ["closed"] }
+        // send closes the connection on return.
+        #expect(try IPCClient.send(["peek", "5"], socketPath: test.socketPath).held)
+        try await waitUntil { ends.all == ["closed", "closed"] }
+    }
+
+    @Test func aClientGoneBeforeItsHeldResponseReleasesTheHold() async throws {
+        let gate = Gate()
+        let ends = Lines()
+        let test = try TestServer(replying: { _ in
+            await gate.wait()
+            return Reply(Response()) { args in
+                ends.append(args == nil ? "closed" : "ended")
+                return Response()
+            }
+        })
+        defer { test.stop() }
+        var connection: ClientConnection? = try ClientConnection(socketPath: test.socketPath)
+        try connection?.write(frame(Request(args: ["peek", "5"]).encoded), deadline: .now + .seconds(5))
+        try await waitUntil { await gate.isWaiting }
+        connection = nil
+        await gate.open()
+        try await waitUntil { ends.all == ["closed"] }
+    }
+
+    @Test func aResponseCarriesHeldOnlyWhenHeld() throws {
+        #expect(String(decoding: Response(stdout: "x").encoded, as: UTF8.self) == #"{"exitCode":0,"stderr":"","stdout":"x"}"#)
+        let held = Response(held: true)
+        #expect(String(decoding: held.encoded, as: UTF8.self) == #"{"exitCode":0,"held":true,"stderr":"","stdout":""}"#)
+        #expect(try Response(decoding: held.encoded) == held)
+    }
+}
+
 /// Holds a command on the main actor until the test opens it.
 @MainActor final class Gate {
     private var waiter: CheckedContinuation<Void, Never>?

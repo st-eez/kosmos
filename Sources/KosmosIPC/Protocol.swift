@@ -18,11 +18,27 @@ public struct Response: Equatable, Sendable {
     public var exitCode: Int32
     public var stdout: String
     public var stderr: String
+    /// The server keeps the connection for one more request (`Reply.hold`).
+    public var held: Bool
 
-    public init(exitCode: Int32 = 0, stdout: String = "", stderr: String = "") {
+    public init(exitCode: Int32 = 0, stdout: String = "", stderr: String = "", held: Bool = false) {
         self.exitCode = exitCode
         self.stdout = stdout
         self.stderr = stderr
+        self.held = held
+    }
+}
+
+/// A handler's answer. With `hold`, the server sends the response marked held and keeps the
+/// connection: it passes `hold` the args of the client's next request, or nil when the client
+/// closes or sends no valid request, sends back what it returns, and closes (docs/ipc.md).
+public struct Reply: Sendable {
+    public var response: Response
+    public var hold: (@MainActor @Sendable ([String]?) -> Response)?
+
+    public init(_ response: Response, hold: (@MainActor @Sendable ([String]?) -> Response)? = nil) {
+        self.response = response
+        self.hold = hold
     }
 }
 
@@ -82,7 +98,9 @@ extension Response {
     }
 
     var encoded: [UInt8] {
-        JSON.object(["exitCode": .int(Int(exitCode)), "stdout": .string(stdout), "stderr": .string(stderr)]).encoded
+        var members: [String: JSON] = ["exitCode": .int(Int(exitCode)), "stdout": .string(stdout), "stderr": .string(stderr)]
+        if held { members["held"] = .bool(true) }
+        return JSON.object(members).encoded
     }
 
     init(decoding body: [UInt8]) throws(IPCError) {
@@ -91,7 +109,7 @@ extension Response {
               case .string(let stdout) = members["stdout"],
               case .string(let stderr) = members["stderr"]
         else { throw IPCError.malformed("the response lacks exitCode, stdout or stderr") }
-        self.init(exitCode: exitCode, stdout: stdout, stderr: stderr)
+        self.init(exitCode: exitCode, stdout: stdout, stderr: stderr, held: members["held"] == .bool(true))
     }
 }
 
