@@ -300,8 +300,9 @@ import Testing
         #expect(s.floatingFrames(at: [10: CGRect(x: -1920, y: 540, width: 400, height: 300)], written: { _ in nil })
                 == [10: CGRect(x: 200, y: 1571, width: 400, height: 300)])
         #expect(s.floatingFrames(at: [10: CGRect(x: -500, y: -1000, width: 3000, height: 3000)], written: { _ in nil })[10]?.size == Desk.builtIn.area.size)
-        // A window off every display stays.
-        #expect(s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)], written: { _ in nil }).isEmpty)
+        // A window off every display comes inside its own, keeping its size.
+        let off = s.floatingFrames(at: [10: CGRect(x: 100_000, y: 100_000, width: 400, height: 300)], written: { _ in nil })[10]
+        #expect(off.map { Desk.builtIn.area.contains($0) } == true && off?.size == CGSize(width: 400, height: 300))
     }
 
     @Test func aFloatingWindowDraggedOntoAnotherDisplayJoinsItsWorkspace() {

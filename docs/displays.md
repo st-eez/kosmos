@@ -198,7 +198,10 @@
   `layoutFloatingWindow` moves it. That covers a move to another display, a rule that
   sends a new window to a workspace another display shows, and a display change. Kosmos
   reads the windows' frames from WindowServer when it checks. A window whose center is on
-  no display stays. A concealed window's row gives the frame it has, as a shown window's
+  no display comes inside its own workspace's display, keeping its size, as AeroSpace takes
+  the nearest monitor. On 2026-10-05 Calculator, killed while a `kosmos peek` held it past
+  the built-in display's right edge, restored that frame at its next launch, one column on
+  screen, and the old rule left it there. A concealed window's row gives the frame it has, as a shown window's
   does ([hiding.md](hiding.md)), so one still concealed on a shown workspace, as while its
   switch waits for a write, goes home as a revealed one would. The read waits on
   WindowServer, which is busy committing right after a switch, so it runs only while a

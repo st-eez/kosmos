@@ -685,7 +685,13 @@ public struct Session: Sendable {
             for window in workspaces[name]!.floating {
                 guard let frame = written(window) ?? frames[window] else { continue }
                 let center = CGPoint(x: frame.midX, y: frame.midY)
-                guard let under = monitors.first(where: { $0.frame.contains(center) }), under.id != own.id else { continue }
+                guard let under = monitors.first(where: { $0.frame.contains(center) }) else {
+                    // On no display, as where an app restores a window off the displays there
+                    // are now, it comes inside its own (docs/displays.md).
+                    targets[window] = fitted(frame, in: own.area).integral
+                    continue
+                }
+                guard under.id != own.id else { continue }
                 targets[window] = floatingFrame(frame, from: under.area, movingTo: own.area)
             }
         }
