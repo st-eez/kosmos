@@ -150,7 +150,7 @@ sends its batches, to other Spaces.
 5. The main actor publishes one bar snapshot.
 
 A switch launches no process, writes no file and leaves the status item and the Secure
-Input overlay alone. Everything
+Input badge alone. Everything
 Kosmos causes (a hide, a reveal, a frame write, a focus request) is recorded as an
 expected echo and consumed before any notification is treated as the user's.
 

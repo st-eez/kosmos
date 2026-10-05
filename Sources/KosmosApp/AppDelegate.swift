@@ -73,9 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let statusItem = StatusItem()
         self.statusItem = statusItem
         // Hotkeys are registered only while Kosmos manages windows.
-        secureInputOverlay.focusedDisplay = { [weak self] in
+        secureInputOverlay.focusedMonitor = { [weak self] in
             guard let controller = self?.controller, controller.managing else { return nil }
-            return controller.session.focusedDisplay
+            return controller.session.monitor(of: controller.session.focusedWorkspace)
         }
         SkyLight.watchSecureInput { [weak self] in self?.secureInputChanged() }
         secureInputChanged()
@@ -292,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         secureInput = current
         log.notice("secure input \(current.map { "on, held by \($0)" } ?? "off", privacy: .public)")
         statusItem?.secureInput = current
-        secureInputOverlay.update(current)
+        secureInputOverlay.update(on: current != nil)
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.

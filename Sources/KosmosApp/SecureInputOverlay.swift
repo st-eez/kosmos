@@ -1,19 +1,19 @@
 import AppKit
 import KosmosCore
 
-/// Secure Input and its holder on screen, for a Mac whose hidden menu bar hides the status
-/// item's lock. Only a Secure Input change and its own wait write to it, never a switch
+/// A lock badge on screen while Secure Input holds, for a Mac whose hidden menu bar hides the
+/// status item's lock. Only a Secure Input change and its own wait write to it, never a switch
 /// (docs/hotkeys.md).
 @MainActor
 final class SecureInputOverlay {
     /// Nil while Kosmos registers no hotkeys, as none then waits.
-    var focusedDisplay: @MainActor () -> DisplayID? = { nil }
-    private var hold = SecureInputHold<SecureInput>()
+    var focusedMonitor: @MainActor () -> Monitor? = { nil }
+    private var hold = SecureInputHold()
     private var wait: DispatchWorkItem?
-    private var window: OverlayWindow?
+    private lazy var window = BadgeWindow()
 
-    func update(_ secureInput: SecureInput?) {
-        hold.update(secureInput, at: .now)
+    func update(on: Bool) {
+        hold.update(on: on, at: .now)
         refresh()
     }
 
@@ -21,11 +21,10 @@ final class SecureInputOverlay {
         wait?.cancel()
         wait = nil
         let now = ContinuousClock.now
-        if let holder = hold.shown(at: now), let display = focusedDisplay(),
-           let screen = NSScreen.screens.first(where: { $0.displayID == display }) {
-            return show(holder, on: screen)
+        if hold.shows(at: now), let monitor = focusedMonitor() {
+            return show(on: monitor)
         }
-        window?.orderOut(nil)
+        window.orderOut(nil)
         // Dispatch's clock and the continuous clock can part by rounding, so a wait that fires
         // short of the delay waits again.
         guard let due = hold.due, due > now else { return }
@@ -36,89 +35,146 @@ final class SecureInputOverlay {
         DispatchQueue.main.asyncAfter(deadline: .now() + (due - now).milliseconds / 1000, execute: next)
     }
 
-    /// At the top center, below the notch and a menu bar that stays shown, so it covers no
-    /// centered password dialog.
-    private func show(_ holder: SecureInput, on screen: NSScreen) {
-        let window = self.window ?? OverlayWindow()
-        self.window = window
-        if !window.isVisible { log.notice("secure input overlay shown on display \(screen.displayID)") }
-        window.setContent(Self.content(for: holder))
-        let top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
-        window.setFrameOrigin(NSPoint(x: (screen.frame.midX - window.frame.width / 2).rounded(),
-                                      y: top - 8 - window.frame.height))
+    /// At the top center of the tiling area, clear of a terminal's own badge in its window's
+    /// corner and of a centered password dialog.
+    private func show(on monitor: Monitor) {
+        guard !window.isVisible else { return }
+        let area = NSScreen.flipped(monitor.tilingArea)
+        let size = BadgeView.size
+        window.setFrameOrigin(NSPoint(x: (area.midX - size / 2).rounded(), y: area.maxY - BadgeView.inset - size))
         window.orderFrontRegardless()
+        log.notice("secure input badge shown on display \(monitor.id)")
+    }
+}
+
+/// Ghostty's Secure Input badge (macos/Sources/Features/Secure Input/SecureInputOverlay.swift,
+/// MIT) in AppKit: a lock over a glow at the edges that turns once every 2 s and pulses, at
+/// Ghostty's size. Plain layers, which the snapshot's offscreen render draws as the screen does.
+private final class BadgeView: NSView {
+    static let size: CGFloat = 35
+    /// From the tiling area's top edge, as Ghostty's sits from its window's corner.
+    static let inset: CGFloat = 10
+
+    private let glow = CAGradientLayer()
+    /// The background color fading out toward the edges, so the glow shows only there.
+    private let fade = CAGradientLayer()
+    private let lock = CALayer()
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.size, height: Self.size))
+        wantsLayer = true
+        let layer = self.layer!
+        layer.cornerRadius = 12
+        layer.cornerCurve = .continuous
+        layer.masksToBounds = true
+        layer.borderWidth = 1
+
+        glow.type = .conic
+        glow.colors = [NSColor.cyan, .systemPurple, .orange, .systemPurple, .cyan].map(\.cgColor)
+        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+        glow.endPoint = CGPoint(x: 0.5, y: 0)
+        // Larger than the badge, so its corners stay covered as it turns.
+        glow.frame = bounds.insetBy(dx: -Self.size / 2, dy: -Self.size / 2)
+        fade.type = .radial
+        fade.startPoint = CGPoint(x: 0.5, y: 0.5)
+        // Gone 25 pt from the center, where Ghostty's mask is full.
+        fade.endPoint = CGPoint(x: 0.5 + 25 / Self.size, y: 0.5 + 25 / Self.size)
+        fade.frame = bounds
+        lock.frame = bounds
+        lock.contentsGravity = .center
+        for sublayer in [glow, fade, lock] { layer.addSublayer(sublayer) }
+
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = 0
+        turn.toValue = -2 * Double.pi
+        turn.duration = 2
+        turn.repeatCount = .infinity
+        glow.add(turn, forKey: "turn")
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.5
+        pulse.toValue = 1
+        pulse.duration = 2
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        glow.add(pulse, forKey: "pulse")
     }
 
-    private static func content(for holder: SecureInput) -> NSView {
-        let lock = NSImageView(image: NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)!)
-        lock.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .medium)
-        lock.contentTintColor = .secondaryLabelColor
-        let title = NSTextField(labelWithString: holder.heldBy)
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
-        let detail = NSTextField(labelWithString: SecureInput.waiting)
-        detail.font = .systemFont(ofSize: 11)
-        detail.textColor = .secondaryLabelColor
-        let text = NSStackView(views: [title, detail])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 2
-        let row = NSStackView(views: [lock, text])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 10
+    required init?(coder: NSCoder) { fatalError() }
 
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.blendingMode = .behindWindow
-        // Kosmos is never the active app, and an inactive window's material draws flat.
-        background.state = .active
-        background.maskImage = rounded(radius: 12)
-        background.addSubview(row)
-        row.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 14),
-            row.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -16),
-            row.topAnchor.constraint(equalTo: background.topAnchor, constant: 10),
-            row.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -10),
-        ])
-        return background
-    }
+    override var wantsUpdateLayer: Bool { true }
 
-    /// A mask on the content view shapes the window and its shadow.
-    private static func rounded(radius: CGFloat) -> NSImage {
-        let edge = 2 * radius + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { bounds in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
-            return true
+    /// Layer colors are fixed values, so each appearance or scale change sets them again.
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let background = NSColor.windowBackgroundColor
+            layer?.backgroundColor = background.cgColor
+            layer?.borderColor = NSColor.systemGray.cgColor
+            fade.colors = [background.cgColor, background.withAlphaComponent(0).cgColor]
+            let scale = window?.backingScaleFactor ?? 4
+            let symbol = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Secure Input")!
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor.labelColor.usingColorSpace(.sRGB)!])))!
+            lock.contentsScale = scale
+            lock.contents = symbol.layerContents(forContentsScale: scale)
         }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
     }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsDisplay = true
+    }
+}
+
+/// Kept out of management as the border windows are: Kosmos is an accessory app, whose
+/// windows the inventory never admits (docs/inventory.md), and its level is not 0.
+private final class BadgeWindow: NSWindow {
+    init() {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: BadgeView.size, height: BadgeView.size),
+                   styleMask: [.borderless], backing: .buffered, defer: false)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        animationBehavior = .none
+        isReleasedWhenClosed = false
+        canHide = false
+        // Above floating windows, modal panels and the menu bar when it shows.
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        contentView = BadgeView()
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 // MARK: Snapshot
 
 extension SecureInputOverlay {
-    /// Draws the overlay in light and dark mode without showing a window. The material's blur
-    /// of what lies behind needs WindowServer, so the picture shows its flat fallback.
+    /// Draws the badge in light and dark mode at 4x without showing a window, still: the turn
+    /// and the pulse need WindowServer.
     static func snapshot(_ arguments: [String]) -> Int32 {
         guard arguments.count == 1 else {
             FileHandle.standardError.write(Data("usage: Kosmos secure-input-snapshot <directory>\n".utf8))
             return 2
         }
         let directory = URL(filePath: arguments[0], directoryHint: .isDirectory)
-        let holder = SecureInput(pid: 4242, appName: "Ghostty")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             for (appearance, mode) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
-                let window = OverlayWindow()
-                window.appearance = NSAppearance(named: appearance)
-                window.setContent(content(for: holder))
-                let view = window.contentView!
-                let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
-                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let view = BadgeView()
+                view.appearance = NSAppearance(named: appearance)
+                view.updateLayer()
+                view.layoutSubtreeIfNeeded()
+                let scale: CGFloat = 4
+                let pixels = Int(BadgeView.size * scale)
+                guard let bitmap = NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+                    samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                    bytesPerRow: 0, bitsPerPixel: 0),
+                    let context = NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext else { return 1 }
+                context.scaleBy(x: scale, y: scale)
+                view.layer!.render(in: context)
                 let file = directory.appending(path: "secure-input-\(mode).png")
                 try bitmap.representation(using: .png, properties: [:])!.write(to: file)
                 print(file.path)
@@ -128,31 +184,5 @@ extension SecureInputOverlay {
             return 1
         }
         return 0
-    }
-}
-
-/// Kept out of management as the border windows are: Kosmos is an accessory app, whose
-/// windows the inventory never admits (docs/inventory.md), and its level is not 0.
-private final class OverlayWindow: NSWindow {
-    init() {
-        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
-        isOpaque = false
-        backgroundColor = .clear
-        ignoresMouseEvents = true
-        animationBehavior = .none
-        isReleasedWhenClosed = false
-        canHide = false
-        // Above floating windows, modal panels and the menu bar when it shows.
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-    }
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    func setContent(_ view: NSView) {
-        contentView = view
-        setContentSize(view.fittingSize)
-        invalidateShadow()
     }
 }

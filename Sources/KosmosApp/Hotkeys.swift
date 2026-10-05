@@ -180,10 +180,6 @@ struct SecureInput: Equatable, CustomStringConvertible {
         return SecureInput(pid: pid, appName: pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName })
     }
 
-    /// The status menu's and the overlay's lines.
-    var heldBy: String { "Secure Input is on, held by \(self)" }
-    static let waiting = "Until it is off, alt and alt-shift bindings on letter, digit and punctuation keys do nothing"
-
     var description: String {
         switch (appName, pid) {
         case let (name?, pid?): "\(name) (pid \(pid))"

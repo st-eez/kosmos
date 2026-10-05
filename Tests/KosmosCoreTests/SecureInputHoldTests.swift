@@ -2,39 +2,37 @@ import Testing
 @testable import KosmosCore
 
 @Test func aBriefHoldShowsNothing() {
-    var hold = SecureInputHold<String>()
-    hold.update("Ghostty", at: t0)
-    #expect(hold.shown(at: t0 + .milliseconds(35)) == nil)
-    hold.update(nil, at: t0 + .milliseconds(35))
+    var hold = SecureInputHold()
+    hold.update(on: true, at: t0)
+    #expect(!hold.shows(at: t0 + .milliseconds(35)))
+    hold.update(on: false, at: t0 + .milliseconds(35))
     // The wait scheduled at the start finds the hold over.
-    #expect(hold.shown(at: t0 + .milliseconds(500)) == nil)
+    #expect(!hold.shows(at: t0 + .milliseconds(500)))
     #expect(hold.due == nil)
 }
 
 @Test func aHoldShowsOnceItHasLastedTheDelay() {
-    var hold = SecureInputHold<String>()
-    hold.update("Ghostty", at: t0)
+    var hold = SecureInputHold()
+    hold.update(on: true, at: t0)
     #expect(hold.due == t0 + .milliseconds(500))
-    #expect(hold.shown(at: t0 + .milliseconds(499)) == nil)
-    #expect(hold.shown(at: t0 + .milliseconds(500)) == "Ghostty")
-    hold.update(nil, at: t0 + .milliseconds(8_400))
-    #expect(hold.shown(at: t0 + .milliseconds(8_400)) == nil)
+    #expect(!hold.shows(at: t0 + .milliseconds(499)))
+    #expect(hold.shows(at: t0 + .milliseconds(500)))
+    hold.update(on: false, at: t0 + .milliseconds(8_400))
+    #expect(!hold.shows(at: t0 + .milliseconds(8_400)))
 }
 
 @Test func aNewHolderKeepsTheHoldGoing() {
-    var hold = SecureInputHold<String>()
-    hold.update("Ghostty", at: t0)
-    hold.update("1Password", at: t0 + .milliseconds(300))
-    #expect(hold.shown(at: t0 + .milliseconds(500)) == "1Password")
-    hold.update("Safari", at: t0 + .milliseconds(900))
-    #expect(hold.shown(at: t0 + .milliseconds(900)) == "Safari")
+    var hold = SecureInputHold()
+    hold.update(on: true, at: t0)
+    hold.update(on: true, at: t0 + .milliseconds(300))
+    #expect(hold.shows(at: t0 + .milliseconds(500)))
 }
 
 @Test func aHoldAfterABriefOneWaitsItsOwnDelay() {
-    var hold = SecureInputHold<String>()
-    hold.update("Ghostty", at: t0)
-    hold.update(nil, at: t0 + .milliseconds(35))
-    hold.update("Ghostty", at: t0 + .milliseconds(400))
-    #expect(hold.shown(at: t0 + .milliseconds(500)) == nil)
-    #expect(hold.shown(at: t0 + .milliseconds(900)) == "Ghostty")
+    var hold = SecureInputHold()
+    hold.update(on: true, at: t0)
+    hold.update(on: false, at: t0 + .milliseconds(35))
+    hold.update(on: true, at: t0 + .milliseconds(400))
+    #expect(!hold.shows(at: t0 + .milliseconds(500)))
+    #expect(hold.shows(at: t0 + .milliseconds(900)))
 }

@@ -60,7 +60,7 @@ prefix.
   `KosmosCore/Tabs.swift`, `KosmosCore/SavedLayout.swift`, `KosmosApp/LayoutFile.swift`,
   `KosmosApp/Controller+Windows.swift`, `kosmos-probe/Tree.swift`.
 - [hotkeys.md](hotkeys.md): Carbon hotkeys, the hotkeys Secure Input stops, and how Kosmos
-  shows Secure Input and its holder, in the status item and an overlay.
+  shows Secure Input and its holder, in the status item and a badge.
   Code: `KosmosApp/Hotkeys.swift`, `KosmosCore/HotkeyTable.swift`,
   `KosmosCore/Config/KeyCombo.swift`, `KosmosCore/Config/KeyboardLayout.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/SecureInputOverlay.swift`,

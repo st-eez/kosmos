@@ -13,6 +13,9 @@ public struct Monitor: Equatable, Sendable {
     public var area: CGRect
     public var gaps: Gaps
 
+    /// The area inside the outer gaps, where tiles lie.
+    public var tilingArea: CGRect { tilingRect(area, gaps.outer) }
+
     public init(id: DisplayID, frame: CGRect, area: CGRect? = nil, gaps: Gaps = Gaps()) {
         self.id = id
         self.frame = frame
