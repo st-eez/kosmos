@@ -555,3 +555,16 @@
   writing the frame back and waiting for its read back would remove that. A click on the
   column during a peek hits the window, as the probe's hit test found; what Kosmos does with
   the key report that follows is untested.
+- Live on 2026-10-05 (0189caf, CuaDriver 0.32.0), with the front app, key window and
+  Kosmos's focus unchanged throughout:
+  - A TextEdit window on hidden workspace 8 answered "No content produced" to Cua's
+    `get_window_state`; inside `kosmos peek` the same call's PNG showed the text typed into
+    it a moment before. The log: 790.6 ms in all, the edge move 270.3 ms (a write through
+    TextEdit's Accessibility), the settle 166.7 ms, Cua's call 352.2 ms, concealed again in
+    2.8 ms. The edge move is the part to speed up.
+  - Wrapped and unwrapped, Cua's screenshot of a shown Ghostty window took 271 to 409 ms
+    and 298 to 307 ms over three runs each, and no `peek of` line was logged.
+  - A pixel click on a hidden Calculator, grounded on a peeked screenshot, was refused after
+    the peek (`capture_target_mismatch`), and inside the peek Cua posted it but Calculator's
+    display stayed 0: the point lay past the display's edge. Clicks by `element_token` land
+    on hidden windows, as on 2026-10-05 before (7 + 5 read back 12).
