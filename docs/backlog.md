@@ -175,7 +175,8 @@ Steve's windows on 2026-10-02, so none of his apps' own has been seen.
 ## Check the Secure Input badge live
 
 Kosmos shows a lock badge of its own once a Secure Input hold lasts 0.5 s
-([hotkeys.md](hotkeys.md)). Only unit tests and an offscreen snapshot have run it. Run
+([hotkeys.md](hotkeys.md)). Unit tests cover when it shows, and `Kosmos
+secure-input-preview` showed the badge on 2026-10-05, but no real hold has. Run
 `log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` during each check.
 - Run `sudo -k; sudo -v` in Ghostty and leave the password prompt open. It passes when, about
   half a second later, the badge shows 10 pt below the top center of the focused display's

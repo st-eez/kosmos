@@ -48,48 +48,53 @@ final class SecureInputOverlay {
 }
 
 /// Ghostty's Secure Input badge (macos/Sources/Features/Secure Input/SecureInputOverlay.swift,
-/// MIT) in AppKit: a lock over a glow at the edges that turns once every 2 s and pulses, at
-/// Ghostty's size. Plain layers, which the snapshot's offscreen render draws as the screen does.
+/// MIT) in AppKit, at its size: a lock over a blurred glow, masked to the edges, that turns
+/// once every 2 s and pulses. Core Animation runs both in WindowServer, where Ghostty's SwiftUI
+/// animation ticks on the main thread, which Kosmos keeps for switches.
 private final class BadgeView: NSView {
     static let size: CGFloat = 35
     /// From the tiling area's top edge, as Ghostty's sits from its window's corner.
     static let inset: CGFloat = 10
 
-    private let glow = CAGradientLayer()
-    /// The background color fading out toward the edges, so the glow shows only there.
-    private let fade = CAGradientLayer()
-    private let lock = CALayer()
+    private let glow = CALayer()
+    private let spin = CAGradientLayer()
+    private let lock = NSImageView()
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.size, height: Self.size))
         wantsLayer = true
+        layerUsesCoreImageFilters = true
         let layer = self.layer!
         layer.cornerRadius = 12
         layer.cornerCurve = .continuous
         layer.masksToBounds = true
         layer.borderWidth = 1
 
-        glow.type = .conic
-        glow.colors = [NSColor.cyan, .systemPurple, .orange, .systemPurple, .cyan].map(\.cgColor)
-        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
-        glow.endPoint = CGPoint(x: 0.5, y: 0)
+        spin.type = .conic
+        spin.colors = [NSColor.systemPurple, .systemBlue, .systemPurple, .systemBlue, .systemPurple].map(\.cgColor)
+        spin.startPoint = CGPoint(x: 0.5, y: 0.5)
+        spin.endPoint = CGPoint(x: 0.5, y: 0)
         // Larger than the badge, so its corners stay covered as it turns.
-        glow.frame = bounds.insetBy(dx: -Self.size / 2, dy: -Self.size / 2)
-        fade.type = .radial
-        fade.startPoint = CGPoint(x: 0.5, y: 0.5)
-        // Gone 25 pt from the center, where Ghostty's mask is full.
-        fade.endPoint = CGPoint(x: 0.5 + 25 / Self.size, y: 0.5 + 25 / Self.size)
-        fade.frame = bounds
-        lock.frame = bounds
-        lock.contentsGravity = .center
-        for sublayer in [glow, fade, lock] { layer.addSublayer(sublayer) }
+        spin.frame = bounds.insetBy(dx: -Self.size / 2, dy: -Self.size / 2)
+        spin.filters = [CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 4])!]
+        let edges = CAGradientLayer()
+        edges.type = .radial
+        edges.colors = [NSColor.clear.cgColor, NSColor.black.cgColor]
+        edges.startPoint = CGPoint(x: 0.5, y: 0.5)
+        // Clear at the center, full 25 pt from it, as Ghostty's mask.
+        edges.endPoint = CGPoint(x: 0.5 + 25 / Self.size, y: 0.5 + 25 / Self.size)
+        edges.frame = bounds
+        glow.frame = bounds
+        glow.mask = edges
+        glow.addSublayer(spin)
+        layer.addSublayer(glow)
 
         let turn = CABasicAnimation(keyPath: "transform.rotation.z")
         turn.fromValue = 0
         turn.toValue = -2 * Double.pi
         turn.duration = 2
         turn.repeatCount = .infinity
-        glow.add(turn, forKey: "turn")
+        spin.add(turn, forKey: "turn")
         let pulse = CABasicAnimation(keyPath: "opacity")
         pulse.fromValue = 0.5
         pulse.toValue = 1
@@ -97,31 +102,25 @@ private final class BadgeView: NSView {
         pulse.autoreverses = true
         pulse.repeatCount = .infinity
         glow.add(pulse, forKey: "pulse")
+
+        lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Secure Input")
+        lock.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        lock.contentTintColor = .labelColor
+        lock.imageScaling = .scaleNone
+        lock.frame = bounds
+        addSubview(lock)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var wantsUpdateLayer: Bool { true }
 
-    /// Layer colors are fixed values, so each appearance or scale change sets them again.
+    /// Layer colors are fixed values, resolved under the window's dark appearance.
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let background = NSColor.windowBackgroundColor
-            layer?.backgroundColor = background.cgColor
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             layer?.borderColor = NSColor.systemGray.cgColor
-            fade.colors = [background.cgColor, background.withAlphaComponent(0).cgColor]
-            let scale = window?.backingScaleFactor ?? 4
-            let symbol = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Secure Input")!
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor.labelColor.usingColorSpace(.sRGB)!])))!
-            lock.contentsScale = scale
-            lock.contents = symbol.layerContents(forContentsScale: scale)
         }
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        needsDisplay = true
     }
 }
 
@@ -141,6 +140,8 @@ private final class BadgeWindow: NSWindow {
         // Above floating windows, modal panels and the menu bar when it shows.
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        // The same badge in light and dark mode.
+        appearance = NSAppearance(named: .darkAqua)
         contentView = BadgeView()
     }
 
@@ -148,41 +149,27 @@ private final class BadgeWindow: NSWindow {
     override var canBecomeMain: Bool { false }
 }
 
-// MARK: Snapshot
+// MARK: Preview
 
 extension SecureInputOverlay {
-    /// Draws the badge in light and dark mode at 4x without showing a window, still: the turn
-    /// and the pulse need WindowServer.
-    static func snapshot(_ arguments: [String]) -> Int32 {
-        guard arguments.count == 1 else {
-            FileHandle.standardError.write(Data("usage: Kosmos secure-input-snapshot <directory>\n".utf8))
+    /// Shows the badge for `seconds` at the top center of the main display, without taking
+    /// focus or the mouse, and prints its window number for `screencapture -l`. The glow's blur
+    /// and mask need WindowServer, which an offscreen render leaves out.
+    static func preview(_ arguments: [String]) -> Int32 {
+        guard arguments.count <= 1, let seconds = Double(arguments.first ?? "10") else {
+            FileHandle.standardError.write(Data("usage: Kosmos secure-input-preview [seconds]\n".utf8))
             return 2
         }
-        let directory = URL(filePath: arguments[0], directoryHint: .isDirectory)
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            for (appearance, mode) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
-                let view = BadgeView()
-                view.appearance = NSAppearance(named: appearance)
-                view.updateLayer()
-                view.layoutSubtreeIfNeeded()
-                let scale: CGFloat = 4
-                let pixels = Int(BadgeView.size * scale)
-                guard let bitmap = NSBitmapImageRep(
-                    bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
-                    samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                    bytesPerRow: 0, bitsPerPixel: 0),
-                    let context = NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext else { return 1 }
-                context.scaleBy(x: scale, y: scale)
-                view.layer!.render(in: context)
-                let file = directory.appending(path: "secure-input-\(mode).png")
-                try bitmap.representation(using: .png, properties: [:])!.write(to: file)
-                print(file.path)
-            }
-        } catch {
-            FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
-            return 1
-        }
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let window = BadgeWindow()
+        let area = NSScreen.main?.visibleFrame ?? .zero
+        window.setFrameOrigin(NSPoint(x: (area.midX - BadgeView.size / 2).rounded(),
+                                      y: area.maxY - BadgeView.inset - BadgeView.size))
+        window.orderFrontRegardless()
+        print(window.windowNumber)
+        fflush(stdout)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
         return 0
     }
 }
