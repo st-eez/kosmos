@@ -172,6 +172,22 @@ Steve's windows on 2026-10-02, so none of his apps' own has been seen.
   their button read again once the drag ends.
 - Open System Settings. It should float by rule.
 
+## Check the Secure Input overlay live
+
+Kosmos shows an overlay of its own once a Secure Input hold lasts 0.5 s
+([hotkeys.md](hotkeys.md)). Only unit tests and an offscreen snapshot have run it. Run
+`log stream --predicate 'subsystem == "io.github.st-eez.kosmos"'` during each check.
+- Run `sudo -k; sudo -v` in Ghostty and leave the password prompt open. It passes when, about
+  half a second later, the overlay shows at the top center of the display Kosmos has
+  focused and names Ghostty, the keys keep going to Ghostty, and the overlay goes as the
+  prompt ends. The log shows `secure input on, held by Ghostty`, then `secure input overlay
+  shown on display N`, then `secure input off`.
+- A brief hold shows nothing. Most of Steve's holds last about 35 ms, so through ordinary
+  use, each `secure input on` line followed by `secure input off` within half a second
+  should have no `overlay shown` line between them, and no overlay should flash.
+- Run the `sudo` check again in a native fullscreen Ghostty window. The overlay should show
+  over it.
+
 ## Watch a title rule apply on a retitle
 
 The Bitwarden pop-out floated by its title rule live on 2026-10-02, in Chrome (53114 at

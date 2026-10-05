@@ -60,9 +60,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
             menu.addItem(withTitle: "Waiting for Accessibility permission", action: nil, keyEquivalent: "")
         }
         if let secureInput {
-            menu.addItem(withTitle: "Secure Input is on, held by \(secureInput)", action: nil, keyEquivalent: "")
-            menu.addItem(withTitle: "Until it is off, alt and alt-shift bindings on letter, digit and punctuation keys do nothing",
-                         action: nil, keyEquivalent: "")
+            menu.addItem(withTitle: secureInput.heldBy, action: nil, keyEquivalent: "")
+            menu.addItem(withTitle: SecureInput.waiting, action: nil, keyEquivalent: "")
         }
         for problem in problems.prefix(8) { menu.addItem(withTitle: problem, action: nil, keyEquivalent: "") }
         if problems.count > 8 { menu.addItem(withTitle: "and \(problems.count - 8) more in the log", action: nil, keyEquivalent: "") }

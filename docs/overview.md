@@ -149,7 +149,8 @@ sends its batches, to other Spaces.
    windows' borders after the focus request ([borders.md](borders.md)).
 5. The main actor publishes one bar snapshot.
 
-A switch launches no process, writes no file and leaves the status item alone. Everything
+A switch launches no process, writes no file and leaves the status item and the Secure
+Input overlay alone. Everything
 Kosmos causes (a hide, a reveal, a frame write, a focus request) is recorded as an
 expected echo and consumed before any notification is treated as the user's.
 

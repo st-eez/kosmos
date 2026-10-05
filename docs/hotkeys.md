@@ -63,8 +63,33 @@
   Secure Input turns off and on again.
 - While Secure Input is on, the status item shows a lock, names the holder and says which
   bindings wait, and the log records each change. For a holder with no windows of its own,
-  WindowServer names the frontmost app instead. Showing it in the bar, for a Mac that hides
-  the menu bar, is a later option: the snapshot can gain a field without a new version.
+  WindowServer names the frontmost app instead.
+- Steve's menu bar hides itself, so an overlay of Kosmos's own
+  (`KosmosApp/SecureInputOverlay.swift`) shows the status menu's two lines on screen once a
+  hold has lasted 0.5 s, and goes as soon as Secure Input turns off. On 2026-09-28 Secure
+  Input was held 27 times in about four hours, mostly for about 35 ms and at most 8.4 s, so
+  an overlay at every hold would flicker. A new holder while it shows changes its text.
+  `SecureInputHold` in KosmosCore decides when it shows, and its tests cover a brief hold, a
+  new holder and a hold that follows a brief one.
+  - It shows on the display the model has focused, at the top center, below the notch and
+    a menu bar that stays shown, so it covers no centered password dialog. Only a Secure
+    Input change and its own 0.5 s wait write to it, and nothing in a switch does, so when
+    the focus moves to another display it stays where it is until the holder changes or
+    Secure Input turns off. While Kosmos only observes or waits for Accessibility, it
+    registers no hotkeys and shows no overlay.
+  - Its window is set up as a border's ([borders.md](borders.md)): borderless, never key or
+    main, ignoring the mouse, hidden in Mission Control and out of the window cycle, and
+    kept on screen when Hide Others in another app hides Kosmos. It also joins every Space
+    and shows beside another app's native fullscreen window (`.canJoinAllSpaces` and
+    `.fullScreenAuxiliary`). Its level is the status bar's, above floating windows, modal
+    panels and the menu bar when it shows. The inventory admits no window of an app that is
+    not regular, and Kosmos is an accessory app, so the overlay is never tiled, bordered
+    or tracked. A window at a level other than 0 is no candidate either
+    ([inventory.md](inventory.md)).
+  - Nothing has shown it live yet ([backlog.md](backlog.md)). `Kosmos secure-input-snapshot
+    <directory>` draws it in light and dark mode into PNG files without showing a window.
+    The material's blur needs WindowServer, so the files show its flat fallback.
+- The bar could show Secure Input too: the snapshot can gain a field without a new version.
 - A reload does not warn about bindings that stop. They stop only while Secure Input is
   on, and the sample config binds 34 of them on purpose by the rule above, so the warning
   would come with every reload.
