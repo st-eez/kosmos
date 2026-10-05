@@ -438,32 +438,48 @@
     the cover takes the mouse. A real app can take longer to draw after the occlusion change
     than the probe's panel: Discord showed black for about a second when its workspace came
     back on September 25, 2026.
-  - Since branch `peekreal` the probe has two more variants and peeks real apps' windows;
-    neither has run yet. `plain` removes the window from the holding Space with nothing over
-    it, so the user sees it at its frame: the baseline for how long an app takes to draw
-    again. `corner` first moves the concealed window so that only its corner point stays on
-    its display, as AeroSpace hid windows, then removes it from the holding Space with no
-    cover. It takes the first bottom corner, else top corner, past which no other display
-    lies on either edge, since a window between two displays shows on the other one. Its
-    capture of the screen is the 80 points around that point. Each trial reads the front app,
-    its key window, Kosmos's focus and display, and the pointer before and after it.
-  - `chrome`, `finder`, `textedit` and `electron[=<app>]` run `plain`, `corner` and `covered`
-    on a window the probe opens without activating its app: a page in Chrome for Testing
-    that draws the panel's cells from the wall clock, a Finder window on a folder whose file
-    the probe renames before each trial, a TextEdit document whose text it sets through
-    Accessibility before each trial, read back with Vision, and an Electron app it launches,
-    Obsidian by default, whose capture counts as current when it is not black and differs
-    from the last one. Kosmos manages every such window and no rule leaves one out
-    ([inventory.md](inventory.md)), so the probe lets Kosmos conceal it: Kosmos admits it, as
-    a window of the focused workspace or the one its rule names, then `kosmos
-    move-node-to-workspace --window-id` sends it to an empty workspace that no display shows,
-    and each peek takes it out of Kosmos's holding Space and puts it back. Kosmos leaves out
-    a concealed window's change events ([geometry.md](geometry.md)), so the corner move goes
-    unanswered, and a batch confirms only the windows it names. A switch that shows the
-    workspace during a peek reveals the window as Kosmos has it, so after each conceal the
-    probe takes the window out of the holding Space again when the workspace is shown, and
-    stops. A resync after an unlock or a wake conceals every hidden window again, and one
-    during a peek would fail its batch, so recovery would show every concealed window until
-    the next switch. The probe leaves each window at its own frame in the holding Space, and
-    quits the apps it launched, closes the windows it opened in apps already running, and
-    removes its files, at the end and at Ctrl-C.
+  - Since branch `peekreal` the probe peeks real apps' windows too, with two more variants.
+    `plain` removes the window from the holding Space with nothing over it, so the user sees
+    it at its frame. `corner` first moves the concealed window so that one column of points
+    stays on its display, past its right or left edge with its top 40 points down, else past
+    a bottom corner, then removes it from the holding Space with no cover. A frame past an
+    edge where another display lies would show the window there, so it takes an edge with
+    none. Each trial reads the front app, its key window, Kosmos's focus and display, and the
+    pointer before and after it.
+  - `chrome`, `finder`, `textedit` and `electron[=<app>]` peek a window the probe opens
+    without activating its app: a Chrome for Testing page that draws the panel's cells from
+    the wall clock, a Finder window on a folder whose file the probe renames, a TextEdit
+    document whose text it sets through Accessibility and reads back with Vision, and an
+    Electron app, Obsidian by default, whose capture counts as current when it is not black
+    and differs from the last one. Kosmos manages every such window and no rule leaves one
+    out ([inventory.md](inventory.md)), so the probe lets Kosmos conceal it: `kosmos
+    move-node-to-workspace --window-id` sends it to an empty workspace no display shows, and
+    each peek takes it out of Kosmos's holding Space and puts it back. Kosmos leaves out a
+    concealed window's change events ([geometry.md](geometry.md)), so the edge move goes
+    unanswered, and a batch confirms only the windows it names.
+  - Runs on 2026-10-05 (macOS 27, main display 1920 by 1080, 5 trials a variant, CuaDriver
+    0.32.0), every trial with the front app, key window and Kosmos's focus unchanged:
+    - `corner` was current in 5 of 5 for the probe's panel (74 ms from the peek at the
+      median), TextEdit (81 ms) and Chrome for Testing (118 ms), whose page stops drawing
+      while occluded. The captures were whole and opaque, the part off the display
+      included: Vision read TextEdit's current text from ScreenCaptureKit, `screencapture
+      -l` and CuaDriver's `get_window_state` (458 ms) alike. On screen, only the column
+      changed, 272 pixels by up to 55 levels of 255, and a click on it hits the window.
+    - A bottom corner failed for real apps: TextEdit and Chrome for Testing kept their top
+      edge on the display (Chrome's frame stopped at y 1039 of 1079), so the probe now
+      tries an edge first.
+    - `plain` was current in 5 of 5 for the panel (88 ms), TextEdit (96 ms) and Chrome for
+      Testing (95 ms), with the window in full view.
+    - `covered` worked for the panel (82 ms after a 77 ms cover). For a 1900 point window
+      the cover is most of a display, and the probe's check stopped it when 15,091 pixels
+      outside the window changed during the cover, Steve's terminal drawing on.
+    - Obsidian's captures in `plain` and `corner` were whole and opaque, but its release
+      notes page did not change, so no capture could show it current.
+    - Opening the apps, before any peek: Chrome for Testing's launch raised a keychain
+      prompt for "Chromium Safe Storage" until the probe passed `--use-mock-keychain`, and
+      Obsidian came to the front. Finder opened its window more than 20 s late, after the
+      probe gave up, on the focused workspace.
+    - The Mac locked during the Obsidian run. The displays dropped out and came back from
+      13:45:36, Kosmos's next switch failed its batch, and recovery showed every concealed
+      window until the following switch, the resync risk above. A peek of Kosmos's must
+      give way to a display change or lock.

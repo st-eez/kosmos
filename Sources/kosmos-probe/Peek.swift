@@ -14,10 +14,10 @@
 //                                   5 trials by default, or the variants named run alone:
 //                                     plain    in its display's current Space at its own frame,
 //                                              which the user sees
-//                                     corner   the same, moved first so that only its corner
-//                                              point stays on its display, past a bottom corner
-//                                              with no display beyond either edge if there is
-//                                              one, as AeroSpace hid windows
+//                                     corner   the same, moved first so that only one column of
+//                                              points stays on its display, past its right or
+//                                              left edge, else a bottom corner, with no
+//                                              display past it, as AeroSpace hid windows
 //                                     clear    an animation Space, level 1, at alpha 0
 //                                     faint    the same at alpha 0.01
 //                                     clipped  faint, with the Space's shape set to one point
@@ -640,16 +640,18 @@ private func activeDisplays() -> [CGDirectDisplayID] {
     return Array(ids.prefix(Int(count)))
 }
 
-/// A frame of `size` with only its corner point on `display` and no part on another display,
-/// bottom corners first, since AppKit keeps a title bar below the top edge's menu bar; nil
-/// when another display lies past an edge at every corner. A corner between two displays would
-/// show the window on the other one.
+/// A frame of `size` with one column of points on `display` and no part on another display,
+/// past its right or left edge with its top inside the display, then past a bottom corner; nil
+/// when another display lies past each. AppKit keeps a window's top edge on its display, so
+/// TextEdit and Chrome for Testing refused a bottom corner on 2026-10-05 and took an edge.
+/// A frame between two displays would show the window on the other one.
 private func cornerFrame(_ size: CGSize, on display: CGRect, besides others: [CGRect]) -> (frame: CGRect, name: String)? {
+    let top = display.minY + max(0, min(40, display.height - size.height))
     let candidates = [
+        ("right edge", CGPoint(x: display.maxX - 1, y: top)),
+        ("left edge", CGPoint(x: display.minX - size.width + 1, y: top)),
         ("bottom right", CGPoint(x: display.maxX - 1, y: display.maxY - 1)),
         ("bottom left", CGPoint(x: display.minX - size.width + 1, y: display.maxY - 1)),
-        ("top right", CGPoint(x: display.maxX - 1, y: display.minY - size.height + 1)),
-        ("top left", CGPoint(x: display.minX - size.width + 1, y: display.minY - size.height + 1)),
     ]
     for (name, origin) in candidates {
         let frame = CGRect(origin: origin, size: size)

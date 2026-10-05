@@ -340,7 +340,7 @@ extension Pixels {
         let t0 = Int((Date().timeIntervalSince1970 * 1000).rounded())
         let page = directory.appending(path: "peek.html")
         guard (try? countPage(t0: t0).write(to: page, atomically: true, encoding: .utf8)) != nil else { return fail("the page was not written") }
-        opened = openInBackground(chrome, arguments: ["--user-data-dir=\(directory.appending(path: "profile").path)", "--no-first-run",
+        opened = openInBackground(chrome, arguments: ["--user-data-dir=\(directory.appending(path: "profile").path)", "--no-first-run", "--use-mock-keychain",
                                                       "--no-default-browser-check", "--new-window", page.absoluteString],
                                   newInstance: true)
         (launched, before, matches) = (true, [], { _ in true })
