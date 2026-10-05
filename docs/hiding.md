@@ -568,3 +568,16 @@
     the peek (`capture_target_mismatch`), and inside the peek Cua posted it but Calculator's
     display stayed 0: the point lay past the display's edge. Clicks by `element_token` land
     on hidden windows: earlier that day 7 + 5 read back 12.
+- `below` for real apps, 2026-10-05 (Chrome for Testing launched with
+  `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding` and
+  `--disable-background-timer-throttling`): the window in a Space shown one level under the
+  desktop Space, stripped of its ordinary Space, at alpha 1. The window list put the desktop
+  picture directly over it in every trial, and a hit test at its center found the user's
+  window. TextEdit was current in 3 of 3 (98 ms at the median) and Chrome for Testing in 3 of
+  3 (85 ms), from ScreenCaptureKit, `screencapture -l` and CuaDriver alike; Chrome's counter
+  advanced between captures, so it drew throughout. The probe's panel, which stops drawing
+  while occluded, had read stale there on 2026-10-02: the capture works under the desktop
+  picture, and whether it is current is the app's. The pixel check cannot judge `below` on
+  a display the user's windows draw on, so the probe takes the window list's order instead.
+  Without its switches Chrome stops drawing when fully covered (an opaque window over a
+  shown workspace's windows on 2026-10-05): two captures a second apart were the same.

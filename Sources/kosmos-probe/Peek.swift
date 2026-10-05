@@ -98,7 +98,7 @@ enum PeekVariant: String, CaseIterable {
     var ordinary: Bool { self == .plain || self == .corner }
 
     /// What an app's window runs; the panel settled the others (docs/hiding.md).
-    static let forApps: [PeekVariant] = [.plain, .corner, .covered]
+    static let forApps: [PeekVariant] = [.plain, .corner, .covered, .below]
 }
 
 /// How far the captures of the screen reach past the window's frame, for its shadow.
@@ -851,6 +851,7 @@ private struct PeekTrial {
                 continue
             }
             var seen = captureArea(area)
+            var underPicture = false
             if variant == .below && seen?.magenta == 0 {
                 let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? [])
                 let own = order.firstIndex { $0[kCGWindowNumber as String] as? UInt32 == window }
@@ -862,6 +863,7 @@ private struct PeekTrial {
                       + "desktop pictures over its rest at \(pictures)")
                 seen = nil
                 if let own, pictures.contains(where: { $0 < own }) {
+                    underPicture = true
                     kosmos_space_set_alpha(space, 1)
                     seen = captureArea(area)
                 }
@@ -878,7 +880,9 @@ private struct PeekTrial {
                 shows = variant != .corner && (pixels < 0 || pixels > (variant == .tiny ? 4 : 0))
                 seenText = "the screen showed \(pixels) of its pixels"
             } else {
-                shows = variant != .corner && (difference?.over2 ?? 1) > 0
+                // Under the desktop picture the window list decides: the user's own windows draw
+                // over the window's area too, so its pixels can change without it showing.
+                shows = variant == .below ? !underPicture : variant != .corner && (difference?.over2 ?? 1) > 0
                 seenText = "the screen changed by more than 2 levels in \(difference?.over2 ?? -1) pixels"
             }
             if shows && variant.alpha == 1 && space != 0 { kosmos_space_set_alpha(space, 0) }
