@@ -74,7 +74,6 @@ extension Controller {
         concealed()
         guard let frame = peeking.frames.replaced(old, by: new) else { return }
         writeFrames([new: frame])
-        if !sessionLocked { peeking.frames.sent(new) }
     }
 
     /// A row of the window, from its change event or the one last read, after the ledger saw
@@ -105,10 +104,13 @@ extension Controller {
     }
 
     /// When the displays are applied, as at the unlock, before the resync's plan: the write
-    /// backs a lock dropped (PeekFrames.takeOwed).
+    /// backs a lock dropped. Each stays owed until `sendWrites` hands it over, as one still
+    /// held behind a batch is joined by this write and waits with it.
     func writeOwedPeekFrames() {
-        guard !peeking.frames.owed.isEmpty else { return }
-        writeFrames(peeking.frames.takeOwed().filter { hiding.isConcealed($0.key) })
+        let owed = peeking.frames.owed
+        guard !owed.isEmpty else { return }
+        for window in owed.keys where !hiding.isConcealed(window) { peeking.frames.forget(window) }
+        writeFrames(owed.filter { hiding.isConcealed($0.key) })
     }
 
     private func preparePeek(_ window: WindowID) -> Peeks.Preparation {
@@ -173,8 +175,9 @@ extension Controller {
     /// The window goes back into the holding Space in a batch of its own, sent ahead of the
     /// batches waiting, and its write back waits for that batch, as does a switch that shows it
     /// (BatchOrder.addSent). While locked the batch still goes, as a lock or display change with
-    /// the window out made the next batch fail on 2026-10-05. A write back that a lock drops,
-    /// here or when the batch is done, stays owed until the unlock (PeekFrames).
+    /// the window out made the next batch fail on 2026-10-05. The write back stays owed until
+    /// `sendWrites` hands it to the app, so one a lock drops is written at the unlock
+    /// (PeekFrames).
     private func endPeek(_ peek: Peeks.Peek, _ outcome: Peeks.Outcome, conceal: Bool, rest: CGRect?) {
         if let waiting = peeking.waiting.removeValue(forKey: peek.number) {
             // The command runs without the peek.
@@ -190,7 +193,6 @@ extension Controller {
             hiding.apply(show: [], on: [:], hide: [peek.window], stripping: []) { [weak self] result, _ in
                 guard let self else { return }
                 sendWrites(order.done(batch.number))
-                if !sessionLocked { peeking.frames.sent(peek.window) }
                 sendReadyBatches()
                 if case .failed = result {
                     controllerLog.error("the conceal after a peek of \(peek.window) failed; recovery ran")
@@ -200,10 +202,7 @@ extension Controller {
             }
         }
         // A deselected tab's goes to the tab selected in its place (peekTabReplaced).
-        if let back, outcome != .replaced {
-            writeFrames([peek.window: back])
-            if !conceal && !sessionLocked { peeking.frames.sent(peek.window) }
-        }
+        if let back, outcome != .replaced { writeFrames([peek.window: back]) }
         if !conceal { logPeek(peek, outcome, ended: ended, concealed: nil) }
     }
 

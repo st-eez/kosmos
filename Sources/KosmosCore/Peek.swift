@@ -308,7 +308,7 @@ extension Peeks {
 public struct PeekFrames: Sendable {
     /// Targets Kosmos wrote for the window of the peek under way, which would show it there.
     private var later: [WindowID: CGRect] = [:]
-    /// Write backs not yet sent to their apps: held behind the end's batch, or by a lock.
+    /// Write backs not yet handed to their apps: held behind a batch, or dropped by a lock.
     public private(set) var owed: [WindowID: CGRect] = [:]
 
     public init() {}
@@ -322,7 +322,7 @@ public struct PeekFrames: Sendable {
         return others
     }
 
-    /// The frame a peek's end writes back, owed until `sent`: the newest target held while
+    /// The frame a peek's end writes back, owed until `handed`: the newest target held while
     /// the peek was under way, else `rest`. Nil, owing nothing, without a rest.
     public mutating func ended(_ window: WindowID, rest: CGRect?) -> CGRect? {
         let held = later.removeValue(forKey: window)
@@ -331,8 +331,17 @@ public struct PeekFrames: Sendable {
         return held ?? rest
     }
 
-    /// The write back went to its app.
-    public mutating func sent(_ window: WindowID) {
+    /// Writes about to go to the apps of `windows`, which have a worker. Held behind a batch,
+    /// a write back has not gone; while `locked` none goes, as the controller drops every
+    /// write then, so each stays owed. A write to a window that owes one is its write back or
+    /// a newer target, which a held write back joins.
+    public mutating func handed(_ windows: some Sequence<WindowID>, locked: Bool) {
+        guard !locked, !owed.isEmpty else { return }
+        for window in windows { owed[window] = nil }
+    }
+
+    /// Its window closed or is no longer concealed, so nothing is written back.
+    public mutating func forget(_ window: WindowID) {
         owed[window] = nil
     }
 
@@ -343,10 +352,4 @@ public struct PeekFrames: Sendable {
         return frame
     }
 
-    /// Every write back not sent, as one a lock dropped, whatever ended its peek. The displays'
-    /// apply at the unlock writes them.
-    public mutating func takeOwed() -> [WindowID: CGRect] {
-        defer { owed = [:] }
-        return owed
-    }
 }

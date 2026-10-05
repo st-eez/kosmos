@@ -155,6 +155,7 @@ extension Controller {
 
     private func forget(_ id: WindowID) {
         peekGiveWay(id, .closed)
+        peeking.frames.forget(id)
         titleWatch.end(id)
         owner[id] = nil
         recent.removeAll { $0 == id }

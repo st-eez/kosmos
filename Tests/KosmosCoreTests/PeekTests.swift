@@ -235,6 +235,35 @@ private let facts = Peeks.Facts(concealed: true, frame: rest, display: main)
 
 // MARK: Frames written back
 
+/// The controller's write path in small: a write waits in `order` while a batch not done
+/// conceals its window, and only `send`, which a lock stops, hands it to its app, as
+/// `Controller.sendWrites` does. `unlock` is the displays' apply, which writes what is owed.
+private struct WritePath {
+    var order = BatchOrder()
+    var frames = PeekFrames()
+    var locked = false
+    /// What reached the apps.
+    var reached: [WindowID: CGRect] = [:]
+
+    mutating func write(_ targets: [WindowID: CGRect]) {
+        send(order.write(targets.mapValues { (.frame($0), $0) }))
+    }
+
+    mutating func done(_ batch: BatchOrder.Batch) {
+        send(order.done(batch.number))
+    }
+
+    mutating func send(_ writes: [WindowID: BatchOrder.Write]) {
+        frames.handed(writes.keys, locked: locked)
+        if !locked { reached.merge(writes.mapValues(\.target)) { $1 } }
+    }
+
+    mutating func unlock() {
+        locked = false
+        write(frames.owed)
+    }
+}
+
 @Test func aRelayoutTargetForThePeekedWindowWaitsAndIsWrittenBackInPlaceOfItsRest() {
     var frames = PeekFrames()
     let tile = CGRect(x: 10, y: 35, width: 945, height: 1035)
@@ -247,18 +276,92 @@ private let facts = Peeks.Facts(concealed: true, frame: rest, display: main)
 }
 
 @Test(arguments: [Peeks.Outcome.screensSlept, .displaysChanged, .finished, .timedOut, .locked])
-func aWriteBackALockDropsIsOwedUntilTheUnlockWhateverEndedThePeek(outcome: Peeks.Outcome) {
+func aWriteBackALockDropsIsOwedUntilTheUnlockWhateverEndedThePeek(outcome: Peeks.Outcome) throws {
     var (peeks, number) = running()
     guard case .end(_, outcome, true, let back?)? = only(peeks.ended(number, outcome)) else { Issue.record("no write back"); return }
-    var frames = PeekFrames()
-    #expect(frames.ended(7, rest: back) == rest)
-    // A lock before the end's batch is done drops the write, so nothing is sent.
-    #expect(frames.takeOwed() == [7: rest])
-    #expect(frames.takeOwed().isEmpty)
-    // Sent with no lock, it is owed no longer.
-    _ = frames.ended(7, rest: back)
-    frames.sent(7)
-    #expect(frames.owed.isEmpty)
+    var path = WritePath()
+    let end = path.order.addSent(hide: [7])
+    let owed = path.frames.ended(7, rest: back)
+    path.write([7: try #require(owed)])
+    // Held behind the end's batch, which a lock catches in flight.
+    #expect(path.reached.isEmpty && path.frames.owed == [7: rest])
+    path.locked = true
+    path.done(end)
+    #expect(path.reached.isEmpty && path.frames.owed == [7: rest])
+    path.unlock()
+    #expect(path.reached == [7: rest])
+    #expect(path.frames.owed.isEmpty)
+}
+
+@Test func aWriteBackHeldBehindAPlanThatConcealsTheWindowAgainStaysOwedPastTheEndsBatch() throws {
+    var path = WritePath()
+    let end = path.order.addSent(hide: [7])
+    let owed = path.frames.ended(7, rest: rest)
+    path.write([7: try #require(owed)])
+    let plan = path.order.add(show: [], hide: [7])
+    #expect(path.order.ready { _ in false } == [plan])
+    // The end's batch releases nothing while the plan's conceals the window.
+    path.done(end)
+    #expect(path.reached.isEmpty && path.frames.owed == [7: rest])
+    path.locked = true
+    path.done(plan)
+    #expect(path.frames.owed == [7: rest])
+    path.unlock()
+    #expect(path.reached == [7: rest])
+}
+
+@Test func aWriteBackThatConcealsNothingHeldBehindTheLastPeeksEndStaysOwed() throws {
+    // The previous peek's end is in flight when this one ends in its moving phase.
+    var path = WritePath()
+    let earlier = path.order.addSent(hide: [7])
+    var peeks = Peeks()
+    _ = peeks.request(7)
+    _ = peeks.next(prepare: ready)
+    guard case .end(_, .shown, false, let back?)? = only(peeks.giveWay(7, .shown)) else { Issue.record("no write back"); return }
+    let owed = path.frames.ended(7, rest: back)
+    path.write([7: try #require(owed)])
+    #expect(path.reached.isEmpty && path.frames.owed == [7: rest])
+    path.locked = true
+    path.done(earlier)
+    path.unlock()
+    #expect(path.reached == [7: rest])
+}
+
+@Test func aReloadWhileAWriteBackIsHeldLeavesItOwed() throws {
+    var path = WritePath()
+    let end = path.order.addSent(hide: [7])
+    let owed = path.frames.ended(7, rest: rest)
+    path.write([7: try #require(owed)])
+    // The reload's apply writes what is owed, which joins the write still held.
+    path.write(path.frames.owed)
+    #expect(path.reached.isEmpty && path.frames.owed == [7: rest])
+    path.locked = true
+    path.done(end)
+    path.unlock()
+    #expect(path.reached == [7: rest])
+    #expect(path.frames.owed.isEmpty)
+}
+
+@Test func theTabSelectedInADeselectedTabsPlaceTakesItsRestOnceItsConcealIsDone() throws {
+    var (peeks, _) = running()
+    guard case .end(_, .replaced, false, let back?)? = only(peeks.giveWay(7, .replaced)) else { Issue.record("no rest"); return }
+    var path = WritePath()
+    _ = path.frames.ended(7, rest: back)
+    // The replace's plan conceals tab 9, which shows at the edge.
+    let plan = path.order.add(show: [], hide: [9])
+    #expect(path.order.ready { _ in false } == [plan])
+    let handedOver = path.frames.replaced(7, by: 9)
+    path.write([9: try #require(handedOver)])
+    #expect(path.reached.isEmpty && path.frames.owed == [9: rest])
+    #expect(path.frames.replaced(7, by: 9) == nil)
+    path.locked = true
+    path.done(plan)
+    path.unlock()
+    #expect(path.reached == [9: rest])
+    // A waiting peek's window was never moved.
+    var waiting = Peeks()
+    _ = waiting.request(7)
+    guard case .end(_, .replaced, false, nil)? = only(waiting.giveWay(7, .replaced)) else { Issue.record("moved"); return }
 }
 
 @Test func aClosedWindowOwesNothing() {
@@ -267,20 +370,8 @@ func aWriteBackALockDropsIsOwedUntilTheUnlockWhateverEndedThePeek(outcome: Peeks
     #expect(frames.ended(7, rest: nil) == nil)
     #expect(frames.owed.isEmpty)
     #expect(frames.ended(7, rest: edge) == edge)
-}
-
-@Test func theTabSelectedInADeselectedTabsPlaceTakesItsRest() {
-    var (peeks, _) = running()
-    guard case .end(_, .replaced, false, rest?)? = only(peeks.giveWay(7, .replaced)) else { Issue.record("no rest"); return }
-    var frames = PeekFrames()
-    _ = frames.ended(7, rest: rest)
-    #expect(frames.replaced(7, by: 9) == rest)
-    #expect(frames.owed == [9: rest])
-    #expect(frames.replaced(7, by: 9) == nil)
-    // A waiting peek's window was never moved.
-    var waiting = Peeks()
-    _ = waiting.request(7)
-    guard case .end(_, .replaced, false, nil)? = only(waiting.giveWay(7, .replaced)) else { Issue.record("moved"); return }
+    frames.forget(7)
+    #expect(frames.owed.isEmpty)
 }
 
 @Test func eachResyncNamesItsOwnCause() {

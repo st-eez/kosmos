@@ -537,9 +537,12 @@
   - the CLI closes its connection, or the command runs past 10 s, about 20 times
     CuaDriver's `get_window_state` (458 ms). A slower command's captures after that fail,
     and the CLI says the peek ended early.
-- A write back is owed until it goes to its app (`PeekFrames`). A lock drops writes, so one
-  a lock catches, at the end or when the end's batch is done after a peek that ended for
-  another reason, is written when the displays are applied at the unlock. Dropped, it would
+- A write back is owed until `sendWrites`, the one place a frame write reaches its app, hands
+  it over unlocked (`PeekFrames.handed`). Until then it can wait behind the end's batch, a
+  later batch that conceals the window again, the end of the peek before it, or, for a
+  deselected tab's, the batch that conceals the tab selected in its place; a lock drops it
+  wherever it waits. Each apply of the displays, at the unlock, a reload or a profile, writes
+  what is still owed, and that write joins one still waiting. Dropped, a write back would
   leave the window at its edge frame: a switch writes only tiles, so a floating window would
   show there, and the next peek of it would take the edge for its rest frame.
 - A peek keys, raises and focuses nothing, and moves neither the pointer nor a workspace.

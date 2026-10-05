@@ -448,6 +448,9 @@ final class Controller {
     /// not left pending.
     func sendWrites(_ writes: [WindowID: BatchOrder.Write]) {
         let now = ContinuousClock.now
+        // Only here does a write reach its app, so only here is a peek's write back no longer
+        // owed (PeekFrames.handed).
+        peeking.frames.handed(writes.keys.filter { owner[$0].flatMap(inventory.worker) != nil }, locked: sessionLocked)
         for (pid, group) in Dictionary(grouping: writes, by: { owner[$0.key] }) {
             guard !sessionLocked, let worker = pid.flatMap(inventory.worker) else {
                 for (id, _) in group { ledger.forget(id) }
