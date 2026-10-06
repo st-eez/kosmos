@@ -1,6 +1,7 @@
 # Integrations
 
-- **Status bar (SketchyBar).** Kosmos sends one `kosmos_state` event per change, holding
+- **Status bar (SketchyBar, and Zenith, which replaces it).** Kosmos sends each bar one
+  snapshot per change ([ipc.md](ipc.md)), to SketchyBar as a `kosmos_state` event, holding
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
   active profile; and every connected display, numbered as SketchyBar numbers it, from the
@@ -9,7 +10,8 @@
   in SketchyBar 2.24.0's src/display.c). A workspace's display is the one [displays.md](displays.md) lays it
   out on. The bar runs no command on a switch. A bar that starts after Kosmos runs
   `kosmos state` once for the current snapshot, and again after a wake (`system_woke`),
-  and clicking a workspace runs `kosmos workspace <name>`.
+  and clicking a workspace runs `kosmos workspace <name>`. Zenith sends both requests on
+  the socket itself, without the CLI.
 - **Borders (JankyBorders).** Kosmos draws borders of its own by default
   ([borders.md](borders.md)), in place of JankyBorders, so stop JankyBorders, or set
   `borders = false` to keep it. Beside Kosmos, JankyBorders works while its inactive

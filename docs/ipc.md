@@ -35,8 +35,10 @@
   - The server's side is `Reply.hold`: a handler that returns one gets the args of the
     client's next request, or nil when the client closes or sends no valid request, and the
     response it returns goes back before the close.
-- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
-  SketchyBar's Mach port as one `--trigger` event with a zero timeout. The bar asks Kosmos
+- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to each
+  bar's Mach port with a zero timeout: SketchyBar's, `git.felix.sketchybar`, as one
+  `--trigger` event, and Zenith's, `io.github.st-eez.zenith`, as the JSON alone, while
+  Steve moves from SketchyBar to Zenith (~/Projects/Personal/zenith). A bar asks Kosmos
   for a snapshot with `kosmos state` only when it starts and after a wake
   ([integrations.md](integrations.md)).
   A bar reads the snapshot's `version` first: a new version may rename or remove fields,
@@ -46,8 +48,9 @@
   yet. No failure has been seen, as failures were logged at debug level, which the live log
   of September 24 to 26, 2026 did not keep. The first failure of a streak logs at notice
   level, and so does the send that ends it, with the streak's length and whether a retry
-  sent it, so a Mac without SketchyBar logs once. The retry goes unless that log shows a
+  sent it, so a Mac without one of the bars logs once for it. Each bar has its own streak
+  and retry. The retry goes unless that log shows a
   retry ending a streak.
-- The message has the format SketchyBar's own CLI sends, which SketchyBar documents
-  nowhere: the arguments joined by NUL, with one more NUL at the end, in one out of line
-  descriptor.
+- Each message carries its payload in one out of line descriptor. SketchyBar's has the
+  format its own CLI sends, which SketchyBar documents nowhere: the arguments joined by NUL,
+  with one more NUL at the end.

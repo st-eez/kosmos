@@ -1,6 +1,7 @@
 #include "KosmosBar.h"
 
 #include <servers/bootstrap.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -14,7 +15,11 @@ typedef struct {
     mach_msg_trailer_t trailer;
 } bar_reply;
 
-static mach_port_t cached_port = MACH_PORT_NULL;
+// One cached port per bar Kosmos pushes to: SketchyBar and Zenith.
+static struct {
+    const char *name;
+    mach_port_t port;
+} cached[4];
 
 static mach_port_t look_up(const char *name) {
     mach_port_t bootstrap, port = MACH_PORT_NULL;
@@ -42,14 +47,20 @@ static kern_return_t send(mach_port_t port, mach_port_t reply, const char *paylo
 }
 
 kern_return_t kosmos_bar_send(const char *name, const char *payload, uint32_t length) {
-    if (cached_port == MACH_PORT_NULL) cached_port = look_up(name);
-    if (cached_port == MACH_PORT_NULL) return MACH_SEND_INVALID_DEST;
-    kern_return_t result = send(cached_port, MACH_PORT_NULL, payload, length);
+    size_t slot = 0;
+    while (slot < 4 && cached[slot].name && strcmp(cached[slot].name, name) != 0) slot++;
+    if (slot == 4) return MACH_SEND_INVALID_DEST;
+    // Swift's string for the name lives only for the call.
+    if (!cached[slot].name) cached[slot].name = strdup(name);
+    mach_port_t *port = &cached[slot].port;
+    if (*port == MACH_PORT_NULL) *port = look_up(name);
+    if (*port == MACH_PORT_NULL) return MACH_SEND_INVALID_DEST;
+    kern_return_t result = send(*port, MACH_PORT_NULL, payload, length);
     if (result == MACH_SEND_INVALID_DEST) {
-        mach_port_deallocate(mach_task_self(), cached_port);
-        cached_port = look_up(name);
-        if (cached_port == MACH_PORT_NULL) return MACH_SEND_INVALID_DEST;
-        result = send(cached_port, MACH_PORT_NULL, payload, length);
+        mach_port_deallocate(mach_task_self(), *port);
+        *port = look_up(name);
+        if (*port == MACH_PORT_NULL) return MACH_SEND_INVALID_DEST;
+        result = send(*port, MACH_PORT_NULL, payload, length);
     }
     return result;
 }

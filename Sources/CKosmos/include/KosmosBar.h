@@ -1,12 +1,13 @@
-// SketchyBar's Mach messages, in the format its own CLI sends (docs/ipc.md).
+// The bars' Mach messages: SketchyBar's in the format its own CLI sends, and Zenith's
+// (docs/ipc.md).
 #pragma once
 
 #include <mach/mach.h>
 #include <stdint.h>
 
 // Sends without waiting: a full queue returns MACH_SEND_TIMED_OUT instead of blocking.
-// After SketchyBar restarts, looks the name up again and retries once. Call from one
-// thread only; the port is cached.
+// After a bar restarts, looks its name up again and retries once. Call from one thread
+// only; each name's port is cached, for up to four names.
 kern_return_t kosmos_bar_send(const char *name, const char *payload, uint32_t length);
 
 // Sends and waits up to `timeout_ms` for SketchyBar's reply, copied into `reply`.
