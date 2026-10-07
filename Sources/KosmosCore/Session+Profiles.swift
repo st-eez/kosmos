@@ -7,6 +7,7 @@ extension Session {
         defer { check() }
         precondition(!newNames.isEmpty, "a session needs a workspace")
         precondition(!newMonitors.isEmpty, "a session needs a display")
+        let newNames = newNames.contains(Self.agent) ? newNames : newNames + [Self.agent]
         for window in lifted { putBack(window) }
         lifted = []
         let focusedBefore = focusedDisplay
@@ -89,7 +90,8 @@ extension Session {
         shown = shown.filter { $0.value != focus }
         shown[display] = focus
         for monitor in monitors where shown[monitor.id] == nil {
-            let hidden = names.filter { !isShown($0) }
+            // No display takes the agent workspace unasked (docs/displays.md).
+            let hidden = names.filter { !isShown($0) && $0 != Self.agent }
             let before = shownBefore[monitor.id].flatMap { name in
                 hidden.contains(name) && (assigned[name] ?? monitor.id) == monitor.id ? name : nil
             }

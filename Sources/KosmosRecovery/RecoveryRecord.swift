@@ -69,21 +69,30 @@ public struct RecoveryRecord: Equatable, Sendable {
     /// Spaces windows slide in. Each is recorded before any window enters it, and every
     /// window in one is Kosmos's to take out.
     public var animationSpaces: [UInt64]
+    /// The Spaces of `spaces` under the desktop, where the agent workspace's windows stay
+    /// drawn (docs/hiding.md), each put first in `spaces`, newest first. A reader that predates
+    /// the list recovers them as holding Spaces and reuses the newest Space last in `spaces`, a
+    /// holding one.
+    public var belowSpaces: [UInt64]
 
     public init(windowServer: ProcessIdentity, manager: ProcessIdentity, spaces: [UInt64] = [], windows: [Window] = [],
-                animationSpaces: [UInt64] = []) {
+                animationSpaces: [UInt64] = [], belowSpaces: [UInt64] = []) {
         self.windowServer = windowServer
         self.manager = manager
         self.spaces = spaces
         self.windows = windows
         self.animationSpaces = animationSpaces
+        self.belowSpaces = belowSpaces
     }
 
-    /// The newest recorded Space while it holds a recorded window, which shows it was never
-    /// sent a destroy (docs/hiding.md); nil calls for a new one.
-    public func reusableSpace(members: [UInt64: [UInt32]]) -> UInt64? {
+    /// The newest recorded holding Space, or with `below` the newest under the desktop, while it
+    /// holds a recorded window, which shows it was never sent a destroy (docs/hiding.md); nil
+    /// calls for a new one.
+    public func reusableSpace(members: [UInt64: [UInt32]], below: Bool = false) -> UInt64? {
         let recorded = Set(windows.map(\.id))
-        guard let newest = spaces.last, members[newest]?.contains(where: recorded.contains) == true else { return nil }
+        let newest = below ? spaces.first(where: belowSpaces.contains) : spaces.last { !belowSpaces.contains($0) }
+        guard let newest,
+              members[newest]?.contains(where: recorded.contains) == true else { return nil }
         return newest
     }
 
@@ -105,7 +114,9 @@ public struct RecoveryRecord: Equatable, Sendable {
     static let maxWindows = 4096
 
     func encoded() -> [UInt8]? {
-        guard spaces.count <= Self.maxSpaces, windows.count <= Self.maxWindows, animationSpaces.count <= Self.maxSpaces else { return nil }
+        let below = belowSpaces.filter(spaces.contains)
+        guard spaces.count <= Self.maxSpaces, windows.count <= Self.maxWindows, animationSpaces.count <= Self.maxSpaces
+        else { return nil }
         var bytes: [UInt8] = []
         func put<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { bytes += $0 } }
         put(Self.magic); put(Self.version)
@@ -118,8 +129,12 @@ public struct RecoveryRecord: Equatable, Sendable {
         }
         // After the windows, where a reader that predates them stops, so it still restores
         // every concealed window.
-        if !animationSpaces.isEmpty {
+        if !animationSpaces.isEmpty || !below.isEmpty {
             put(UInt32(animationSpaces.count)); animationSpaces.forEach { put($0) }
+        }
+        // After the animation Spaces, where a reader that predates them stops.
+        if !below.isEmpty {
+            put(UInt32(below.count)); below.forEach { put($0) }
         }
         return bytes
     }
@@ -150,16 +165,19 @@ public struct RecoveryRecord: Equatable, Sendable {
                   let original: UInt64 = take() else { return nil }
             windows.append(Window(id: id, owner: ProcessIdentity(pid: pid, start: start), originalSpace: original))
         }
-        var animationSpaces: [UInt64] = []
-        if !bytes.isEmpty {
+        func list() -> [UInt64]? {
+            guard !bytes.isEmpty else { return [] }
             guard let count: UInt32 = take(), count <= Self.maxSpaces else { return nil }
+            var list: [UInt64] = []
             for _ in 0..<count {
                 guard let space: UInt64 = take() else { return nil }
-                animationSpaces.append(space)
+                list.append(space)
             }
+            return list
         }
+        guard let animationSpaces = list(), let below = list() else { return nil }
         self.init(windowServer: ProcessIdentity(pid: wsPid, start: wsStart),
                   manager: ProcessIdentity(pid: mPid, start: mStart), spaces: spaces, windows: windows,
-                  animationSpaces: animationSpaces)
+                  animationSpaces: animationSpaces, belowSpaces: below.filter(spaces.contains))
     }
 }

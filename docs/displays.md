@@ -49,6 +49,34 @@
   and why it floats at admission. A new Finder window on the left panel had come up at the
   tile a third window beside Preview and Ghostty would have had, behind Ghostty's tile,
   when Kosmos tiled a ruled window before floating it (live log, September 25, 2026).
+- The agent workspace, `agent`, holds agents' windows, out of the user's way (Steve's
+  design of 2026-10-05 and 2026-10-07; `Session+Agent.swift`). Every session has it, after
+  the profile's workspaces, so no profile lists it, and the config refuses a `workspaces`
+  list that does, while a rule can send windows there ([config.md](config.md)). No
+  display keeps it:
+  - `workspace agent`, which Steve binds to alt-`, shows it on the focused display in
+    place of the workspace there, and focuses it. Pressed with the agent workspace on
+    another display, it moves here and that display gets back the workspace it showed
+    before, else its first hidden workspace that can go there. Pressed on the agent
+    workspace, it goes and gives its display back the same way. With no hidden workspace
+    to give back the press does nothing.
+  - No display takes it unasked: a display left with no workspace at a display change or
+    a profile takes another, and `workspace next` and `prev` leave it out.
+  - The bar has it only while a display shows it, so a bar shows which display holds it
+    and lists only the user's workspaces otherwise. `list-workspaces` and `list-windows`
+    always list it.
+  - Its windows float, so each keeps its size and an agent's screenshots and pixel
+    coordinates stay put when it moves between displays. A window that leaves it tiles,
+    unless its app holds it off level 0 ([tree.md](tree.md)). A floating window comes to
+    the display that shows it at the floating check after the switch, as any floating
+    window does (below).
+  - While no display shows it, its windows stay drawn under the desktop
+    ([hiding.md](hiding.md)), so agents can capture and click them with no peek.
+  - Agents' windows reach it three ways: `kosmos open` claims the new windows of the app
+    it opens for 10 s ([ipc.md](ipc.md)), a rule's `workspace = 'agent'`, and `kosmos
+    move-node-to-workspace --window-id <id> agent`, which shows the window first. A
+    claim goes by app, so a window the user opens in that app within the 10 s goes there
+    too, and so do the windows an app restores as it launches.
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which

@@ -138,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let received = ContinuousClock.now
         if let query = Query(arguments) { return answer(query) }
         if arguments.first == "handover" { return armHandover(Array(arguments.dropFirst())) }
+        if arguments.first == "claim" { return claim(Array(arguments.dropFirst())) }
         switch Command.parse(arguments) {
         case .success(let command): return run(command, received: received, from: .cli)
         case .failure(let error): return failure(error.message)
@@ -182,6 +183,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let refusal = handover.arm(arguments, hiding: hiding != nil, at: .now) { return failure(refusal) }
         log.notice("handover: a quit within \(Handover.life, privacy: .public) leaves the record to the Kosmos that follows")
         return Response()
+    }
+
+    /// `kosmos open`'s request, before it runs `open -g`: the app's new windows over the next
+    /// 10 s go to the agent workspace. A cold launch shows its first window in 1 to 3 s.
+    private func claim(_ arguments: [String]) -> Response {
+        guard let controller else { return Self.waiting }
+        guard let app = AgentOpen.bundleID(arguments) else {
+            return failure("no app opens \(arguments.joined(separator: " ")); its windows open where they would")
+        }
+        controller.agentClaims[app] = .now + .seconds(10)
+        log.notice("claim: new windows of \(app, privacy: .public) go to the agent workspace for 10 s")
+        return Response(stdout: app)
     }
 
     private func listBindings() -> Response {

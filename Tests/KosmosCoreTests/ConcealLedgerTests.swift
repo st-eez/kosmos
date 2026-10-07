@@ -8,7 +8,7 @@ private let holding: SpaceID = 100
     let batch = ledger.batch(show: [], hide: [2, 1, 2], into: holding, isOnAnySpace: { _ in true })
     #expect(batch.fresh == [1, 2])
     #expect(batch.mustBeIn == [1: holding, 2: holding])
-    ledger.commit(batch, into: holding)
+    ledger.commit(batch)
     #expect(ledger.entries == [1: holding, 2: holding])
 }
 
@@ -17,7 +17,7 @@ private let holding: SpaceID = 100
     let batch = ledger.batch(show: [1, 2, 3], hide: [], into: holding, isOnAnySpace: { $0 == 1 })
     #expect(batch.removals == [holding: [1, 2]])
     #expect(batch.adds == [2])
-    ledger.commit(batch, into: holding)
+    ledger.commit(batch)
     #expect(ledger.entries.isEmpty)
 }
 
@@ -27,7 +27,7 @@ private let holding: SpaceID = 100
     #expect(batch.fresh == [1, 2])
     #expect(batch.strip == [2])
     #expect(batch.mustBeIn == [1: holding, 2: holding, 3: holding])
-    ledger.commit(batch, into: holding)
+    ledger.commit(batch)
     #expect(ledger.entries == [1: holding, 2: holding, 3: holding])
 }
 
@@ -36,7 +36,7 @@ private let holding: SpaceID = 100
     let batch = ledger.batch(show: [], hide: [2], into: holding, isOnAnySpace: { _ in true })
     #expect(batch.fresh.isEmpty)
     #expect(batch.mustBeIn == [2: holding])
-    ledger.commit(batch, into: holding)
+    ledger.commit(batch)
     #expect(ledger.entries == [2: holding])
 }
 
@@ -110,7 +110,7 @@ private struct Memberships {
         server.run(batch)
         #expect(batch.isDone(members: server.members(of: batch.touched)))
         #expect(server.spaces == [shown: [Memberships.desktop], hidden: [Memberships.desktop, holding]])
-        ledger.commit(batch, into: holding)
+        ledger.commit(batch)
         (shown, hidden) = (hidden, shown)
     }
 }
@@ -126,7 +126,7 @@ private struct Memberships {
         server.run(batch)
         #expect(batch.isDone(members: server.members(of: batch.touched)))
         #expect(server.spaces == [shown: [Memberships.desktop], hidden: [Memberships.desktop, holding]])
-        ledger.commit(batch, into: holding)
+        ledger.commit(batch)
         (shown, hidden) = (hidden, shown)
     }
 }
@@ -150,7 +150,7 @@ private struct Memberships {
     #expect(read == [3])
     #expect(confirmed?.left == [3])
     #expect(confirmed?.batch.fresh == [2] && confirmed?.batch.strip == [])
-    ledger.commit(confirmed!.batch, into: holding)
+    ledger.commit(confirmed!.batch)
     #expect(ledger.entries == [2: holding])
 }
 
@@ -202,4 +202,33 @@ private struct Memberships {
 /// to record, so the batch stops and recovery runs (docs/hiding.md).
 @Test func withTheRowsUnreadABatchLeavesNoWindowOut() {
     #expect(ConcealLedger.concealing([1, 3, 4], rows: nil, recorded: [1], owned: []) == [1, 3, 4])
+}
+
+@Test func theAgentWorkspacesWindowsGoUnderTheDesktopStripped() {
+    let under: SpaceID = 200
+    var ledger = ConcealLedger()
+    let batch = ledger.batch(show: [], hide: [1, 2], into: holding, below: [2], under: under, isOnAnySpace: { _ in true })
+    #expect(batch.fresh == [1, 2] && batch.strip == [2])
+    #expect(batch.mustBeIn == [1: holding, 2: under])
+    ledger.commit(batch)
+    #expect(ledger.entries == [1: holding, 2: under])
+}
+
+@Test func withNoSpaceUnderTheDesktopTheyGoToTheHoldingSpace() {
+    let batch = ConcealLedger().batch(show: [], hide: [2], into: holding, below: [2], under: 0, isOnAnySpace: { _ in true })
+    #expect(batch.mustBeIn == [2: holding] && batch.strip.isEmpty)
+}
+
+@Test func aConcealedWindowChangingWorkspaceMovesBetweenTheTwoSpaces() {
+    let under: SpaceID = 200, old: SpaceID = 7
+    var ledger = ConcealLedger(entries: [1: holding, 2: under, 3: old])
+    // 1 joins the agent workspace, 2 leaves it, and 3 stays in its older holding Space.
+    let batch = ledger.batch(show: [], hide: [1, 2, 3], into: holding, below: [1], under: under, isOnAnySpace: { _ in true })
+    #expect(batch.moves == [1, 2] && batch.fresh.isEmpty)
+    #expect(batch.removals == [holding: [1], under: [2]])
+    #expect(batch.mustBeIn == [1: under, 2: holding, 3: old])
+    #expect(!batch.isDone(members: [holding: [1, 2], under: [2], old: [3]]))
+    #expect(batch.isDone(members: [holding: [2], under: [1], old: [3]]))
+    ledger.commit(batch)
+    #expect(ledger.entries == [1: under, 2: holding, 3: old])
 }

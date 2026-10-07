@@ -173,3 +173,26 @@ private func record(spaces: [UInt64], windows: Int = 0) -> RecoveryRecord {
     #expect(kept.reusableSpace(members: [1: [0]]) == nil)   // 2 is gone
     #expect(kept.reusableSpace(members: [2: [7]]) == nil)   // another process's window
 }
+
+/// The Spaces under the desktop are first in `spaces` too, so a reader that predates their list
+/// recovers them as holding Spaces and reuses the holding Space last; the list follows the
+/// animation Spaces, there even when empty.
+@Test func spacesUnderTheDesktopFollowTheAnimationSpaces() throws {
+    var record = RecoveryRecord(windowServer: ProcessIdentity(pid: 1, start: 2), manager: ProcessIdentity(pid: 3, start: 4),
+                                spaces: [12, 5])
+    let old = try #require(record.encoded())
+    record.belowSpaces = [12]
+    let bytes = try #require(record.encoded())
+    #expect(Array(bytes.prefix(old.count)) == old)
+    #expect(Array(bytes.dropFirst(old.count)) == [0, 0, 0, 0, 1, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0])
+    #expect(record.spaces.last == 5)
+    #expect(RecoveryRecord(decoding: bytes) == record)
+    #expect(record.reusableSpace(members: [5: [], 12: []], below: true) == nil)
+    record.windows = [.init(id: 6, owner: ProcessIdentity(pid: 7, start: 8), originalSpace: 9)]
+    #expect(record.reusableSpace(members: [5: [6], 12: [6]]) == 5)
+    #expect(record.reusableSpace(members: [5: [6], 12: [6]], below: true) == 12)
+    // A list naming a Space the record no longer has drops it.
+    record.spaces = [5]
+    record.belowSpaces = [12]
+    #expect(RecoveryRecord(decoding: try #require(record.encoded()))?.belowSpaces == [])
+}

@@ -36,6 +36,8 @@ final class Hiding {
     private let store: HidingStore
     /// A copy of the bridge queue's ledger as of its last job.
     private var concealed: Set<WindowID> = []
+    /// The concealed windows under the desktop, as of the same job.
+    private var underDesktop: Set<WindowID> = []
     private var batchesConcealing: [WindowID: Int] = [:]
 
     /// A description while concealed windows could not all be restored, nil once they are.
@@ -48,6 +50,10 @@ final class Hiding {
     }
 
     func isConcealed(_ window: WindowID) -> Bool { concealed.contains(window) }
+
+    /// Concealed under the desktop, where macOS still draws it and captures it, so a peek
+    /// would add nothing (docs/hiding.md).
+    func isUnderDesktop(_ window: WindowID) -> Bool { underDesktop.contains(window) }
 
     func isConcealedOrConcealing(_ window: WindowID) -> Bool { concealed.contains(window) || batchesConcealing[window] != nil }
 
@@ -74,15 +80,16 @@ final class Hiding {
         let store = self.store
         bridge.async {
             store.forgetClosed(window)
-            let concealed = store.concealed
-            onMain { self.concealed = concealed }
+            let (concealed, under) = (store.concealed, store.underDesktop)
+            onMain { (self.concealed, self.underDesktop) = (concealed, under) }
         }
     }
 
     /// Reveals `show`, then conceals `hide`, then confirms both (docs/hiding.md). Windows in
-    /// `stripping` lose their ordinary Space only if this batch conceals them.
+    /// `stripping` lose their ordinary Space only if this batch conceals them. Those of `hide`
+    /// in `below`, the agent workspace's, go under the desktop.
     func apply(show: [WindowID], on displays: [WindowID: CGDirectDisplayID], hide: [WindowID], stripping: Set<WindowID>,
-               done: @escaping @MainActor (Outcome, Timing) -> Void) {
+               below: Set<WindowID> = [], done: @escaping @MainActor (Outcome, Timing) -> Void) {
         let revealedOnly = missingOperation == nil && !guardian.isReady
         let hide = canConceal ? hide : []
         for window in hide { batchesConcealing[window, default: 0] += 1 }
@@ -90,17 +97,18 @@ final class Hiding {
         let submitted = ContinuousClock.now
         bridge.async {
             let started = ContinuousClock.now
-            let (confirmed, sent, barrier, stripped) = store.apply(show: show, on: displays, hide: hide, stripping: stripping)
+            let (confirmed, sent, barrier, stripped) = store.apply(show: show, on: displays, hide: hide, stripping: stripping,
+                                                                   below: below)
             let applied = ContinuousClock.now
             let outcome = confirmed ? nil : store.recover(keepingAnimationSpaces: true)
-            let concealed = store.concealed
+            let (concealed, under) = (store.concealed, store.underDesktop)
             let finished = ContinuousClock.now
             var timing = Timing(queued: started - submitted, sent: (sent ?? applied) - started,
                                 confirmed: applied - (sent ?? applied), recovered: finished - applied, barrier: barrier,
                                 stripped: stripped)
             onMain {
                 timing.returned = .now - finished
-                self.concealed = concealed
+                (self.concealed, self.underDesktop) = (concealed, under)
                 for window in hide {
                     self.batchesConcealing[window]! -= 1
                     if self.batchesConcealing[window] == 0 { self.batchesConcealing[window] = nil }
@@ -129,8 +137,8 @@ final class Hiding {
         let store = self.store
         bridge.async {
             store.forget(windows)
-            let concealed = store.concealed
-            onMain { self.concealed = concealed }
+            let (concealed, under) = (store.concealed, store.underDesktop)
+            onMain { (self.concealed, self.underDesktop) = (concealed, under) }
         }
     }
 
@@ -138,9 +146,9 @@ final class Hiding {
         let store = self.store
         bridge.async {
             let outcome = store.recover(keepingAnimationSpaces: true)
-            let concealed = store.concealed
+            let (concealed, under) = (store.concealed, store.underDesktop)
             onMain {
-                self.concealed = concealed
+                (self.concealed, self.underDesktop) = (concealed, under)
                 self.report(outcome)
             }
         }
@@ -163,11 +171,11 @@ final class Hiding {
     /// before any window is admitted (docs/hiding.md).
     func adopt() -> (Recovery.Outcome, Adoption) {
         let store = self.store
-        let (outcome, adoption, concealed) = bridge.sync {
+        let (outcome, adoption, concealed, under) = bridge.sync {
             let (outcome, adoption) = store.adopt()
-            return (outcome, adoption, store.concealed)
+            return (outcome, adoption, store.concealed, store.underDesktop)
         }
-        self.concealed = concealed
+        (self.concealed, self.underDesktop) = (concealed, under)
         report(outcome)
         return (outcome, adoption)
     }
@@ -183,6 +191,8 @@ private final class HidingStore: @unchecked Sendable {
     private let record: RecordFile
     private var state: RecoveryRecord?
     private var space: SpaceID = 0
+    /// Under the desktop, for the agent workspace's windows; 0 until one is needed.
+    private var below: SpaceID = 0
     private var ledger = ConcealLedger()
     /// Windows the ledger holds that a peek took out of their concealing Space, and whether
     /// each was stripped of its ordinary Space.
@@ -195,6 +205,8 @@ private final class HidingStore: @unchecked Sendable {
 
     var concealed: Set<WindowID> { Set(ledger.entries.keys) }
 
+    var underDesktop: Set<WindowID> { below == 0 ? [] : Set(ledger.entries.filter { $0.value == below }.keys) }
+
     /// False while a recorded Space cannot be read: nothing is concealed or revealed until
     /// its state is known.
     private func load() -> Bool {
@@ -203,6 +215,7 @@ private final class HidingStore: @unchecked Sendable {
         guard let onFile = record.read(), onFile.windowServer == windowServer else {
             state = RecoveryRecord(windowServer: windowServer, manager: .current)
             space = 0
+            below = 0
             ledger = ConcealLedger()
             loaded = true
             return true
@@ -213,6 +226,7 @@ private final class HidingStore: @unchecked Sendable {
         state!.manager = .current
         state!.spaces.removeAll { read.gone.contains($0) }
         space = onFile.reusableSpace(members: read.members) ?? 0
+        below = onFile.reusableSpace(members: read.members, below: true) ?? 0
         ledger = rebuilt
         loaded = true
         return true
@@ -220,8 +234,10 @@ private final class HidingStore: @unchecked Sendable {
 
     /// `sent` is nil when the batch stopped before sending, `barrier` nil when it read nothing.
     func apply(show: [WindowID], on displays: [WindowID: CGDirectDisplayID], hide: [WindowID],
-               stripping: Set<WindowID>) -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
-        guard case (var batch, let sent)? = send(show: show, on: displays, hide: hide, stripping: stripping) else { return (false, nil, nil, 0) }
+               stripping: Set<WindowID>, below agents: Set<WindowID>)
+        -> (confirmed: Bool, sent: ContinuousClock.Instant?, barrier: Bool?, stripped: Int) {
+        guard case (var batch, let sent)? = send(show: show, on: displays, hide: hide, stripping: stripping, below: agents)
+        else { return (false, nil, nil, 0) }
         let touched = batch.touched
         guard let any = touched.first else { return (true, sent, nil, batch.strip.count) }
         func members() -> [SpaceID: Set<WindowID>] { Self.members(of: touched) }
@@ -239,7 +255,7 @@ private final class HidingStore: @unchecked Sendable {
             }
             batch = kept
         }
-        ledger.commit(batch, into: space)
+        ledger.commit(batch)
         return (true, sent, !confirmed, batch.strip.count)
     }
 
@@ -288,7 +304,7 @@ private final class HidingStore: @unchecked Sendable {
     }
 
     private func send(show: [WindowID], on showDisplays: [WindowID: CGDirectDisplayID], hide: [WindowID],
-                      stripping: Set<WindowID>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
+                      stripping: Set<WindowID>, below agents: Set<WindowID>) -> (ConcealLedger.Batch, ContinuousClock.Instant)? {
         guard load() else { return nil }
         let read = SkyLight.rows(hide)
         let rows = Dictionary((read ?? []).map { ($0.id, $0) }) { first, _ in first }
@@ -297,8 +313,12 @@ private final class HidingStore: @unchecked Sendable {
         for (id, row) in rows where !recorded.contains(id) { owners[id] = ProcessIdentity.of(row.pid) }
         let hide = ConcealLedger.concealing(hide, rows: read == nil ? nil : Set(rows.keys), recorded: recorded, owned: Set(owners.keys))
         let fresh = Set(hide).filter { ledger.entries[$0] == nil }
-        if !fresh.isEmpty, !prepare(Array(fresh), owners: owners) { return nil }
-        let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space,
+        let wantsBelow = below == 0 && hide.contains(where: agents.contains)
+        // A window leaving the Space under the desktop for a hidden workspace of the user's
+        // needs the holding Space.
+        let wantsHolding = space == 0 && hide.contains { !agents.contains($0) && ledger.entries[$0] != nil }
+        if !fresh.isEmpty || wantsBelow || wantsHolding, !prepare(Array(fresh), owners: owners, below: wantsBelow) { return nil }
+        let batch = ledger.batch(show: show, hide: hide, stripping: stripping, into: space, below: agents, under: below,
                                  isOnAnySpace: Self.isOnAnySpace)
         // Adds land before any removal: a window removed from its only Space lands on the
         // active Space, maybe a fullscreen one. Only a batch that adds pays the barrier and
@@ -316,14 +336,22 @@ private final class HidingStore: @unchecked Sendable {
             guard let held = batch.removals.keys.first, kosmos_barrier(held) else { return nil }
             removals = batch.removals(landed: displays.isInOrdinarySpace)
         }
-        history.withLock { $0.changed(Array(removals.values.joined()), concealed: false, at: .now) }
+        // A window that changes concealing Space joins its new one before it leaves the old, so
+        // it is never on screen; the exclusive add under the desktop strips its ordinary Space.
+        for window in batch.moves {
+            Self.add([window], to: batch.mustBeIn[window]!, exclusively: batch.mustBeIn[window] == below)
+        }
+        let moved = Set(batch.moves)
+        history.withLock { $0.changed(removals.values.joined().filter { !moved.contains($0) }, concealed: false, at: .now) }
         for (from, windows) in removals {
             var ids = windows
             kosmos_remove_windows(from, &ids, ids.count)
         }
         history.withLock { $0.changed(batch.fresh, concealed: true, at: .now) }
-        Self.add(batch.fresh.filter { !batch.strip.contains($0) }, to: space, exclusively: false)
-        Self.add(batch.strip, to: space, exclusively: true)
+        for (into, windows) in Dictionary(grouping: batch.fresh, by: { batch.mustBeIn[$0]! }) {
+            Self.add(windows.filter { !batch.strip.contains($0) }, to: into, exclusively: false)
+            Self.add(windows.filter(batch.strip.contains), to: into, exclusively: true)
+        }
         // A peeked window this batch conceals goes back to its Space, stripped again if the peek
         // gave it an ordinary one; one it reveals is out already.
         for window in show where peeked[window] != nil { peeked[window] = nil }
@@ -355,18 +383,31 @@ private final class HidingStore: @unchecked Sendable {
         if record.publish(next) { state = next }
     }
 
-    /// Records the holding Space before any window enters it, and each window before its
-    /// first hide.
-    private func prepare(_ windows: [WindowID], owners: [WindowID: ProcessIdentity]) -> Bool {
+    /// Records the holding Space, and with `wantsBelow` the Space under the desktop, before
+    /// any window enters it, and each window before its first hide.
+    private func prepare(_ windows: [WindowID], owners: [WindowID: ProcessIdentity], below wantsBelow: Bool) -> Bool {
         var next = state!
-        var created: SpaceID = 0
+        var created: [SpaceID] = []
+        var holding: SpaceID = 0, under: SpaceID = 0
         if space == 0 {
-            created = kosmos_holding_create()
-            guard created != 0 else {
+            holding = kosmos_holding_create()
+            guard holding != 0 else {
                 hidingLog.error("holding Space not created")
                 return false
             }
-            next.spaces.append(created)
+            created.append(holding)
+            next.spaces.append(holding)
+        }
+        if wantsBelow {
+            under = Self.createBelow()
+            if under == 0 {
+                hidingLog.error("no Space under the desktop; the agent workspace's windows go to the holding Space")
+            } else {
+                created.append(under)
+                // First, where a Kosmos that predates the agent workspace never reuses it.
+                next.spaces.insert(under, at: 0)
+                next.belowSpaces.append(under)
+            }
         }
         let known = Set(next.windows.map(\.id))
         let new = windows.filter { !known.contains($0) }
@@ -389,14 +430,26 @@ private final class HidingStore: @unchecked Sendable {
             next = pruned
         }
         state = next
-        if created != 0 { space = created }
+        if holding != 0 { space = holding }
+        if under != 0 { below = under }
         return true
     }
 
-    /// Destroys a Space created for a change never published, which holds no window.
-    private func abandon(_ created: SpaceID) -> Bool {
-        if created != 0 { kosmos_space_destroy(created) }
+    /// Destroys the Spaces created for a change never published, which hold no window.
+    private func abandon(_ created: [SpaceID]) -> Bool {
+        created.forEach { kosmos_space_destroy($0) }
         return false
+    }
+
+    /// One level under the desktop Space of the main display's ordinary Space, at alpha 1: the
+    /// desktop picture covers its windows on every display, and macOS draws and captures them,
+    /// as `kosmos-probe dwell` held two apps' windows there for 5 minutes (docs/hiding.md).
+    /// 0 when the level does not read or the Space is not made.
+    private static func createBelow() -> SpaceID {
+        var level: Int32 = 0
+        guard let ordinary = Displays.current().ordinarySpace(original: nil), kosmos_space_level(ordinary, &level)
+        else { return 0 }
+        return kosmos_float_space_create(level - 1)
     }
 
     /// Records the Spaces windows slide in before any window enters them.

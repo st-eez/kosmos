@@ -107,6 +107,9 @@ final class Controller {
     /// The windows taken over concealed at launch until their admission (docs/hiding.md).
     var adoption = Adoption()
     var peeking = PeekBook()
+    /// Apps an agent opens with `kosmos open`, each until the end of its claim: their new
+    /// windows go to the agent workspace (docs/displays.md).
+    var agentClaims: [String: ContinuousClock.Instant] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -371,7 +374,8 @@ final class Controller {
         // The windows to conceal that lose their ordinary Space, by each app's window
         // focused last (Session.stripped).
         let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
-        hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
+        let below = Set(hide.filter { session.workspace(of: $0) == Session.agent })
+        hiding.apply(show: show, on: displays, hide: hide, stripping: strip, below: below) { [weak self] outcome, timing in
             guard let self else { return }
             self.intake.forgetPlacedHidden(hide)   // the conceal that placed them hidden is done
             // Sent only now, so each lands concealed.

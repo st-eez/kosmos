@@ -73,10 +73,13 @@ public struct Session: Sendable {
     /// The window focused when the restored layout was saved, until Kosmos admits it
     /// (docs/tree.md).
     var savedFocus: WindowID?
+    /// The workspace the agent workspace's display showed before it, given back when it goes.
+    var agentDisplaced: String?
 
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
         precondition(!names.isEmpty, "a session needs a workspace")
         precondition(!monitors.isEmpty, "a session needs a display")
+        let names = names.contains(Self.agent) ? names : names + [Self.agent]
         self.names = names
         workspaces = Dictionary(uniqueKeysWithValues: names.map { ($0, Workspace()) })
         self.monitors = Monitor.arranged(monitors)
@@ -240,7 +243,7 @@ public struct Session: Sendable {
         }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if minimum != .zero { constrained[window] = minimum }
-        if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
+        if floating || target == Self.agent { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
         fit(window, in: target)
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
@@ -483,7 +486,9 @@ public struct Session: Sendable {
         defer { check() }
         switch command {
         case .workspace(let target):
-            guard let name = resolve(target), name != focusedWorkspace else { return nil }
+            guard let name = resolve(target) else { return nil }
+            if name == Self.agent { return toggleAgent() }
+            guard name != focusedWorkspace else { return nil }
             return reach(name)
         case .workspaceBackAndForth:
             guard let previous, previous != focusedWorkspace else { return nil }
@@ -592,8 +597,8 @@ public struct Session: Sendable {
         case .named(let name):
             return workspaces[name] != nil ? name : nil
         case .next, .previous:
-            let cycle = names.filter { monitor(of: $0).id == focusedDisplay }
-            let index = cycle.firstIndex(of: focusedWorkspace)!
+            let cycle = names.filter { $0 != Self.agent && monitor(of: $0).id == focusedDisplay }
+            guard let index = cycle.firstIndex(of: focusedWorkspace) else { return cycle.first }
             let step = target == .next ? 1 : -1
             return cycle[(index + step + cycle.count) % cycle.count]
         }
@@ -628,10 +633,11 @@ public struct Session: Sendable {
         return plan
     }
 
-    private mutating func show(_ name: String) -> Plan {
+    mutating func show(_ name: String) -> Plan {
         let display = monitor(of: name).id
         var plan = Plan()
         if let old = shown[display] { plan.hide = windows(of: old) }
+        if name == Self.agent { agentDisplaced = shown[display] } else if shown[display] == Self.agent { agentDisplaced = nil }
         plan.show = windows(of: name)
         shown[display] = name
         previous = focusedWorkspace
@@ -649,7 +655,10 @@ public struct Session: Sendable {
         let before = framesBeforeFullscreen
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
-        let floating = workspaces[source]!.floating.contains(window)
+        // A window floats on the agent workspace and tiles once it leaves, unless its app holds
+        // it off level 0 (docs/displays.md).
+        let floating = name == Self.agent
+            || workspaces[source]!.floating.contains(window) && (source != Self.agent || floatedForLevel.contains(window))
         _ = workspaces[source]!.remove(window)
         mergedFrom[window] = nil
         if let entering, !floating {
@@ -669,6 +678,9 @@ public struct Session: Sendable {
         plan.show.removeAll { $0 == window }
         if onScreen, !isShown(name) { plan.hide.append(window) }
         if !onScreen, isShown(name) { plan.show.append(window) }
+        // Concealed again, as the agent workspace's windows stay drawn in a Space of their own
+        // (docs/hiding.md).
+        if !onScreen, !isShown(name), (source == Self.agent) != (name == Self.agent) { plan.hide.append(window) }
         if !following, wasFocused || name == focusedWorkspace {
             plan.focus = intent
         }

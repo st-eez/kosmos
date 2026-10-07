@@ -155,6 +155,18 @@ uint64_t kosmos_float_space_create(int32_t level) {
     return createSpace(level, CGAffineTransformIdentity, 1);
 }
 
+bool kosmos_space_level(uint64_t space, int32_t *level) {
+    @try {
+        Class cls = operationClass(@"SLSBridgedSpaceGetAbsoluteLevelOperation", @selector(initWithSpaceID:));
+        id result = perform([[cls alloc] initWithSpaceID:space]);
+        // The selector the read's result answers, from SkyLight's runtime on macOS 27 (Peek.m).
+        SEL value = sel_registerName("int32Value");
+        if (![result respondsToSelector:value]) return false;
+        *level = ((int32_t (*)(id, SEL))objc_msgSend)(result, value);
+        return true;
+    } @catch (NSException *exception) { return false; }
+}
+
 void kosmos_space_set_transform(uint64_t space, CGAffineTransform transform) {
     @try { setTransform(space, transform); } @catch (NSException *exception) {}
 }

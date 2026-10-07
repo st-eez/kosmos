@@ -34,7 +34,7 @@ extension Controller {
     /// else once the window shows past its display's edge, holding the connection until the
     /// CLI reports its command's end (docs/hiding.md, docs/ipc.md).
     func peek(_ window: WindowID) async -> Reply {
-        guard hiding.isConcealed(window) else { return Reply(Response()) }
+        guard hiding.isConcealed(window), !hiding.isUnderDesktop(window) else { return Reply(Response()) }
         var asked = 0
         let answer: Response? = await withCheckedContinuation { continuation in
             let number = peeking.peeks.request(window)

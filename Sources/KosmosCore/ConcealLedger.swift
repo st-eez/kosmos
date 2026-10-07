@@ -14,6 +14,10 @@ public struct ConcealLedger: Equatable, Sendable {
         /// `strip` (docs/displays.md).
         public var fresh: [WindowID] = []
         public var strip: [WindowID] = []
+        /// Concealed windows that change concealing Space, between the holding Space and the
+        /// one under the desktop: each is added to its new Space before its removal from the
+        /// old, so it never shows (docs/hiding.md).
+        public var moves: [WindowID] = []
         public var mustBeIn: [WindowID: SpaceID] = [:]
 
         public var touched: Set<SpaceID> { Set(mustBeIn.values).union(removals.keys) }
@@ -43,6 +47,7 @@ public struct ConcealLedger: Equatable, Sendable {
             batch.adds.removeAll(where: left.contains)
             batch.fresh.removeAll(where: left.contains)
             batch.strip.removeAll(where: left.contains)
+            batch.moves.removeAll(where: left.contains)
             batch.mustBeIn = mustBeIn.filter { !left.contains($0.key) }
             return (batch, left)
         }
@@ -84,9 +89,11 @@ public struct ConcealLedger: Equatable, Sendable {
     }
 
     /// A revealed window on no other Space, as `isOnAnySpace` reads it now, is added to an
-    /// ordinary one first: removing it would leave it on none.
+    /// ordinary one first: removing it would leave it on none. The windows of `below` go to
+    /// `under`, the Space under the desktop, stripped of their ordinary Space; with no such
+    /// Space, 0, they go to `space` (docs/hiding.md).
     public func batch(show: [WindowID], hide: [WindowID], stripping: Set<WindowID> = [], into space: SpaceID,
-                      isOnAnySpace: (WindowID) -> Bool) -> Batch {
+                      below: Set<WindowID> = [], under: SpaceID = 0, isOnAnySpace: (WindowID) -> Bool) -> Batch {
         var batch = Batch()
         for window in show {
             guard let held = entries[window] else { continue }
@@ -94,13 +101,19 @@ public struct ConcealLedger: Equatable, Sendable {
             batch.removals[held, default: []].append(window)
         }
         for window in Set(hide).sorted() {
+            let target = below.contains(window) && under != 0 ? under : space
             if let held = entries[window] {
                 batch.mustBeIn[window] = held
+                // One left in an older holding Space stays there.
+                guard target != 0, (held == under) != (target == under) else { continue }
+                batch.moves.append(window)
+                batch.removals[held, default: []].append(window)
+                batch.mustBeIn[window] = target
                 continue
             }
             batch.fresh.append(window)
-            if stripping.contains(window) { batch.strip.append(window) }
-            batch.mustBeIn[window] = space
+            if stripping.contains(window) || target == under { batch.strip.append(window) }
+            batch.mustBeIn[window] = target
         }
         return batch
     }
@@ -121,8 +134,8 @@ public struct ConcealLedger: Equatable, Sendable {
     }
 
     /// Once the batch is confirmed.
-    public mutating func commit(_ batch: Batch, into space: SpaceID) {
+    public mutating func commit(_ batch: Batch) {
         for window in batch.removals.values.joined() { entries[window] = nil }
-        for window in batch.fresh { entries[window] = space }
+        for window in batch.fresh + batch.moves { entries[window] = batch.mustBeIn[window] }
     }
 }

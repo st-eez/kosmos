@@ -10,6 +10,7 @@ guard !args.isEmpty else {
     exit(2)
 }
 if args[0] == "peek" { peek(Array(args.dropFirst()), socketPath: socketPath) }
+if args[0] == "open" { open(Array(args.dropFirst()), socketPath: socketPath) }
 
 do throws(IPCError) {
     let response = try IPCClient.send(args, socketPath: socketPath)

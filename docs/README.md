@@ -69,7 +69,8 @@ prefix.
   `KosmosCore/SecureInputHold.swift`, `kosmos-probe/SecureInput.swift`.
 - [ipc.md](ipc.md): the socket, the CLI, `kosmos peek`'s held request and the snapshots
   pushed to Zenith.
-  Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `KosmosCore/Query.swift`,
+  Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `kosmos/Open.swift`,
+  `KosmosApp/AgentOpen.swift`, `KosmosCore/Query.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
@@ -106,7 +107,7 @@ prefix.
   `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
-  `KosmosSkyLight/Displays.swift`.
+  `KosmosSkyLight/Displays.swift`, `KosmosCore/Session+Agent.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,

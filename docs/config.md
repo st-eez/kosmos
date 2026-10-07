@@ -69,6 +69,8 @@
     its rule, and a title that changes back never undoes a rule applied. Showing a new
     window of such an app only once its title settles would end the half second tiled, at
     the cost of a wait for each of its windows.
+- A rule's `workspace` can be `agent`, Kosmos's workspace for agents' windows, which no
+  `workspaces` list may name ([displays.md](displays.md)).
 - An app's Open and Save panels float whatever its rule says, `float = false` included
   ([inventory.md](inventory.md)). No rule reaches another choice Kosmos makes about a
   window, such as which windows it manages, so none reaches this one. A rule's `workspace`

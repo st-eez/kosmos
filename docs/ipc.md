@@ -11,7 +11,17 @@
   `list-bindings` change nothing (`Query`). `handover [record version]`, which
   `script/install.sh` sends, arms a quit within 5 s to leave the hidden windows to the
   Kosmos that starts next ([hiding.md](hiding.md)). `peek <window id>` is the CLI's half of
-  `kosmos peek`, below. Any other request is a command (`Command.parse`).
+  `kosmos peek`, below, and `claim` the half of `kosmos open`. Any other request is a
+  command (`Command.parse`).
+- `kosmos open [-a <app> | -b <bundle id>] [<file or URL>...] [open's options]` opens
+  something for an agent: its new windows go to the agent workspace
+  ([displays.md](displays.md)), and the app stays in the background. The CLI sends
+  `{"args":["claim","-a","Preview"],"protocol":1}`, or `-b` with the bundle id, or the
+  first file, made absolute, or URL. Kosmos finds the app as `open` would
+  (`AgentOpen`), claims the new windows of that bundle id for 10 s, and answers with it.
+  Then the CLI runs `/usr/bin/open -g` with its arguments and exits with its status, so
+  `open` runs whatever Kosmos answers. A URL a running browser opens as a tab opens no
+  window, so it lands in the user's browser window, in the background.
 - `kosmos peek <window id> -- <command> [args...]` runs the command while Kosmos shows a
   window it conceals past its display's edge ([hiding.md](hiding.md)), and exits with the
   command's status: 128 plus the signal's number when a signal ended it, 127 when the
