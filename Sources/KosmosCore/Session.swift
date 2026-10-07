@@ -319,17 +319,18 @@ public struct Session: Sendable {
             workspaces[name]!.unpark(returning.filter { home[$0] == name }, in: monitor.area, gaps: monitor.gaps)
         }
         var plan = Plan()
+        var ended: [WindowID: CGRect] = [:]
         if let follow, returning.contains(follow), let name = home[follow] {
             workspaces[name]!.focus(follow)
             if name != focusedWorkspace { plan = reach(name) }
         } else if let focused {
             // A returning window focused more recently would take the focus back.
-            workspaces[focusedWorkspace]!.focus(focused)
+            ended = focusEndingFullscreen(focused, on: focusedWorkspace)
         } else if let window = returning.first(where: { home[$0] == focusedWorkspace }) {
             workspaces[focusedWorkspace]!.focus(window)
             plan.focus = .window(window)
         }
-        plan.frames = frames(of: changed).merging(backFromFullscreen(since: before)) { $1 }
+        plan.frames = frames(of: changed).merging(ended) { $1 }.merging(backFromFullscreen(since: before)) { $1 }
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)

@@ -208,6 +208,20 @@ import Testing
         #expect(s.unpark([3], follow: 3).frames[3] == nil)
     }
 
+    /// No command leaves tile 2 focused under tile 1's fullscreen, so the test sets the stamp.
+    /// A return elsewhere keeps 2 focused, which ends the fullscreen and lays workspace 1 out.
+    @Test func aReturnElsewhereKeepingATileFocusedUnderItLaysItsWorkspaceOut() {
+        var s = Session(names: ["1", "2"], display: Self.display)
+        _ = s.add(1); _ = s.add(2); _ = s.add(5, to: "2")
+        _ = s.park([5], because: .minimized)
+        _ = s.adopt(1)
+        _ = s.perform(.fullscreen)
+        s.workspaces["1"]!.stamp(2)
+        let plan = s.unpark([5], follow: nil)
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && s.focused == 2)
+        #expect(plan.frames[1] == Self.tiles()[1] && plan.frames[2] == Self.tiles()[2])
+    }
+
     /// Measured from the frame at the press, so a window its app keeps short of the display
     /// stays in fullscreen at a jitter.
     @Test func aDragPastTheThresholdEndsItWhereTheDragLeavesIt() {

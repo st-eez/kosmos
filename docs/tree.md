@@ -152,7 +152,10 @@
   - A focus that ends a fullscreen, tiled or floating, lays the workspace out at once. Before
     this, Kosmos adopting a key window macOS reported, as at Command-Tab to another tile,
     ended a tiled window's fullscreen and wrote no frame until the next plan, so that window
-    kept the display under the one raised.
+    kept the display under the one raised. A return to another workspace that keeps the
+    focus on a tile under the fullscreen window lays the focused workspace out too. Kosmos
+    knows no path to that focus since `layout floating tiling` and a profile merge keep the
+    focus off such a tile (below).
   - While a window of the workspace is in fullscreen, tiled or floating, a focus in a
     direction sees that window and the workspace's floating windows, never the tiles under
     it, and compares their centers. The fullscreen window's center is the display area's.
