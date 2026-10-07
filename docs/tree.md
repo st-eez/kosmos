@@ -59,6 +59,14 @@
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
   A workspace with tiled or floating windows always has a focused one, as in i3.
+- A tiled window its app raises off level 0, as IINA's Video > Float on Top does, floats at
+  the frame it has and stays on its workspace, and the other tiles fill its space
+  (`Session.leveled`). When its level returns to 0 it tiles again, where it was if its
+  restore hint still holds, unless `layout floating tiling` toggled it meanwhile, which wins.
+  A window floating by a rule, as a dialog, or by the user's toggle is never tiled by its level. One
+  reopened or dragged out of a tab group while raised floats at once, and one that opens
+  above level 0 is never managed ([inventory.md](inventory.md)). The ceiling: a window whose
+  level returns while it is parked comes back floating, until the user tiles it.
 - `move` takes one step, as i3's `tree_move` does (src/move.c). Into a sibling container
   the window lands beside that container's window at the near edge, or its most recently
   focused one when the container runs across the direction, as i3's

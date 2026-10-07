@@ -21,6 +21,10 @@ extension Controller {
             updateBorders()
         case .fullscreenChange(let id, let entered, let spaceChangeBegan):
             fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
+        case .levelChange(let id, let raised):
+            guard let plan = session.leveled(id, raised: raised) else { return }
+            controllerLog.info("\(id) \(raised ? "floats, raised off level 0 by its app" : "tiles again, back at level 0", privacy: .public)")
+            execute(plan)
         case .frameChange(let id, let old, let frame, let changedAt):
             let landed = ledger.seen(id, frame: frame)
             if landed { sendReadyBatches() }
@@ -93,6 +97,11 @@ extension Controller {
             : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason,
                           concealed: hiding.isConcealed(id))
         guard var plan = placed else { return }
+        // Reopened, or out of a tab group, while its app holds it off level 0 (docs/tree.md).
+        if inventory.windows[id].map({ $0.level != 0 }) == true, let raised = session.leveled(id, raised: true) {
+            plan.frames[id] = nil
+            plan.frames.merge(raised.frames) { $1 }
+        }
         // A window there at launch, in the saved layout, reopened or out of a tab group has its
         // title already.
         if arrival == .admitted, !atLaunch, saved == nil, TitleWatch.watches(rules, appID: app.bundleID, appName: app.name) {

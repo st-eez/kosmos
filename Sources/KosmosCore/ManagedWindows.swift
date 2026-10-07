@@ -1,11 +1,12 @@
 /// The windows the inventory has reported managed, so each reported managed gets one report
-/// that it is not. A window that leaves level 0 or gains a parent stays managed, as apps such
-/// as Helium change a window's level while it lives, and its removal reports it
-/// (docs/inventory.md).
+/// that it is not. A window that leaves level 0 or gains a parent stays managed, as an app
+/// can raise its window while it lives, and its removal reports it (docs/inventory.md).
 public struct ManagedWindows: Sendable {
     private var reported: Set<WindowID> = []
 
     public init() {}
+
+    public func contains(_ id: WindowID) -> Bool { reported.contains(id) }
 
     /// At each Accessibility read of the window: true when it becomes managed, false when it
     /// stops being, and nil for no change. A standard window that is no candidate waits for the
