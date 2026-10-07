@@ -625,6 +625,15 @@ public struct Session: Sendable {
         workspaces[name]!.fit(window, in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
+    /// A click the user released on the desktop of a display whose workspace does not have the
+    /// focus focuses that workspace, as AeroSpace's mouse up does (docs/displays.md). Nil when
+    /// that workspace has it, or the point is on no display.
+    public mutating func clickedDesktop(at point: CGPoint) -> Plan? {
+        defer { check() }
+        guard let name = workspace(at: point), name != focusedWorkspace else { return nil }
+        return focusShown(name)
+    }
+
     mutating func reach(_ name: String) -> Plan {
         isShown(name) ? focusShown(name) : show(name)
     }

@@ -118,3 +118,15 @@ import Testing
     _ = s.leveled(40, raised: false)
     #expect(s.isFloating(40))
 }
+
+@Test func aClickOnAnotherDisplaysDesktopFocusesItsWorkspace() throws {
+    var s = Desk.session()
+    #expect(s.focusedDisplay == Desk.main.id)
+    #expect(s.clickedDesktop(at: CGPoint(x: 500, y: 500)) == nil)
+    let plan = s.clickedDesktop(at: CGPoint(x: 600, y: 1500))
+    #expect(plan?.focus == .noWindow)
+    #expect(s.focusedDisplay == Desk.builtIn.id)
+    _ = s.perform(.workspace(.named(Session.agent)))
+    #expect(s.workspace(shownOn: Desk.builtIn.id) == Session.agent)
+    #expect(s.clickedDesktop(at: CGPoint(x: 5000, y: 5000)) == nil)
+}

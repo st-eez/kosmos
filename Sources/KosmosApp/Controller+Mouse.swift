@@ -85,7 +85,8 @@ extension Controller {
         }
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
-            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point) }
+            let location = event.locationInWindow
+            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point, location: location) }
         }
     }
 
@@ -122,13 +123,31 @@ extension Controller {
 
     /// During a left modifier drag its own end drops the window (finishDrag), so a mouse up
     /// heard here drops nothing twice.
-    private func leftMouseUpHeard(at point: CGPoint?) {
+    private func leftMouseUpHeard(at point: CGPoint?, location: NSPoint) {
         leftButton.released(at: .now)
         guard modifierDrag?.grab.button != .left else {
             controllerLog.info("left mouse up heard during a left modifier drag: left out")
             return
         }
+        if let point, session.lifted.isEmpty, mouseMoved.isEmpty { focusClickedDesktop(at: point, location: location) }
         leftMouseUp(at: point)
+    }
+
+    /// A click on a display's desktop keys no window, so macOS reports only Finder in front,
+    /// which names no display; the mouse up names it (docs/displays.md). A click on a window
+    /// is left to its key report, and one on a window no key report follows, as the bar's, to
+    /// that window. The desktop's windows sit under level 0; the hit test names none on bare
+    /// desktop, 0.
+    private func focusClickedDesktop(at point: CGPoint, location: NSPoint) {
+        guard managing, !sessionLocked, session.focusIsOnAnotherDisplay(than: point) else { return }
+        let hit = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0)
+        if hit > 0 {
+            let rows = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(hit)) as? [[String: Any]]
+            guard let layer = rows?.first?[kCGWindowLayer as String] as? Int, layer < 0 else { return }
+        }
+        guard let plan = session.clickedDesktop(at: point) else { return }
+        controllerLog.info("click on the desktop of \(self.session.focusedWorkspace, privacy: .public)'s display focuses it")
+        execute(plan)
     }
 
     /// `point`: nil for where the pointer is.

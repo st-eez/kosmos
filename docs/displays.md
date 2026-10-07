@@ -289,13 +289,15 @@
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display ([hiding.md](hiding.md),
   and its open item on windows concealed before that window moved).
-- Open item: a click on the desktop of another display does not focus that display, as
-  when its workspace is empty. AeroSpace watches left mouse up with
-  `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift), and when the pointer is in
-  a display's visible area and that display's workspace is not the focused one, it
-  focuses that workspace. Kosmos sees such a click only as Finder becoming front with no
-  key window, which names no display. The pointer events of focus follows mouse ([focus-follows-mouse.md](focus-follows-mouse.md))
-  could carry the same check.
+- A click on the desktop of another display focuses that display's workspace, as when its
+  workspace is empty, so alt-` and a free workspace's key then show there
+  (`Session.clickedDesktop`). macOS reports such a click only as Finder becoming front with
+  no key window, which names no display, so Kosmos reads the left mouse up, as AeroSpace
+  does with `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift). It acts only when
+  the hit test there names no window or one under level 0, the desktop's, so a click on a
+  window is left to that window's key report, and a click on a bar or a panel changes
+  nothing. Before this, Steve's alt-` on an empty built-in display showed the agent
+  workspace on the main one (2026-10-07).
 - Steve's AeroSpace profiles map onto this model, and his config keeps their choices: a
   second office profile, `office-va24e`, takes the ASUS VA24E alone; the laptop profile,
   without `when`, takes the built-in display alone; and displays no profile knows keep
