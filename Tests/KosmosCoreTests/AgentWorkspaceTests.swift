@@ -196,7 +196,7 @@ import Testing
     #expect(s.focusedWorkspace == "1")
 }
 
-@Test func aWindowDraggedOutOfItKeepsFloatingWhereItWasLeft() {
+@Test func aWindowDraggedOutOfItTiles() {
     var s = Desk.session()
     _ = s.perform(.focusMonitor(.direction(.left), wrapAround: false))
     _ = s.perform(.workspace(.named(Session.agent)))
@@ -204,7 +204,6 @@ import Testing
     _ = s.add(10, to: "1")
     let start = CGRect(x: -1500, y: 200, width: 300, height: 400)
     let plan = s.dragged(30, to: CGRect(x: 600, y: 200, width: 300, height: 400), from: start)
-    #expect(s.workspace(of: 30) == "1" && s.isFloating(30))
-    #expect(plan?.frames[30] == nil)
-    #expect(s.workspaces["1"]!.root.windows == [10])
+    #expect(s.workspace(of: 30) == "1" && !s.isFloating(30))
+    #expect(plan?.frames[30] != nil && s.tile(of: 30) != nil)
 }

@@ -38,7 +38,7 @@ extension Session {
                 || abs(frame.width - start.width) > reach || abs(frame.height - start.height) > reach)
         if left { workspaces[source]!.toggleFullscreen(window) }
         guard let name = workspace(at: CGPoint(x: frame.midX, y: frame.midY)), name != source else { return left ? Plan() : nil }
-        var plan = move(window, from: source, to: name, follow: focused == window, dragged: true)
+        var plan = move(window, from: source, to: name, follow: focused == window)
         plan.focus = nil
         return plan
     }

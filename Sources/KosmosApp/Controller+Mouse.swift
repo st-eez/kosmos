@@ -290,6 +290,15 @@ extension Controller {
         guard let drag = modifierDrag else { return }
         modifierDrag = nil
         if session.lifted.contains(drag.grab.window) { leftMouseUp(at: point) }
+        // A floating window the drag carried out of the agent workspace tiles there, and its
+        // drag frames held it under the pointer until the release (docs/displays.md).
+        if drag.floating, let tile = session.tile(of: drag.grab.window) {
+            ledger.forget(drag.grab.window)
+            var plan = Session.Plan()
+            plan.frames = [drag.grab.window: tile]
+            controllerLog.info("\(drag.grab.window) dragged out of the agent workspace takes its tile")
+            execute(plan)
+        }
         publishState()
     }
 }
