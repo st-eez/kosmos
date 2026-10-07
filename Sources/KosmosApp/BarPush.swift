@@ -23,6 +23,8 @@ final class BarPush: Sendable {
     ]
 
     private let queue = DispatchQueue(label: "kosmos.bar", qos: .utility)
+    /// Each bar's send right, touched only on `queue`.
+    nonisolated(unsafe) private var ports = Array(repeating: mach_port_t(MACH_PORT_NULL), count: bars.count)
     /// The snapshot each bar has yet to take.
     private let pending = Mutex<[Data?]>(Array(repeating: nil, count: bars.count))
     /// The log names the first failed send of each bar's streak and its end, so a Mac
@@ -38,7 +40,7 @@ final class BarPush: Sendable {
         let bar = Self.bars[index]
         guard let snapshot = pending.withLock({ $0[index] }) else { return }
         let payload = bar.payload(snapshot)
-        let result = payload.withUnsafeBufferPointer { kosmos_bar_send(bar.name, $0.baseAddress, UInt32($0.count)) }
+        let result = payload.withUnsafeBufferPointer { kosmos_bar_send(&ports[index], bar.name, $0.baseAddress, UInt32($0.count)) }
         if result == KERN_SUCCESS {
             pending.withLock { if $0[index] == snapshot { $0[index] = nil } }
             let streak = failures.withLock { counts in defer { counts[index] = 0 }; return counts[index] }

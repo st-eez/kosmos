@@ -4,7 +4,8 @@
   snapshot per change ([ipc.md](ipc.md)), to SketchyBar as a `kosmos_state` event, holding
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
-  active profile; and every connected display, numbered as SketchyBar numbers it, from the
+  active profile; and every connected display, with CoreGraphics' UUID for it, which Zenith
+  matches its screens by, numbered as SketchyBar numbers it, from the
   same WindowServer display list: 1 when it is the only active display, else one more than
   its place in the managed display list, and 0 when the list lacks it (`display_arrangement`
   in SketchyBar 2.24.0's src/display.c). A workspace's display is the one [displays.md](displays.md) lays it

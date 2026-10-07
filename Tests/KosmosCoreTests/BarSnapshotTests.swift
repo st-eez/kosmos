@@ -4,7 +4,7 @@ import Testing
 @testable import KosmosCore
 
 private let display = CGRect(x: 0, y: 0, width: 1000, height: 800)
-private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
+private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in", uuid: "37D8832A-2D66-02CA-B9F7-8F30A301B230")
 
 @Test func snapshotListsEveryWorkspaceWithItsWindowsInScreenOrder() {
     var s = Session(names: ["1", "2", "3"], display: display)
@@ -50,7 +50,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in")
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let json = String(decoding: try encoder.encode(snapshot), as: UTF8.self)
-    #expect(json == #"{"displays":[{"id":1,"name":"Built-in"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","id":10,"x":0,"y":0}]}]}"#)
+    #expect(json == #"{"displays":[{"id":1,"name":"Built-in","uuid":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","id":10,"x":0,"y":0}]}]}"#)
 }
 
 /// SketchyBar 2.24.0 numbers displays in display_arrangement (src/display.c).

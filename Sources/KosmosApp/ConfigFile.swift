@@ -59,8 +59,9 @@ enum ConfigFile {
     static func barDisplays(_ displays: [Display]) -> [DisplayID: BarSnapshot.Display] {
         let active = DisplayIdentity.active().count, managed = DisplayIdentity.managed()
         return Dictionary(uniqueKeysWithValues: displays.map { display in
-            let number = BarSnapshot.displayNumber(uuid: DisplayIdentity.uuid(of: display.id), active: active, managed: managed)
-            return (display.id, BarSnapshot.Display(id: number, name: display.name))
+            let uuid = DisplayIdentity.uuid(of: display.id)
+            let number = BarSnapshot.displayNumber(uuid: uuid, active: active, managed: managed)
+            return (display.id, BarSnapshot.Display(id: number, name: display.name, uuid: uuid))
         })
     }
 }

@@ -6,9 +6,9 @@
 #include <stdint.h>
 
 // Sends without waiting: a full queue returns MACH_SEND_TIMED_OUT instead of blocking.
-// After a bar restarts, looks its name up again and retries once. Call from one thread
-// only; each name's port is cached, for up to four names.
-kern_return_t kosmos_bar_send(const char *name, const char *payload, uint32_t length);
+// `port` caches the send right for `name`: MACH_PORT_NULL at first, looked up again after
+// the bar restarts, with one retry. Call for each port from one serial queue.
+kern_return_t kosmos_bar_send(mach_port_t *port, const char *name, const char *payload, uint32_t length);
 
 // Sends and waits up to `timeout_ms` for SketchyBar's reply, copied into `reply`.
 // Returns the number of bytes copied, or -1 on failure.
