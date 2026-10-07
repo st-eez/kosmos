@@ -216,7 +216,8 @@
     has no fullscreen window (`Session.carry`). Steve's laptop profile merges 6 to 0 into 1
     to 5, so an unplug to the laptop alone takes this path. The resync after the profile
     change gives the window its new display's area, and the workspace coming back takes it
-    out of the one it joined, back into fullscreen on its own.
+    out of the one it joined, back into fullscreen on its own. The window takes that
+    workspace's focus, so no tile under it keeps the focus.
   - Left out: where the workspace it joins has a fullscreen window already, and for a
     window parked from fullscreen, the merge keeps no frame from before. The first keeps the
     display's size out of fullscreen, and the second returns where macOS puts it. The

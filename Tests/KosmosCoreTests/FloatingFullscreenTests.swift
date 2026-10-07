@@ -184,6 +184,19 @@ import Testing
         #expect(s.workspaces["2"]!.frameBeforeFullscreen == Self.own.offsetBy(dx: 1000, dy: 0))
     }
 
+    /// The tile focused on the workspace it joins would sit under it, so it takes the focus.
+    @Test func aProfileMergingItsWorkspaceAwayFocusesIt() {
+        let left = Monitor(id: 1, frame: Self.display), right = Monitor(id: 2, frame: Self.display.offsetBy(dx: 1000, dy: 0))
+        var s = Session(names: ["1", "2"], monitors: [left, right], assigned: ["1": 1, "2": 2])
+        _ = s.add(1); _ = s.add(2)
+        _ = s.add(5, to: "2", floating: true)
+        _ = s.follow(5)
+        _ = s.perform(.fullscreen, frame: { _ in Self.own.offsetBy(dx: 1000, dy: 0) })
+        _ = s.follow(1)
+        s.reconfigure(names: ["1"], monitors: [left], assigned: [:], merge: ["2": "1"])
+        #expect(s.workspaces["1"]!.fullscreenWindow == 5 && s.focused == 5)
+    }
+
     // MARK: Parking and drags
 
     @Test func parkingEndsItAndTheReturnGoesBackToItsFrame() {

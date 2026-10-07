@@ -69,6 +69,7 @@ extension Session {
             if let fullscreen, workspaces[name]!.fullscreenWindow == nil {
                 workspaces[name]!.fullscreenWindow = window
                 workspaces[name]!.frameBeforeFullscreen = fullscreen
+                workspaces[name]!.focus(window)
             }
         } else {
             workspaces[name]!.insert(window, first: false)
