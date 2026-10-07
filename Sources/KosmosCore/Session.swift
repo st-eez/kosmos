@@ -68,6 +68,8 @@ public struct Session: Sendable {
     var shownBefore: [DisplayID: String] = [:]
     /// Tiled windows dragged by the title bar, parked where they stood (docs/displays.md).
     public internal(set) var lifted: Set<WindowID> = []
+    /// Tiled windows that float because their app raised them off level 0 (docs/tree.md).
+    public internal(set) var floatedForLevel: Set<WindowID> = []
     /// The window focused when the restored layout was saved, until Kosmos admits it
     /// (docs/tree.md).
     var savedFocus: WindowID?
@@ -142,6 +144,9 @@ public struct Session: Sendable {
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
+        for window in floatedForLevel where home[window].map({ workspaces[$0]!.root.path(to: window) != nil }) ?? true {
+            problems.append("window \(window) floated for its level is tiled or belongs to no workspace")
+        }
         for window in parkReasons.keys where !isParked(window) { problems.append("window \(window) with a park reason is not parked") }
         for name in names {
             for entry in workspaces[name]!.parked where (parkReasons[entry.window] == nil) != lifted.contains(entry.window) {
@@ -248,6 +253,7 @@ public struct Session: Sendable {
         parkedConcealed.remove(window)
         parkReasons[window] = nil
         lifted.remove(window)
+        floatedForLevel.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan(frames: frames(of: name))
@@ -268,9 +274,11 @@ public struct Session: Sendable {
             _ = workspaces[current]!.remove(new)
             parkedConcealed.remove(new)
             lifted.remove(new)
+            floatedForLevel.remove(new)
             changed.insert(current)
         }
         if lifted.remove(old) != nil { lifted.insert(new) }
+        if floatedForLevel.remove(old) != nil { floatedForLevel.insert(new) }
         parkReasons[new] = parkReasons.removeValue(forKey: old)
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
@@ -287,6 +295,24 @@ public struct Session: Sendable {
         var plan = Plan(frames: frames(of: changed))
         if !isShown(name), !isParked(new) { plan.hide = [new] }
         return plan
+    }
+
+    /// A tiled window its app raises off level 0, as IINA's Float on Top does, floats at the
+    /// frame it has, and tiles again when its level returns to 0, unless the user toggled it in
+    /// the meantime (docs/tree.md). Nil when nothing changes, as for a window floating already.
+    public mutating func leveled(_ window: WindowID, raised: Bool) -> Plan? {
+        defer { check() }
+        guard let name = home[window] else { return nil }
+        if raised {
+            guard workspaces[name]!.float(window) else { return nil }
+            floatedForLevel.insert(window)
+        } else {
+            let monitor = monitor(of: name)
+            guard floatedForLevel.contains(window), workspaces[name]!.tile(window, in: monitor.area, gaps: monitor.gaps)
+            else { return nil }
+            floatedForLevel.remove(window)
+        }
+        return Plan(frames: frames(of: name))
     }
 
     /// A parked window keeps its reason unless a minimize or native fullscreen replaces closed
@@ -518,6 +544,7 @@ public struct Session: Sendable {
         case .layout(.toggleFloating):
             let floating = workspace.floating.contains(window)
             guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
+            floatedForLevel.remove(window)
         case .fullscreen:
             guard workspace.toggleFullscreen(window, frame: frame(window)) else { return nil }
         case .resize(let dimension, let amount) where workspace.floating.contains(window):
