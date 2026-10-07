@@ -637,6 +637,15 @@ public struct Session: Sendable {
         return true
     }
 
+    /// Focuses a workspace a display shows, where it is, as the pointer entering its empty
+    /// desktop does (docs/focus-follows-mouse.md); `workspace agent` would move the agent
+    /// workspace instead. Nil for a hidden or the focused workspace.
+    public mutating func focusShownWorkspace(_ name: String) -> Plan? {
+        defer { check() }
+        guard isShown(name), name != focusedWorkspace else { return nil }
+        return focusShown(name)
+    }
+
     mutating func reach(_ name: String) -> Plan {
         isShown(name) ? focusShown(name) : show(name)
     }

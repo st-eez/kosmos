@@ -86,7 +86,9 @@ extension Controller {
         _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let point = event.cgEvent?.location
             let location = event.locationInWindow
-            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point, location: location) }
+            // The user's hand carries source pid 0, a posted click its poster's (docs/focus.md).
+            let byUser = event.cgEvent.map { $0.getIntegerValueField(.eventSourceUnixProcessID) == 0 } ?? false
+            MainActor.assumeIsolated { self?.leftMouseUpHeard(at: point, location: location, byUser: byUser) }
         }
     }
 
@@ -105,10 +107,22 @@ extension Controller {
         let onDisplay = CGGetDisplaysWithPoint(point, 1, &display, &count) == .success && count > 0
         controllerLog.debug("left mouse down at \(point.x), \(point.y)\(onDisplay ? "" : ", off every display: left out", privacy: .public)")
         clickedWindow = 0
+        pressedOnDesktop = false
         guard onDisplay else { return }
+        pressedOnDesktop = managing && session.focusIsOnAnotherDisplay(than: point) && Self.isDesktop(at: location)
         leftButton.pressed(at: .now)
         floatingAtPress = [:]
         if mouseFollowsFocus { clickedWindow = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0) }
+    }
+
+    /// The hit test names no window on bare desktop, and Finder's desktop window at the icons'
+    /// level elsewhere; a bar, as ZenithBar's at level -20, sits above it.
+    private static func isDesktop(at location: NSPoint) -> Bool {
+        let hit = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0)
+        guard hit > 0 else { return true }
+        let rows = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(hit)) as? [[String: Any]]
+        guard let layer = rows?.first?[kCGWindowLayer as String] as? Int else { return false }
+        return FocusFollowsMouse.isDesktop(level: Int32(layer))
     }
 
     /// At a lock and a resync: a press whose mouse up Kosmos never heard would count as on
@@ -123,28 +137,28 @@ extension Controller {
 
     /// During a left modifier drag its own end drops the window (finishDrag), so a mouse up
     /// heard here drops nothing twice.
-    private func leftMouseUpHeard(at point: CGPoint?, location: NSPoint) {
+    private func leftMouseUpHeard(at point: CGPoint?, location: NSPoint, byUser: Bool) {
         leftButton.released(at: .now)
+        let pressedOnDesktop = self.pressedOnDesktop
+        self.pressedOnDesktop = false
         guard modifierDrag?.grab.button != .left else {
             controllerLog.info("left mouse up heard during a left modifier drag: left out")
             return
         }
-        if let point, session.lifted.isEmpty, mouseMoved.isEmpty { focusClickedDesktop(at: point, location: location) }
+        if let point, byUser, pressedOnDesktop, session.lifted.isEmpty, mouseMoved.isEmpty {
+            focusClickedDesktop(at: point, location: location)
+        }
         leftMouseUp(at: point)
     }
 
     /// A click on a display's desktop keys no window, so macOS reports only Finder in front,
-    /// which names no display; the mouse up names it (docs/displays.md). A click on a window
-    /// is left to its key report, and one on a window no key report follows, as the bar's, to
-    /// that window. The desktop's windows sit under level 0; the hit test names none on bare
-    /// desktop, 0.
+    /// which names no display; the mouse up names it (docs/displays.md). Only the user's click,
+    /// pressed and released on the desktop, counts: a click on a window is left to its key
+    /// report, and a drag out of a window on another display, a click on a bar or a panel, and
+    /// a click another process posts change nothing.
     private func focusClickedDesktop(at point: CGPoint, location: NSPoint) {
-        guard managing, !sessionLocked, session.focusIsOnAnotherDisplay(than: point) else { return }
-        let hit = NSWindow.windowNumber(at: location, belowWindowWithWindowNumber: 0)
-        if hit > 0 {
-            let rows = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(hit)) as? [[String: Any]]
-            guard let layer = rows?.first?[kCGWindowLayer as String] as? Int, layer < 0 else { return }
-        }
+        guard managing, !sessionLocked, session.focusIsOnAnotherDisplay(than: point), Self.isDesktop(at: location)
+        else { return }
         guard session.clickedDesktop(at: point) else { return }
         controllerLog.info("click on the desktop of \(self.session.focusedWorkspace, privacy: .public)'s display focuses it")
         publishState()

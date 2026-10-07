@@ -171,3 +171,27 @@ import Testing
     _ = s.perform(.workspace(.named(Session.agent)))
     #expect(s.workspace(shownOn: Desk.main.id) == main && main != left)
 }
+
+@Test func thePointerFocusesItWhereItIsAndNeverMovesIt() throws {
+    var s = Desk.session()
+    _ = s.perform(.focusMonitor(.direction(.left), wrapAround: false))
+    _ = s.perform(.workspace(.named(Session.agent)))
+    _ = s.perform(.focusMonitor(.direction(.right), wrapAround: false))
+    let main = try #require(s.workspace(shownOn: Desk.main.id))
+    let plan = s.focusShownWorkspace(Session.agent)
+    #expect(plan?.focus == .noWindow)
+    #expect(s.workspace(shownOn: Desk.left.id) == Session.agent && s.workspace(shownOn: Desk.main.id) == main)
+    #expect(s.focusedWorkspace == Session.agent)
+    let again = s.focusShownWorkspace(Session.agent)
+    let hidden = s.focusShownWorkspace("6")
+    #expect(again == nil && hidden == nil)
+}
+
+@Test func anAgentsWindowUnminimizedWithNoFollowStaysConcealedThere() {
+    var s = Desk.session()
+    _ = s.add(30, to: Session.agent)
+    _ = s.park([30], because: .minimized)
+    let plan = s.unpark([30], follow: nil)
+    #expect(plan.hide == [30] && !s.isShown(Session.agent))
+    #expect(s.focusedWorkspace == "1")
+}

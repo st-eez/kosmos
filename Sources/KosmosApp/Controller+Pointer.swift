@@ -55,7 +55,7 @@ extension Controller {
             return
         }
         if let emptyWorkspace {
-            guard let plan = session.perform(.workspace(.named(emptyWorkspace))) else { return }
+            guard let plan = session.focusShownWorkspace(emptyWorkspace) else { return }
             pointerLog.info("pointer focuses empty workspace \(emptyWorkspace, privacy: .public)")
             reports.commandExecuted(receivedAt: stamp)
             execute(plan, fromCommand: true)

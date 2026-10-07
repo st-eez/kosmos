@@ -355,7 +355,11 @@ extension Controller {
         case .minimized(let id, true):
             depart([id], because: .minimized)
         case .minimized(let id, false):
-            returned([id], follow: id, at: report.received)
+            // An agent's window comes back on the agent workspace and takes no display, unless
+            // the user's own input brought it back (docs/displays.md).
+            let follow = session.workspace(of: id) != Session.agent
+                || owner[id].map { userCause(of: $0, at: report.received) != nil } == true
+            returned([id], follow: follow ? id : nil, reassert: !follow, at: report.received)
         case .frameApplied(let id, let target, let readBack):
             let asked = "asked \(Int(target.width))x\(Int(target.height)), kept \(Int(readBack.width))x\(Int(readBack.height))"
             // Concealed or on a hidden workspace, a window refused once at most, and its

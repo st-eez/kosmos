@@ -50,6 +50,8 @@ final class Controller {
     var floatingAtPress: [WindowID: CGRect] = [:]
     var leftButton = LeftButton()
     var clickedWindow = 0
+    /// The left button's press landed on the desktop of a display other than the focused one.
+    var pressedOnDesktop = false
     /// False while another tiling window manager runs: Kosmos then only observes.
     let managing: Bool
     var rules: [WindowRule] = []

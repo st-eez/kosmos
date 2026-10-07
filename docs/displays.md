@@ -61,7 +61,10 @@
     workspace, it goes and gives its display back the same way. With no hidden workspace
     to give back the press does nothing.
   - No display takes it unasked: a display left with no workspace at a display change or
-    a profile takes another, and `workspace next` and `prev` leave it out.
+    a profile takes another, and `workspace next` and `prev` leave it out. The pointer
+    entering its empty desktop focuses it where it is. Its window unminimized with no input
+    of the user's stays on it, concealed while it is hidden, and the focus goes back, as for
+    an app's unhide ([tree.md](tree.md)).
   - The bar has it only while a display shows it, so a bar shows which display holds it
     and lists only the user's workspaces otherwise. `list-workspaces` and `list-windows`
     always list it.
@@ -297,10 +300,11 @@
   for a desktop icon, whose Quick Look or rename key would otherwise reach the workspace's
   window. macOS reports such a click only as Finder becoming front with
   no key window, which names no display, so Kosmos reads the left mouse up, as AeroSpace
-  does with `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift). It acts only when
-  the hit test there names no window or one under level 0, the desktop's, so a click on a
-  window is left to that window's key report, and a click on a bar or a panel changes
-  nothing. Before this, Steve's alt-` on an empty built-in display showed the agent
+  does with `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift). It acts only on the
+  user's click, source pid 0, pressed and released where the hit test names no window or
+  one at or under the desktop icons' level. So a click on a window is left to that window's
+  key report, and a click on a bar or a panel (ZenithBar's sits at level -20), a drag out of
+  a window on another display and a click another process posts change nothing. Before this, Steve's alt-` on an empty built-in display showed the agent
   workspace on the main one (2026-10-07).
 - Steve's AeroSpace profiles map onto this model, and his config keeps their choices: a
   second office profile, `office-va24e`, takes the ASUS VA24E alone; the laptop profile,
