@@ -1,4 +1,4 @@
-// The bars' Mach messages: Kosmos's push to Zenith, and kosmos-probe's query of SketchyBar
+// The bars' Mach messages: Kosmos's push to ZenithBar, and kosmos-probe's query of SketchyBar
 // in the format its own CLI sends (docs/ipc.md).
 #pragma once
 

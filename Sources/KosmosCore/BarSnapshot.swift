@@ -6,7 +6,7 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
         /// SketchyBar's number for the display, the value an item's `display` property takes.
         public var id: Int
         public var name: String
-        /// CoreGraphics' UUID for the display, which Zenith matches its screens by; nil when
+        /// CoreGraphics' UUID for the display, which ZenithBar matches its screens by; nil when
         /// CoreGraphics gives none.
         public var uuid: String?
 

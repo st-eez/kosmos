@@ -35,20 +35,20 @@
   - The server's side is `Reply.hold`: a handler that returns one gets the args of the
     client's next request, or nil when the client closes or sends no valid request, and the
     response it returns goes back before the close.
-- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to Zenith's
-  Mach port, `io.github.st-eez.zenith`, as the JSON alone, with a zero timeout
-  (~/Projects/Personal/zenith). Kosmos pushed to SketchyBar's port too until SketchyBar
-  retired on October 6, 2026; each push to it then cost two failed bootstrap lookups,
-  about 100 µs. A bar asks Kosmos for a snapshot with `kosmos state` only when it starts
-  and after a wake ([integrations.md](integrations.md)).
-  A bar reads the snapshot's `version` first: a new version may rename or remove fields,
-  and new fields can appear in any version.
+- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to
+  ZenithBar's Mach port, `io.github.st-eez.zenithbar`, as the JSON alone, with a zero
+  timeout (~/Projects/Personal/zenithbar). Kosmos pushed to SketchyBar's port too until
+  SketchyBar retired on October 6, 2026; each push to it then cost two failed bootstrap
+  lookups, about 100 µs. A bar asks Kosmos for a snapshot with `kosmos state` only when it
+  starts and after a wake ([integrations.md](integrations.md)). A bar reads the snapshot's
+  `version` first: a new version may rename or remove fields, and new fields can appear in
+  any version.
 - A send that fails is tried once more 250 ms later, with the newest snapshot: the zero
   timeout fails while the bar's message queue is full, and a restarting bar has no port
   yet. No failure has been seen, as failures were logged at debug level, which the live log
   of September 24 to 26, 2026 did not keep. The first failure of a streak logs at notice
   level, and so does the send that ends it, with the streak's length and whether a retry
-  sent it, so a Mac without Zenith logs once for it. The retry goes unless that log shows
+  sent it, so a Mac without ZenithBar logs once for it. The retry goes unless that log shows
   a retry ending a streak.
 - A send that times out leaves Kosmos the message back: the kernel maps a new copy of the
   payload into Kosmos and adds a reference to the bar's send right. `send` in
