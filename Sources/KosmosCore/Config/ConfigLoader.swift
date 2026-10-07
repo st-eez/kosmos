@@ -209,6 +209,9 @@ private struct ConfigDecoder {
         if name.hasPrefix("-") {
             return "workspace names cannot start with '-', which starts an option"
         }
+        if name == Session.agent {
+            return "'\(name)' is Kosmos's own workspace for agents' windows, there in every profile (docs/displays.md)"
+        }
         guard case .success(.workspace(.named)) = Command.parse(["workspace", name]) else {
             return "'\(name)' is a command keyword and cannot name a workspace"
         }
@@ -370,7 +373,7 @@ private struct ConfigDecoder {
             if let entry = fields["float"] { rule.float = boolean(entry.value, rulePath.key(entry.key)) }
             if let entry = fields["workspace"], let name = string(entry.value, rulePath.key(entry.key)) {
                 rule.workspace = name
-                checkWorkspace((name, entry.value.position, rulePath.key(entry.key)), in: workspaces, scope: scope)
+                checkWorkspace((name, entry.value.position, rulePath.key(entry.key)), in: workspaces, scope: scope, agent: true)
             }
             guard fields["app-id"] != nil || fields["app-name"] != nil else {
                 fail("a rule needs app-id or app-name", at: item.position, rulePath)
@@ -449,8 +452,8 @@ private struct ConfigDecoder {
                 profile.rules = rules(entry.value, profilePath.key(entry.key), workspaces: workspaces, scope: scope).map(\.rule)
             }
             for base in baseRules {
-                guard let target = base.rule.workspace, !workspaces.contains(target), profile.mergeWorkspaces[target] == nil,
-                      !profile.rules.contains(where: { $0.covers(base.rule) })
+                guard let target = base.rule.workspace, target != Session.agent, !workspaces.contains(target),
+                      profile.mergeWorkspaces[target] == nil, !profile.rules.contains(where: { $0.covers(base.rule) })
                 else { continue }
                 warn("\(base.path) on line \(base.position.line) sends windows to workspace '\(target)', which this profile "
                      + "leaves out; add '\(target)' to merge-workspaces or give the profile a rule of its own",
@@ -484,8 +487,9 @@ private struct ConfigDecoder {
     }
 
     /// `scope` names the workspace list `name` must be in, for the message.
-    private mutating func checkWorkspace(_ name: Located, in workspaces: [String], scope: String) {
-        if !workspaces.contains(name.value) {
+    /// A rule can send windows to the agent workspace, which every profile has.
+    private mutating func checkWorkspace(_ name: Located, in workspaces: [String], scope: String, agent: Bool = false) {
+        if !(agent && name.value == Session.agent), !workspaces.contains(name.value) {
             fail("workspace '\(name.value)' is not in \(scope)" + suggestion(for: name.value, from: workspaces),
                  at: name.position, name.path)
         }

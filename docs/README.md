@@ -17,13 +17,14 @@ prefix.
   Code: `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
   `KosmosCore/LockState.swift`, `KosmosCore/Sweeps.swift`, `KosmosCore/Tabs.swift`,
-  `KosmosCore/RegularApps.swift`, `KosmosPolicyWatch/PolicyWatch.swift`,
+  `KosmosCore/ManagedWindows.swift`, `KosmosCore/RegularApps.swift`,
+  `KosmosPolicyWatch/PolicyWatch.swift`,
   `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Events.swift`, `kosmos-probe/Policy.swift`,
   `kosmos-probe/PolicyExits.swift`, `kosmos-probe/WindowKinds.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.
-  Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
+  Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/TileRewrites.swift`, `KosmosCore/AXBackoff.swift`,
   `KosmosCore/LeftButton.swift`, `KosmosCore/Session.swift`, `KosmosCore/Slide.swift`,
   `KosmosApp/AppWorker.swift`, `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
@@ -68,7 +69,8 @@ prefix.
   `KosmosCore/SecureInputHold.swift`, `kosmos-probe/SecureInput.swift`.
 - [ipc.md](ipc.md): the socket, the CLI, `kosmos peek`'s held request and the snapshots
   pushed to ZenithBar.
-  Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `KosmosCore/Query.swift`,
+  Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `kosmos/Open.swift`,
+  `KosmosApp/AgentOpen.swift`, `KosmosCore/Query.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,
@@ -105,7 +107,7 @@ prefix.
   `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
-  `KosmosSkyLight/Displays.swift`.
+  `KosmosSkyLight/Displays.swift`, `KosmosCore/Session+Agent.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,

@@ -14,6 +14,8 @@ const char *kosmos_bridge_missing(void);
 uint64_t kosmos_holding_create(void);
 // In place and opaque. Returns 0 on failure, with any partial Space destroyed.
 uint64_t kosmos_float_space_create(int32_t level);
+// The Space's absolute level; false when it does not read, as on a macOS that lacks the read.
+bool kosmos_space_level(uint64_t space, int32_t *level);
 // Applies in each window's own coordinates, y down, mapping where a point shows to the
 // window's point: a translation of 300 in x shows the window 300 points left. The hit test
 // follows; the Accessibility frame does not (docs/geometry.md).

@@ -49,6 +49,34 @@
   and why it floats at admission. A new Finder window on the left panel had come up at the
   tile a third window beside Preview and Ghostty would have had, behind Ghostty's tile,
   when Kosmos tiled a ruled window before floating it (live log, September 25, 2026).
+- The agent workspace, `agent`, holds agents' windows, out of the user's way (Steve's
+  design of 2026-10-05 and 2026-10-07; `Session+Agent.swift`). Every session has it, after
+  the profile's workspaces, so no profile lists it, and the config refuses a `workspaces`
+  list that does, while a rule can send windows there ([config.md](config.md)). No
+  display keeps it:
+  - `workspace agent`, which Steve binds to alt-`, shows it on the focused display in
+    place of the workspace there, and focuses it. Pressed with the agent workspace on
+    another display, it moves here and that display gets back the workspace it showed
+    before, else its first hidden workspace that can go there. Pressed on the agent
+    workspace, it goes and gives its display back the same way. With no hidden workspace
+    to give back the press does nothing.
+  - No display takes it unasked: a display left with no workspace at a display change or
+    a profile takes another, and `workspace next` and `prev` leave it out.
+  - The bar has it only while a display shows it, so a bar shows which display holds it
+    and lists only the user's workspaces otherwise. `list-workspaces` and `list-windows`
+    always list it.
+  - Its windows float, so each keeps its size and an agent's screenshots and pixel
+    coordinates stay put when it moves between displays. A window that leaves it tiles,
+    unless its app holds it off level 0 ([tree.md](tree.md)). A floating window comes to
+    the display that shows it at the floating check after the switch, as any floating
+    window does (below).
+  - While no display shows it, its windows stay drawn under the desktop
+    ([hiding.md](hiding.md)), so agents can capture and click them with no peek.
+  - Agents' windows reach it three ways: `kosmos open` claims the new windows of the app
+    it opens for 10 s ([ipc.md](ipc.md)), a rule's `workspace = 'agent'`, and `kosmos
+    move-node-to-workspace --window-id <id> agent`, which shows the window first. A
+    claim goes by app, so a window the user opens in that app within the 10 s goes there
+    too, and so do the windows an app restores as it launches.
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which
@@ -261,13 +289,15 @@
   recently used window is shown on another display, since macOS prefers an eligible
   window on the current display over the app's key window on another display ([hiding.md](hiding.md),
   and its open item on windows concealed before that window moved).
-- Open item: a click on the desktop of another display does not focus that display, as
-  when its workspace is empty. AeroSpace watches left mouse up with
-  `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift), and when the pointer is in
-  a display's visible area and that display's workspace is not the focused one, it
-  focuses that workspace. Kosmos sees such a click only as Finder becoming front with no
-  key window, which names no display. The pointer events of focus follows mouse ([focus-follows-mouse.md](focus-follows-mouse.md))
-  could carry the same check.
+- A click on the desktop of another display focuses that display's workspace, as when its
+  workspace is empty, so alt-` and a free workspace's key then show there
+  (`Session.clickedDesktop`). macOS reports such a click only as Finder becoming front with
+  no key window, which names no display, so Kosmos reads the left mouse up, as AeroSpace
+  does with `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift). It acts only when
+  the hit test there names no window or one under level 0, the desktop's, so a click on a
+  window is left to that window's key report, and a click on a bar or a panel changes
+  nothing. Before this, Steve's alt-` on an empty built-in display showed the agent
+  workspace on the main one (2026-10-07).
 - Steve's AeroSpace profiles map onto this model, and his config keeps their choices: a
   second office profile, `office-va24e`, takes the ASUS VA24E alone; the laptop profile,
   without `when`, takes the built-in display alone; and displays no profile knows keep

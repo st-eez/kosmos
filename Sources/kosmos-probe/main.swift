@@ -13,6 +13,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("holding", "holding", { _ in holding() }),
     ("handover", "handover", { _ in handover() }),
     ("concealed-move", "concealed-move [onscreen]", { concealedMove(onscreen: $0.contains("onscreen")) }),
+    ("ordered-out-add", "ordered-out-add [trials]", { orderedOutAdd(trials: $0.first.flatMap(Int.init) ?? 3) }),
     ("fullscreen", "fullscreen [dry]", { fullscreen(dry: $0.contains("dry")) }),
     ("departures", "departures", { _ in departures() }),
     ("tabs", "tabs [strip|keep]", { tabs(conceal: $0.first) }),
@@ -110,6 +111,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("raise-stub", nil, { raiseStub($0) }),
     ("clamp-window", nil, { _ in clampWindow() }),
     ("hidden-window", nil, { _ in showHiddenWindow() }),
+    ("ordered-out-window", nil, { _ in orderedOutWindow() }),
     ("handover-creator", nil, { arguments in
         guard let window = arguments.first.flatMap(UInt32.init) else { usage() }
         handoverCreator(window, kill: arguments.contains("kill"))

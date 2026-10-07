@@ -164,4 +164,17 @@ private let A: WindowID = 1, B: WindowID = 2, C: WindowID = 3, F: WindowID = 4, 
         _ = s.adopt(F)
         #expect(Self.arrow(&s, .left, f: Self.rightHalf) == .window(A))
     }
+
+    /// `layout floating tiling` on F, focused, tiles it and ends A's fullscreen.
+    @Test func tilingTheFocusedFloatingWindowUnderAFullscreenOneKeepsTheArrowsWorking() {
+        var s = Self.session()
+        _ = s.adopt(F)
+        let plan = s.perform(.layout(.toggleFloating))
+        #expect(!s.isFloating(F))
+        let fullscreen = s.workspaces["1"]!.fullscreenWindow
+        #expect(fullscreen == nil || s.focused == fullscreen)
+        #expect(plan?.frames == s.frames(of: "1"))
+        let moves = [Direction.left, .right, .up, .down].compactMap { d in var c = s; return c.perform(.focus(d))?.focus }
+        #expect(!moves.isEmpty)
+    }
 }

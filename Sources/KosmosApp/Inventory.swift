@@ -37,6 +37,8 @@ final class Inventory {
         /// these (docs/tree.md).
         case orderChange(window: WindowID, pid: pid_t, orderedIn: Bool, frame: CGRect, at: ContinuousClock.Instant)
         case fullscreenChange(window: WindowID, entered: Bool, spaceChangeBegan: ContinuousClock.Instant)
+        /// A managed window's level left 0 or returned to it (docs/tree.md).
+        case levelChange(window: WindowID, raised: Bool)
         /// `changedAt` is nil for a frame read for a creation, a sweep, or a Space change such
         /// as a reveal.
         case frameChange(window: WindowID, old: CGRect, new: CGRect, changedAt: ContinuousClock.Instant?)
@@ -102,6 +104,7 @@ final class Inventory {
     /// (docs/inventory.md).
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
     private var looks = ClosedAndKept.Looks()
+    private var managed = ManagedWindows()
 
     func start() {
         SkyLight.subscribe { [weak self] event, stamp in self?.handle(event, at: stamp) }
@@ -137,10 +140,8 @@ final class Inventory {
         apps.start()
     }
 
-    func isManaged(_ id: WindowID) -> Bool {
-        guard let row = windows[id] else { return false }
-        return isCandidate(row) && ax[id]?.subrole == kAXStandardWindowSubrole
-    }
+    /// Reported managed. One its app raised off level 0 stays so (docs/inventory.md).
+    func isManaged(_ id: WindowID) -> Bool { managed.contains(id) }
 
     func wasThereAtLaunch(_ id: WindowID) -> Bool { sweeps.atLaunch.contains(id) }
 
@@ -285,14 +286,14 @@ final class Inventory {
 
     /// Nil info means the app did not answer, and what was known stays (docs/inventory.md).
     private func setAX(_ id: WindowID, _ info: AXWindowInfo?) {
-        guard let info, let pid = windows[id]?.pid else { return }
-        let wasManaged = isManaged(id)
+        guard let info, let row = windows[id] else { return }
         ax[id] = info
-        if isManaged(id) != wasManaged {
-            onEvent?(.managedChange(window: id, pid: pid, managed: isManaged(id)))
+        let standard = info.subrole == kAXStandardWindowSubrole
+        if let nowManaged = managed.read(id, standard: standard, candidate: isCandidate(row)) {
+            onEvent?(.managedChange(window: id, pid: row.pid, managed: nowManaged))
             inventoryLog.info("""
-                \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
-                \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
+                \(id) \(nowManaged ? "managed" : "not managed", privacy: .public): \
+                \(self.appName(row.pid), privacy: .public) \
                 subrole \(info.subrole ?? "-", privacy: .public) \
                 identifier \(info.identifier ?? "-", privacy: .public) \
                 zoom button \(info.zoomButtonEnabled.map { $0 ? "enabled" : "disabled" } ?? "-", privacy: .public)
@@ -404,8 +405,12 @@ final class Inventory {
         let old = windows.updateValue(row, forKey: row.id)
         if old == nil { scheduleWatch() }
         departures.ordered(row.id, in: row.orderedIn, was: old?.orderedIn, at: .now)
+        // Before its frame change, which would otherwise count as its tile's.
+        if let old, (old.level == 0) != (row.level == 0), isManaged(row.id) {
+            onEvent?(.levelChange(window: row.id, raised: row.level != 0))
+        }
         // A new tab can be seen first already ordered in.
-        if isCandidate(row),
+        if isCandidate(row) || isManaged(row.id),
            heldOrder.ordered(row.id, app: row.pid, in: row.orderedIn, was: old?.orderedIn, frame: row.frame,
                              at: stamp, locked: sessionLocked) {
             onEvent?(.orderChange(window: row.id, pid: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp))
@@ -434,7 +439,7 @@ final class Inventory {
     private func remove(_ id: WindowID, reason: StaticString, at stamp: ContinuousClock.Instant = .now) {
         guard !sessionLocked else {
             if windows[id] != nil { removedWhileLocked.insert(id) }
-            if let row = windows[id], isCandidate(row) {
+            if let row = windows[id], isCandidate(row) || isManaged(id) {
                 _ = heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp, locked: true)
             } else if let row = arrivedWhileLocked.removeValue(forKey: id) {
                 _ = heldOrder.removed(id, app: row.pid, orderedIn: false, frame: row.frame, at: stamp, locked: true)
@@ -442,18 +447,17 @@ final class Inventory {
             return
         }
         sweeps.touch([id])
-        let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
         fullscreen.remove(id)
         spaceChangedAt[id] = nil
         if row.orderedIn { departures.left(id, at: .now) }
         // Before the removal, so a tab that replaces this one takes its place.
-        if isCandidate(row),
+        if isCandidate(row) || isManaged(id),
            heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp, locked: false) {
             onEvent?(.orderChange(window: id, pid: row.pid, orderedIn: false, frame: row.frame, at: stamp))
         }
-        if wasManaged { onEvent?(.managedChange(window: id, pid: row.pid, managed: false)) }
+        if managed.removed(id) { onEvent?(.managedChange(window: id, pid: row.pid, managed: false)) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
     }

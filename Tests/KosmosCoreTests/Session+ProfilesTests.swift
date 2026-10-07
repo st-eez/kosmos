@@ -72,7 +72,7 @@ import Testing
         let laptop = ["1", "2", "3", "4", "5"]
         s.reconfigure(names: laptop, monitors: [Desk.builtIn], assigned: Dictionary(uniqueKeysWithValues: laptop.map { ($0, 3) }),
                       merge: ["6": "1", "7": "2", "8": "3", "9": "4", "0": "5"])
-        #expect(s.names == laptop)
+        #expect(s.names == laptop + [Session.agent])
         #expect(s.workspaces["1"]!.tree == "h[10 60 61]")
         #expect(s.workspace(of: 70) == "2" && s.workspaces["2"]!.floating == [70])
         #expect(s.workspace(of: 71) == "2" && s.isParked(71))

@@ -44,6 +44,7 @@ final class Controller {
     /// The target each 100 ms retry writes again, until the log names how it went
     /// (docs/geometry.md).
     var retries: [WindowID: CGRect] = [:]
+    var tileRewrites = TileRewrites()
     /// Each floating window's frame at the left button's press, as its first change in the press
     /// found it, which a drag out of fullscreen counts from (docs/tree.md).
     var floatingAtPress: [WindowID: CGRect] = [:]
@@ -106,6 +107,9 @@ final class Controller {
     /// The windows taken over concealed at launch until their admission (docs/hiding.md).
     var adoption = Adoption()
     var peeking = PeekBook()
+    /// Apps an agent opens with `kosmos open`, each until the end of its claim: their new
+    /// windows go to the agent workspace (docs/displays.md).
+    var agentClaims: [String: ContinuousClock.Instant] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory
@@ -311,6 +315,11 @@ final class Controller {
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
+        // Nor is a size kept smaller than the tile while hidden, which the ledger took for
+        // rounding.
+        for id in plan.show where plan.frames[id] != nil {
+            if let frame = knownFrame(id) { _ = rewritesTile(id, seen: frame) }
+        }
         let written = writeFrames(plan.frames, sliding: motions)
         flashSpills(plan.frames, written: written)
         if movePointer { centerPointer() }
@@ -365,7 +374,8 @@ final class Controller {
         // The windows to conceal that lose their ordinary Space, by each app's window
         // focused last (Session.stripped).
         let strip = session.stripped(hide) { window in owner[window].flatMap { pid in recent.last { owner[$0] == pid } } }
-        hiding.apply(show: show, on: displays, hide: hide, stripping: strip) { [weak self] outcome, timing in
+        let below = Set(hide.filter { session.workspace(of: $0) == Session.agent })
+        hiding.apply(show: show, on: displays, hide: hide, stripping: strip, below: below) { [weak self] outcome, timing in
             guard let self else { return }
             self.intake.forgetPlacedHidden(hide)   // the conceal that placed them hidden is done
             // Sent only now, so each lands concealed.

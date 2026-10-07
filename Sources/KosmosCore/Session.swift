@@ -68,13 +68,18 @@ public struct Session: Sendable {
     var shownBefore: [DisplayID: String] = [:]
     /// Tiled windows dragged by the title bar, parked where they stood (docs/displays.md).
     public internal(set) var lifted: Set<WindowID> = []
+    /// Tiled windows that float because their app raised them off level 0 (docs/tree.md).
+    public internal(set) var floatedForLevel: Set<WindowID> = []
     /// The window focused when the restored layout was saved, until Kosmos admits it
     /// (docs/tree.md).
     var savedFocus: WindowID?
+    /// The workspace the agent workspace's display showed before it, given back when it goes.
+    var agentDisplaced: String?
 
     public init(names: [String], monitors: [Monitor], assigned: [String: DisplayID] = [:]) {
         precondition(!names.isEmpty, "a session needs a workspace")
         precondition(!monitors.isEmpty, "a session needs a display")
+        let names = names.contains(Self.agent) ? names : names + [Self.agent]
         self.names = names
         workspaces = Dictionary(uniqueKeysWithValues: names.map { ($0, Workspace()) })
         self.monitors = Monitor.arranged(monitors)
@@ -142,6 +147,9 @@ public struct Session: Sendable {
         }
         for window in lifted where !isParked(window) { problems.append("lifted window \(window) is not parked") }
         for window in parkedConcealed where !isParked(window) { problems.append("concealed window \(window) is not parked") }
+        for window in floatedForLevel where home[window].map({ workspaces[$0]!.root.path(to: window) != nil }) ?? true {
+            problems.append("window \(window) floated for its level is tiled or belongs to no workspace")
+        }
         for window in parkReasons.keys where !isParked(window) { problems.append("window \(window) with a park reason is not parked") }
         for name in names {
             for entry in workspaces[name]!.parked where (parkReasons[entry.window] == nil) != lifted.contains(entry.window) {
@@ -183,6 +191,12 @@ public struct Session: Sendable {
 
     public func isVisible(_ window: WindowID) -> Bool {
         home[window].map(isShown) == true && !isParked(window)
+    }
+
+    /// The tile of a tiled window of a shown workspace; nil for a floating, parked or hidden one.
+    public func tile(of window: WindowID) -> CGRect? {
+        guard let name = home[window], isShown(name), !isParked(window), !isFloating(window) else { return nil }
+        return frames(of: name)[window]
     }
 
     public func focusIsOnAnotherDisplay(than point: CGPoint) -> Bool {
@@ -229,7 +243,7 @@ public struct Session: Sendable {
         }
         let target = name.flatMap { workspaces[$0] != nil ? $0 : nil } ?? point.flatMap(workspace(at:)) ?? focusedWorkspace
         if minimum != .zero { constrained[window] = minimum }
-        if floating { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
+        if floating || target == Self.agent { workspaces[target]!.floating.append(window) } else { workspaces[target]!.insert(window) }
         fit(window, in: target)
         if workspaces[target]!.focusedWindow == nil { workspaces[target]!.focus(window) }
         home[window] = target
@@ -248,6 +262,7 @@ public struct Session: Sendable {
         parkedConcealed.remove(window)
         parkReasons[window] = nil
         lifted.remove(window)
+        floatedForLevel.remove(window)
         let wasFocused = name == focusedWorkspace && focused == window
         _ = workspaces[name]!.remove(window)
         var plan = Plan(frames: frames(of: name))
@@ -268,9 +283,11 @@ public struct Session: Sendable {
             _ = workspaces[current]!.remove(new)
             parkedConcealed.remove(new)
             lifted.remove(new)
+            floatedForLevel.remove(new)
             changed.insert(current)
         }
         if lifted.remove(old) != nil { lifted.insert(new) }
+        if floatedForLevel.remove(old) != nil { floatedForLevel.insert(new) }
         parkReasons[new] = parkReasons.removeValue(forKey: old)
         workspaces[name]!.replace(old, with: new)
         home[old] = nil
@@ -287,6 +304,30 @@ public struct Session: Sendable {
         var plan = Plan(frames: frames(of: changed))
         if !isShown(name), !isParked(new) { plan.hide = [new] }
         return plan
+    }
+
+    /// A tiled window its app raises off level 0, as IINA's Float on Top does, floats at the
+    /// frame it has, and tiles again when its level returns to 0, unless the user toggled it in
+    /// the meantime (docs/tree.md). Nil when nothing changes, as for a window floating already.
+    public mutating func leveled(_ window: WindowID, raised: Bool) -> Plan? {
+        defer { check() }
+        guard let name = home[window] else { return nil }
+        // On the agent workspace every window floats already; one its app raises tiles only
+        // once it leaves and its level returns (docs/displays.md).
+        if name == Self.agent {
+            if raised { floatedForLevel.insert(window) } else { floatedForLevel.remove(window) }
+            return nil
+        }
+        if raised {
+            guard workspaces[name]!.float(window) else { return nil }
+            floatedForLevel.insert(window)
+        } else {
+            let monitor = monitor(of: name)
+            guard floatedForLevel.contains(window), workspaces[name]!.tile(window, in: monitor.area, gaps: monitor.gaps)
+            else { return nil }
+            floatedForLevel.remove(window)
+        }
+        return Plan(frames: frames(of: name))
     }
 
     /// A parked window keeps its reason unless a minimize or native fullscreen replaces closed
@@ -319,17 +360,18 @@ public struct Session: Sendable {
             workspaces[name]!.unpark(returning.filter { home[$0] == name }, in: monitor.area, gaps: monitor.gaps)
         }
         var plan = Plan()
+        var ended: [WindowID: CGRect] = [:]
         if let follow, returning.contains(follow), let name = home[follow] {
             workspaces[name]!.focus(follow)
             if name != focusedWorkspace { plan = reach(name) }
         } else if let focused {
             // A returning window focused more recently would take the focus back.
-            workspaces[focusedWorkspace]!.focus(focused)
+            ended = focusEndingFullscreen(focused, on: focusedWorkspace)
         } else if let window = returning.first(where: { home[$0] == focusedWorkspace }) {
             workspaces[focusedWorkspace]!.focus(window)
             plan.focus = .window(window)
         }
-        plan.frames = frames(of: changed).merging(backFromFullscreen(since: before)) { $1 }
+        plan.frames = frames(of: changed).merging(ended) { $1 }.merging(backFromFullscreen(since: before)) { $1 }
         plan.hide += returning.filter { !isShown(home[$0]!) && !plan.hide.contains($0) }
         plan.show += returning.filter { isShown(home[$0]!) && parkedConcealed.contains($0) && !plan.show.contains($0) }
         parkedConcealed.subtract(returning)
@@ -450,7 +492,9 @@ public struct Session: Sendable {
         defer { check() }
         switch command {
         case .workspace(let target):
-            guard let name = resolve(target), name != focusedWorkspace else { return nil }
+            guard let name = resolve(target) else { return nil }
+            if name == Self.agent { return toggleAgent() }
+            guard name != focusedWorkspace else { return nil }
             return reach(name)
         case .workspaceBackAndForth:
             guard let previous, previous != focusedWorkspace else { return nil }
@@ -518,6 +562,7 @@ public struct Session: Sendable {
         case .layout(.toggleFloating):
             let floating = workspace.floating.contains(window)
             guard floating ? workspace.tile(window, in: display, gaps: gaps) : workspace.float(window) else { return nil }
+            floatedForLevel.remove(window)
         case .fullscreen:
             guard workspace.toggleFullscreen(window, frame: frame(window)) else { return nil }
         case .resize(let dimension, let amount) where workspace.floating.contains(window):
@@ -558,8 +603,8 @@ public struct Session: Sendable {
         case .named(let name):
             return workspaces[name] != nil ? name : nil
         case .next, .previous:
-            let cycle = names.filter { monitor(of: $0).id == focusedDisplay }
-            let index = cycle.firstIndex(of: focusedWorkspace)!
+            let cycle = names.filter { $0 != Self.agent && monitor(of: $0).id == focusedDisplay }
+            guard let index = cycle.firstIndex(of: focusedWorkspace) else { return cycle.first }
             let step = target == .next ? 1 : -1
             return cycle[(index + step + cycle.count) % cycle.count]
         }
@@ -580,6 +625,15 @@ public struct Session: Sendable {
         workspaces[name]!.fit(window, in: monitor.area, gaps: monitor.gaps, minimums: minimums)
     }
 
+    /// A click the user released on the desktop of a display whose workspace does not have the
+    /// focus focuses that workspace, as AeroSpace's mouse up does (docs/displays.md). Nil when
+    /// that workspace has it, or the point is on no display.
+    public mutating func clickedDesktop(at point: CGPoint) -> Plan? {
+        defer { check() }
+        guard let name = workspace(at: point), name != focusedWorkspace else { return nil }
+        return focusShown(name)
+    }
+
     mutating func reach(_ name: String) -> Plan {
         isShown(name) ? focusShown(name) : show(name)
     }
@@ -594,10 +648,11 @@ public struct Session: Sendable {
         return plan
     }
 
-    private mutating func show(_ name: String) -> Plan {
+    mutating func show(_ name: String) -> Plan {
         let display = monitor(of: name).id
         var plan = Plan()
         if let old = shown[display] { plan.hide = windows(of: old) }
+        if name == Self.agent { agentDisplaced = shown[display] } else if shown[display] == Self.agent { agentDisplaced = nil }
         plan.show = windows(of: name)
         shown[display] = name
         previous = focusedWorkspace
@@ -615,7 +670,10 @@ public struct Session: Sendable {
         let before = framesBeforeFullscreen
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
-        let floating = workspaces[source]!.floating.contains(window)
+        // A window floats on the agent workspace and tiles once it leaves, unless its app holds
+        // it off level 0 (docs/displays.md).
+        let floating = name == Self.agent
+            || workspaces[source]!.floating.contains(window) && (source != Self.agent || floatedForLevel.contains(window))
         _ = workspaces[source]!.remove(window)
         mergedFrom[window] = nil
         if let entering, !floating {
@@ -635,6 +693,9 @@ public struct Session: Sendable {
         plan.show.removeAll { $0 == window }
         if onScreen, !isShown(name) { plan.hide.append(window) }
         if !onScreen, isShown(name) { plan.show.append(window) }
+        // Concealed again, as the agent workspace's windows stay drawn in a Space of their own
+        // (docs/hiding.md).
+        if !onScreen, !isShown(name), (source == Self.agent) != (name == Self.agent) { plan.hide.append(window) }
         if !following, wasFocused || name == focusedWorkspace {
             plan.focus = intent
         }

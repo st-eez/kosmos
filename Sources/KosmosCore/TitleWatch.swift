@@ -70,15 +70,17 @@ extension Session {
     public mutating func retitled(_ window: WindowID, floating: Bool, frame: CGRect?, to target: String?) -> Plan? {
         defer { check() }
         guard let source = home[window], !isParked(window) else { return nil }
+        // Every window floats on the agent workspace.
+        let floating = floating || (target.flatMap { workspaces[$0] != nil ? $0 : nil } ?? source) == Self.agent
         var plan: Plan?
         if floating != isFloating(window) {
-            let monitor = monitor(of: source)
+            let monitor = monitor(of: source), before = framesBeforeFullscreen
             if floating {
                 workspaces[source]!.float(window)
             } else {
                 workspaces[source]!.tile(window, in: monitor.area, gaps: monitor.gaps)
             }
-            var changed = Plan(frames: frames(of: source))
+            var changed = Plan(frames: frames(of: source).merging(backFromFullscreen(since: before)) { $1 })
             if floating, let frame { changed.frames[window] = frame }
             plan = changed
         }

@@ -37,7 +37,7 @@ private let answerBound = Duration.seconds(30)
 
 /// The command's exit status, 128 plus the signal that killed it, or 127 and 126 as a shell
 /// gives for a command not found or not run.
-private func run(_ command: [String]) -> Int32 {
+func run(_ command: [String]) -> Int32 {
     // A Ctrl-C at the terminal reaches the command too; the CLI stays to end the peek.
     signal(SIGINT, SIG_IGN)
     signal(SIGQUIT, SIG_IGN)

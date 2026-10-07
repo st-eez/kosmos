@@ -21,6 +21,10 @@ extension Controller {
             updateBorders()
         case .fullscreenChange(let id, let entered, let spaceChangeBegan):
             fullscreenChanged(id, entered, spaceChangeBegan: spaceChangeBegan)
+        case .levelChange(let id, let raised):
+            guard let plan = session.leveled(id, raised: raised) else { return }
+            controllerLog.info("\(id) \(raised ? "floats, raised off level 0 by its app" : "tiles again, back at level 0", privacy: .public)")
+            execute(plan)
         case .frameChange(let id, let old, let frame, let changedAt):
             let landed = ledger.seen(id, frame: frame)
             if landed { sendReadyBatches() }
@@ -83,7 +87,11 @@ extension Controller {
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
         let float = WindowRule.floats(rule, axIdentifier: inventory.axIdentifier(id), zoomButtonEnabled: inventory.zoomButtonEnabled(id))
         let floats = float != nil
-        let workspace = arrival == .detached ? nil : rule?.workspace
+        // A new window of an app an agent just opened goes to the agent workspace, over its
+        // rule's workspace (docs/displays.md).
+        let claimed = arrival == .admitted && !atLaunch && session.savedWorkspace(of: id) == nil
+            && app.bundleID.flatMap { agentClaims[$0] }.map { ContinuousClock.now < $0 } == true
+        let workspace = arrival == .detached ? nil : claimed ? Session.agent : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero
         let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id), minimized: inventory.isMinimized(id),
                                             appHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true)
@@ -93,12 +101,20 @@ extension Controller {
             : session.add(id, to: workspace, at: center, floating: floats, minimum: minimum, parked: reason,
                           concealed: hiding.isConcealed(id))
         guard var plan = placed else { return }
+        // Reopened, or out of a tab group, while its app holds it off level 0 (docs/tree.md).
+        if inventory.windows[id].map({ $0.level != 0 }) == true, let raised = session.leveled(id, raised: true) {
+            plan.frames[id] = nil
+            plan.frames.merge(raised.frames) { $1 }
+        }
         // A window there at launch, in the saved layout, reopened or out of a tab group has its
         // title already.
         if arrival == .admitted, !atLaunch, saved == nil, TitleWatch.watches(rules, appID: app.bundleID, appName: app.name) {
             watchTitle(id, pid: pid, rule: rule)
         }
         let floating = session.isFloating(id)
+        if claimed {
+            controllerLog.notice("\(id) of \(app.bundleID ?? "?", privacy: .public), opened by an agent, goes to the agent workspace")
+        }
         if let saved {
             controllerLog.info("\(id) back on \(saved, privacy: .public) as the saved layout had it\(floating ? ", floating" : "", privacy: .public)")
         } else if let float, let frame = inventory.windows[id]?.frame {
@@ -162,6 +178,7 @@ extension Controller {
         tabs.forget(id)
         intake.forgetPlacedHidden([id])
         ledger.forget(id)
+        tileRewrites.forget(id)
         hiding.forgetClosed(id)
         execute(session.remove(id))
     }
@@ -368,6 +385,11 @@ extension Controller {
             }
             // WindowServer can take the frame before the read back comes (docs/hiding.md).
             if let row = inventory.windows[id] { ledger.seen(id, frame: row.frame) }
+            if let since = tileRewrites.readBack(id, readBack, target: target) {
+                let now = readBack.isSmaller(than: target) ? "still smaller" : "at its tile"
+                controllerLog.notice("\(id) written again: \(asked, privacy: .public), \(now, privacy: .public) \((ContinuousClock.now - since).milliseconds, format: .fixed(precision: 1)) ms after it was seen smaller")
+            }
+            if fit == .took, let tile = rewritesTile(id, seen: readBack) { writeFrames([id: tile]) }
             peekAnswered(id, target: target, readBack: readBack)
             sendReadyBatches()
         case .framesDropped(let ids):
@@ -378,6 +400,30 @@ extension Controller {
             retitled(id)
         case .windowCreated, .windowDestroyed, .answering:
             break
+        }
+    }
+
+    /// A tiled window of a shown workspace seen smaller than its tile on an axis, with no write
+    /// in flight and no press or drag on it, has its tile written again whole, 3 times in 5 s
+    /// at most (docs/geometry.md). The tile, once the ledger forgot the window for that write.
+    func rewritesTile(_ id: WindowID, seen frame: CGRect, since: ContinuousClock.Instant? = nil) -> CGRect? {
+        let tile = session.tile(of: id)
+        let busy = ledger.isWriting(id) || modifierDrag != nil || mouseMoved[id] != nil || session.lifted.contains(id)
+            || leftButton.state(at: .now) != .up || UserInput.leftButtonDown
+        let seen = "\(Int(frame.width))x\(Int(frame.height)) of \(Int(tile?.width ?? 0))x\(Int(tile?.height ?? 0))"
+        switch tileRewrites.judge(id, seen: frame, tile: tile, busy: busy, at: .now, since: since) {
+        case .none:
+            return nil
+        case .gaveUp:
+            controllerLog.notice("""
+                \(id) stayed smaller than its tile, \(seen, privacy: .public), after \(TileRewrites.limit) writes in \
+                \(TileRewrites.span.components.seconds) s; written again once its tile changes
+                """)
+            return nil
+        case .rewrite(let count):
+            controllerLog.notice("\(id) seen smaller than its tile, \(seen, privacy: .public): written again, \(count) of \(TileRewrites.limit)")
+            ledger.forget(id)
+            return tile
         }
     }
 

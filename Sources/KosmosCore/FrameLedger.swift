@@ -57,9 +57,12 @@ public struct FrameLedger: Sendable {
             if current == target { continue }
             if let refusal = refused[id], refusal.target == target {
                 let placed = CGRect(origin: target.origin, size: refusal.kept)
-                if confirmed[id] != placed, pending[id] != placed {
-                    writes[id] = .position(target.origin)
-                    pending[id] = placed
+                if current != placed {
+                    // A write of another size in flight, or a size seen since, leaves the
+                    // window at that size.
+                    let whole = current?.size != placed.size
+                    writes[id] = whole ? .frame(target) : .position(target.origin)
+                    pending[id] = whole ? target : placed
                 }
                 continue
             }
@@ -170,6 +173,19 @@ public struct FrameLedger: Sendable {
     public func change(of id: WindowID, changedAt: ContinuousClock.Instant?, landed: Bool) -> Change {
         if isWriting(id) { return .writing }
         return landed || changedAt.map { isWriting(id, at: $0) } == true ? .written : .other
+    }
+
+    /// Records the frame a change shows, of a concealed, hidden or parked window too, so the
+    /// write that shows it compares with the frame it has (docs/geometry.md).
+    public mutating func changed(_ id: WindowID, to frame: CGRect, changedAt: ContinuousClock.Instant?,
+                                 landed: Bool) -> Change {
+        let change = change(of: id, changedAt: changedAt, landed: landed)
+        switch change {
+        case .writing: break
+        case .written: observeAfterConfirm(id, frame: frame)
+        case .other: observe(id, frame: frame)
+        }
+        return change
     }
 
     public mutating func forget(_ id: WindowID) {

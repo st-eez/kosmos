@@ -325,6 +325,12 @@
   once its row is gone or it has a Space: recovery restores one alive on no Space. A failed
   row query, for which `SkyLight.rows` returns nil, counts as neither, and the conceal
   that needed the room does not go.
+- Open: whether recovery can restore a window its app closed and kept, as at Command-W in
+  Activity Monitor. Ordered out, it is alive, in no recorded Space and on no Space, so
+  recovery adds it to an ordinary Space (`RecoveryPlan.make`). Should that add never land,
+  every recovery would report itself incomplete and keep the record and its holding
+  Spaces. `kosmos-probe ordered-out-add` reads whether the add lands, exclusive and not,
+  and whether it orders the window in or shows it.
 - A batch leaves out each window to hide that WindowServer no longer lists, and each
   window new to the record whose process is gone, as a closed tab whose place waits for
   the next tab ([tree.md](tree.md)) or a window of an app that quit before the inventory
@@ -483,6 +489,28 @@
       13:45:36, Kosmos's next switch failed its batch, and recovery showed every concealed
       window until the following switch, the resync risk above. A peek of Kosmos's must
       give way to a display change or lock.
+- The agent workspace's windows ([displays.md](displays.md)) are concealed in a Space of
+  their own under the desktop, as `kosmos-probe dwell` held windows above, not in the
+  holding Space, so agents can capture and click them while no display shows them
+  (`HidingStore.createBelow`). Kosmos makes it at the first such conceal, one level under
+  the main display's ordinary Space as its level reads, at alpha 1, and records it in the
+  record's Spaces and in a list of its own after the animation Spaces
+  (`RecoveryRecord.belowSpaces`). Every window there is stripped of its ordinary Space, as
+  one on any other Space shows above the desktop, so its reveal pays the add. A window
+  that moves between the agent workspace and another hidden workspace changes Space in
+  one batch: it joins the new Space before it leaves the old one, so it never shows
+  (`ConcealLedger.Batch.moves`). A window in an older holding Space stays there. `kosmos
+  peek` answers at once for a window there, as for a shown one. With no Space made, as on
+  a macOS whose level read fails, the windows go to the holding Space, and the log says so.
+  - Recovery restores them as it restores a holding Space's windows. A Kosmos that predates
+    the list reads it as a holding Space, so Kosmos puts it first in the record's Spaces,
+    where such a reader, which reuses the last, never reuses it. A recovery that keeps it
+    and destroys every holding Space, as an adoption with no window of the user's concealed,
+    makes a new holding Space after it at once, so it is never the last.
+  - Untested live: whether Command-Tab, a Dock click, Mission Control or a lock reveals a
+    window there, whether a click Cua posts as a mouse event reaches it, and whether a
+    window revealed with the frame of another display than the one showing the workspace
+    flashes there before the floating check moves it.
 - `kosmos peek <window id> -- <command>` runs the `corner` peek past an edge around a
   command, as an agent's CuaDriver screenshot ([ipc.md](ipc.md) has the protocol). For a
   window Kosmos does not conceal, as one on a shown workspace, one it does not manage or an
@@ -515,7 +543,9 @@
     waiting (`BatchOrder.addSent`), then writes its frame back, which waits for that batch.
     A target Kosmos wrote for the window meanwhile, as at a relayout of its workspace, would
     show it there, so it waits for the end and replaces the frame written back
-    (`PeekFrames`).
+    (`PeekFrames`). With no guardian ready that batch conceals nothing, so the window
+    shows at its frame over the shown workspace until the next switch conceals and reveals
+    every window again, as after a switch with no guardian ready.
 - A peek ends at once in the way its step can be undone. Before the window leaves the
   holding Space only its frame goes back; after, it goes back into the holding Space, then
   its frame. It ends when:

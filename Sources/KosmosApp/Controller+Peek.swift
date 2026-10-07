@@ -34,7 +34,7 @@ extension Controller {
     /// else once the window shows past its display's edge, holding the connection until the
     /// CLI reports its command's end (docs/hiding.md, docs/ipc.md).
     func peek(_ window: WindowID) async -> Reply {
-        guard hiding.isConcealed(window) else { return Reply(Response()) }
+        guard hiding.isConcealed(window), !hiding.isUnderDesktop(window) else { return Reply(Response()) }
         var asked = 0
         let answer: Response? = await withCheckedContinuation { continuation in
             let number = peeking.peeks.request(window)
@@ -194,7 +194,12 @@ extension Controller {
                 guard let self else { return }
                 sendWrites(order.done(batch.number))
                 sendReadyBatches()
-                if case .failed = result {
+                switch result {
+                case .confirmed: break
+                case .revealedOnly:
+                    controllerLog.error("guardian not ready: \(peek.window) was not concealed again after its peek")
+                    needsResync = true
+                case .failed:
                     controllerLog.error("the conceal after a peek of \(peek.window) failed; recovery ran")
                     needsResync = true
                 }

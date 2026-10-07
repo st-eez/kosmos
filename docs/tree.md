@@ -59,6 +59,14 @@
 - First operations: insert, remove, park, unpark, move, swap, join-with, layout, resize,
   balance-sizes, flatten-workspace-tree, fullscreen, floating and tiling, focus direction.
   A workspace with tiled or floating windows always has a focused one, as in i3.
+- A tiled window its app raises off level 0, as IINA's Video > Float on Top does, floats at
+  the frame it has and stays on its workspace, and the other tiles fill its space
+  (`Session.leveled`). When its level returns to 0 it tiles again, where it was if its
+  restore hint still holds, unless `layout floating tiling` toggled it meanwhile, which wins.
+  A window floating by a rule, as a dialog, or by the user's toggle is never tiled by its level. One
+  reopened or dragged out of a tab group while raised floats at once, and one that opens
+  above level 0 is never managed ([inventory.md](inventory.md)). The ceiling: a window whose
+  level returns while it is parked comes back floating, until the user tiles it.
 - `move` takes one step, as i3's `tree_move` does (src/move.c). Into a sibling container
   the window lands beside that container's window at the near edge, or its most recently
   focused one when the container runs across the direction, as i3's
@@ -152,7 +160,10 @@
   - A focus that ends a fullscreen, tiled or floating, lays the workspace out at once. Before
     this, Kosmos adopting a key window macOS reported, as at Command-Tab to another tile,
     ended a tiled window's fullscreen and wrote no frame until the next plan, so that window
-    kept the display under the one raised.
+    kept the display under the one raised. A return to another workspace that keeps the
+    focus on a tile under the fullscreen window lays the focused workspace out too. Kosmos
+    knows no path to that focus since `layout floating tiling` and a profile merge keep the
+    focus off such a tile (below).
   - While a window of the workspace is in fullscreen, tiled or floating, a focus in a
     direction sees that window and the workspace's floating windows, never the tiles under
     it, and compares their centers. The fullscreen window's center is the display area's.
@@ -205,6 +216,9 @@
     (`onFullscreenWorkspaceFocusWindow` in src/desktop/state/FocusState.cpp). Omarchy sets
     it to 1, so the tile takes the fullscreen over (default/hypr/looknfeel.lua in
     basecamp/omarchy at e1614f2), and Steve chose Hyprland's default on 2026-10-02.
+    `layout floating tiling` or a rule on its title that tiles the focused floating window
+    ends it the same way. Before, the window became a focused tile under the fullscreen
+    window, where no focus in a direction found it.
   - Hyprland's `movetoworkspace` takes the window out of fullscreen and puts it back in on
     the workspace it moves to (`CGlobalWindowController::moveWindowToWorkspace`). Kosmos
     ends fullscreen there, for tiled and floating windows alike.
@@ -213,7 +227,8 @@
     has no fullscreen window (`Session.carry`). Steve's laptop profile merges 6 to 0 into 1
     to 5, so an unplug to the laptop alone takes this path. The resync after the profile
     change gives the window its new display's area, and the workspace coming back takes it
-    out of the one it joined, back into fullscreen on its own.
+    out of the one it joined, back into fullscreen on its own. The window takes that
+    workspace's focus, so no tile under it keeps the focus.
   - Left out: where the workspace it joins has a fullscreen window already, and for a
     window parked from fullscreen, the merge keeps no frame from before. The first keeps the
     display's size out of fullscreen, and the second returns where macOS puts it. The

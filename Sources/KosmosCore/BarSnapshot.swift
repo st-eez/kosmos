@@ -67,7 +67,8 @@ extension Session {
     /// `frame` gives where a floating window is.
     public func barSnapshot(profile: String?, displays: [DisplayID: BarSnapshot.Display],
                             app: (WindowID) -> String?, frame: (WindowID) -> CGRect?) -> BarSnapshot {
-        let workspaces = names.map { name -> BarSnapshot.Workspace in
+        // The agent workspace shows in the bar only while a display shows it (docs/displays.md).
+        let workspaces = names.filter { $0 != Self.agent || isShown($0) }.map { name -> BarSnapshot.Workspace in
             let tiled = frames(of: name)
             let windows = windows(of: name).compactMap { id -> BarSnapshot.Window? in
                 guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
