@@ -159,8 +159,11 @@
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight
   replaces the confirmed one, and a size other than the one the window kept at a refusal
   ends that refusal, so the next layout writes the target again, as a first attempt. A
-  concealed window's change is left out, though its row gives the frame it has, as a shown
-  window's does ([hiding.md](hiding.md)).
+  concealed, hidden or parked window's change replaces the confirmed frame too, and does
+  nothing else, so the write that shows the window compares with the frame it has. Its row
+  gives that frame, as a shown window's does ([hiding.md](hiding.md)). Left out, an app's
+  resize while its window was concealed made the reveal skip the window's write as done,
+  and it showed at the app's size until its tile changed.
 - A tiled window the user resizes by its edges, as a change event reports it while the
   left button is down, goes back to its tile when the button comes up, which an `NSEvent`
   global monitor hears, as AeroSpace's GlobalObserver does. Omarchy leaves Hyprland's

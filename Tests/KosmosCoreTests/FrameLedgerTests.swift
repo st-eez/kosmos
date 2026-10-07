@@ -264,3 +264,16 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(!ledger.isWriting(1))
     #expect(ledger.writes(for: [1: resized]).isEmpty)
 }
+
+/// An app resized its window while it was concealed, so the write that shows it is not
+/// skipped as already done (docs/geometry.md).
+@Test func aChangeOfAHiddenWindowIsRecordedSoTheWriteThatShowsItGoes() {
+    var ledger = FrameLedger()
+    _ = ledger.writes(for: [1: a])
+    #expect(ledger.changed(1, to: resized, changedAt: t0, landed: false) == .writing)
+    ledger.confirm(1, target: a, readBack: a, at: t0 + .milliseconds(2))
+    #expect(ledger.changed(1, to: a, changedAt: t0 + .milliseconds(1), landed: false) == .written)
+    #expect(ledger.writes(for: [1: a]).isEmpty)
+    #expect(ledger.changed(1, to: resized, changedAt: t0 + .milliseconds(3), landed: false) == .other)
+    #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
+}

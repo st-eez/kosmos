@@ -175,6 +175,19 @@ public struct FrameLedger: Sendable {
         return landed || changedAt.map { isWriting(id, at: $0) } == true ? .written : .other
     }
 
+    /// Records the frame a change shows, of a concealed, hidden or parked window too, so the
+    /// write that shows it compares with the frame it has (docs/geometry.md).
+    public mutating func changed(_ id: WindowID, to frame: CGRect, changedAt: ContinuousClock.Instant?,
+                                 landed: Bool) -> Change {
+        let change = change(of: id, changedAt: changedAt, landed: landed)
+        switch change {
+        case .writing: break
+        case .written: observeAfterConfirm(id, frame: frame)
+        case .other: observe(id, frame: frame)
+        }
+        return change
+    }
+
     public mutating func forget(_ id: WindowID) {
         confirmed[id] = nil
         pending[id] = nil
