@@ -325,6 +325,12 @@
   once its row is gone or it has a Space: recovery restores one alive on no Space. A failed
   row query, for which `SkyLight.rows` returns nil, counts as neither, and the conceal
   that needed the room does not go.
+- Open: whether recovery can restore a window its app closed and kept, as at Command-W in
+  Activity Monitor. Ordered out, it is alive, in no recorded Space and on no Space, so
+  recovery adds it to an ordinary Space (`RecoveryPlan.make`). Should that add never land,
+  every recovery would report itself incomplete and keep the record and its holding
+  Spaces. `kosmos-probe ordered-out-add` reads whether the add lands, exclusive and not,
+  and whether it orders the window in or shows it.
 - A batch leaves out each window to hide that WindowServer no longer lists, and each
   window new to the record whose process is gone, as a closed tab whose place waits for
   the next tab ([tree.md](tree.md)) or a window of an app that quit before the inventory
