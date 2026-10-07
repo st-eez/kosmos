@@ -27,11 +27,17 @@ func open(_ args: [String], socketPath: String) -> Never {
 private func claim(_ args: [String]) -> [String]? {
     let valued: Set<String> = ["-a", "-b", "-s", "-u", "--env", "--stdin", "--stdout", "--stderr"]
     func absolute(_ path: String) -> String { path.hasPrefix("/") ? path : workingDirectory() + "/" + path }
-    if args.contains("-e") { return ["-b", "com.apple.TextEdit"] }
-    if args.contains("-t") || args.contains("-f") { return nil }
+    let options = args.prefix { $0 != "--args" }
+    // Short options can come together, as in `open -na Safari`, the last one taking a value.
+    func given(_ letter: Character) -> Bool {
+        options.contains { $0.hasPrefix("-") && !$0.hasPrefix("--") && $0.dropFirst().contains(letter) }
+    }
+    if given("e") { return ["-b", "com.apple.TextEdit"] }
+    if given("t") || given("f") { return nil }
     var index = 0
     while index < args.count, args[index] != "--args" {
-        let arg = args[index]
+        var arg = args[index]
+        if arg.count > 2, arg.hasPrefix("-"), !arg.hasPrefix("--"), let last = arg.last, "abu".contains(last) { arg = "-\(last)" }
         if arg == "-a", index + 1 < args.count { return [arg, args[index + 1].contains("/") ? absolute(args[index + 1]) : args[index + 1]] }
         if arg == "-b" { return index + 1 < args.count ? [arg, args[index + 1]] : nil }
         if arg == "-u" { return index + 1 < args.count ? [args[index + 1]] : nil }
