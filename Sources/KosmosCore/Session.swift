@@ -312,6 +312,12 @@ public struct Session: Sendable {
     public mutating func leveled(_ window: WindowID, raised: Bool) -> Plan? {
         defer { check() }
         guard let name = home[window] else { return nil }
+        // On the agent workspace every window floats already; one its app raises tiles only
+        // once it leaves and its level returns (docs/displays.md).
+        if name == Self.agent {
+            if raised { floatedForLevel.insert(window) } else { floatedForLevel.remove(window) }
+            return nil
+        }
         if raised {
             guard workspaces[name]!.float(window) else { return nil }
             floatedForLevel.insert(window)

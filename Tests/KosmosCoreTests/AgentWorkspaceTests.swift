@@ -104,3 +104,17 @@ import Testing
         #expect(listed.diagnostics.map(\.description).contains { $0.contains("Kosmos's own workspace") })
     }
 }
+
+@Test func aWindowItsAppRaisesStaysFloatingThereAndOnceItLeaves() {
+    var s = Desk.session()
+    _ = s.add(30, to: Session.agent)
+    #expect(s.leveled(30, raised: true) == nil)
+    _ = s.perform(.moveNodeToWorkspace(.named("2"), focusFollowsWindow: false, window: 30))
+    #expect(s.isFloating(30))
+    _ = s.leveled(30, raised: false)
+    #expect(!s.isFloating(30))
+    _ = s.add(40, to: "1"); _ = s.leveled(40, raised: true)
+    _ = s.perform(.moveNodeToWorkspace(.named(Session.agent), focusFollowsWindow: false, window: 40))
+    _ = s.leveled(40, raised: false)
+    #expect(s.isFloating(40))
+}

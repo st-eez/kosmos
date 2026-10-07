@@ -479,6 +479,8 @@ private final class HidingStore: @unchecked Sendable {
         if !load() {
             // Every batch fails at load() and recovers again, so this ledger decides nothing.
             ledger = ConcealLedger()
+        } else if space == 0, below != 0, !prepare([], owners: [:], below: false) {
+            hidingLog.error("no holding Space after the Space under the desktop; a Kosmos before the agent workspace would reuse it")
         }
         return outcome
     }

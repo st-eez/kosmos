@@ -504,7 +504,9 @@
   a macOS whose level read fails, the windows go to the holding Space, and the log says so.
   - Recovery restores them as it restores a holding Space's windows. A Kosmos that predates
     the list reads it as a holding Space, so Kosmos puts it first in the record's Spaces,
-    where such a reader, which reuses the last, never reuses it.
+    where such a reader, which reuses the last, never reuses it. A recovery that keeps it
+    and destroys every holding Space, as an adoption with no window of the user's concealed,
+    makes a new holding Space after it at once, so it is never the last.
   - Untested live: whether Command-Tab, a Dock click, Mission Control or a lock reveals a
     window there, whether a click Cua posts as a mouse event reaches it, and whether a
     window revealed with the frame of another display than the one showing the workspace

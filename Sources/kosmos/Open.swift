@@ -21,20 +21,25 @@ func open(_ args: [String], socketPath: String) -> Never {
     exit(run(["/usr/bin/open", "-g"] + args))
 }
 
-/// `-a` or `-b` with its value, else the first file or URL, made absolute, as Kosmos resolves
-/// it from another directory. Nil when `args` name neither.
+/// `-a` or `-b` with its value, else the first file or URL, each path made absolute, as Kosmos
+/// resolves it from another directory. `-e` names TextEdit; `-t` and `-f` name the default text
+/// editor, which goes unclaimed. Nil when `args` name no app.
 private func claim(_ args: [String]) -> [String]? {
     let valued: Set<String> = ["-a", "-b", "-s", "-u", "--env", "--stdin", "--stdout", "--stderr"]
+    func absolute(_ path: String) -> String { path.hasPrefix("/") ? path : workingDirectory() + "/" + path }
+    if args.contains("-e") { return ["-b", "com.apple.TextEdit"] }
+    if args.contains("-t") || args.contains("-f") { return nil }
     var index = 0
     while index < args.count, args[index] != "--args" {
         let arg = args[index]
-        if arg == "-a" || arg == "-b" { return index + 1 < args.count ? [arg, args[index + 1]] : nil }
+        if arg == "-a", index + 1 < args.count { return [arg, args[index + 1].contains("/") ? absolute(args[index + 1]) : args[index + 1]] }
+        if arg == "-b" { return index + 1 < args.count ? [arg, args[index + 1]] : nil }
         if arg == "-u" { return index + 1 < args.count ? [args[index + 1]] : nil }
         if valued.contains(arg) {
             index += 2
             continue
         }
-        if !arg.hasPrefix("-") { return [arg.contains("://") || arg.hasPrefix("/") ? arg : workingDirectory() + "/" + arg] }
+        if !arg.hasPrefix("-") { return [arg.contains("://") ? arg : absolute(arg)] }
         index += 1
     }
     return nil
