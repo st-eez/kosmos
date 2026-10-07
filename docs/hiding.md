@@ -515,7 +515,9 @@
     waiting (`BatchOrder.addSent`), then writes its frame back, which waits for that batch.
     A target Kosmos wrote for the window meanwhile, as at a relayout of its workspace, would
     show it there, so it waits for the end and replaces the frame written back
-    (`PeekFrames`).
+    (`PeekFrames`). With no guardian ready that batch conceals nothing, so the window
+    shows at its frame over the shown workspace until the next switch conceals and reveals
+    every window again, as after a switch with no guardian ready.
 - A peek ends at once in the way its step can be undone. Before the window leaves the
   holding Space only its frame goes back; after, it goes back into the holding Space, then
   its frame. It ends when:

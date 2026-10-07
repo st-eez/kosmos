@@ -194,7 +194,12 @@ extension Controller {
                 guard let self else { return }
                 sendWrites(order.done(batch.number))
                 sendReadyBatches()
-                if case .failed = result {
+                switch result {
+                case .confirmed: break
+                case .revealedOnly:
+                    controllerLog.error("guardian not ready: \(peek.window) was not concealed again after its peek")
+                    needsResync = true
+                case .failed:
                     controllerLog.error("the conceal after a peek of \(peek.window) failed; recovery ran")
                     needsResync = true
                 }
