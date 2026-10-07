@@ -2,7 +2,10 @@
 # Installs Kosmos from this checkout, swaps the previous copy back in, or removes Kosmos
 # (docs/INSTALL.md).
 #
-#   script/install.sh [--dry-run] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]
+#   script/install.sh [--dry-run] [--prototype] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]
+#
+# Into /Applications it installs main with no uncommitted changes; a branch or uncommitted
+# build needs --prototype, and the status menu then marks it (docs/INSTALL.md).
 #
 # The copy an install replaces becomes Kosmos-previous, without the .app extension, so
 # LaunchServices never registers it, and --rollback swaps the two. ~/.local/bin/kosmos links
@@ -11,14 +14,16 @@
 # restores them when that build reads another recovery record version, or at --uninstall.
 set -euo pipefail
 
-usage="usage: script/install.sh [--dry-run] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]"
+usage="usage: script/install.sh [--dry-run] [--prototype] [--app-dir DIR] [--bin-dir DIR] [--rollback | --uninstall]"
 mode=install
 dry_run=false
+prototype=false
 app_dir=/Applications
 bin_dir=$HOME/.local/bin
 while (($#)); do
     case $1 in
         --dry-run) dry_run=true ;;
+        --prototype) prototype=true ;;
         --rollback) mode=rollback ;;
         --uninstall) mode=uninstall ;;
         --app-dir) app_dir=${2:?$usage}; shift ;;
@@ -35,6 +40,14 @@ cd "$(dirname "$0")/.."
 
 app=$app_dir/Kosmos.app
 previous=$app_dir/Kosmos-previous
+# Where a bundled copy came from; empty for one that predates the stamp.
+source_of() { /usr/libexec/PlistBuddy -c 'Print :KosmosSource' "$1/Contents/Info.plist" 2>/dev/null || true; }
+is_prototype() { [[ -n $1 && ! $1 =~ ^main\ [0-9a-f]+$ ]]; }
+if [[ $mode == install && $app_dir == /Applications ]] && is_prototype "$(script/source.sh)" && ! $prototype; then
+    echo "This checkout is $(script/source.sh), not main with every change committed. Install from main," >&2
+    echo "or pass --prototype to install it as a prototype, which the status menu marks." >&2
+    exit 1
+fi
 stage=$app_dir/.Kosmos-install
 cli=$app/Contents/Helpers/kosmos
 link=$bin_dir/kosmos
@@ -178,6 +191,7 @@ if [[ -d $app ]]; then
     if [[ $mode == install && -d $previous ]]; then run rm -rf "$previous"; fi
     run mv "$app" "$previous"
 fi
+replaced=$(source_of "$app")
 run mv "$stage" "$app"
 run mkdir -p "$bin_dir"
 run ln -sfn "$cli" "$link"
@@ -185,7 +199,10 @@ start_pending=false
 start_kosmos
 
 $dry_run && exit 0
-echo "Kosmos $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist") is in $app, and $link runs its CLI."
+installed=$(source_of "$app")
+echo "Kosmos $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")${installed:+ ($installed)} is in $app, and $link runs its CLI."
+if is_prototype "$installed"; then echo "This is a prototype build, not main; the status menu says so."; fi
+if is_prototype "$replaced"; then echo "It replaced the prototype build $replaced."; fi
 if [[ -d $previous ]]; then echo "The replaced copy is in $previous, and script/install.sh --rollback swaps it back."; fi
 case ":$PATH:" in
     *":$bin_dir:"*) ;;

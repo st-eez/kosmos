@@ -29,6 +29,8 @@ app=$dist/Kosmos.app
 rm -rf "$dist"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Library/LaunchAgents" "$app/Contents/Resources" "$dist/bin"
 sed -e "s/RECORD_VERSION/$record_version/" -e "s/VERSION/$version/g" Resources/Info.plist > "$app/Contents/Info.plist"
+# The status menu, `kosmos version` and script/install.sh read where the build came from.
+plutil -insert KosmosSource -string "$(script/source.sh)" "$app/Contents/Info.plist"
 # The app icon; script/icon.swift regenerates it when the design changes.
 cp Resources/Kosmos.icns "$app/Contents/Resources/"
 # The launch at login agent, registered through SMAppService.
@@ -45,4 +47,4 @@ sign --identifier io.github.st-eez.kosmos.cli "$app/Contents/Helpers/kosmos"
 sign "$app"
 cp "$app/Contents/Helpers/kosmos" "$dist/bin/kosmos"
 codesign --verify --strict "$app"
-echo "Built Kosmos $version in $dist, signed by $identity"
+echo "Built Kosmos $version ($(script/source.sh)) in $dist, signed by $identity"

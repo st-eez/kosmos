@@ -34,6 +34,15 @@ script/install.sh             # build, install and link
    If a step after step 2 fails, the script still starts Kosmos, from whichever copy is
    at `/Applications/Kosmos.app`.
 
+Every build carries where it came from, `KosmosSource` in its Info.plist, from
+`script/source.sh`: its branch and commit, and `+uncommitted` when the code differs from
+that commit. The status menu's first line and `kosmos version` show it, as
+`0.1.0 (main 7d65a13)`. Into `/Applications` the script installs only main with every
+change committed. Anything else is a prototype and needs `--prototype`; the status menu
+then adds "Prototype build, not main", and the script's last lines say so, and say when an
+install replaced a prototype. On 2026-10-07 a branch build of the agent workspace went in
+with nothing to mark it, and another agent's install of main replaced it unnoticed.
+
 `--app-dir` and `--bin-dir` install somewhere else, for example into a temporary directory
 to try the script, as `script/test-install.sh` does. Outside `/Applications` the script
 leaves launch at login alone: a copy elsewhere has the same bundle identifier and

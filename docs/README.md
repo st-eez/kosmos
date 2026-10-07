@@ -85,7 +85,7 @@ prefix.
   `KosmosApp/LaunchAtLogin.swift`.
 - [distribution.md](distribution.md): the planned release zip and Homebrew cask, signing,
   notarization and the app icon.
-  Code: `script/bundle.sh`, `script/install.sh`, `script/test-install.sh`,
+  Code: `script/bundle.sh`, `script/install.sh`, `script/source.sh`, `script/test-install.sh`,
   `script/icon.swift`, `Resources/`, `KosmosIPC/Version.swift`.
 - [focus-follows-mouse.md](focus-follows-mouse.md): hover focus from a pointer event tap,
   the pointer following keyboard focus, and whether the tap needs Input Monitoring.

@@ -154,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func answer(_ query: Query) -> Response {
         switch (query, controller) {
         case (.ping, _): Response(stdout: "pong")
-        case (.version, _): Response(stdout: kosmosVersion)
+        case (.version, _): Response(stdout: Build.version)
         case (.listBindings, _): listBindings()
         case (_, nil): Self.waiting
         case (.state, let controller?): Response(stdout: String(decoding: controller.stateJSON(), as: UTF8.self))

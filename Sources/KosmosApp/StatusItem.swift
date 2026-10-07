@@ -55,7 +55,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(withTitle: "Kosmos \(kosmosVersion)", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: Build.description, action: nil, keyEquivalent: "")
+        if Build.isPrototype { menu.addItem(withTitle: "Prototype build, not main", action: nil, keyEquivalent: "") }
         if accessibilityMissing {
             menu.addItem(withTitle: "Waiting for Accessibility permission", action: nil, keyEquivalent: "")
         }
