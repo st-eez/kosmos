@@ -10,13 +10,10 @@ extension Controller {
     /// (docs/geometry.md, docs/displays.md).
     func frameChanged(_ id: WindowID, from old: CGRect, to frame: CGRect, changedAt: ContinuousClock.Instant?,
                       landed: Bool) {
-        guard managing, !sessionLocked, !hiding.isConcealed(id),
-              let name = session.workspace(of: id), session.isShown(name), !session.isParked(id) else { return }
-        switch ledger.change(of: id, changedAt: changedAt, landed: landed) {
-        case .writing: return
-        case .written: return ledger.observeAfterConfirm(id, frame: frame)
-        case .other: break
-        }
+        guard managing, !sessionLocked, let name = session.workspace(of: id) else { return }
+        // Recorded for a concealed, hidden or parked window too, and nothing more.
+        guard ledger.changed(id, to: frame, changedAt: changedAt, landed: landed) == .other,
+              !hiding.isConcealed(id), session.isShown(name), !session.isParked(id) else { return }
         let button = changedAt.map { leftButton.state(at: $0) } ?? .up
         // The user moves or resizes it, unless the change is its own write landing after the
         // read back, as the other tiles' reflow at a lift lands while the user drags.
@@ -24,13 +21,13 @@ extension Controller {
             slides?.changedInPress(id, to: frame)
             titleWatch.end(id)
         }
-        ledger.observe(id, frame: frame)
         // Seen smaller than its minimum, the window loses it. During a press, the mouse up
         // lays its workspace out.
         let smaller = session.sizeObserved(id, frame.size)
         if !smaller.isEmpty { controllerLog.notice("\(id) seen at \(Int(frame.width))x\(Int(frame.height)), below its minimum") }
         guard button != .up else {
             if !smaller.isEmpty { execute(smaller) }
+            if let tile = rewritesTile(id, seen: frame, since: changedAt) { writeFrames([id: tile]) }
             return
         }
         if session.shownFloatingWindows.contains(id) {
