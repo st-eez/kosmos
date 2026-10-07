@@ -23,9 +23,9 @@ func open(_ args: [String], socketPath: String) -> Never {
 
 /// `-a` or `-b` with its value, else the first file or URL, each path made absolute, as Kosmos
 /// resolves it from another directory. `-e` names TextEdit; `-t` and `-f` name the default text
-/// editor, which goes unclaimed. Nil when `args` name no app.
+/// editor, which goes unclaimed, and `-R` opens no app. Nil when `args` name no app.
 private func claim(_ args: [String]) -> [String]? {
-    let valued: Set<String> = ["-a", "-b", "-s", "-u", "--arch", "--env", "--stdin", "--stdout", "--stderr"]
+    let valued: Set<String> = ["-a", "-b", "-s", "-u", "-i", "-o", "--arch", "--env", "--stdin", "--stdout", "--stderr"]
     func absolute(_ path: String) -> String { path.hasPrefix("/") ? path : workingDirectory() + "/" + path }
     let options = args.prefix { $0 != "--args" }
     // Short options can come together, as in `open -na Safari`, the last one taking a value.
@@ -33,7 +33,8 @@ private func claim(_ args: [String]) -> [String]? {
         options.contains { $0.hasPrefix("-") && !$0.hasPrefix("--") && $0.dropFirst().contains(letter) }
     }
     if given("e") { return ["-b", "com.apple.TextEdit"] }
-    if given("t") || given("f") { return nil }
+    // -R only reveals the file in Finder.
+    if given("t") || given("f") || given("R") { return nil }
     var index = 0
     while index < args.count, args[index] != "--args" {
         var arg = args[index]

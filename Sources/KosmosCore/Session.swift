@@ -677,15 +677,16 @@ public struct Session: Sendable {
 
     /// `entering`: the window crosses to another display in this direction, and tiles at the
     /// edge it enters by.
+    /// `dragged`: the user carries the floating window there, so it keeps floating.
     mutating func move(_ window: WindowID, from source: String, to name: String, follow: Bool,
-                       entering: Direction? = nil) -> Plan {
+                       entering: Direction? = nil, dragged: Bool = false) -> Plan {
         let before = framesBeforeFullscreen
         let wasFocused = source == focusedWorkspace && focused == window
         let onScreen = isShown(source)
-        // A window floats on the agent workspace and tiles once it leaves, unless its app holds
-        // it off level 0 (docs/displays.md).
-        let floating = name == Self.agent
-            || workspaces[source]!.floating.contains(window) && (source != Self.agent || floatedForLevel.contains(window))
+        // A window floats on the agent workspace and tiles once a command moves it out, unless
+        // its app holds it off level 0 (docs/displays.md).
+        let floating = name == Self.agent || workspaces[source]!.floating.contains(window)
+            && (source != Self.agent || dragged || floatedForLevel.contains(window))
         _ = workspaces[source]!.remove(window)
         mergedFrom[window] = nil
         if let entering, !floating {

@@ -70,8 +70,8 @@
     always list it.
   - Its windows float, so each keeps its size and an agent's screenshots and pixel
     coordinates stay put when it moves between displays, one dragged there by its title
-    bar too. A window that leaves it tiles,
-    unless its app holds it off level 0 ([tree.md](tree.md)). A floating window comes to
+    bar too. A window a command moves out of it tiles, unless its app holds it off level 0
+    ([tree.md](tree.md)), and one the user drags out keeps floating. A floating window comes to
     the display that shows it at the floating check after the switch, as any floating
     window does (below).
   - While no display shows it, its windows stay drawn under the desktop

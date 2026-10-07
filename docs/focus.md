@@ -368,6 +368,12 @@
   since Hiding's ledger lives on the bridge queue.
 - When a newer command for another workspace is already queued, the older one lays out but
   doesn't focus.
+- A switch that shows nothing and asks for no focus, as the conceal of a new window on a
+  hidden workspace, an agent's on the agent workspace among them, requests none when its
+  batch is done, so a key the user holds in a window Kosmos does not focus, as Finder's
+  desktop after a click on another display's ([displays.md](displays.md)), stays with it.
+  An older switch whose focus such a switch took over still gets its request. Before this,
+  every `kosmos open` keyed the focused workspace's window once its conceal landed.
 - Every focus request passes one gate: while macOS shows a native fullscreen window's
   Space, only a command requests focus. The Space counts as shown while its window is
   key, or a panel or dialog of its app that Kosmos does not manage. Parking the fullscreen

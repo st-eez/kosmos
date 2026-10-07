@@ -27,6 +27,8 @@ final class Controller {
     /// (docs/hiding.md).
     var order = BatchOrder()
     private var switches: [Int: Switch] = [:]
+    /// A focus request a done switch left to the newest one, and whether a command asked it.
+    private var focusOwed: Bool?
     private var recheckAt: ContinuousClock.Instant?
     var owner: [WindowID: pid_t] = [:]
     /// Newest last.
@@ -312,7 +314,11 @@ final class Controller {
         let entering = taken.filter { motions[$0] == nil }
         // Before the writes, which wait for the batches that conceal their windows.
         let added = order.add(show: show, hide: hide, entering: entering).map(\.number)
-        for number in added { switches[number] = Switch(received: received, fromCommand: fromCommand) }
+        // One that shows nothing and asks for no focus, as the conceal of a window an agent
+        // opened, keys nothing, so a user's key in a window Kosmos does not focus, as Finder's
+        // desktop, stays (docs/focus.md).
+        let focuses = plan.focus != nil || !show.isEmpty
+        for number in added { switches[number] = Switch(received: received, fromCommand: fromCommand, focuses: focuses) }
         if !(show.isEmpty && hide.isEmpty) { intake.forgetPlacedHidden(show) }   // their workspace is shown
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
@@ -337,6 +343,7 @@ final class Controller {
     private struct Switch {
         let received: ContinuousClock.Instant
         let fromCommand: Bool
+        let focuses: Bool
         /// When the batch first waited for writes; nil for one sent in its command's turn.
         var held: ContinuousClock.Instant?
     }
@@ -408,9 +415,12 @@ final class Controller {
                 self.needsResync = true
                 return
             }
-            // A newer switch focuses for itself (tla/Kosmos.tla, Resume).
-            guard batch.number == self.order.lastNumber else { return }
-            self.requestFocus(self.session.intent, fromCommand: context.fromCommand)
+            // A newer switch focuses for itself (tla/Kosmos.tla, Resume), and for an older one
+            // whose focus it took over when it asks for none.
+            if context.focuses { self.focusOwed = (self.focusOwed ?? false) || context.fromCommand }
+            guard batch.number == self.order.lastNumber, let fromCommand = self.focusOwed else { return }
+            self.focusOwed = nil
+            self.requestFocus(self.session.intent, fromCommand: fromCommand)
             // Only after the focus request. A stale switch's reveal is checked by the switch
             // that replaced it.
             self.bringFloatingHome()
