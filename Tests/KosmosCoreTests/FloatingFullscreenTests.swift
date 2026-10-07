@@ -122,6 +122,25 @@ import Testing
         #expect(plan?.frames[3] != Self.display && plan?.frames[3] != Self.own)
     }
 
+    /// Floating 4 focused over it and tiled ends it, as a focus on a tile does.
+    @Test func tilingAnotherFocusedWindowEndsIt() {
+        var s = Self.session()
+        _ = s.add(4, floating: true)
+        _ = s.adopt(4)
+        let plan = s.perform(.layout(.toggleFloating))
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && plan?.frames[3] == Self.own)
+        #expect(plan?.frames[4] == s.frames(of: "1")[4] && s.focused == 4)
+    }
+
+    /// The same where a rule on its title tiles it.
+    @Test func aRetitledFocusedWindowTiledEndsIt() {
+        var s = Self.session()
+        _ = s.add(4, floating: true)
+        _ = s.adopt(4)
+        let plan = s.retitled(4, floating: false, frame: nil, to: nil)
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && plan?.frames[3] == Self.own)
+    }
+
     @Test func aTabSwitchPassesItOn() {
         var s = Self.session()
         _ = s.replace(3, with: 9)
@@ -165,6 +184,19 @@ import Testing
         #expect(s.workspaces["2"]!.frameBeforeFullscreen == Self.own.offsetBy(dx: 1000, dy: 0))
     }
 
+    /// The tile focused on the workspace it joins would sit under it, so it takes the focus.
+    @Test func aProfileMergingItsWorkspaceAwayFocusesIt() {
+        let left = Monitor(id: 1, frame: Self.display), right = Monitor(id: 2, frame: Self.display.offsetBy(dx: 1000, dy: 0))
+        var s = Session(names: ["1", "2"], monitors: [left, right], assigned: ["1": 1, "2": 2])
+        _ = s.add(1); _ = s.add(2)
+        _ = s.add(5, to: "2", floating: true)
+        _ = s.follow(5)
+        _ = s.perform(.fullscreen, frame: { _ in Self.own.offsetBy(dx: 1000, dy: 0) })
+        _ = s.follow(1)
+        s.reconfigure(names: ["1"], monitors: [left], assigned: [:], merge: ["2": "1"])
+        #expect(s.workspaces["1"]!.fullscreenWindow == 5 && s.focused == 5)
+    }
+
     // MARK: Parking and drags
 
     @Test func parkingEndsItAndTheReturnGoesBackToItsFrame() {
@@ -174,6 +206,20 @@ import Testing
         let plan = s.unpark([3], follow: 3)
         #expect(plan.frames[3] == Self.own && s.isFloating(3))
         #expect(s.unpark([3], follow: 3).frames[3] == nil)
+    }
+
+    /// No command leaves tile 2 focused under tile 1's fullscreen, so the test sets the stamp.
+    /// A return elsewhere keeps 2 focused, which ends the fullscreen and lays workspace 1 out.
+    @Test func aReturnElsewhereKeepingATileFocusedUnderItLaysItsWorkspaceOut() {
+        var s = Session(names: ["1", "2"], display: Self.display)
+        _ = s.add(1); _ = s.add(2); _ = s.add(5, to: "2")
+        _ = s.park([5], because: .minimized)
+        _ = s.adopt(1)
+        _ = s.perform(.fullscreen)
+        s.workspaces["1"]!.stamp(2)
+        let plan = s.unpark([5], follow: nil)
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && s.focused == 2)
+        #expect(plan.frames[1] == Self.tiles()[1] && plan.frames[2] == Self.tiles()[2])
     }
 
     /// Measured from the frame at the press, so a window its app keeps short of the display
