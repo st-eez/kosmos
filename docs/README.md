@@ -17,7 +17,8 @@ prefix.
   Code: `KosmosApp/Inventory.swift`, `KosmosApp/Apps.swift`, `KosmosApp/AppWorker.swift`,
   `KosmosApp/LockWatch.swift`, `KosmosApp/AppDelegate.swift`,
   `KosmosCore/LockState.swift`, `KosmosCore/Sweeps.swift`, `KosmosCore/Tabs.swift`,
-  `KosmosCore/RegularApps.swift`, `KosmosPolicyWatch/PolicyWatch.swift`,
+  `KosmosCore/ManagedWindows.swift`, `KosmosCore/RegularApps.swift`,
+  `KosmosPolicyWatch/PolicyWatch.swift`,
   `KosmosSkyLight/SkyLight.swift`, `kosmos-probe/Events.swift`, `kosmos-probe/Policy.swift`,
   `kosmos-probe/PolicyExits.swift`, `kosmos-probe/WindowKinds.swift`.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the

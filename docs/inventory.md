@@ -164,7 +164,11 @@
   missed by events. Kosmos accepts that gap, with no timer to close it. A visible window's
   level change is unmeasured, as the probe keeps its window invisible. A window that stops
   being a candidate stays in the inventory: apps such as Helium change a window's level
-  while it lives, and dropping the window would lose it until the next sweep.
+  while it lives, and dropping the window would lose it until the next sweep. A managed
+  window stays managed then, in its place in the layout, and its removal at its close or
+  its app's exit reports it unmanaged, so its tile closes (`ManagedWindows`). Before this,
+  only a window still a candidate was reported at its removal, so a window an app's float
+  on top moved off level 0 left an empty tile when it closed, until Kosmos restarted.
 - An event that names a window is answered with the window's row, read from WindowServer,
   and a read during a switch waits for WindowServer to commit the switch's Space
   transaction. Every switch posts 815 about twice for each watched window, including

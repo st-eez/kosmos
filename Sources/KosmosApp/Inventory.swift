@@ -102,6 +102,7 @@ final class Inventory {
     /// (docs/inventory.md).
     private let reads = DispatchQueue(label: "kosmos.inventory.reads", qos: .userInitiated)
     private var looks = ClosedAndKept.Looks()
+    private var managed = ManagedWindows()
 
     func start() {
         SkyLight.subscribe { [weak self] event, stamp in self?.handle(event, at: stamp) }
@@ -285,14 +286,14 @@ final class Inventory {
 
     /// Nil info means the app did not answer, and what was known stays (docs/inventory.md).
     private func setAX(_ id: WindowID, _ info: AXWindowInfo?) {
-        guard let info, let pid = windows[id]?.pid else { return }
-        let wasManaged = isManaged(id)
+        guard let info, let row = windows[id] else { return }
         ax[id] = info
-        if isManaged(id) != wasManaged {
-            onEvent?(.managedChange(window: id, pid: pid, managed: isManaged(id)))
+        let standard = info.subrole == kAXStandardWindowSubrole
+        if let nowManaged = managed.read(id, standard: standard, candidate: isCandidate(row)) {
+            onEvent?(.managedChange(window: id, pid: row.pid, managed: nowManaged))
             inventoryLog.info("""
-                \(id) \(self.isManaged(id) ? "managed" : "not managed", privacy: .public): \
-                \(self.appName(self.windows[id]?.pid ?? 0), privacy: .public) \
+                \(id) \(nowManaged ? "managed" : "not managed", privacy: .public): \
+                \(self.appName(row.pid), privacy: .public) \
                 subrole \(info.subrole ?? "-", privacy: .public) \
                 identifier \(info.identifier ?? "-", privacy: .public) \
                 zoom button \(info.zoomButtonEnabled.map { $0 ? "enabled" : "disabled" } ?? "-", privacy: .public)
@@ -442,7 +443,6 @@ final class Inventory {
             return
         }
         sweeps.touch([id])
-        let wasManaged = isManaged(id)
         guard let row = windows.removeValue(forKey: id) else { return }
         ax[id] = nil
         fullscreen.remove(id)
@@ -453,7 +453,7 @@ final class Inventory {
            heldOrder.removed(id, app: row.pid, orderedIn: row.orderedIn, frame: row.frame, at: stamp, locked: false) {
             onEvent?(.orderChange(window: id, pid: row.pid, orderedIn: false, frame: row.frame, at: stamp))
         }
-        if wasManaged { onEvent?(.managedChange(window: id, pid: row.pid, managed: false)) }
+        if managed.removed(id) { onEvent?(.managedChange(window: id, pid: row.pid, managed: false)) }
         inventoryLog.info("removed \(id): \(reason, privacy: .public)")
         scheduleWatch()
     }
