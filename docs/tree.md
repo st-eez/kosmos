@@ -205,6 +205,9 @@
     (`onFullscreenWorkspaceFocusWindow` in src/desktop/state/FocusState.cpp). Omarchy sets
     it to 1, so the tile takes the fullscreen over (default/hypr/looknfeel.lua in
     basecamp/omarchy at e1614f2), and Steve chose Hyprland's default on 2026-10-02.
+    `layout floating tiling` or a rule on its title that tiles the focused floating window
+    ends it the same way. Before, the window became a focused tile under the fullscreen
+    window, where no focus in a direction found it.
   - Hyprland's `movetoworkspace` takes the window out of fullscreen and puts it back in on
     the workspace it moves to (`CGlobalWindowController::moveWindowToWorkspace`). Kosmos
     ends fullscreen there, for tiled and floating windows alike.

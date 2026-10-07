@@ -251,12 +251,13 @@ extension Workspace {
         check()
     }
 
-    /// `rect` and `gaps` are as for `unpark`.
+    /// `rect` and `gaps` are as for `unpark`. The focused window tiled ends fullscreen, as a
+    /// focus on a tile does (docs/tree.md).
     @discardableResult
     mutating func tile(_ window: WindowID, in rect: CGRect, gaps: Gaps) -> Bool {
         guard let index = floating.firstIndex(of: window) else { return false }
+        if fullscreenWindow == window || focusedWindow == window { (fullscreenWindow, frameBeforeFullscreen) = (nil, nil) }
         floating.remove(at: index)
-        if fullscreenWindow == window { (fullscreenWindow, frameBeforeFullscreen) = (nil, nil) }
         restore(window, in: rect, gaps: gaps)
         normalize()
         check()

@@ -122,6 +122,25 @@ import Testing
         #expect(plan?.frames[3] != Self.display && plan?.frames[3] != Self.own)
     }
 
+    /// Floating 4 focused over it and tiled ends it, as a focus on a tile does.
+    @Test func tilingAnotherFocusedWindowEndsIt() {
+        var s = Self.session()
+        _ = s.add(4, floating: true)
+        _ = s.adopt(4)
+        let plan = s.perform(.layout(.toggleFloating))
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && plan?.frames[3] == Self.own)
+        #expect(plan?.frames[4] == s.frames(of: "1")[4] && s.focused == 4)
+    }
+
+    /// The same where a rule on its title tiles it.
+    @Test func aRetitledFocusedWindowTiledEndsIt() {
+        var s = Self.session()
+        _ = s.add(4, floating: true)
+        _ = s.adopt(4)
+        let plan = s.retitled(4, floating: false, frame: nil, to: nil)
+        #expect(s.workspaces["1"]!.fullscreenWindow == nil && plan?.frames[3] == Self.own)
+    }
+
     @Test func aTabSwitchPassesItOn() {
         var s = Self.session()
         _ = s.replace(3, with: 9)
