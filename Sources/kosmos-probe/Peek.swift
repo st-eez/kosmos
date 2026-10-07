@@ -626,7 +626,7 @@ private struct PeekWatch: Equatable, CustomStringConvertible {
 }
 
 /// The display that holds the center of `frame`, else the main display.
-private func display(holding frame: CGRect) -> CGDirectDisplayID {
+func display(holding frame: CGRect) -> CGDirectDisplayID {
     var id: CGDirectDisplayID = 0, count: UInt32 = 0
     guard CGGetDisplaysWithPoint(CGPoint(x: frame.midX, y: frame.midY), 1, &id, &count) == .success, count > 0 else {
         return CGMainDisplayID()

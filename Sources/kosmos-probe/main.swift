@@ -91,6 +91,15 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         let count = arguments.first.flatMap(Int.init)
         peek(trials: count ?? 5, arguments: Array(arguments.dropFirst(count == nil ? 0 : 1)))
     }),
+    ("dwell", "dwell [minutes] [textedit|chrome|calculator...] [workspace=<name>]", { arguments in
+        let minutes = arguments.first.flatMap(Double.init)
+        dwell(minutes: minutes ?? 5, arguments: Array(arguments.dropFirst(minutes == nil ? 0 : 1)))
+    }),
+    ("snapback", "snapback <app name> [seconds] [watch]", { arguments in
+        guard let name = arguments.first else { usage() }
+        let rest = arguments.dropFirst().filter { $0 != "watch" }
+        snapBack(app: name, seconds: rest.first.flatMap(Double.init) ?? 120, watchOnly: arguments.contains("watch"))
+    }),
     ("api-sweep", "api-sweep [--list] [--check] [--out <path>] [--from <i>] [--to <i>]", { apiSweep($0) }),
     ("api-sweep-window", nil, { _ in apiSweepWindow() }),
     ("api-sweep-call", nil, { arguments in

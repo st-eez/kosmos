@@ -3,6 +3,25 @@
 Open work on Kosmos, most urgent first. Each item says what is known, what settles it and
 what Steve has decided. Take an item out when it lands, and add new work here.
 
+## Put a tiled window back when it stays smaller than its tile
+
+Kosmos retries a write that reads back larger than the tile, but takes one that reads back
+smaller, and leaves a tiled window an app shrinks with no write of Kosmos's in flight
+([geometry.md](geometry.md)). Both left gaps on 2026-10-06:
+- Alarm.com's Safari web app shrinks its own window from its tile to 480 wide about 200 ms
+  after its "Sign in with Bitwarden" window opens, with the popup tiled or floating and
+  with Kosmos never writing to it (`kosmos-probe snapback Alarm.com watch`). The window
+  kept its tile once the probe wrote it back, and was not shrunk again.
+- After a move to another display, Helium kept its old width at the old display's edge
+  past the 50 ms of size writes (`moved to another display kept 955x1035 of 1900x1035`),
+  and showed at half width over the other window's tile. That Helium was stuck since the
+  displays changed, and a quit and reopen fixed it; a slow app would leave the same gap.
+The fix: a tiled window of a shown workspace that a row shows smaller than its tile on an
+axis, past the slack, with no write in flight and the left button up, gets its tile
+written again at once, at most 3 times a window in 5 s, then a log line. Floating windows
+keep the sizes their apps give them. Done when the live check on Alarm.com shows no gap
+and the log shows how long the narrow window lasted.
+
 ## Decide whether an agent's window on a shown workspace keeps the focus
 
 Steve decided that windows agents, scripts, `open -a` or computer use open never switch a
@@ -115,39 +134,39 @@ after them.
 - Computer use cannot drive the Claude desktop app at all, since its screenshots always
   leave that app out ([integrations.md](integrations.md)). That is Anthropic's to fix.
 
-## Decide where agents' windows go
+## Check the agent workspace live
 
-Parked by Steve on 2026-10-02. Kosmos puts a window an agent opens on the focused
-workspace, so it shows over Steve's work without taking focus (CuaDriver's Calculator on
-workspace 2, 2026-10-02). On a hidden workspace an agent can act through Accessibility,
-but its screenshots of the concealed window fail, and Steve rules out hiding agents'
-windows for that reason: agents need screenshots. Options looked at:
-- A virtual display (BetterDisplay) holding a workspace for agents: windows draw and
-  capture, Steve never sees it. Untested: CuaDriver there, keeping the pointer off it.
-- A workspace for agents whose windows park in a screen corner instead of the holding
-  Space, so they keep drawing: a second hiding path, slower switches, slivers in a corner.
-- `kosmos park` and `unpark` called by agents: Steve found it fragile, since an agent that
-  forgets leaves a window parked.
-- `kosmos peek <window> -- <command>`, built on branch `peek` (below): the window shows
-  past its display's edge, with one column on screen, while the command captures it
-  ([hiding.md](hiding.md)). Open: how long real apps take to draw after the occlusion
-  change (Discord showed black for about a second on September 25, 2026).
-
-## Check `kosmos peek` live
-
-`kosmos peek <window id> -- <command>` shows a window Kosmos conceals past its display's
-edge while the command runs ([hiding.md](hiding.md), [ipc.md](ipc.md)). Installed at 0189caf
-on 2026-10-05, it passed its screenshot, pass-through and pixel checks live (hiding.md).
-Left, both with Steve at the Mac, each reading
-`log show --last 5m --predicate 'subsystem == "io.github.st-eez.kosmos" AND eventMessage BEGINSWITH "peek of"'`:
-- A switch to the window's workspace during `kosmos peek <id> -- sleep 5`: it passes when
-  the window shows at its tile, never at the edge, the log line says "a switch showed its
-  workspace" before the switch line, the CLI prints "the peek ended before the command did:
-  a switch showed its workspace" and exits 0 after the 5 s, and the switch after it
-  confirms.
-- A lock during `kosmos peek <id> -- sleep 5`, with the window floating: the log line says
-  "the session locked", after the unlock the next switch confirms with no recovery, and the
-  window shows at its own frame when its workspace shows, not at the edge.
+Built on branch `agentws` (2026-10-07, [displays.md](displays.md), [hiding.md](hiding.md)):
+alt-` (`workspace agent`) shows it on the focused display, moves it from another display and
+gives that display its workspace back, and goes at a second press; its windows float and stay
+drawn under the desktop while hidden; `kosmos open` sends an app's new windows there. Steve
+decided it follows him on 2026-10-07; that its windows float and the second press goes back
+are Claude's choice from his "pop in or out", open to change. The bar shows it only while a
+display shows it, against "left out of the bar", so Zenith marks which display holds it.
+- Settles it: install, bind `alt-backtick = 'workspace agent'`, then with a TextEdit and a
+  Chrome for Testing window there, alt-` on each display and back, an agent's
+  `kosmos open` of a PDF while Steve works, Cua's screenshot and click on a window while
+  hidden, and the log's `switch` lines for the reveal from under the desktop.
+- Untested: Command-Tab, a Dock click, Mission Control and a lock with a window there; a
+  click CuaDriver posts as a mouse event, since it pressed Calculator's buttons through
+  Accessibility; whether a window revealed with another display's frame flashes there
+  before the floating check moves it.
+- The computer-use skill should tell agents to open apps with `kosmos open`, work on the
+  agent workspace's windows by id without `kosmos peek`, and launch Chrome with
+  `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding` and
+  `--disable-background-timer-throttling`, which it needs to keep drawing there.
+- A claimed window shows on screen until its admission conceals it: `kosmos open -a TextEdit`
+  on a cold launch, 2026-10-07, listed its two restored windows at 16:33:33.761, admitted
+  them at 34.026, as the launching app answered Accessibility slowly, and concealed them by
+  34.049, about 0.3 s that Steve saw on workspace 8. Concealing a claimed app's window as
+  soon as it is a candidate, as `Session.add`'s `concealed` input and the adoption's
+  backstop already allow, would leave the inventory's latency alone.
+- A claim goes by app for 10 s, so Steve's own window of that app in those 10 s goes there
+  too, and so do the windows an app restores at launch. A URL a running browser opens as a
+  tab lands in Steve's browser window, in the background.
+- Costs: Option-` is the grave accent dead key, Secure Input blocks alt-` as it does
+  alt-1, and Steve's keys reach agents' apps while he looks at the workspace.
+- `kosmos peek` stays for windows on Steve's own hidden workspaces.
 
 ## Check Kosmos fullscreen live
 
@@ -208,15 +227,25 @@ Input four times from 11:03:28, and each time the badge showed on display 2 betw
 - Run `sudo -k; sudo -v` in a native fullscreen Ghostty window. The badge should show over
   it.
 
-## Watch a title rule apply on a retitle
+## Keep a window a title rule floats from showing tiled first
 
-The Bitwarden pop-out floated by its title rule live on 2026-10-02, in Chrome (53114 at
-17:02:30) and in Helium (53127 at 17:02:44), both `floats by rule` at admission: Chrome had
-already titled it `Bitwarden` by then. So the retitle path, a rule that matches only after
-the app retitles the window within 2 s ([config.md](config.md)), has not run live, and
-whether Chrome posts AXTitleChanged for the pop-out is still unmeasured. A pop-out that
-stays tiled with no `takes the rule on its title` line is the case to look at; a delay
-near 2 s in that line calls for a longer `TitleWatch.bound`.
+A title rule applies when the app titles the window, which can come after Kosmos admits
+and tiles it ([config.md](config.md)). On 2026-10-06 Alarm.com's Safari web app opened its
+"Sign in with Bitwarden" window untitled, and Kosmos logged `takes the rule on its title
+'Bitwarden Password Manager'` 530 ms after admission once and 51 ms after it once, so the
+window showed as a third column for up to half a second, then floated. The retitle path
+works live; whether Chrome posts AXTitleChanged for its Bitwarden pop-out is still
+unmeasured. The fix: hold a new window of an app that a title rule names out of the layout
+until its title settles or the 2 s `TitleWatch.bound` ends, at the cost of that wait for
+each of the app's windows.
+
+## Place a floating popup where Steve can see it
+
+A floating window stays at the frame its app opens it at. Alarm.com's web app opens its
+Bitwarden window at (0, 0), so on 2026-10-06 it covered Ghostty at the top left of the main
+panel. AeroSpace and Hyprland center a new floating window on its display. Decide whether
+Kosmos centers every new floating window, or only one whose frame its app gave at a display
+corner.
 
 ## Check RustDesk live
 
@@ -259,8 +288,8 @@ Each of these logs what settles it, at notice level unless marked.
   after the one before` and `display change applied: ...`. Set the wait from hotplug
   bursts. If changes to the visible area dominate, apply them without resetting the frame
   ledger.
-- The SketchyBar retry (bar): `SketchyBar send failed: ...` and `SketchyBar took a snapshot
-  after N failed sends, ...`. Remove the retry unless a streak ends `on a retry`.
+- The Zenith retry (bar): `Zenith send failed: ...` and `Zenith took a snapshot after N
+  failed sends, ...`. Remove the retry unless a streak ends `on a retry`.
 - The per-window frame report (01d0e31): run `script/bench-relayout.sh 9 20` twice on
   main and twice on main with the reports sent after the drain's last write, as before
   01d0e31. Keep it if the second and third windows of a drain land sooner by more than the
@@ -311,6 +340,20 @@ in the `.minimum` case of `Controller+Windows.swift`, which needs `flash` made i
 replaces that ceiling in borders.md with the rule. The deleted `minimum` branch did this
 (9e5ee38). Weigh it against the refusal retry above, which may move the recording to the
 first refusal.
+
+## Don't learn a minimum from a window that resizes itself
+
+On 2026-10-06 Ghostty stopped drawing after the displays changed while the Mac was locked
+(`Received purged IOSurface` in its log). Kosmos's retry asked for 2540×1045 and Ghostty
+kept 2240×1060: narrower than asked, so the app was changing size itself, not holding a
+minimum, yet Kosmos recorded the height as the window's minimum
+([geometry.md](geometry.md)). A learned minimum lasts until the window is seen smaller,
+which a stuck window never is. The fix: in `FrameLedger.confirm`, a retry read back larger
+on one axis and smaller on the other returns a new `Fit` that records nothing and does not
+retry, and `Controller+Windows.swift` logs it as `<id> resized itself`. The ceiling: an
+app that keeps its aspect ratio also comes back taller and narrower, and would lose its
+learned minimum. Of 4 `minimum for` lines in the 7 days of log to 2026-10-06, this was the
+only one smaller on an axis, so Steve parked it: build it when the log shows another.
 
 ## Clean up branches
 

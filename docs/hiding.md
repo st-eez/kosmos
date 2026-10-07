@@ -581,3 +581,18 @@
   a display the user's windows draw on, so the probe takes the window list's order instead.
   Without its switches Chrome stops drawing when fully covered (an opaque window over a
   shown workspace's windows on 2026-10-05): two captures a second apart were the same.
+- `kosmos-probe dwell` on 2026-10-05 (CuaDriver 0.32.0) held a TextEdit window and a
+  Calculator window, both concealed by Kosmos on hidden workspace 3, in one Space at level
+  -1 under the main display's desktop Space, stripped of their ordinary Spaces, at alpha 1,
+  for 5 minutes. Every 10 s the window list kept a desktop picture directly over each, the
+  hit test at each center found the user's window, and ScreenCaptureKit captures were
+  current in 22 of 22 for each (90 to 146 ms); CuaDriver's screenshot was current each
+  minute. Calculator floated at its frame on the left display, so the Space reached under
+  that display's desktop too. Pixel clicks from CuaDriver, each grounded on a fresh
+  screenshot's `capture_id`, typed AC 4 + 2 = at the start, after 2.5 minutes and at the
+  end, and Calculator's display read 6 each time. CuaDriver turned each into an
+  Accessibility press of the button under the point (`route: accessibility`), so a click
+  on a surface with no Accessibility element, which CuaDriver posts as a mouse event, is
+  untested there. The probe logged no app activation, Space change, sleep or lock during
+  the run, so Command-Tab, the Dock, Mission Control and a lock with a window there are
+  untested, and so is whether its observers see those events.

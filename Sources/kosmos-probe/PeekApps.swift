@@ -13,13 +13,14 @@ import KosmosSkyLight
 import Vision
 
 enum PeekApp {
-    case chrome, finder, textEdit, electron(String)
+    case chrome, finder, textEdit, calculator, electron(String)
 
     init?(_ argument: String) {
         switch argument {
         case "chrome": self = .chrome
         case "finder": self = .finder
         case "textedit": self = .textEdit
+        case "calculator": self = .calculator
         case "electron": self = .electron("Obsidian")
         default:
             guard argument.hasPrefix("electron="), argument.count > 9 else { return nil }
@@ -32,6 +33,7 @@ enum PeekApp {
         case .chrome: "Chrome for Testing"
         case .finder: "Finder"
         case .textEdit: "TextEdit"
+        case .calculator: "Calculator"
         case .electron(let name): name
         }
     }
@@ -51,19 +53,19 @@ func peekWorkspace(named name: String?, in state: BarSnapshot) -> String? {
     return (empty.first { $0.display == focused } ?? empty.first)?.name
 }
 
-private func axCopy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+func axCopy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
     var value: CFTypeRef?
     return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
 }
 
-private func axFrame(_ element: AXUIElement) -> CGRect? {
+func axFrame(_ element: AXUIElement) -> CGRect? {
     guard let position = axCopy(element, kAXPositionAttribute), let size = axCopy(element, kAXSizeAttribute) else { return nil }
     var point = CGPoint.zero, extent = CGSize.zero
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
     return CGRect(origin: point, size: extent)
 }
 
-private struct AXWindow {
+struct AXWindow {
     let id: UInt32
     let element: AXUIElement
     let title: String
@@ -71,7 +73,7 @@ private struct AXWindow {
 }
 
 /// The app's standard windows that Accessibility lists, those on shown Spaces.
-private func axWindows(_ pid: pid_t) -> [AXWindow] {
+func axWindows(_ pid: pid_t) -> [AXWindow] {
     let app = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(app, 1)
     guard let list = axCopy(app, kAXWindowsAttribute) as? [AXUIElement] else { return [] }
@@ -112,7 +114,7 @@ private final class Locked<Value>: @unchecked Sendable {
     }
 }
 
-private func rowFrame(_ window: UInt32) -> CGRect? { SkyLight.rows([window])?.first?.frame }
+func rowFrame(_ window: UInt32) -> CGRect? { SkyLight.rows([window])?.first?.frame }
 
 /// Opens `urls` with the app, or launches it with `arguments`, without activating it.
 @MainActor private func openInBackground(_ app: URL, urls: [URL] = [], arguments: [String] = [],
@@ -247,7 +249,7 @@ extension Pixels {
     let putBack: @Sendable () -> Void
     let log: StubLog? = nil
     let signature: ((Pixels) -> Int)? = nil
-    private let element: AXUIElement, workspace: String
+    let element: AXUIElement, workspace: String
     private let refreshing: () -> Void
     private let remembering: @Sendable (CGImage) -> Void
 
@@ -400,6 +402,18 @@ extension Pixels {
             let next = nextToken(after: token.value)
             let error = AXUIElementSetAttributeValue(area, kAXValueAttribute as CFString, next as CFString)
             if error == .success { token.value = next } else { print("  TextEdit: the text was not set: Accessibility error \(error.rawValue)") }
+        }
+    case .calculator:
+        // Launched only when not running, so no window of Steve's moves; `kosmos-probe dwell`
+        // presses its keys and reads its display back.
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.calculator").isEmpty else {
+            return fail("already running; the probe uses only a Calculator it launches")
+        }
+        opened = openInBackground(URL(fileURLWithPath: "/System/Applications/Calculator.app"), arguments: ["-ApplePersistenceIgnoreState", "YES"])
+        (launched, before, matches) = (true, [], { _ in true })
+        judge = { image, _ in
+            let pixels = Pixels(image), black = pixels.blackShare > 0.9
+            return Verdict(current: !black, text: "\(black ? "black" : "drawn"), \(pixels.coverage)")
         }
     case .electron(let name):
         let url = URL(fileURLWithPath: "/Applications/\(name).app")
