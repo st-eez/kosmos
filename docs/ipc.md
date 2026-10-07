@@ -18,8 +18,9 @@
   ([displays.md](displays.md)), and the app stays in the background. The CLI sends
   `{"args":["claim","-a","Preview"],"protocol":1}`, or `-b` with the bundle id, or the
   first file, made absolute, or URL; `-e` claims TextEdit, and `-t` and `-f` claim
-  nothing. Kosmos finds the app as `open` would (`AgentOpen`), claims the new windows of
-  its bundle id, as the app spells it, for 10 s, and answers with it.
+  nothing. Kosmos finds the app as `open` would (`AgentOpen`), by any name LaunchServices
+  knows, claims the new windows of its bundle id, as the app spells it, for 10 s, and
+  answers with it.
   Then the CLI runs `/usr/bin/open -g` with its arguments and exits with its status, so
   `open` runs whatever Kosmos answers. A URL a running browser opens as a tab opens no
   window, so it lands in the user's browser window, in the background.

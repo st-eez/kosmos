@@ -312,9 +312,10 @@ public struct Session: Sendable {
     public mutating func leveled(_ window: WindowID, raised: Bool) -> Plan? {
         defer { check() }
         guard let name = home[window] else { return nil }
-        // On the agent workspace every window floats already; one its app raises tiles only
-        // once it leaves and its level returns (docs/displays.md).
-        if name == Self.agent {
+        // On the agent workspace its windows float already; one its app raises tiles only once
+        // it leaves and its level returns (docs/displays.md). One the user tiled there is as
+        // on any workspace.
+        if name == Self.agent, workspaces[name]!.floating.contains(window) {
             if raised { floatedForLevel.insert(window) } else { floatedForLevel.remove(window) }
             return nil
         }
@@ -626,12 +627,14 @@ public struct Session: Sendable {
     }
 
     /// A click the user released on the desktop of a display whose workspace does not have the
-    /// focus focuses that workspace, as AeroSpace's mouse up does (docs/displays.md). Nil when
+    /// focus focuses that workspace, as AeroSpace's mouse up does, and keys nothing: the app
+    /// clicked, as Finder for a desktop icon, keeps the keyboard (docs/displays.md). False when
     /// that workspace has it, or the point is on no display.
-    public mutating func clickedDesktop(at point: CGPoint) -> Plan? {
+    public mutating func clickedDesktop(at point: CGPoint) -> Bool {
         defer { check() }
-        guard let name = workspace(at: point), name != focusedWorkspace else { return nil }
-        return focusShown(name)
+        guard let name = workspace(at: point), name != focusedWorkspace else { return false }
+        focusShown(name)
+        return true
     }
 
     mutating func reach(_ name: String) -> Plan {

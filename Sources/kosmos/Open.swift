@@ -25,7 +25,7 @@ func open(_ args: [String], socketPath: String) -> Never {
 /// resolves it from another directory. `-e` names TextEdit; `-t` and `-f` name the default text
 /// editor, which goes unclaimed. Nil when `args` name no app.
 private func claim(_ args: [String]) -> [String]? {
-    let valued: Set<String> = ["-a", "-b", "-s", "-u", "--env", "--stdin", "--stdout", "--stderr"]
+    let valued: Set<String> = ["-a", "-b", "-s", "-u", "--arch", "--env", "--stdin", "--stdout", "--stderr"]
     func absolute(_ path: String) -> String { path.hasPrefix("/") ? path : workingDirectory() + "/" + path }
     let options = args.prefix { $0 != "--args" }
     // Short options can come together, as in `open -na Safari`, the last one taking a value.

@@ -88,6 +88,8 @@ extension Session {
         let main = monitors.first { $0.frame.origin == .zero } ?? monitors[0]
         let display = assigned[focus] ?? displayShowing(focus) ?? near.flatMap { ids.contains($0) ? $0 : nil } ?? main.id
         shown = shown.filter { $0.value != focus }
+        // As alt-` would, so its next press gives the display its workspace back.
+        if focus == Self.agent, let old = shown[display] { agentDisplaced = old }
         shown[display] = focus
         for monitor in monitors where shown[monitor.id] == nil {
             // No display takes the agent workspace unasked (docs/displays.md).

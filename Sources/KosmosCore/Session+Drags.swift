@@ -72,7 +72,10 @@ extension Session {
             func distance(_ frame: CGRect) -> CGFloat { hypot(frame.midX - point.x, frame.midY - point.y) }
             let target = tiles.first { $0.value.contains(point) } ?? tiles.min { distance($0.value) < distance($1.value) }
             _ = workspaces[source]!.remove(window)
-            if let target {
+            if name == Self.agent {
+                // Every window floats there, where the drag left it (docs/displays.md).
+                workspaces[name]!.floating.append(window)
+            } else if let target {
                 let tile = target.value, across = tile.width > tile.height
                 workspaces[name]!.insert(window, beside: target.key, across ? .horizontal : .vertical,
                                          first: across ? point.x < tile.midX : point.y < tile.midY)

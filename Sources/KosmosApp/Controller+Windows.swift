@@ -87,9 +87,9 @@ extension Controller {
         let center = atLaunch ? inventory.windows[id].map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } : nil
         let float = WindowRule.floats(rule, axIdentifier: inventory.axIdentifier(id), zoomButtonEnabled: inventory.zoomButtonEnabled(id))
         let floats = float != nil
-        // A new window of an app an agent just opened goes to the agent workspace, over its
-        // rule's workspace (docs/displays.md).
-        let claimed = arrival == .admitted && !atLaunch && session.savedWorkspace(of: id) == nil
+        // A new window of an app an agent just opened, or one its app reopens, goes to the
+        // agent workspace, over its rule's workspace (docs/displays.md).
+        let claimed = arrival != .detached && !atLaunch && session.savedWorkspace(of: id) == nil
             && app.bundleID.flatMap { agentClaims[$0] }.map { ContinuousClock.now < $0 } == true
         let workspace = arrival == .detached ? nil : claimed ? Session.agent : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero

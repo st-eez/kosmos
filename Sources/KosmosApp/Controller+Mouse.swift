@@ -145,9 +145,9 @@ extension Controller {
             let rows = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(hit)) as? [[String: Any]]
             guard let layer = rows?.first?[kCGWindowLayer as String] as? Int, layer < 0 else { return }
         }
-        guard let plan = session.clickedDesktop(at: point) else { return }
+        guard session.clickedDesktop(at: point) else { return }
         controllerLog.info("click on the desktop of \(self.session.focusedWorkspace, privacy: .public)'s display focuses it")
-        execute(plan)
+        publishState()
     }
 
     /// `point`: nil for where the pointer is.

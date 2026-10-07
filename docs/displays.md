@@ -66,7 +66,8 @@
     and lists only the user's workspaces otherwise. `list-workspaces` and `list-windows`
     always list it.
   - Its windows float, so each keeps its size and an agent's screenshots and pixel
-    coordinates stay put when it moves between displays. A window that leaves it tiles,
+    coordinates stay put when it moves between displays, one dragged there by its title
+    bar too. A window that leaves it tiles,
     unless its app holds it off level 0 ([tree.md](tree.md)). A floating window comes to
     the display that shows it at the floating check after the switch, as any floating
     window does (below).
@@ -75,7 +76,8 @@
   - Agents' windows reach it three ways: `kosmos open` claims the new windows of the app
     it opens for 10 s ([ipc.md](ipc.md)), a rule's `workspace = 'agent'`, and `kosmos
     move-node-to-workspace --window-id <id> agent`, which shows the window first. A
-    claim goes by app, so a window the user opens in that app within the 10 s goes there
+    claim covers a window its app closed and kept and orders in again, which opens as a new
+    one does ([tree.md](tree.md)). A claim goes by app, so a window the user opens in that app within the 10 s goes there
     too, and so do the windows an app restores as it launches.
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
@@ -291,7 +293,9 @@
   and its open item on windows concealed before that window moved).
 - A click on the desktop of another display focuses that display's workspace, as when its
   workspace is empty, so alt-` and a free workspace's key then show there
-  (`Session.clickedDesktop`). macOS reports such a click only as Finder becoming front with
+  (`Session.clickedDesktop`). It keys nothing: the app clicked keeps the keyboard, as Finder
+  for a desktop icon, whose Quick Look or rename key would otherwise reach the workspace's
+  window. macOS reports such a click only as Finder becoming front with
   no key window, which names no display, so Kosmos reads the left mouse up, as AeroSpace
   does with `NSEvent.addGlobalMonitorForEvents` (GlobalObserver.swift). It acts only when
   the hit test there names no window or one under level 0, the desktop's, so a click on a

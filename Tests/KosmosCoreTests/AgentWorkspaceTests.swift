@@ -122,11 +122,52 @@ import Testing
 @Test func aClickOnAnotherDisplaysDesktopFocusesItsWorkspace() throws {
     var s = Desk.session()
     #expect(s.focusedDisplay == Desk.main.id)
-    #expect(s.clickedDesktop(at: CGPoint(x: 500, y: 500)) == nil)
-    let plan = s.clickedDesktop(at: CGPoint(x: 600, y: 1500))
-    #expect(plan?.focus == .noWindow)
+    let onFocused = s.clickedDesktop(at: CGPoint(x: 500, y: 500))
+    let onBuiltIn = s.clickedDesktop(at: CGPoint(x: 600, y: 1500))
+    #expect(!onFocused && onBuiltIn)
     #expect(s.focusedDisplay == Desk.builtIn.id)
     _ = s.perform(.workspace(.named(Session.agent)))
     #expect(s.workspace(shownOn: Desk.builtIn.id) == Session.agent)
-    #expect(s.clickedDesktop(at: CGPoint(x: 5000, y: 5000)) == nil)
+    let offEvery = s.clickedDesktop(at: CGPoint(x: 5000, y: 5000))
+    #expect(!offEvery)
+}
+
+@Test func aWindowDroppedOnTheAgentWorkspaceFloatsWhereItWasLeft() throws {
+    var s = Desk.session()
+    _ = s.perform(.focusMonitor(.direction(.left), wrapAround: false))
+    _ = s.perform(.workspace(.named(Session.agent)))
+    _ = s.perform(.focusMonitor(.direction(.right), wrapAround: false))
+    _ = s.add(10, to: "1"); _ = s.add(11, to: "1")
+    _ = s.lift(10)
+    let plan = s.drop(at: CGPoint(x: -900, y: 500))
+    #expect(s.workspace(of: 10) == Session.agent && s.isFloating(10))
+    #expect(plan.frames[10] == nil)
+    // Raised and lowered by its app, it stays floating there.
+    _ = s.leveled(10, raised: true); _ = s.leveled(10, raised: false)
+    #expect(s.isFloating(10))
+    #expect(s.validate().isEmpty)
+}
+
+@Test func aTiledWindowTheUserLeftThereFloatsWhenItsAppRaisesIt() {
+    var s = Desk.session()
+    _ = s.add(30, to: Session.agent)
+    _ = s.perform(.workspace(.named(Session.agent)))
+    _ = s.perform(.layout(.toggleFloating))
+    #expect(!s.isFloating(30))
+    let raised = s.leveled(30, raised: true)
+    #expect(raised != nil && s.isFloating(30))
+    #expect(s.validate().isEmpty)
+}
+
+@Test func itsDisplayLeavingWhileFocusedKeepsWhatItDisplacedOnMain() {
+    var s = Desk.session([:])
+    _ = s.perform(.workspace(.named("1")))
+    _ = s.perform(.focusMonitor(.direction(.left), wrapAround: false))
+    let left = s.focusedWorkspace
+    _ = s.perform(.workspace(.named(Session.agent)))
+    let main = s.workspace(shownOn: Desk.main.id)!
+    s.reconfigure(names: Desk.names, monitors: [Desk.main], assigned: [:], merge: [:])
+    #expect(s.workspace(shownOn: Desk.main.id) == Session.agent)
+    _ = s.perform(.workspace(.named(Session.agent)))
+    #expect(s.workspace(shownOn: Desk.main.id) == main && main != left)
 }

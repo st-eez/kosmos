@@ -14,7 +14,8 @@ enum AgentOpen {
         }
     }
 
-    /// A path, a running app's name, or an app in the folders `open -a` searches first.
+    /// A path, a running app's name, or an app LaunchServices knows by that name, in a folder
+    /// of its own too, as Adobe Acrobat in /Applications/Adobe Acrobat DC.
     private static func app(named name: String) -> String? {
         if name.contains("/") { return Bundle(url: URL(fileURLWithPath: name))?.bundleIdentifier }
         let name = name.hasSuffix(".app") ? String(name.dropLast(4)) : name
@@ -22,9 +23,9 @@ enum AgentOpen {
            let url = running.bundleURL {
             return Bundle(url: url)?.bundleIdentifier
         }
-        let folders = ["/Applications", "/System/Applications", "/System/Applications/Utilities", "/Applications/Utilities",
-                       NSHomeDirectory() + "/Applications"]
-        return folders.lazy.compactMap { Bundle(path: "\($0)/\(name).app")?.bundleIdentifier }.first
+        // Deprecated with no replacement that takes a name, and it still answered on macOS 27
+        // (2026-10-07); the protocol keeps its warning out.
+        return (NSWorkspace.shared as AppPaths).fullPath(forApplication: name).flatMap { Bundle(path: $0)?.bundleIdentifier }
     }
 
     private static func opener(of target: String) -> String? {
@@ -32,3 +33,9 @@ enum AgentOpen {
         return url.flatMap(NSWorkspace.shared.urlForApplication(toOpen:)).flatMap { Bundle(url: $0)?.bundleIdentifier }
     }
 }
+
+private protocol AppPaths {
+    func fullPath(forApplication: String) -> String?
+}
+
+extension NSWorkspace: AppPaths {}
