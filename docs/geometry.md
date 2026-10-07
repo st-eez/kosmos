@@ -1,7 +1,9 @@
 # Geometry
 
 - Layout compares each target with the last confirmed frame and the pending target.
-  Unchanged windows get no write, and each window keeps only its newest target. A write
+  Unchanged windows get no write, and each window keeps only its newest target. A size a
+  window kept for a target, as by rounding, counts as that target, and a target the window
+  is back to while a write of another size is in flight goes whole. A write
   that goes to no worker, or that a worker drops for a window it has no element for,
   makes the ledger forget the window, so its target is not left pending and the next
   write is whole.

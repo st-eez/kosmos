@@ -239,3 +239,28 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1900, height: 1032), target: target, after: .zero))
     #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1910, height: 1100), target: target, after: .zero))
 }
+
+/// A refusal's kept size held the older target in place, though the newer write in flight
+/// would move the window away.
+@Test func aReturnToAnOlderTargetIsWrittenWhileANewerWriteIsInFlight() {
+    var ledger = FrameLedger()
+    let id: WindowID = 1, now = ContinuousClock.now
+    let t1 = CGRect(x: 0, y: 0, width: 500, height: 400), t2 = CGRect(x: 500, y: 0, width: 500, height: 400)
+    #expect(!ledger.writes(for: [id: t1]).isEmpty); ledger.sent(id, target: t1, at: now)
+    #expect(!ledger.writes(for: [id: t2]).isEmpty); ledger.sent(id, target: t2, at: now)
+    _ = ledger.confirm(id, target: t1, readBack: CGRect(x: 0, y: 0, width: 501, height: 400), at: now)
+    #expect(!ledger.writes(for: [id: t1]).isEmpty)
+}
+
+@Test func aReturnToAKeptSizeWhileAWriteOfAnotherSizeIsInFlightIsWrittenWhole() {
+    var ledger = FrameLedger()
+    let kept = CGRect(x: 0, y: 0, width: 401, height: 600)
+    _ = ledger.writes(for: [1: resized])
+    #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
+    // The older write's read back, rounded, comes while the newer one is in flight.
+    ledger.confirm(1, target: resized, readBack: kept, at: t0)
+    #expect(ledger.writes(for: [1: resized]) == [1: .frame(resized)])
+    ledger.confirm(1, target: resized, readBack: kept, at: t0)
+    #expect(!ledger.isWriting(1))
+    #expect(ledger.writes(for: [1: resized]).isEmpty)
+}
