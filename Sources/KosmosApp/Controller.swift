@@ -44,6 +44,7 @@ final class Controller {
     /// The target each 100 ms retry writes again, until the log names how it went
     /// (docs/geometry.md).
     var retries: [WindowID: CGRect] = [:]
+    var tileRewrites = TileRewrites()
     /// Each floating window's frame at the left button's press, as its first change in the press
     /// found it, which a drag out of fullscreen counts from (docs/tree.md).
     var floatingAtPress: [WindowID: CGRect] = [:]
@@ -311,6 +312,11 @@ final class Controller {
         // A size refused while hidden is no limit of the app's: the write that shows the
         // window is a first attempt, retried until the reveal lands (docs/geometry.md).
         for id in plan.show { ledger.forgetLargerReadBack(id) }
+        // Nor is a size kept smaller than the tile while hidden, which the ledger took for
+        // rounding.
+        for id in plan.show where plan.frames[id] != nil {
+            if let frame = knownFrame(id) { _ = rewritesTile(id, seen: frame) }
+        }
         let written = writeFrames(plan.frames, sliding: motions)
         flashSpills(plan.frames, written: written)
         if movePointer { centerPointer() }

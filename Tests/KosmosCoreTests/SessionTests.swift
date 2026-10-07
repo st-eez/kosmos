@@ -728,3 +728,30 @@ private func session(_ names: [String] = ["1", "2", "3"]) -> Session {
     let rule = s.follow(4)
     #expect(s.entering(show: rule.show, hide: rule.hide, frames: rule.frames.keys, concealed: concealed, display: shown) == [4])
 }
+
+/// Only a tiled window of a shown workspace has a tile its rewrite goes back to; a floating
+/// one keeps the size its app gives it (docs/geometry.md).
+@Test func onlyATiledWindowOfAShownWorkspaceHasATile() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2); _ = s.add(3, floating: true); _ = s.add(4, to: "2"); _ = s.add(5)
+    _ = s.park([5], because: .minimized)
+    #expect(s.tile(of: 1) == CGRect(x: 0, y: 0, width: 500, height: 800))
+    #expect(s.tile(of: 2) == CGRect(x: 500, y: 0, width: 500, height: 800))
+    #expect(s.tile(of: 3) == nil)
+    #expect(s.tile(of: 4) == nil)
+    #expect(s.tile(of: 5) == nil)
+    #expect(s.tile(of: 9) == nil)
+}
+
+/// A window seen below its minimum loses it before any rewrite, which then goes to the tile
+/// laid out without it; one seen smaller above its minimum keeps it.
+@Test func aRewritesTileFollowsTheMinimum() {
+    var s = session()
+    _ = s.add(1); _ = s.add(2)
+    _ = s.setMinimum(2, CGSize(width: 700, height: 0))
+    #expect(s.tile(of: 2) == CGRect(x: 500, y: 0, width: 700, height: 800))
+    #expect(s.sizeObserved(2, CGSize(width: 699, height: 800)).isEmpty)
+    #expect(s.tile(of: 2)?.width == 700)
+    _ = s.sizeObserved(2, CGSize(width: 480, height: 800))
+    #expect(s.tile(of: 2) == CGRect(x: 500, y: 0, width: 500, height: 800))
+}

@@ -162,6 +162,7 @@ extension Controller {
         tabs.forget(id)
         intake.forgetPlacedHidden([id])
         ledger.forget(id)
+        tileRewrites.forget(id)
         hiding.forgetClosed(id)
         execute(session.remove(id))
     }
@@ -368,6 +369,11 @@ extension Controller {
             }
             // WindowServer can take the frame before the read back comes (docs/hiding.md).
             if let row = inventory.windows[id] { ledger.seen(id, frame: row.frame) }
+            if let since = tileRewrites.readBack(id, readBack, target: target) {
+                let now = readBack.isSmaller(than: target) ? "still smaller" : "at its tile"
+                controllerLog.notice("\(id) written again: \(asked, privacy: .public), \(now, privacy: .public) \((ContinuousClock.now - since).milliseconds, format: .fixed(precision: 1)) ms after it was seen smaller")
+            }
+            if fit == .took, let tile = rewritesTile(id, seen: readBack) { writeFrames([id: tile]) }
             peekAnswered(id, target: target, readBack: readBack)
             sendReadyBatches()
         case .framesDropped(let ids):
@@ -378,6 +384,30 @@ extension Controller {
             retitled(id)
         case .windowCreated, .windowDestroyed, .answering:
             break
+        }
+    }
+
+    /// A tiled window of a shown workspace seen smaller than its tile on an axis, with no write
+    /// in flight and no press or drag on it, has its tile written again whole, 3 times in 5 s
+    /// at most (docs/geometry.md). The tile, once the ledger forgot the window for that write.
+    func rewritesTile(_ id: WindowID, seen frame: CGRect, since: ContinuousClock.Instant? = nil) -> CGRect? {
+        let tile = session.tile(of: id)
+        let busy = ledger.isWriting(id) || modifierDrag != nil || mouseMoved[id] != nil || session.lifted.contains(id)
+            || leftButton.state(at: .now) != .up || UserInput.leftButtonDown
+        let seen = "\(Int(frame.width))x\(Int(frame.height)) of \(Int(tile?.width ?? 0))x\(Int(tile?.height ?? 0))"
+        switch tileRewrites.judge(id, seen: frame, tile: tile, busy: busy, at: .now, since: since) {
+        case .none:
+            return nil
+        case .gaveUp:
+            controllerLog.notice("""
+                \(id) stayed smaller than its tile, \(seen, privacy: .public), after \(TileRewrites.limit) writes in \
+                \(TileRewrites.span.components.seconds) s; written again once its tile changes
+                """)
+            return nil
+        case .rewrite(let count):
+            controllerLog.notice("\(id) seen smaller than its tile, \(seen, privacy: .public): written again, \(count) of \(TileRewrites.limit)")
+            ledger.forget(id)
+            return tile
         }
     }
 

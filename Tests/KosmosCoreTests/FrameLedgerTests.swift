@@ -277,3 +277,15 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.changed(1, to: resized, changedAt: t0 + .milliseconds(3), landed: false) == .other)
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
 }
+
+/// The ledger takes a size kept smaller for the app's rounding, so a rewrite of the tile
+/// forgets the window first (docs/geometry.md).
+@Test func aWindowKeptSmallerThanItsTileIsWrittenWholeOnceForgotten() {
+    var ledger = FrameLedger()
+    let narrow = CGRect(x: 0, y: 0, width: 480, height: 600)
+    _ = ledger.writes(for: [1: a])
+    #expect(ledger.confirm(1, target: a, readBack: narrow, at: t0) == .took)
+    #expect(ledger.writes(for: [1: a]).isEmpty)
+    ledger.forget(1)
+    #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
+}

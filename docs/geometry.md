@@ -82,11 +82,8 @@
   its raise lands after the wait. A window its app holds smaller, by rounding its size
   down or by a maximum size, blocks the worker the whole 50 ms at each move to another
   display, and remembering each window that still read back smaller would spare it the
-  next ones. A window still smaller at 50 ms keeps that size until its target changes,
-  as the ledger takes it for the app's rounding. A give-up the log measures for a window
-  its app does not hold smaller would call for the ledger's fallback: the worker marks the
-  give-up in its report, and the ledger takes it as a first refusal, which the 100 ms
-  retry writes again.
+  next ones. A tiled window still smaller at 50 ms gets its tile written again at once, as
+  any tiled window seen smaller than its tile does (below).
 - Each window's minimum size comes first from WindowServer. The inventory's reads of
   window rows take the size WindowServer holds each window to
   (`SLSWindowIteratorGetConstraints`), and for a row at level 0 with no parent that holds
@@ -154,6 +151,27 @@
 - A window seen smaller than its minimum on an axis, by more than 2 pt, with no write of
   Kosmos's in flight, as when the user or its app resized it, loses the minimum on that
   axis. Its workspace is laid out again then, or at the mouse up during a press.
+- A tiled window of a shown workspace that a read back or a change shows more than 2 pt
+  smaller than its tile on an axis, with no write in flight, the left button up and no
+  press or modifier drag on it, gets its tile written again whole at once
+  (`TileRewrites`). On 2026-10-06 Alarm.com's Safari web app shrank its own window to 480
+  pt wide about 200 ms after its tile landed, and Helium kept its old width past the 50 ms
+  of size writes after a move to another display (above). A reveal judges each window it
+  shows by where its row or newest write has it, since the ledger takes a size kept
+  smaller while hidden for rounding and would skip the write. A window seen below its
+  minimum loses it first, and the relayout's write goes in place of the rewrite. A rewrite
+  during a slide goes to the slide's own frame, so the slide follows it.
+  - After 3 rewrites in 5 s the log has one notice, `<id> stayed smaller than its tile`,
+    and the window keeps its size until its tile changes, since a window its app holds
+    smaller, by a maximum size or by rounding to a cell, would be written without end.
+    Each rewrite logs `seen smaller than its tile`, and its read back how many ms after the
+    window was first seen smaller it came.
+  - A floating window keeps the size its app gives it, and one larger than its tile
+    follows the refusals above.
+  - The ceilings: a window its app holds smaller costs 3 more writes at each new tile, a
+    reveal of it waits for them, and after a move to another display each can take the
+    worker's 50 ms of size writes. A change applied once a press has begun, or a read back
+    that comes during any press, is left smaller until the window's next change.
 - WindowServer reports each move and resize as a change event (`WindowServerEvent.changed`
   lists its ids), and the inventory reads the window's frame again. A frame it reads for
   a tiled or floating window of a shown workspace while no write of Kosmos's is in flight

@@ -27,6 +27,7 @@ extension Controller {
         if !smaller.isEmpty { controllerLog.notice("\(id) seen at \(Int(frame.width))x\(Int(frame.height)), below its minimum") }
         guard button != .up else {
             if !smaller.isEmpty { execute(smaller) }
+            if let tile = rewritesTile(id, seen: frame, since: changedAt) { writeFrames([id: tile]) }
             return
         }
         if session.shownFloatingWindows.contains(id) {

@@ -23,7 +23,7 @@ prefix.
 - [geometry.md](geometry.md): frame writes and read backs, sizes a window refuses, the
   user's resizes and moves of tiled windows, Accessibility timeouts and backoff, and
   window slides.
-  Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/AXBackoff.swift`,
+  Code: `KosmosCore/FrameLedger.swift`, `KosmosCore/TileRewrites.swift`, `KosmosCore/AXBackoff.swift`,
   `KosmosCore/LeftButton.swift`, `KosmosCore/Session.swift`, `KosmosCore/Slide.swift`,
   `KosmosApp/AppWorker.swift`, `KosmosApp/Slides.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,

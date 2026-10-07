@@ -185,6 +185,12 @@ public struct Session: Sendable {
         home[window].map(isShown) == true && !isParked(window)
     }
 
+    /// The tile of a tiled window of a shown workspace; nil for a floating, parked or hidden one.
+    public func tile(of window: WindowID) -> CGRect? {
+        guard let name = home[window], isShown(name), !isParked(window), !isFloating(window) else { return nil }
+        return frames(of: name)[window]
+    }
+
     public func focusIsOnAnotherDisplay(than point: CGPoint) -> Bool {
         !monitor(of: focusedWorkspace).frame.contains(point)
     }
