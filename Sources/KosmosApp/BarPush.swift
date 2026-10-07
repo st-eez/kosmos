@@ -5,17 +5,17 @@ import Synchronization
 
 private let barLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "bar")
 
-/// Pushes each snapshot to Zenith's Mach port as the JSON alone (docs/ipc.md).
+/// Pushes each snapshot to ZenithBar's Mach port as the JSON alone (docs/ipc.md).
 final class BarPush: Sendable {
-    static let name = "io.github.st-eez.zenith"
+    static let name = "io.github.st-eez.zenithbar"
 
     private let queue = DispatchQueue(label: "kosmos.bar", qos: .utility)
-    /// Zenith's send right, touched only on `queue`.
+    /// ZenithBar's send right, touched only on `queue`.
     nonisolated(unsafe) private var port = mach_port_t(MACH_PORT_NULL)
-    /// The snapshot Zenith has yet to take.
+    /// The snapshot ZenithBar has yet to take.
     private let pending = Mutex<Data?>(nil)
     /// The log names the first failed send of a streak and its end, so a Mac without
-    /// Zenith logs once.
+    /// ZenithBar logs once.
     private let failures = Mutex(0)
 
     func publish(_ snapshot: Data) {
@@ -31,12 +31,12 @@ final class BarPush: Sendable {
             pending.withLock { if $0 == snapshot { $0 = nil } }
             let streak = failures.withLock { count in defer { count = 0 }; return count }
             if streak > 0 {
-                barLog.notice("Zenith took a snapshot after \(streak) failed sends, \(retrying ? "on a retry 250 ms after one" : "at a later change", privacy: .public)")
+                barLog.notice("ZenithBar took a snapshot after \(streak) failed sends, \(retrying ? "on a retry 250 ms after one" : "at a later change", privacy: .public)")
             }
             return
         }
         if failures.withLock({ count in count += 1; return count }) == 1 {
-            barLog.notice("Zenith send failed: \(result); more failures are logged when a send goes again")
+            barLog.notice("ZenithBar send failed: \(result); more failures are logged when a send goes again")
         }
         // The zero send timeout fails while the bar's queue is full, and a restarting bar has
         // no port yet, so a busy or restarting bar gets one more try.

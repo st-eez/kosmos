@@ -31,7 +31,7 @@ is in [tla/](tla/README.md).
 - **Focus:** the exact window is keyed on a background queue, and the manager recognizes
   its own focus changes when macOS reports them back.
 - **Hotkeys and control:** Carbon hotkeys, a Unix socket with a small CLI, and state pushed
-  straight to the status bar, Zenith.
+  straight to the status bar, ZenithBar.
 - **Config:** TOML with a strict schema. A reload applies completely or not at all.
 
 ## Requirements

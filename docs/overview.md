@@ -90,7 +90,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | The bridged Space operations of hiding and recovery, the reads that confirm them, the barrier read, and creating the Spaces windows slide in | Run past its time budget |
 | IPC queue | Socket I/O | Block the main actor |
-| Bar queue (`kosmos.bar`), serial | The Mach sends of snapshots to Zenith and their retry | Block the main actor |
+| Bar queue (`kosmos.bar`), serial | The Mach sends of snapshots to ZenithBar and their retry | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
 | Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
 | Slide link thread (`kosmos.slide.links`), a run loop of its own | The display links that step slides: it adds and invalidates them, and each callback hands its display frame to the frames queue | Wait on WindowServer or on the main actor |
