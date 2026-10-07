@@ -490,7 +490,7 @@
       window until the following switch, the resync risk above. A peek of Kosmos's must
       give way to a display change or lock.
 - The agent workspace's windows ([displays.md](displays.md)) are concealed in a Space of
-  their own under the desktop, as `kosmos-probe dwell` held windows above, not in the
+  their own under the desktop, as `kosmos-probe dwell` held windows (below), not in the
   holding Space, so agents can capture and click them while no display shows them
   (`HidingStore.createBelow`). Kosmos makes it at the first such conceal, one level under
   the main display's ordinary Space as its level reads, at alpha 1, and records it in the

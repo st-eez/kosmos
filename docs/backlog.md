@@ -3,7 +3,7 @@
 Open work on Kosmos, most urgent first. Each item says what is known, what settles it and
 what Steve has decided. Take an item out when it lands, and add new work here.
 
-## Put a tiled window back when it stays smaller than its tile
+## Check live that a tiled window goes back when it stays smaller than its tile
 
 Kosmos retries a write that reads back larger than the tile, but takes one that reads back
 smaller, and leaves a tiled window an app shrinks with no write of Kosmos's in flight
@@ -16,9 +16,10 @@ smaller, and leaves a tiled window an app shrinks with no write of Kosmos's in f
   past the 50 ms of size writes (`moved to another display kept 955x1035 of 1900x1035`),
   and showed at half width over the other window's tile. That Helium was stuck since the
   displays changed, and a quit and reopen fixed it; a slow app would leave the same gap.
-The fix: a tiled window of a shown workspace that a row shows smaller than its tile on an
-axis, past the slack, with no write in flight and the left button up, gets its tile
-written again at once, at most 3 times a window in 5 s, then a log line. Floating windows
+The fix, landed on 2026-10-07 (`TileRewrites`, [geometry.md](geometry.md)): a tiled window
+of a shown workspace that a row shows smaller than its tile on an axis, past the slack,
+with no write in flight and the left button up, gets its tile written again at once, at
+most 3 times a window in 5 s, then a log line. Floating windows
 keep the sizes their apps give them. Done when the live check on Alarm.com shows no gap
 and the log shows how long the narrow window lasted.
 
