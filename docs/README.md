@@ -67,7 +67,7 @@ prefix.
   `KosmosApp/AppDelegate.swift`, `KosmosApp/SecureInputOverlay.swift`,
   `KosmosCore/SecureInputHold.swift`, `kosmos-probe/SecureInput.swift`.
 - [ipc.md](ipc.md): the socket, the CLI, `kosmos peek`'s held request and the snapshots
-  pushed to SketchyBar.
+  pushed to Zenith.
   Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `KosmosCore/Query.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
@@ -92,7 +92,7 @@ prefix.
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/UserInput.swift`,
   `KosmosCore/KeyReportIntake.swift`, `KosmosCore/Config/Config.swift`,
   `kosmos-probe/FloatRaise.swift`.
-- [integrations.md](integrations.md): how Kosmos works with SketchyBar, JankyBorders,
+- [integrations.md](integrations.md): how Kosmos works with Zenith, JankyBorders,
   display profile scripts and launchers, and switching from another window manager.
   Code: `KosmosCore/BarSnapshot.swift`, `KosmosCore/CommandSummary.swift`,
   `KosmosCore/Query.swift`, `KosmosApp/BarPush.swift`, `KosmosApp/AppDelegate.swift`,

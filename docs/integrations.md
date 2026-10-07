@@ -1,7 +1,7 @@
 # Integrations
 
-- **Status bar (SketchyBar, and Zenith, which replaces it).** Kosmos sends each bar one
-  snapshot per change ([ipc.md](ipc.md)), to SketchyBar as a `kosmos_state` event, holding
+- **Status bar (Zenith).** Kosmos sends one snapshot per change to Zenith only
+  ([ipc.md](ipc.md)); Zenith replaced SketchyBar. The snapshot holds
   everything a bar draws: every workspace with its display, whether it is shown and
   focused, and its windows' ids, app names and positions; the focused window and app; the
   active profile; and every connected display, with CoreGraphics' UUID for it, which Zenith
@@ -9,7 +9,11 @@
   same WindowServer display list: 1 when it is the only active display, else one more than
   its place in the managed display list, and 0 when the list lacks it (`display_arrangement`
   in SketchyBar 2.24.0's src/display.c). A workspace's display is the one [displays.md](displays.md) lays it
-  out on. The bar runs no command on a switch. A bar that starts after Kosmos runs
+  out on, given by its number in `display` and its UUID in `displayUUID`. The number can
+  name several displays: 0 is every display the managed list lacks, and 0 too for a
+  workspace whose display the snapshot's `displays` lack, while 1 is every display while
+  WindowServer reports one active display. `displayUUID` is nil only in that second case or when CoreGraphics gives
+  no UUID. The bar runs no command on a switch. A bar that starts after Kosmos runs
   `kosmos state` once for the current snapshot, and again after a wake (`system_woke`),
   and clicking a workspace runs `kosmos workspace <name>`. Zenith sends both requests on
   the socket itself, without the CLI.

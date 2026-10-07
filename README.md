@@ -31,7 +31,7 @@ is in [tla/](tla/README.md).
 - **Focus:** the exact window is keyed on a background queue, and the manager recognizes
   its own focus changes when macOS reports them back.
 - **Hotkeys and control:** Carbon hotkeys, a Unix socket with a small CLI, and state pushed
-  straight to status bars such as SketchyBar.
+  straight to the status bar, Zenith.
 - **Config:** TOML with a strict schema. A reload applies completely or not at all.
 
 ## Requirements
@@ -63,7 +63,7 @@ AeroSpace and rolling back.
 | Per-app Accessibility workers | Working | Found every standard window and followed each focus change |
 | Holding Space and confirmation | Working | 120 live switches confirmed by direct reads at 2.1 to 3.0 ms median; the barrier alone took 3.3 to 3.4 ms |
 | Recovery after `kill -9` | Working in probes | The guardian restored a concealed window in 130 ms |
-| SketchyBar push | Working in probes | 0.02 ms per send |
+| Bar push | Working in probes | 0.02 ms per send |
 | Tiling, switching, hotkeys, config, CLI | In progress | |
 | Several displays and profiles that follow them | In progress | Unit tests; the desk test is pending |
 

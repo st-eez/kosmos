@@ -77,7 +77,7 @@ width = 2.0
 active = '#7aa2f7'
 inactive = '#00000000'
 
-# The bindings. Kosmos pushes every change to SketchyBar itself, so no binding runs
+# The bindings. Kosmos pushes every change to the bar itself, so no binding runs
 # `sketchybar --trigger`.
 [binding]
 

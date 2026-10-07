@@ -36,8 +36,12 @@ static kern_return_t send(mach_port_t port, mach_port_t reply, const char *paylo
     message.payload.copy = MACH_MSG_VIRTUAL_COPY;
     message.payload.deallocate = false;
     message.payload.type = MACH_MSG_OOL_DESCRIPTOR;
-    return mach_msg(&message.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof message, 0,
-                    MACH_PORT_NULL, 0, MACH_PORT_NULL);
+    kern_return_t result = mach_msg(&message.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof message, 0,
+                                    MACH_PORT_NULL, 0, MACH_PORT_NULL);
+    // On these the kernel hands the message back: a new mapping of the payload and a
+    // reference on each port right, leaked unless destroyed (docs/ipc.md).
+    if (result == MACH_SEND_TIMED_OUT || result == MACH_SEND_INTERRUPTED) mach_msg_destroy(&message.header);
+    return result;
 }
 
 kern_return_t kosmos_bar_send(mach_port_t *port, const char *name, const char *payload, uint32_t length) {

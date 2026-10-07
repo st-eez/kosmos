@@ -56,7 +56,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Tree | Per-workspace roots, fractional weights, normalization after every mutation, a pure layout function with sway's gap arithmetic, a frame-write filter, and parked windows with restore hints | Pixel weights and per-state containers |
 | Hotkeys | Carbon `RegisterEventHotKey` called directly and registered exclusive, checked against system shortcuts at load, delivered to a main thread that does no AX work | A keyboard event tap, which puts every keystroke behind the manager and receives nothing under Secure Input |
 | IPC | A Unix socket in a 0700 directory with uid checks and length-prefixed JSON, and a CLI that avoids AppKit (1.4 ms launch) | A CLI that links AppKit (about 15 ms launch) |
-| Bar | Each state snapshot goes to SketchyBar's Mach port as one event | Shell hooks on every switch |
+| Bar | Each state snapshot goes to the bar's Mach port as one message | Shell hooks on every switch |
 | Config | TOML with a strict schema, all-or-nothing reload, diagnostics with file, line and key path, a `check` command, and built-in display profiles | Lua in process, shell scripts, Swift source |
 | Status item | AppKit, a static square icon, the menu built when opened, never written on the command path, optional removal | A SwiftUI `MenuBarExtra` with a live label |
 | Modifier drags | An active event tap for the left and right buttons at the annotated session location, each event decided on the tap's thread from WindowServer's hit test | `NSEvent` global monitors, which cannot keep an event from the app. A hit test of the model's frames, which knows no stacking order and would take a click on a panel over a tile |
@@ -90,7 +90,7 @@ file writes and menu bar redraws off the switch path, and never lose a hidden wi
 | Focus queue, serial | Front-process calls and key records, generation checks, the already key check | Wait on a worker longer than 30 ms |
 | Bridge queue, serial | The bridged Space operations of hiding and recovery, the reads that confirm them, the barrier read, and creating the Spaces windows slide in | Run past its time budget |
 | IPC queue | Socket I/O | Block the main actor |
-| Bar queue (`kosmos.bar`), serial | The Mach sends of snapshots to SketchyBar and their retry | Block the main actor |
+| Bar queue (`kosmos.bar`), serial | The Mach sends of snapshots to Zenith and their retry | Block the main actor |
 | SkyLight notification callback | Copy the payload and hand it to the main actor | Anything else |
 | Inventory read queue, serial | The rows WindowServer gives for window events, one query for each main run loop turn's events, and the sweep's reads, in order | Change the inventory |
 | Slide link thread (`kosmos.slide.links`), a run loop of its own | The display links that step slides: it adds and invalidates them, and each callback hands its display frame to the frames queue | Wait on WindowServer or on the main actor |

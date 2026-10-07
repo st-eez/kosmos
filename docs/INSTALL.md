@@ -110,7 +110,8 @@ and if AeroSpace is running, it only observes until it is started again.
 5. Open `/Applications/Kosmos.app` and grant Accessibility when it asks.
 6. Turn on Launch at Login in the Kosmos menu.
 7. Keep the status bar's AeroSpace code next to its Kosmos code until the switch is final.
-   The bar gets Kosmos's state from the `kosmos_state` event.
+   The bar gets Kosmos's state from the snapshot Kosmos pushes to Zenith's Mach port
+   ([ipc.md](ipc.md)).
 
 ## Rolling back
 

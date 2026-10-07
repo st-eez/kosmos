@@ -1,5 +1,5 @@
-// The bars' Mach messages: SketchyBar's in the format its own CLI sends, and Zenith's
-// (docs/ipc.md).
+// The bars' Mach messages: Kosmos's push to Zenith, and kosmos-probe's query of SketchyBar
+// in the format its own CLI sends (docs/ipc.md).
 #pragma once
 
 #include <mach/mach.h>

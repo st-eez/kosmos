@@ -29,6 +29,9 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
         public var name: String
         /// The `id` of its display.
         public var display: Int
+        /// The `uuid` of its display, which tells apart displays that share a `display` number
+        /// (docs/integrations.md). Nil when `displays` lacks its display or it has no UUID.
+        public var displayUUID: String?
         public var shown: Bool
         /// Shown on the display that has focus.
         public var focused: Bool
@@ -70,7 +73,8 @@ extension Session {
                 guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
                 return BarSnapshot.Window(id: id, app: app(id) ?? "?", x: Int(origin.x.rounded()), y: Int(origin.y.rounded()))
             }.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
-            return BarSnapshot.Workspace(name: name, display: displays[monitor(of: name).id]?.id ?? 0, shown: isShown(name),
+            let display = displays[monitor(of: name).id]
+            return BarSnapshot.Workspace(name: name, display: display?.id ?? 0, displayUUID: display?.uuid, shown: isShown(name),
                                          focused: name == focusedWorkspace, windows: windows)
         }
         let focus = focused.map { BarSnapshot.Focus(window: $0, app: app($0) ?? "?", workspace: focusedWorkspace) }

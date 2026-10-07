@@ -50,7 +50,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in", uuid: "37D883
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let json = String(decoding: try encoder.encode(snapshot), as: UTF8.self)
-    #expect(json == #"{"displays":[{"id":1,"name":"Built-in","uuid":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","id":10,"x":0,"y":0}]}]}"#)
+    #expect(json == #"{"displays":[{"id":1,"name":"Built-in","uuid":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"displayUUID":"37D8832A-2D66-02CA-B9F7-8F30A301B230","focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","id":10,"x":0,"y":0}]}]}"#)
 }
 
 /// SketchyBar 2.24.0 numbers displays in display_arrangement (src/display.c).
@@ -87,5 +87,15 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in", uuid: "37D883
         #expect(snapshot.workspaces.filter(\.focused).map(\.name) == ["5"])
         #expect(snapshot.focused?.workspace == "5")
         #expect(snapshot.workspaces[4].windows.first?.x == -1910)
+    }
+
+    @Test func theDisplayUUIDTellsApartDisplaysThatShareANumber() {
+        let bar: [DisplayID: BarSnapshot.Display] = [1: .init(id: 0, name: "VG279QE5A (2)", uuid: "LEFT-UUID"),
+                                                     2: .init(id: 0, name: "VG279QE5A (1)", uuid: "MAIN-UUID")]
+        let snapshot = Desk.session().barSnapshot(profile: "home", displays: bar, app: { _ in nil }, frame: { _ in nil })
+        #expect(snapshot.workspaces.map(\.display) == Array(repeating: 0, count: 10))
+        // Display 3 is missing from `bar`, so its workspaces carry no UUID.
+        #expect(snapshot.workspaces.map(\.displayUUID) == Array(repeating: "MAIN-UUID", count: 4)
+            + Array(repeating: "LEFT-UUID", count: 3) + Array(repeating: nil, count: 3))
     }
 }

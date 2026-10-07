@@ -35,12 +35,12 @@
   - The server's side is `Reply.hold`: a handler that returns one gets the args of the
     client's next request, or nil when the client closes or sends no valid request, and the
     response it returns goes back before the close.
-- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to each
-  bar's Mach port with a zero timeout: SketchyBar's, `git.felix.sketchybar`, as one
-  `--trigger` event, and Zenith's, `io.github.st-eez.zenith`, as the JSON alone, while
-  Steve moves from SketchyBar to Zenith (~/Projects/Personal/zenith). A bar asks Kosmos
-  for a snapshot with `kosmos state` only when it starts and after a wake
-  ([integrations.md](integrations.md)).
+- A bar snapshot is about 870 bytes of JSON and takes 30 µs to encode. It goes to Zenith's
+  Mach port, `io.github.st-eez.zenith`, as the JSON alone, with a zero timeout
+  (~/Projects/Personal/zenith). Kosmos pushed to SketchyBar's port too until SketchyBar
+  retired on October 6, 2026; each push to it then cost two failed bootstrap lookups,
+  about 100 µs. A bar asks Kosmos for a snapshot with `kosmos state` only when it starts
+  and after a wake ([integrations.md](integrations.md)).
   A bar reads the snapshot's `version` first: a new version may rename or remove fields,
   and new fields can appear in any version.
 - A send that fails is tried once more 250 ms later, with the newest snapshot: the zero
@@ -48,9 +48,13 @@
   yet. No failure has been seen, as failures were logged at debug level, which the live log
   of September 24 to 26, 2026 did not keep. The first failure of a streak logs at notice
   level, and so does the send that ends it, with the streak's length and whether a retry
-  sent it, so a Mac without one of the bars logs once for it. Each bar has its own streak
-  and retry. The retry goes unless that log shows a
-  retry ending a streak.
-- Each message carries its payload in one out of line descriptor. SketchyBar's has the
-  format its own CLI sends, which SketchyBar documents nowhere: the arguments joined by NUL,
-  with one more NUL at the end.
+  sent it, so a Mac without Zenith logs once for it. The retry goes unless that log shows
+  a retry ending a streak.
+- A send that times out leaves Kosmos the message back: the kernel maps a new copy of the
+  payload into Kosmos and adds a reference to the bar's send right. `send` in
+  `CKosmos/KosmosBar.c` destroys it, or each timed out send would leak a page and a port
+  reference; a C program with the same message took a send right from 1 reference to 101
+  over 100 timed out sends.
+- Each message carries its payload in one out of line descriptor. `kosmos-probe displays`
+  still queries SketchyBar for its display numbers, in the format its own CLI sends, which
+  SketchyBar documents nowhere: the arguments joined by NUL, with one more NUL at the end.
