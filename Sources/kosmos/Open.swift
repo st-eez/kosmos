@@ -22,7 +22,7 @@ func open(_ args: [String], socketPath: String) -> Never {
 }
 
 /// `-a` or `-b` with its value, else the first file or URL, each path made absolute, as Kosmos
-/// resolves it from another directory. `-e` names TextEdit; `-t` and `-f` name the default text
+/// resolves it from another directory, and a folder's ending with a slash. `-e` names TextEdit; `-t` and `-f` name the default text
 /// editor, which goes unclaimed, and `-R` opens no app. Nil when `args` name no app.
 private func claim(_ args: [String]) -> [String]? {
     let valued: Set<String> = ["-a", "-b", "-s", "-u", "-i", "-o", "--arch", "--env", "--stdin", "--stdout", "--stderr"]
@@ -46,10 +46,17 @@ private func claim(_ args: [String]) -> [String]? {
             index += 2
             continue
         }
-        if !arg.hasPrefix("-") { return [arg.contains("://") ? arg : absolute(arg)] }
+        if !arg.hasPrefix("-") { return [arg.contains("://") ? arg : file(absolute(arg))] }
         index += 1
     }
     return nil
+}
+
+/// A folder's path ends with a slash, as Kosmos finds the opener from the path alone.
+private func file(_ path: String) -> String {
+    var info = stat()
+    guard !path.hasSuffix("/"), stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { return path }
+    return path + "/"
 }
 
 private func workingDirectory() -> String {

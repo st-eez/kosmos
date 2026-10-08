@@ -17,10 +17,14 @@
   something for an agent: its new windows go to the agent workspace
   ([displays.md](displays.md)), and the app stays in the background. The CLI sends
   `{"args":["claim","-a","Preview"],"protocol":1}`, or `-b` with the bundle id, or the
-  first file, made absolute, or URL; `-e` claims TextEdit, and `-t` and `-f` claim
-  nothing. Kosmos finds the app as `open` would (`AgentOpen`), by any name LaunchServices
-  knows, claims the new windows of its bundle id, as the app spells it, for 10 s, and
-  answers with it.
+  first file, made absolute and a folder's ending with a slash, or URL; `-e` claims
+  TextEdit, and `-t` and `-f` claim nothing. Kosmos finds the app as `open` would
+  (`AgentOpen`), by any name LaunchServices knows, claims the new windows of its bundle id,
+  as the app spells it, for 10 s, and answers with it.
+  - Kosmos finds a file's app by the type its name gives, without reading the file: reading
+    one in ~/Downloads, ~/Documents or ~/Desktop asks TCC on Kosmos's main thread, which
+    once held it 5.3 s, past the CLI's 5 s wait (2026-10-08). A file's own Open With choice
+    goes unseen.
   Then the CLI runs `/usr/bin/open -g` with its arguments and exits with its status, so
   `open` runs whatever Kosmos answers. A URL a running browser opens as a tab opens no
   window, so it lands in the user's browser window, in the background.

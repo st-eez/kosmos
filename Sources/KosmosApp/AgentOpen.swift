@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// The app `kosmos open` opens, named as `open` takes it, whose new windows Kosmos sends to the
 /// agent workspace (docs/ipc.md).
@@ -28,9 +29,18 @@ enum AgentOpen {
         return (NSWorkspace.shared as AppPaths).fullPath(forApplication: name).flatMap { Bundle(path: $0)?.bundleIdentifier }
     }
 
+    /// A file's opener by the type its name gives, as reading the file asks TCC in a folder
+    /// such as ~/Downloads, which held the main thread 5.3 s (2026-10-08). A file's own Open
+    /// With choice goes unseen. The CLI ends a folder's path with a slash.
     private static func opener(of target: String) -> String? {
-        let url = target.contains("://") ? URL(string: target) : URL(fileURLWithPath: target)
-        return url.flatMap(NSWorkspace.shared.urlForApplication(toOpen:)).flatMap { Bundle(url: $0)?.bundleIdentifier }
+        let workspace = NSWorkspace.shared
+        if target.contains("://") {
+            return URL(string: target).flatMap(workspace.urlForApplication(toOpen:)).flatMap { Bundle(url: $0)?.bundleIdentifier }
+        }
+        let url = URL(fileURLWithPath: target)
+        if url.pathExtension == "app" { return Bundle(url: url)?.bundleIdentifier }
+        let types = [UTType(filenameExtension: url.pathExtension), url.hasDirectoryPath ? .folder : .data]
+        return types.lazy.compactMap { $0.flatMap(workspace.urlForApplication(toOpen:)) }.first.flatMap { Bundle(url: $0)?.bundleIdentifier }
     }
 }
 
