@@ -4,13 +4,15 @@ import UniformTypeIdentifiers
 /// The app `kosmos open` opens, named as `open` takes it, whose new windows Kosmos sends to the
 /// agent workspace (docs/ipc.md).
 enum AgentOpen {
-    /// For `-a <name or path>`, `-b <bundle id>`, or a file or URL; nil when no app is found.
+    /// For `-a <name or path>`, `-b <bundle id>`, `-x <executable file>`, or a file or URL; nil
+    /// when no app is found.
     static func bundleID(_ arguments: [String]) -> String? {
         switch (arguments.first, arguments.count) {
         // The app's own bundle id, in its own case, as the inventory compares it exactly.
         case ("-b", 2): NSWorkspace.shared.urlForApplication(withBundleIdentifier: arguments[1]).flatMap { Bundle(url: $0)?.bundleIdentifier }
         case ("-a", 2): app(named: arguments[1])
-        case (let target?, 1): opener(of: target)
+        case ("-x", 2): opener(of: arguments[1], executable: true)
+        case (let target?, 1): opener(of: target, executable: false)
         default: nil
         }
     }
@@ -32,8 +34,9 @@ enum AgentOpen {
     /// A file's opener by the type its name gives, without asking the filesystem even whether
     /// it is a folder, as touching a file asks TCC in a folder such as ~/Downloads, which held
     /// the main thread 5.3 s (2026-10-08). A file's own Open With choice goes unseen. The CLI
-    /// sends files as absolute paths and ends a folder's with a slash.
-    private static func opener(of target: String) -> String? {
+    /// sends files as absolute paths, ends a folder's with a slash and marks a file with an
+    /// execute bit, which with no extension opens in Terminal.
+    private static func opener(of target: String, executable: Bool) -> String? {
         let workspace = NSWorkspace.shared
         guard target.hasPrefix("/") else {
             return URL(string: target).flatMap(workspace.urlForApplication(toOpen:)).flatMap { Bundle(url: $0)?.bundleIdentifier }
@@ -42,7 +45,8 @@ enum AgentOpen {
         let url = URL(filePath: target, directoryHint: folder ? .isDirectory : .notDirectory)
         if url.pathExtension == "app" { return Bundle(url: url)?.bundleIdentifier }
         // A folder named Next.js opens in Finder, a package such as an .rtfd in its app.
-        let types = [UTType(filenameExtension: url.pathExtension, conformingTo: folder ? .directory : .data), folder ? .folder : .data]
+        let types = [UTType(filenameExtension: url.pathExtension, conformingTo: folder ? .directory : .data),
+                     executable ? .unixExecutable : folder ? .folder : .data]
         return types.lazy.compactMap { $0.flatMap(workspace.urlForApplication(toOpen:)) }.first.flatMap { Bundle(url: $0)?.bundleIdentifier }
     }
 }

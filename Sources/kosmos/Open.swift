@@ -22,7 +22,8 @@ func open(_ args: [String], socketPath: String) -> Never {
 }
 
 /// `-a` or `-b` with its value, else the first file or URL, each path made absolute, as Kosmos
-/// resolves it from another directory, and a folder's ending with a slash. `-e` names
+/// resolves it from another directory, a link's target in its place, a folder's ending with a
+/// slash and an executable's after `-x`. `-e` names
 /// TextEdit; `-t` and `-f` name the default text editor, which goes unclaimed, and `-R` opens no app. Nil when `args` name no app.
 private func claim(_ args: [String]) -> [String]? {
     let valued: Set<String> = ["-a", "-b", "-s", "-u", "-i", "-o", "--arch", "--env", "--stdin", "--stdout", "--stderr"]
@@ -46,7 +47,7 @@ private func claim(_ args: [String]) -> [String]? {
             index += 2
             continue
         }
-        if !arg.hasPrefix("-") { return [isURL(arg) ? arg : file(absolute(arg))] }
+        if !arg.hasPrefix("-") { return isURL(arg) ? [arg] : file(absolute(arg)) }
         index += 1
     }
     return nil
@@ -60,11 +61,20 @@ private func isURL(_ arg: String) -> Bool {
     return access(arg, F_OK) != 0
 }
 
-/// A folder's path ends with a slash, as Kosmos finds the opener from the path alone.
-private func file(_ path: String) -> String {
+/// Kosmos finds the opener from what the CLI sends alone: a link's target, as LaunchServices
+/// goes by the target's name, a folder's path ending with a slash, and a file with any execute
+/// bit, which with no extension opens in Terminal, after `-x`.
+private func file(_ path: String) -> [String] {
     var info = stat()
-    guard !path.hasSuffix("/"), stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { return path }
-    return path + "/"
+    guard let resolved = realpath(path, nil) else { return [path] }
+    let path = String(cString: resolved)
+    free(resolved)
+    guard stat(path, &info) == 0 else { return [path] }
+    switch info.st_mode & S_IFMT {
+    case S_IFDIR: return [path.hasSuffix("/") ? path : path + "/"]
+    case S_IFREG where info.st_mode & 0o111 != 0: return ["-x", path]
+    default: return [path]
+    }
 }
 
 private func workingDirectory() -> String {

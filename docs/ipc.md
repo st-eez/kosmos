@@ -17,15 +17,17 @@
   something for an agent: its new windows go to the agent workspace
   ([displays.md](displays.md)), and the app stays in the background. The CLI sends
   `{"args":["claim","-a","Preview"],"protocol":1}`, or `-b` with the bundle id, or the
-  first file, made absolute and a folder's ending with a slash, or URL, `mailto:` and
-  other schemes without slashes too; `-e` claims TextEdit, and `-t` and `-f` claim
-  nothing. Kosmos finds the app (`AgentOpen`), by any name LaunchServices knows, claims the
-  new windows of its bundle id, as the app spells it, for 10 s, and answers with it.
+  first file, made absolute with links resolved, a folder's ending with a slash and a file
+  with an execute bit after `-x`, or URL, `mailto:` and other schemes without slashes too;
+  `-e` claims TextEdit, and `-t` and `-f` claim nothing. Kosmos finds the app
+  (`AgentOpen`), by any name LaunchServices knows, claims the new windows of its bundle id,
+  as the app spells it, for 10 s, and answers with it.
   - Kosmos finds a file's app by the type its name gives, without touching the file, not
-    even to ask whether it is a folder: touching one in ~/Downloads, ~/Documents or
-    ~/Desktop asks TCC on Kosmos's main thread, which once held it 5.3 s, past the CLI's
-    5 s wait (2026-10-08). So it can differ from `open`'s: a file's own Open With choice
-    goes unseen, and an executable with no extension claims TextEdit, not Terminal.
+    even to ask whether it is a folder; it reads only an app's own bundle. Touching a file
+    in ~/Downloads, ~/Documents or ~/Desktop asks TCC on Kosmos's main thread, which once
+    held it 5.3 s, past the CLI's 5 s wait (2026-10-08). The CLI, which runs as the agent,
+    says whether the file is a folder or has an execute bit, which with no extension opens
+    it in Terminal. A file's own Open With choice goes unseen.
   Then the CLI runs `/usr/bin/open -g` with its arguments and exits with its status, so
   `open` runs whatever Kosmos answers. A URL a running browser opens as a tab opens no
   window, so it lands in the user's browser window, in the background.
