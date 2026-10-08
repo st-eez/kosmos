@@ -29,17 +29,20 @@ enum AgentOpen {
         return (NSWorkspace.shared as AppPaths).fullPath(forApplication: name).flatMap { Bundle(path: $0)?.bundleIdentifier }
     }
 
-    /// A file's opener by the type its name gives, as reading the file asks TCC in a folder
-    /// such as ~/Downloads, which held the main thread 5.3 s (2026-10-08). A file's own Open
-    /// With choice goes unseen. The CLI ends a folder's path with a slash.
+    /// A file's opener by the type its name gives, without asking the filesystem even whether
+    /// it is a folder, as touching a file asks TCC in a folder such as ~/Downloads, which held
+    /// the main thread 5.3 s (2026-10-08). A file's own Open With choice goes unseen. The CLI
+    /// sends files as absolute paths and ends a folder's with a slash.
     private static func opener(of target: String) -> String? {
         let workspace = NSWorkspace.shared
-        if target.contains("://") {
+        guard target.hasPrefix("/") else {
             return URL(string: target).flatMap(workspace.urlForApplication(toOpen:)).flatMap { Bundle(url: $0)?.bundleIdentifier }
         }
-        let url = URL(fileURLWithPath: target)
+        let folder = target.hasSuffix("/")
+        let url = URL(filePath: target, directoryHint: folder ? .isDirectory : .notDirectory)
         if url.pathExtension == "app" { return Bundle(url: url)?.bundleIdentifier }
-        let types = [UTType(filenameExtension: url.pathExtension), url.hasDirectoryPath ? .folder : .data]
+        // A folder named Next.js opens in Finder, a package such as an .rtfd in its app.
+        let types = [UTType(filenameExtension: url.pathExtension, conformingTo: folder ? .directory : .data), folder ? .folder : .data]
         return types.lazy.compactMap { $0.flatMap(workspace.urlForApplication(toOpen:)) }.first.flatMap { Bundle(url: $0)?.bundleIdentifier }
     }
 }
