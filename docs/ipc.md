@@ -11,8 +11,8 @@
   `list-bindings` change nothing (`Query`). `handover [record version]`, which
   `script/install.sh` sends, arms a quit within 5 s to leave the hidden windows to the
   Kosmos that starts next ([hiding.md](hiding.md)). `peek <window id>` is the CLI's half of
-  `kosmos peek`, below, and `claim` the half of `kosmos open`. Any other request is a
-  command (`Command.parse`).
+  `kosmos peek`, below, and `claim` and `opened` the halves of `kosmos open`. Any other
+  request is a command (`Command.parse`).
 - `kosmos open [-a <app> | -b <bundle id>] [<file or URL>...] [open's options]` opens
   something for an agent: its new windows go to the agent workspace
   ([displays.md](displays.md)), and the app stays in the background. The CLI sends
@@ -28,9 +28,22 @@
     held it 5.3 s, past the CLI's 5 s wait (2026-10-08). The CLI, which runs as the agent,
     says whether the file is a folder or has an execute bit, which with no extension opens
     it in Terminal. A file's own Open With choice goes unseen.
-  Then the CLI runs `/usr/bin/open -g` with its arguments and exits with its status, so
-  `open` runs whatever Kosmos answers. A URL a running browser opens as a tab opens no
-  window, so it lands in the user's browser window, in the background.
+  Then the CLI runs `/usr/bin/open -g` with its arguments, so `open` runs whatever Kosmos
+  answers. A URL or file a running browser opens as a tab opens no window, so it lands in
+  the user's browser window, in the background.
+  - Once `open` succeeds, the CLI sends
+    `{"args":["opened","net.imput.helium","412"],"protocol":1}`, with the milliseconds since
+    its claim, and prints the answer: the windows sent to the agent workspace since its
+    claim, by id, or, when none came, the app's window focused last, where a browser adds a
+    tab, with its workspace, or that the app has no window. The last is most likely, not
+    sure: the app is the one the file's type names. Kosmos waits 3 s for a new window of an
+    app launched before the claim, whose new windows came 0.5 to 1.6 s after it, and the
+    claim's 10 s for one that launches, and then half a second more for others, as two
+    came in one ms (2026-10-08). So a tab costs 3 s; watching the app's windows' titles
+    would end the wait at the tab. Two opens of one app at once cannot tell their windows
+    apart.
+  - When Kosmos does not answer the claim, or `opened`, which the CLI waits 15 s for, the
+    CLI says where the windows went is unknown. It exits with `open`'s status.
 - `kosmos peek <window id> -- <command> [args...]` runs the command while Kosmos shows a
   window it conceals past its display's edge ([hiding.md](hiding.md)), and exits with the
   command's status: 128 plus the signal's number when a signal ended it, 127 when the

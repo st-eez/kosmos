@@ -90,7 +90,7 @@ extension Controller {
         // A new window of an app an agent just opened, or one its app reopens, goes to the
         // agent workspace, over its rule's workspace (docs/displays.md).
         let claimed = arrival != .detached && !atLaunch && session.savedWorkspace(of: id) == nil
-            && app.bundleID.flatMap { agentClaims[$0] }.map { ContinuousClock.now < $0 } == true
+            && app.bundleID.flatMap { agentClaims[$0] }.map { ContinuousClock.now < $0.until } == true
         let workspace = arrival == .detached ? nil : claimed ? Session.agent : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero
         let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id), minimized: inventory.isMinimized(id),
@@ -112,7 +112,8 @@ extension Controller {
             watchTitle(id, pid: pid, rule: rule)
         }
         let floating = session.isFloating(id)
-        if claimed {
+        if claimed, let bundleID = app.bundleID {
+            agentClaims[bundleID]?.windows.append((id, .now))
             controllerLog.notice("\(id) of \(app.bundleID ?? "?", privacy: .public), opened by an agent, goes to the agent workspace")
         }
         if let saved {

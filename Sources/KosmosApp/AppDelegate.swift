@@ -125,6 +125,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reply(to arguments: [String]) async -> Reply {
+        if arguments.first == "opened" {
+            guard arguments.count == 3, let elapsed = Int(arguments[2]), elapsed >= 0 else {
+                return Reply(failure("opened takes a bundle id and the milliseconds since its claim"))
+            }
+            guard let controller else { return Reply(Self.waiting) }
+            return Reply(await controller.opened(arguments[1], elapsed: .milliseconds(elapsed)))
+        }
         guard arguments.first == "peek" else { return Reply(respond(to: arguments)) }
         guard arguments.count == 2, let window = WindowID(arguments[1]) else {
             return Reply(failure("peek takes a window id: kosmos peek <window id> -- <command> [args...]"))
@@ -192,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let app = AgentOpen.bundleID(arguments) else {
             return failure("no app opens \(arguments.joined(separator: " ")); its windows open where they would")
         }
-        controller.agentClaims[app] = .now + .seconds(10)
+        controller.claim(app)
         log.notice("claim: new windows of \(app, privacy: .public) go to the agent workspace for 10 s")
         return Response(stdout: app)
     }

@@ -111,9 +111,8 @@ final class Controller {
     /// The windows taken over concealed at launch until their admission (docs/hiding.md).
     var adoption = Adoption()
     var peeking = PeekBook()
-    /// Apps an agent opens with `kosmos open`, each until the end of its claim: their new
-    /// windows go to the agent workspace (docs/displays.md).
-    var agentClaims: [String: ContinuousClock.Instant] = [:]
+    /// Apps an agent opens with `kosmos open`, by bundle id.
+    var agentClaims: [String: AgentClaim] = [:]
 
     init(inventory: Inventory, hiding: Hiding, setup: Setup, barDisplays: [DisplayID: BarSnapshot.Display], managing: Bool) {
         self.inventory = inventory

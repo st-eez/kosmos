@@ -3,22 +3,39 @@ import KosmosIPC
 
 /// `kosmos open [-a <app> | -b <bundle id>] [<file or URL>...] [open's options]`: runs
 /// `open -g`, which leaves the app in the background, once Kosmos has claimed the app's new
-/// windows for the agent workspace, and exits with its status (docs/ipc.md). `open` runs
-/// whatever Kosmos answers.
+/// windows for the agent workspace, then prints where they landed, and exits with its status
+/// (docs/ipc.md). `open` runs whatever Kosmos answers.
 func open(_ args: [String], socketPath: String) -> Never {
     guard !args.isEmpty else {
         fputs("usage: kosmos open [-a <app> | -b <bundle id>] [<file or URL>...] [open's options]\n", stderr)
         exit(2)
     }
+    var claimed: (app: String, at: ContinuousClock.Instant)?
     if let claim = claim(args) {
         do throws(IPCError) {
             let response = try IPCClient.send(["claim"] + claim, socketPath: socketPath)
             if !response.stderr.isEmpty { fputs(response.stderr + "\n", stderr) }
+            if response.exitCode == 0 { claimed = (response.stdout, .now) }
         } catch {
-            fputs("kosmos: " + error.description + "; the app's windows open where they would\n", stderr)
+            fputs("kosmos: " + error.description + "; where the app's windows open is unknown\n", stderr)
         }
     }
-    exit(run(["/usr/bin/open", "-g"] + args))
+    let status = run(["/usr/bin/open", "-g"] + args)
+    if status == 0, let claimed { report(claimed.app, since: claimed.at, socketPath: socketPath) }
+    exit(status)
+}
+
+/// Prints where what `open` opened landed, which Kosmos answers within the claim's 10 s and
+/// half a second more. Kosmos reports the windows since this claim, not another's (docs/ipc.md).
+private func report(_ app: String, since claimed: ContinuousClock.Instant, socketPath: String) {
+    let elapsed = (ContinuousClock.now - claimed) / .milliseconds(1)
+    do throws(IPCError) {
+        let response = try IPCClient.open(["opened", app, String(Int(elapsed))], socketPath: socketPath, timeout: .seconds(15)).response
+        if !response.stdout.isEmpty { print(response.stdout) }
+        if !response.stderr.isEmpty { fputs(response.stderr + "\n", stderr) }
+    } catch {
+        fputs("kosmos: " + error.description + "; where it opened is unknown\n", stderr)
+    }
 }
 
 /// `-a` or `-b` with its value, else the first file or URL, each path made absolute, as Kosmos
