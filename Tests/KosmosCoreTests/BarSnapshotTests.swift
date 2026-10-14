@@ -37,6 +37,23 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in", uuid: "37D883
     #expect(snapshot.workspaces[0].windows[1].x == 5 && snapshot.workspaces[0].windows[1].y == 600)
 }
 
+/// A window hidden with its app keeps its icon, flagged, after the windows shown; a minimized
+/// one leaves the bar.
+@Test func windowsHiddenWithTheirAppFollowTheShownOnes() {
+    var s = Session(names: ["1", "2"], display: display)
+    _ = s.add(10); _ = s.add(11); _ = s.add(12); _ = s.add(13)
+    _ = s.add(20, to: "2")
+    _ = s.park([10, 20], because: .appHidden)
+    _ = s.park([12], because: .minimized)
+    let frames: [WindowID: CGRect] = [10: CGRect(x: 0, y: 0, width: 250, height: 800),
+                                      20: CGRect(x: 0, y: 0, width: 1000, height: 800)]
+    let snapshot = s.barSnapshot(profile: nil, displays: [1: builtIn], app: { _ in "App" }, frame: { frames[$0] })
+    #expect(snapshot.workspaces[0].windows.map(\.id) == [13, 11, 10])
+    #expect(snapshot.workspaces[0].windows.map(\.hidden) == [false, false, true])
+    #expect(snapshot.workspaces[1].windows.map(\.id) == [20])
+    #expect(snapshot.workspaces[1].windows.map(\.hidden) == [true])
+}
+
 @Test func emptyWorkspaceHasNoFocus() {
     let s = Session(names: ["1"], display: display)
     #expect(s.barSnapshot(profile: nil, displays: [1: builtIn], app: { _ in nil }, frame: { _ in nil }).focused == nil)
@@ -50,7 +67,7 @@ private let builtIn = BarSnapshot.Display(id: 1, name: "Built-in", uuid: "37D883
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let json = String(decoding: try encoder.encode(snapshot), as: UTF8.self)
-    #expect(json == #"{"displays":[{"id":1,"name":"Built-in","uuid":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"displayUUID":"37D8832A-2D66-02CA-B9F7-8F30A301B230","focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","id":10,"x":0,"y":0}]}]}"#)
+    #expect(json == #"{"displays":[{"id":1,"name":"Built-in","uuid":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}],"focused":{"app":"Ghostty","window":10,"workspace":"1"},"profile":"home","version":1,"workspaces":[{"display":1,"displayUUID":"37D8832A-2D66-02CA-B9F7-8F30A301B230","focused":true,"name":"1","shown":true,"windows":[{"app":"Ghostty","hidden":false,"id":10,"x":0,"y":0}]}]}"#)
 }
 
 /// SketchyBar 2.24.0 numbers displays in display_arrangement (src/display.c).

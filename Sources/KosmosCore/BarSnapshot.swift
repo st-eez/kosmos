@@ -23,6 +23,8 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
         /// The window's origin, for ordering app icons as they sit on screen.
         public var x: Int
         public var y: Int
+        /// Hidden with its app, so parked out of the layout until the app unhides.
+        public var hidden: Bool
     }
 
     public struct Workspace: Codable, Equatable, Sendable {
@@ -35,7 +37,8 @@ public struct BarSnapshot: Codable, Equatable, Sendable {
         public var shown: Bool
         /// Shown on the display that has focus.
         public var focused: Bool
-        /// Tiled and floating windows, left to right, then top to bottom.
+        /// Tiled and floating windows, left to right, then top to bottom, then the windows
+        /// hidden with their app in the same order.
         public var windows: [Window]
     }
 
@@ -70,10 +73,15 @@ extension Session {
         // The agent workspace shows in the bar only while a display shows it (docs/displays.md).
         let workspaces = names.filter { $0 != Self.agent || isShown($0) }.map { name -> BarSnapshot.Workspace in
             let tiled = frames(of: name)
-            let windows = windows(of: name).compactMap { id -> BarSnapshot.Window? in
-                guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
-                return BarSnapshot.Window(id: id, app: app(id) ?? "?", x: Int(origin.x.rounded()), y: Int(origin.y.rounded()))
-            }.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
+            func barWindows(_ ids: [WindowID], hidden: Bool) -> [BarSnapshot.Window] {
+                ids.compactMap { id -> BarSnapshot.Window? in
+                    guard let origin = (tiled[id] ?? frame(id))?.origin else { return nil }
+                    return BarSnapshot.Window(id: id, app: app(id) ?? "?", x: Int(origin.x.rounded()),
+                                              y: Int(origin.y.rounded()), hidden: hidden)
+                }.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
+            }
+            let hidden = allWindows(of: name).filter { parkReason(of: $0) == .appHidden }
+            let windows = barWindows(windows(of: name), hidden: false) + barWindows(hidden, hidden: true)
             let display = displays[monitor(of: name).id]
             return BarSnapshot.Workspace(name: name, display: display?.id ?? 0, displayUUID: display?.uuid, shown: isShown(name),
                                          focused: name == focusedWorkspace, windows: windows)

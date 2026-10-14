@@ -3,7 +3,9 @@
 - **Status bar (ZenithBar).** Kosmos sends one snapshot per change to ZenithBar only
   ([ipc.md](ipc.md)); ZenithBar replaced SketchyBar. The snapshot holds everything a bar
   draws: every workspace with its display, whether it is shown and focused, and its windows'
-  ids, app names and positions; the focused window and app; the active profile; and every
+  ids, app names and positions, with those hidden with their app (Command-H) last and
+  flagged `hidden`, so the bar keeps their icons (Steve, 2026-10-14); the focused window and
+  app; the active profile; and every
   connected display, with CoreGraphics' UUID for it, which ZenithBar matches its screens by,
   numbered as SketchyBar numbers it, from the same WindowServer display list: 1 when it is
   the only active display, else one more than its place in the managed display list, and 0
