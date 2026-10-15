@@ -70,7 +70,7 @@ prefix.
 - [ipc.md](ipc.md): the socket, the CLI, `kosmos peek`'s held request and the snapshots
   pushed to ZenithBar.
   Code: `KosmosIPC/`, `kosmos/main.swift`, `kosmos/Peek.swift`, `kosmos/Open.swift`,
-  `KosmosApp/AgentOpen.swift`, `KosmosCore/Query.swift`,
+  `KosmosApp/AgentOpen.swift`, `KosmosApp/Notify.swift`, `KosmosCore/Query.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/BarPush.swift`, `KosmosCore/BarSnapshot.swift`,
   `CKosmos/KosmosBar.c`.
 - [config.md](config.md): reloads, display profiles and how they match monitors,

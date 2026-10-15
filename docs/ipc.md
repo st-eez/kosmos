@@ -11,8 +11,8 @@
   `list-bindings` change nothing (`Query`). `handover [record version]`, which
   `script/install.sh` sends, arms a quit within 5 s to leave the hidden windows to the
   Kosmos that starts next ([hiding.md](hiding.md)). `peek <window id>` is the CLI's half of
-  `kosmos peek`, below, and `claim` and `opened` the halves of `kosmos open`. Any other
-  request is a command (`Command.parse`).
+  `kosmos peek`, below, and `claim` and `opened` the halves of `kosmos open`, and `notify`
+  posts a notification, below. Any other request is a command (`Command.parse`).
 - `kosmos open [-a <app> | -b <bundle id>] [<file or URL>...] [open's options]` opens
   something for an agent: its new windows go to the agent workspace
   ([displays.md](displays.md)), and the app stays in the background. The CLI sends
@@ -44,6 +44,14 @@
     apart.
   - When Kosmos does not answer the claim, or `opened`, which the CLI waits 15 s for, the
     CLI says where the windows went is unknown. It exits with `open`'s status.
+- `kosmos notify <title> <body>` posts a notification from Kosmos, through which agents tell
+  Steve something he has nothing to do about, such as claude-account moving the Mac to the
+  other Claude account. Kosmos's alert style, under System Settings > Notifications > Kosmos,
+  decides whether it stays on screen: Alerts stay until dismissed, Banners leave after a few
+  seconds. The first one asks macOS whether Kosmos may notify and is not sent, as the prompt
+  waits for the user past the CLI's 5 s; the sender sends it again once that is allowed.
+  Kosmos sets no notification delegate, so macOS shows none while Kosmos is the active app,
+  as with its setup window in front; add one that presents them if that hides one.
 - `kosmos peek <window id> -- <command> [args...]` runs the command while Kosmos shows a
   window it conceals past its display's edge ([hiding.md](hiding.md)), and exits with the
   command's status: 128 plus the signal's number when a signal ended it, 127 when the

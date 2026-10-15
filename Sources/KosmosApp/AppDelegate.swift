@@ -132,6 +132,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let controller else { return Reply(Self.waiting) }
             return Reply(await controller.opened(arguments[1], elapsed: .milliseconds(elapsed)))
         }
+        if arguments.first == "notify" {
+            guard arguments.count == 3 else { return Reply(failure("notify takes a title and a body")) }
+            return Reply(await notify(title: arguments[1], body: arguments[2]))
+        }
         guard arguments.first == "peek" else { return Reply(respond(to: arguments)) }
         guard arguments.count == 2, let window = WindowID(arguments[1]) else {
             return Reply(failure("peek takes a window id: kosmos peek <window id> -- <command> [args...]"))
