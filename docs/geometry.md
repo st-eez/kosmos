@@ -71,10 +71,10 @@
   as `Session.movesDisplay` judges from where WindowServer last had the window and the
   target, and reads back more than 2 pt smaller than the target on an axis, writes the
   size again every 2 ms while it reads back smaller, for up to 50 ms
-  (`FrameLedger.writesSizeAgain`). The worker does so after the app's other writes of the
+  (`FrameLedger.writesFrameAgain`). The worker does so after the app's other writes of the
   same drain, so none of them waits, and the app has longer to take the move. It logs how many more sizes it wrote, the read back and the time, and a
   notice with the same when the window still reads back smaller at 50 ms. The ceiling:
-  the app's worker blocks up to 50 ms for each such window, one after another, as when a
+  the app's worker starts retries for up to 50 ms for each such window, one after another, as when a
   display change moves several of the app's windows. The app's writes that come
   meanwhile wait, and so does a reveal that waits for them. The focus queue waits up to
   30 ms for the worker before it keys a window of the app while the app is in the
@@ -84,6 +84,19 @@
   display, and remembering each window that still read back smaller would spare it the
   next ones. A tiled window still smaller at 50 ms gets its tile written again at once, as
   any tiled window seen smaller than its tile does (below).
+- A move between displays can keep the old origin even when the size lands. On
+  2026-10-20, with the built-in display to the right and lower than the main panel,
+  Codex stayed on its old display after a move. Sending its position again moved it.
+  The display move recovery above also checks both origin coordinates with the same
+  2 pt tolerance and retries a rejected position within the existing 50 ms bound.
+  Position-only writes use this recovery too. The 50 ms check stops new iterations;
+  the sleep and an in-flight AX call can run past it, up to the existing AX timeout.
+  The worker finishes this bounded recovery
+  before processing the next queued target, preserving their order. A remaining origin mismatch
+  is logged with the target and read back frame and classified as a misplaced frame,
+  never `.took` in the frame ledger or a learned minimum. A later layout can try the position
+  again. No new delayed retry outlives that write. Recovery of the reported Codex case
+  still needs installed-build verification.
 - Each window's minimum size comes first from WindowServer. The inventory's reads of
   window rows take the size WindowServer holds each window to
   (`SLSWindowIteratorGetConstraints`), and for a row at level 0 with no parent that holds

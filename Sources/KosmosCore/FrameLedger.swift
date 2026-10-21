@@ -14,10 +14,11 @@ public enum FrameWrite: Equatable, Sendable {
     }
 }
 
-/// What a frame read back after a write shows of the window's size.
+/// What a frame read back after a write shows of its placement and size.
 public enum Fit: Equatable, Sendable {
-    /// No larger than the target on either axis, past the slack.
+    /// At the target origin and no larger on either axis, past the slack.
     case took
+    case misplaced
     /// Larger than a target written for the first time: the target is written whole again.
     case refused
     /// Larger at the target's second write: the size kept on each axis it refused, zero on
@@ -26,6 +27,10 @@ public enum Fit: Equatable, Sendable {
 }
 
 extension CGRect {
+    public func isDisplaced(from target: CGRect) -> Bool {
+        abs(minX - target.minX) > FrameLedger.slack || abs(minY - target.minY) > FrameLedger.slack
+    }
+
     /// More than the ledger's slack smaller than `target` on an axis.
     public func isSmaller(than target: CGRect) -> Bool {
         width < target.width - FrameLedger.slack || height < target.height - FrameLedger.slack
@@ -83,6 +88,11 @@ public struct FrameLedger: Sendable {
             pending[id] = nil
         }
         if landing[id]?.target == target { landing[id]?.readBack = readBack }
+        if readBack.isDisplaced(from: target) {
+            refused[id] = nil
+            refusedLarger[id] = nil
+            return .misplaced
+        }
         let kept = CGSize(width: readBack.width > target.width + Self.slack ? readBack.width : 0,
                           height: readBack.height > target.height + Self.slack ? readBack.height : 0)
         guard kept == .zero || refusedLarger[id] == target else {
@@ -200,12 +210,12 @@ public struct FrameLedger: Sendable {
 extension FrameLedger {
     /// AppKit holds a window that grows onto another display to the old display's edge until
     /// its app takes the move, 10 to 30 ms after the position write. So after a write that
-    /// moves a window there, the worker writes the size again every 2 ms while the window
-    /// reads back smaller, for up to this long from when it starts, after the drain's other
+    /// moves a window there, the worker retries a rejected size or position every 2 ms while the window
+    /// reads back smaller or displaced, for up to this long from when it starts, after the drain's other
     /// writes and any earlier window's own writes again (docs/geometry.md).
     public static let displayMoveBound: Duration = .milliseconds(50)
 
-    public static func writesSizeAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {
-        readBack.isSmaller(than: target) && elapsed < displayMoveBound
+    public static func writesFrameAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {
+        (readBack.isSmaller(than: target) || readBack.isDisplaced(from: target)) && elapsed < displayMoveBound
     }
 }

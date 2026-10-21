@@ -378,7 +378,7 @@ actor AppWorker {
                 readBack = retried
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
-            if case .frame(let target) = entry.write, entry.movesDisplay, readBack.isSmaller(than: target) {
+            if entry.movesDisplay, FrameLedger.writesFrameAgain(readBack, target: entry.target, after: .zero) {
                 clamped.append((id, entry, element, readBack, ContinuousClock.now - start))
                 continue
             }
@@ -388,7 +388,7 @@ actor AppWorker {
         // take the move (docs/geometry.md).
         for window in clamped {
             let start = ContinuousClock.now
-            guard let readBack = landSize(window.id, window.element, window.entry.target, readBack: window.readBack) else {
+            guard let readBack = landFrame(window.id, window.element, window.entry.target, readBack: window.readBack) else {
                 queuedWrites[window.id] = window.entry
                 continue
             }
@@ -402,23 +402,22 @@ actor AppWorker {
         send(.frameApplied(id: id, target: entry.target, readBack: readBack))
     }
 
-    /// Writes the size again every 2 ms while `FrameLedger.writesSizeAgain` holds, blocking
-    /// the worker (docs/geometry.md). Nil when a read fails or the app is backed off.
-    private func landSize(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
-        let held = readBack.size, began = ContinuousClock.now
+    private func landFrame(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
+        let held = readBack, began = ContinuousClock.now
         var readBack = readBack, sets = 0
-        while FrameLedger.writesSizeAgain(readBack, target: target, after: ContinuousClock.now - began) {
+        while FrameLedger.writesFrameAgain(readBack, target: target, after: ContinuousClock.now - began) {
             Thread.sleep(forTimeInterval: 0.002)
-            set(element, kAXSizeAttribute, target.size)
+            if readBack.isDisplaced(from: target) { set(element, kAXPositionAttribute, target.origin) }
+            if readBack.isSmaller(than: target) { set(element, kAXSizeAttribute, target.size) }
             sets += 1
             guard !backoff.backedOff, let read = frame(element) else { return nil }
             readBack = read
         }
-        let asked = "\(Int(target.width))x\(Int(target.height))", ms = (ContinuousClock.now - began).milliseconds
-        if readBack.isSmaller(than: target) {
-            log.notice("\(id) moved to another display kept \(Int(readBack.width))x\(Int(readBack.height)) of \(asked, privacy: .public) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
+        let ms = (ContinuousClock.now - began).milliseconds
+        if readBack.isSmaller(than: target) || readBack.isDisplaced(from: target) {
+            log.notice("\(id) display move still differs: asked \(String(describing: target), privacy: .public), read back \(String(describing: readBack), privacy: .public) after \(sets) retries in \(ms, format: .fixed(precision: 1)) ms")
         } else {
-            log.info("\(id) moved to another display was held to \(Int(held.width))x\(Int(held.height)) of \(asked, privacy: .public); read back \(Int(readBack.width))x\(Int(readBack.height)) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
+            log.info("\(id) display move recovered from \(String(describing: held), privacy: .public) to \(String(describing: readBack), privacy: .public) after \(sets) retries in \(ms, format: .fixed(precision: 1)) ms")
         }
         return readBack
     }

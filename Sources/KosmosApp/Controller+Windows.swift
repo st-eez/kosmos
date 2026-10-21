@@ -380,6 +380,8 @@ extension Controller {
             switch fit {
             case .took:
                 break
+            case .misplaced:
+                controllerLog.notice("\(id) position refused: asked \(String(describing: target.origin), privacy: .public), kept \(String(describing: readBack.origin), privacy: .public)")
             case .refused:
                 controllerLog.info("\(id) \(asked, privacy: .public); its tile is written again")
                 retries[id] = target

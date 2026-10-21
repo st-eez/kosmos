@@ -57,7 +57,7 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
     let within = CGRect(x: 10, y: 35, width: 947, height: 1035)
     #expect(ledger.confirm(1, target: target, readBack: within, at: t0) == .took)
-    #expect(ledger.confirm(1, target: target, readBack: resized, at: t0) == .took)
+    #expect(ledger.confirm(1, target: target, readBack: CGRect(origin: target.origin, size: resized.size), at: t0) == .took)
 }
 
 @Test func aNewTargetOrForgettingTheWindowStartsTheRefusalsOver() {
@@ -231,13 +231,13 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
 @Test func aWindowMovedToAnotherDisplayIsWrittenAgainWhileItReadsBackSmallerForUpTo50Ms() {
     let target = CGRect(x: 10, y: 35, width: 1900, height: 1035)
     let held = CGRect(x: 10, y: 35, width: 1718, height: 1035)
-    #expect(FrameLedger.writesSizeAgain(held, target: target, after: .zero))
-    #expect(FrameLedger.writesSizeAgain(held, target: target, after: .milliseconds(49)))
-    #expect(!FrameLedger.writesSizeAgain(held, target: target, after: FrameLedger.displayMoveBound))
+    #expect(FrameLedger.writesFrameAgain(held, target: target, after: .zero))
+    #expect(FrameLedger.writesFrameAgain(held, target: target, after: .milliseconds(49)))
+    #expect(!FrameLedger.writesFrameAgain(held, target: target, after: FrameLedger.displayMoveBound))
     // Within the slack it took the target, as larger it did.
-    #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1898, height: 1033), target: target, after: .zero))
-    #expect(FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1900, height: 1032), target: target, after: .zero))
-    #expect(!FrameLedger.writesSizeAgain(CGRect(x: 10, y: 35, width: 1910, height: 1100), target: target, after: .zero))
+    #expect(!FrameLedger.writesFrameAgain(CGRect(x: 10, y: 35, width: 1898, height: 1033), target: target, after: .zero))
+    #expect(FrameLedger.writesFrameAgain(CGRect(x: 10, y: 35, width: 1900, height: 1032), target: target, after: .zero))
+    #expect(!FrameLedger.writesFrameAgain(CGRect(x: 10, y: 35, width: 1910, height: 1100), target: target, after: .zero))
 }
 
 /// A refusal's kept size held the older target in place, though the newer write in flight
@@ -288,4 +288,38 @@ private let resized = CGRect(x: 0, y: 0, width: 400, height: 600)
     #expect(ledger.writes(for: [1: a]).isEmpty)
     ledger.forget(1)
     #expect(ledger.writes(for: [1: a]) == [1: .frame(a)])
+}
+
+@Test func aDisplayMoveRetriesARejectedPositionEvenWhenItsSizeLanded() {
+    let target = CGRect(x: 1930, y: 431, width: 1708, height: 1070)
+    let oldDisplay = CGRect(x: 10, y: 35, width: 1708, height: 1070)
+    #expect(FrameLedger.writesFrameAgain(oldDisplay, target: target, after: .zero))
+    #expect(FrameLedger.writesFrameAgain(oldDisplay, target: target, after: .milliseconds(49)))
+    #expect(!FrameLedger.writesFrameAgain(oldDisplay, target: target, after: .milliseconds(50)))
+    #expect(!FrameLedger.writesFrameAgain(target, target: target, after: .zero))
+    #expect(!FrameLedger.writesFrameAgain(target.offsetBy(dx: 2, dy: -2), target: target, after: .zero))
+    #expect(FrameLedger.writesFrameAgain(target.offsetBy(dx: -3, dy: 0), target: target, after: .zero))
+    #expect(FrameLedger.writesFrameAgain(target.offsetBy(dx: 0, dy: 3), target: target, after: .zero))
+}
+
+@Test func aCorrectSizeAtTheWrongOriginIsNotAcceptedAndTheNextLayoutMovesIt() {
+    var ledger = FrameLedger()
+    let target = CGRect(x: 1930, y: 431, width: 1708, height: 1070)
+    let wrong = CGRect(x: 10, y: 35, width: 1708, height: 1070)
+    _ = ledger.writes(for: [1: target])
+    #expect(ledger.confirm(1, target: target, readBack: wrong, at: t0) == .misplaced)
+    #expect(ledger.writes(for: [1: target]) == [1: .position(target.origin)])
+    #expect(ledger.confirm(1, target: target, readBack: target, at: t0) == .took)
+    #expect(ledger.writes(for: [1: target]).isEmpty)
+}
+
+@Test func aMisplacedFrameDoesNotTeachAMinimumSize() {
+    var ledger = FrameLedger()
+    let target = CGRect(x: 1930, y: 431, width: 1708, height: 1070)
+    let wrong = CGRect(x: 10, y: 35, width: 1900, height: 1100)
+    for _ in 0..<3 {
+        _ = ledger.writes(for: [1: target])
+        #expect(ledger.confirm(1, target: target, readBack: wrong, at: t0) == .misplaced)
+    }
+    #expect(ledger.confirm(1, target: target, readBack: CGRect(origin: target.origin, size: wrong.size), at: t0) == .refused)
 }
