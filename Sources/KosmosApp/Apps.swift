@@ -8,6 +8,7 @@ private let appsLog = Logger(subsystem: "io.github.st-eez.kosmos", category: "ap
 final class Apps {
     private var workers: [pid_t: AppWorker] = [:]
     private var started = false
+    private var shuttingDown = false
     /// Kept from each app's NSRunningApplication, as NSRunningApplication(processIdentifier:)
     /// returned nil for a running app at startup (docs/inventory.md).
     private var identities: [pid_t: (bundleID: String?, name: String?)] = [:]
@@ -67,7 +68,18 @@ final class Apps {
         }
     }
 
+    func prepareForShutdown() async {
+        shuttingDown = true
+        started = false
+        await withTaskGroup(of: Void.self) { group in
+            for worker in workers.values {
+                group.addTask { await worker.prepareForShutdown() }
+            }
+        }
+    }
+
     func remove(_ pid: pid_t) {
+        guard !shuttingDown else { return }
         identities[pid] = nil
         guard let worker = workers.removeValue(forKey: pid) else { return }
         Task { await worker.stop() }

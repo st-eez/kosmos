@@ -208,20 +208,9 @@ public struct FrameLedger: Sendable {
 }
 
 extension FrameLedger {
-    /// AppKit holds a window that grows onto another display to the old display's edge until
-    /// its app takes the move, 10 to 30 ms after the position write. So after a write that
-    /// moves a window there, the worker retries a rejected size or position every 2 ms while the window
-    /// reads back smaller or displaced, for up to this long from when it starts, after the drain's other
-    /// writes and any earlier window's own writes again (docs/geometry.md).
     public static let displayMoveBound: Duration = .milliseconds(50)
 
-    public enum DisplayMoveRetry: Equatable, Sendable {
-        case position, size
-    }
-
-    public static func displayMoveRetry(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> DisplayMoveRetry? {
-        guard elapsed < displayMoveBound else { return nil }
-        if readBack.isDisplaced(from: target) { return .position }
-        return readBack.isSmaller(than: target) ? .size : nil
+    public static func writesSizeAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {
+        readBack.isSmaller(than: target) && elapsed < displayMoveBound
     }
 }

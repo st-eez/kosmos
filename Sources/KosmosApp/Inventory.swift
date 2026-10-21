@@ -71,6 +71,8 @@ final class Inventory {
 
     func worker(_ pid: pid_t) -> AppWorker? { apps.worker(pid) }
 
+    func prepareForShutdown() async { await apps.prepareForShutdown() }
+
     func appIdentity(_ pid: pid_t) -> (bundleID: String?, name: String?) {
         if let identity = apps.identity(pid) { return identity }
         let app = NSRunningApplication(processIdentifier: pid)

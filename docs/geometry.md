@@ -71,7 +71,7 @@
   as `Session.movesDisplay` judges from where WindowServer last had the window and the
   target, and reads back more than 2 pt smaller than the target on an axis, writes the
   size again every 2 ms while it reads back smaller, for up to 50 ms
-  (`FrameLedger.displayMoveRetry`). The worker does so after the app's other writes of the
+  (`FrameLedger.writesSizeAgain`). The worker does so after the app's other writes of the
   same drain, so none of them waits, and the app has longer to take the move. It logs how many more sizes it wrote, the read back and the time, and a
   notice with the same when the window still reads back smaller at 50 ms. The ceiling:
   the app's worker starts retries for up to 50 ms for each such window, one after another, as when a
@@ -84,22 +84,41 @@
   display, and remembering each window that still read back smaller would spare it the
   next ones. A tiled window still smaller at 50 ms gets its tile written again at once, as
   any tiled window seen smaller than its tile does (below).
-- A move between displays can keep the old origin even when the size lands. On
-  2026-10-20, with the built-in display to the right and lower than the main panel,
-  Codex stayed on its old display after a move. Sending its position again moved it.
-  The display move recovery above also checks both origin coordinates with the same
-  2 pt tolerance and retries a rejected position within the existing 50 ms bound.
-  Position-only writes use this recovery too. Position is retried alone until it reads
-  at its target, then size is retried if needed. Retrying both in one iteration left
-  Codex at its old origin and 25 pt short in the first installed candidate, with
-  animation enabled and disabled. The revised ordering still needs native verification. The 50 ms check stops new iterations;
-  the sleep and an in-flight AX call can run past it, up to the existing AX timeout.
-  The worker finishes this bounded recovery
-  before processing the next queued target, preserving their order. A remaining origin mismatch
-  is logged with the target and read back frame and classified as a misplaced frame,
-  never `.took` in the frame ledger or a learned minimum. A later layout can try the position
-  again. No new delayed retry outlives that write. Recovery of the reported Codex case
-  still needs installed-build verification.
+- `AXEnhancedUserInterface` can make an app animate frame writes itself. On 2026-10-20,
+  Codex had this flag on and retained the old display origin or intermediate sizes after
+  moves between a main panel and a lower MacBook to its right. Position retries within
+  50 ms, together with size or before size, did not resolve it. With the flag temporarily
+  off, the same installed build passed nine exact WindowServer geometry checks, including
+  repeated crossings and a rapid reversal, while Kosmos animation stayed on.
+  The worker reads the flag once per nonempty drain, turns it off only when it was on,
+  and restores it after all writes and size recovery. Codex applies the flag while
+  returning `notImplemented`; independent readback confirmed both changes. Restoration
+  clears the obligation only after reading the flag on, regardless of setter status.
+  An off or unreadable result retains the obligation and backs off. On the next answer, restoration runs before
+  further frame writes, even when none remain queued. Unsupported and already-off flags
+  are left alone. This matches the scope of
+  [AeroSpace's frame-write animation suppression](https://github.com/nikitabobko/AeroSpace/blob/main/Sources/AppBundle/tree/MacApp.swift).
+  Normal quit waits for each worker's current drain, stops later frame writes and
+  retries any outstanding restoration before handing windows over or recovering them.
+  The final restoration bypasses the worker's backoff, but still has the 1 s AX call
+  timeout. A hung or refusing app can leave restoration unconfirmed; Kosmos logs that
+  failure. Abrupt death has no restoration journal. Another accessibility client can
+  enable the flag again, as Cua did in the October 21 test. Crash recovery is out of
+  scope unless that interruption proves disruptive in use.
+  `script/check-app-worker.sh` compiles the production worker against an AX fixture and
+  checks restoration after writes, unsupported and already-off flags, failed restoration
+  with an empty queue, and shutdown during a drain or backoff. Native geometry remains
+  a separate check. A remaining
+  origin mismatch is classified as misplaced, never accepted or learned as a minimum.
+  No new position retry or longer recovery deadline remains.
+  `script/check-display-move.py --help` describes the repeatable native check. It requires
+  an owned spare window on `agent`, enhanced UI already on, and two empty workspaces on
+  adjacent displays. Supply their expected tiled frames. It checks geometry and restored
+  enhanced UI after each move, then restores shown workspaces and focus and saves its
+  evidence even on failure. Cleanup attempts each restoration independently. If Kosmos
+  leaves enhanced UI off, `kosmos-probe eui-restore <pid>` turns it back on and checks the
+  readback; needing this fallback still fails the test. It needs the debug probe build
+  and `cua-driver`.
 - Each window's minimum size comes first from WindowServer. The inventory's reads of
   window rows take the size WindowServer holds each window to
   (`SLSWindowIteratorGetConstraints`), and for a row at level 0 with no parent that holds

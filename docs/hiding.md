@@ -225,7 +225,7 @@
   00:46:17.670, and its first conceals at admission completed at 00:46:17.909 and
   00:46:17.947: about a second, 0.77 s of it between the two processes (live log).
   - A planned restart hands the record over. `kosmos handover [record version]` arms a quit
-    within 5 s, and `script/install.sh` sends it right before its SIGTERM, with the version
+    requested within 5 s, and `script/install.sh` sends it right before its SIGTERM, with the version
     that the build starting next reads: `KosmosRecordVersion` in its Info.plist, which
     `script/bundle.sh` copies from `RecoveryRecord.version`. That build is the staged copy,
     or the previous copy at `--rollback`. An armed quit writes the layout, ends the slides
@@ -244,7 +244,8 @@
     after the arm at the three handovers of September 26, 2026 (live log). So an arm whose
     quit never came, as after a `launchctl kickstart` that failed or an install that
     stopped, cannot hand a later quit to another build (`handover-noexpiry`). The armed
-    quit hands over only while the guardian is ready, as no other process would restore
+    quit keeps its request time while workers finish restoring enhanced UI, so that wait
+    cannot expire a timely handover. It hands over only while the guardian is still ready, as no other process would restore
     the windows should no Kosmos follow (`handover-unready`). `Handover` holds the version
     gate, a refusal clearing the arm, the 5 s life and the guardian gate. The ceiling: a
     build swapped in without `script/install.sh` and then a crash leave the record to a

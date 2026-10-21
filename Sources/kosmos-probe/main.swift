@@ -51,6 +51,10 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
         benchFrames(arguments[0], display: arguments[1], real: arguments.dropFirst(2).first == "real")
     }),
     ("eui", "eui [pid...]", { enhancedUserInterface($0.compactMap { pid_t($0) }) }),
+    ("eui-restore", "eui-restore <pid>", {
+        guard $0.count == 1, let pid = pid_t($0[0]), pid > 0 else { print("usage: kosmos-probe eui-restore <pid>"); exit(2) }
+        restoreEnhancedUserInterface(pid)
+    }),
     ("window-kinds", "window-kinds", { _ in windowKinds() }),
     ("borders", "borders", { _ in borders() }),
     ("constraints", "constraints", { _ in constraints() }),

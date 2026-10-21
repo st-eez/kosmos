@@ -147,3 +147,18 @@ func epochNow() -> String { String(format: "%.6f", Date().timeIntervalSince1970)
         print("\(app.processIdentifier) \(app.localizedName ?? "?"): \(state)")
     }
 }
+
+@MainActor func restoreEnhancedUserInterface(_ pid: pid_t) {
+    guard AXIsProcessTrusted() else { print("this terminal needs Accessibility permission"); exit(1) }
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 1)
+    let attribute = "AXEnhancedUserInterface" as CFString
+    let written = AXUIElementSetAttributeValue(app, attribute, kCFBooleanTrue)
+    var readBack: CFTypeRef?
+    let read = AXUIElementCopyAttributeValue(app, attribute, &readBack)
+    guard read == .success, readBack as? Bool == true else {
+        print("enhanced UI restore failed: set \(written.rawValue), read \(read.rawValue)")
+        exit(1)
+    }
+    print("\(pid): enhanced UI restored on")
+}

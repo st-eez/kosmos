@@ -350,3 +350,9 @@
   batch of its own before any frame is written to it, so it never takes a tile of the shown
   workspace, and the shown workspace's windows keep their tiles. Until then it shows, as
   quit recovery showed it ([hiding.md](hiding.md)).
+
+Normal shutdown asks AppKit to wait while each app worker finishes its active drain and
+restores enhanced UI. Apps stops admitting workers and keeps the current workers until
+that wait finishes, even when an app exits meanwhile. The worker executors remain alive
+until process exit so already queued actor calls can finish. Later frame writes are
+ignored. Window recovery and handover then run in `applicationWillTerminate`.

@@ -91,6 +91,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard handover.beginQuit(at: .now) else { return .terminateLater }
+        server?.stop()
+        Task {
+            await inventory.prepareForShutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         let handingOver = handover.handsOver(at: .now, guardianReady: guardian.isReady)
         server?.stop()

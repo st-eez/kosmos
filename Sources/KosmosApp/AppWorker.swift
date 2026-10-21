@@ -59,10 +59,12 @@ actor AppWorker {
     private let app: AXUIElement
     private var observer: AXObserver?
     private var started = false
+    private var shuttingDown = false
     private(set) var startFailure = "no answer"
     private var elements: [WindowID: AXUIElement] = [:]
     private var queuedWrites: [WindowID: FrameEntry] = [:]
     private var drainScheduled = false
+    private var enhancedUIRestoreOwed = false
     private var backoff = AXBackoff()
     /// `backoff.backedOff`, for the main actor (Controller.motions).
     private nonisolated let backedOff = Atomic(false)
@@ -84,6 +86,7 @@ actor AppWorker {
 
     /// False while the app does not answer Accessibility yet.
     func start() -> Bool {
+        guard !shuttingDown else { return false }
         guard !started else { return true }
         if observer == nil {
             var created: AXObserver?
@@ -125,6 +128,15 @@ actor AppWorker {
         do { windows = try copy(app, kAXWindowsAttribute) } catch { return false }
         for window in windows as? [AXUIElement] ?? [] { track(window) }
         return true
+    }
+
+    func prepareForShutdown() {
+        shuttingDown = true
+        queuedWrites = [:]
+        _ = backoff.answered()
+        _ = restoreEnhancedUI()
+        if let askTimer { CFRunLoopTimerInvalidate(askTimer) }
+        askTimer = nil
     }
 
     func stop() {
@@ -211,7 +223,7 @@ actor AppWorker {
     }
 
     func askLater() {
-        guard !started, backoff.notStarted() else { return }
+        guard !shuttingDown, !started, backoff.notStarted() else { return }
         startAsking()
     }
 
@@ -328,6 +340,7 @@ actor AppWorker {
     }
 
     func setFrames(_ writes: [WindowID: FrameEntry]) {
+        guard !shuttingDown else { return }
         queuedWrites.merge(writes) { queued, new in
             (new.write.replacing(queued.write, target: new.target), new.target, new.movesDisplay)
         }
@@ -338,7 +351,15 @@ actor AppWorker {
 
     private func drainWrites() {
         drainScheduled = false
-        guard !backoff.backedOff else { return }   // held until the app answers again
+        guard !shuttingDown, !backoff.backedOff else { return }   // held until the app answers again
+        guard restoreEnhancedUI(), !queuedWrites.isEmpty else { return }
+        let enhancedUI = (try? copy(app, "AXEnhancedUserInterface")) as? Bool == true
+        if enhancedUI {
+            enhancedUIRestoreOwed = true
+            _ = ax { AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse) }
+        }
+        defer { _ = restoreEnhancedUI() }
+        guard !backoff.backedOff else { return }
         let writes = queuedWrites
         queuedWrites = [:]
         // Each report goes at once, so a window's slide and a batch waiting for its write wait
@@ -378,7 +399,7 @@ actor AppWorker {
                 readBack = retried
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
-            if entry.movesDisplay, FrameLedger.displayMoveRetry(readBack, target: entry.target, after: .zero) != nil {
+            if case .frame(let target) = entry.write, entry.movesDisplay, readBack.isSmaller(than: target) {
                 clamped.append((id, entry, element, readBack, ContinuousClock.now - start))
                 continue
             }
@@ -388,12 +409,27 @@ actor AppWorker {
         // take the move (docs/geometry.md).
         for window in clamped {
             let start = ContinuousClock.now
-            guard let readBack = landFrame(window.id, window.element, window.entry.target, readBack: window.readBack) else {
+            guard let readBack = landSize(window.id, window.element, window.entry.target, readBack: window.readBack) else {
                 queuedWrites[window.id] = window.entry
                 continue
             }
             report(window.id, window.entry, readBack: readBack, spent: window.spent + (ContinuousClock.now - start))
         }
+    }
+
+    private func restoreEnhancedUI() -> Bool {
+        guard enhancedUIRestoreOwed else { return true }
+        let result = ax { AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue) }
+        // Codex applies this attribute but returns notImplemented (docs/geometry.md).
+        let restored = (try? copy(app, "AXEnhancedUserInterface")) as? Bool
+        guard restored == true else {
+            log.error("\(self.name, privacy: .public) enhanced UI restoration unconfirmed, AX result \(result.rawValue)")
+            if !shuttingDown, backoff.timedOut(at: .now) { startAsking() }
+            backedOff.store(true, ordering: .relaxed)
+            return false
+        }
+        enhancedUIRestoreOwed = false
+        return true
     }
 
     private func report(_ id: WindowID, _ entry: FrameEntry, readBack: CGRect, spent: Duration) {
@@ -402,24 +438,21 @@ actor AppWorker {
         send(.frameApplied(id: id, target: entry.target, readBack: readBack))
     }
 
-    private func landFrame(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
-        let held = readBack, began = ContinuousClock.now
+    private func landSize(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
+        let held = readBack.size, began = ContinuousClock.now
         var readBack = readBack, sets = 0
-        while let retry = FrameLedger.displayMoveRetry(readBack, target: target, after: ContinuousClock.now - began) {
+        while FrameLedger.writesSizeAgain(readBack, target: target, after: ContinuousClock.now - began) {
             Thread.sleep(forTimeInterval: 0.002)
-            switch retry {
-            case .position: set(element, kAXPositionAttribute, target.origin)
-            case .size: set(element, kAXSizeAttribute, target.size)
-            }
+            set(element, kAXSizeAttribute, target.size)
             sets += 1
             guard !backoff.backedOff, let read = frame(element) else { return nil }
             readBack = read
         }
-        let ms = (ContinuousClock.now - began).milliseconds
-        if readBack.isSmaller(than: target) || readBack.isDisplaced(from: target) {
-            log.notice("\(id) display move still differs: asked \(String(describing: target), privacy: .public), read back \(String(describing: readBack), privacy: .public) after \(sets) retries in \(ms, format: .fixed(precision: 1)) ms")
+        let asked = "\(Int(target.width))x\(Int(target.height))", ms = (ContinuousClock.now - began).milliseconds
+        if readBack.isSmaller(than: target) {
+            log.notice("\(id) moved to another display kept \(Int(readBack.width))x\(Int(readBack.height)) of \(asked, privacy: .public) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
         } else {
-            log.info("\(id) display move recovered from \(String(describing: held), privacy: .public) to \(String(describing: readBack), privacy: .public) after \(sets) retries in \(ms, format: .fixed(precision: 1)) ms")
+            log.info("\(id) moved to another display was held to \(Int(held.width))x\(Int(held.height)) of \(asked, privacy: .public); read back \(Int(readBack.width))x\(Int(readBack.height)) after \(sets) more size writes in \(ms, format: .fixed(precision: 1)) ms")
         }
         return readBack
     }
@@ -550,6 +583,7 @@ actor AppWorker {
 
     /// Any answer but a timeout lets calls go again (docs/geometry.md).
     private func askAgain() {
+        guard !shuttingDown else { return }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(askElement, kAXRoleAttribute as CFString, &value) != .cannotComplete else { return }
         let since = backoff.answered()

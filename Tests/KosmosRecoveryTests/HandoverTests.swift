@@ -49,3 +49,27 @@ private func armed(_ arguments: [String] = [], at instant: ContinuousClock.Insta
     #expect(handover.arm([], hiding: false, at: t0) == "no windows are hidden before Kosmos manages them")
     #expect(handover.arm(["1", "2"], hiding: true, at: t0) == "usage: handover [record version]")
 }
+
+@Test func aTimelyQuitKeepsItsHandoverWhileWorkersFinish() {
+    var handover = armed()
+    let began = handover.beginQuit(at: t0 + .milliseconds(7))
+    #expect(began)
+    #expect(handover.handsOver(at: t0 + .seconds(8), guardianReady: true))
+    #expect(!handover.handsOver(at: t0 + .seconds(8), guardianReady: false))
+}
+
+@Test func aLateQuitDoesNotReviveAnExpiredHandover() {
+    var handover = armed()
+    let began = handover.beginQuit(at: t0 + Handover.life)
+    #expect(began)
+    #expect(!handover.handsOver(at: t0 + .seconds(8), guardianReady: true))
+}
+
+@Test func repeatedQuitRequestsKeepTheFirstRequestTime() {
+    var handover = armed()
+    let began = handover.beginQuit(at: t0 + .milliseconds(7))
+    #expect(began)
+    let repeated = handover.beginQuit(at: t0 + .seconds(8))
+    #expect(!repeated)
+    #expect(handover.handsOver(at: t0 + .seconds(9), guardianReady: true))
+}

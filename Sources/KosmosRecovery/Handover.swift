@@ -7,6 +7,7 @@ public struct Handover: Sendable {
     public static let life: Duration = .seconds(5)
 
     private var armedAt: ContinuousClock.Instant?
+    private var quitRequestedAt: ContinuousClock.Instant?
 
     public init() {}
 
@@ -24,9 +25,15 @@ public struct Handover: Sendable {
         return nil
     }
 
+    public mutating func beginQuit(at now: ContinuousClock.Instant) -> Bool {
+        guard quitRequestedAt == nil else { return false }
+        quitRequestedAt = now
+        return true
+    }
+
     /// Only the quit the arm was for, and only with a guardian to restore the windows should
     /// no Kosmos follow (docs/hiding.md).
     public func handsOver(at now: ContinuousClock.Instant, guardianReady: Bool) -> Bool {
-        armedAt.map { now - $0 < Self.life } == true && guardianReady
+        armedAt.map { (quitRequestedAt ?? now) - $0 < Self.life } == true && guardianReady
     }
 }
