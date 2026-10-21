@@ -378,7 +378,7 @@ actor AppWorker {
                 readBack = retried
                 log.info("\(id) kept height \(Int(kept)) of \(Int(target.height)); written again through a shorter one: \(Int(readBack.height))")
             }
-            if entry.movesDisplay, FrameLedger.writesFrameAgain(readBack, target: entry.target, after: .zero) {
+            if entry.movesDisplay, FrameLedger.displayMoveRetry(readBack, target: entry.target, after: .zero) != nil {
                 clamped.append((id, entry, element, readBack, ContinuousClock.now - start))
                 continue
             }
@@ -405,10 +405,12 @@ actor AppWorker {
     private func landFrame(_ id: WindowID, _ element: AXUIElement, _ target: CGRect, readBack: CGRect) -> CGRect? {
         let held = readBack, began = ContinuousClock.now
         var readBack = readBack, sets = 0
-        while FrameLedger.writesFrameAgain(readBack, target: target, after: ContinuousClock.now - began) {
+        while let retry = FrameLedger.displayMoveRetry(readBack, target: target, after: ContinuousClock.now - began) {
             Thread.sleep(forTimeInterval: 0.002)
-            if readBack.isDisplaced(from: target) { set(element, kAXPositionAttribute, target.origin) }
-            if readBack.isSmaller(than: target) { set(element, kAXSizeAttribute, target.size) }
+            switch retry {
+            case .position: set(element, kAXPositionAttribute, target.origin)
+            case .size: set(element, kAXSizeAttribute, target.size)
+            }
             sets += 1
             guard !backoff.backedOff, let read = frame(element) else { return nil }
             readBack = read

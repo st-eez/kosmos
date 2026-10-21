@@ -215,7 +215,13 @@ extension FrameLedger {
     /// writes and any earlier window's own writes again (docs/geometry.md).
     public static let displayMoveBound: Duration = .milliseconds(50)
 
-    public static func writesFrameAgain(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> Bool {
-        (readBack.isSmaller(than: target) || readBack.isDisplaced(from: target)) && elapsed < displayMoveBound
+    public enum DisplayMoveRetry: Equatable, Sendable {
+        case position, size
+    }
+
+    public static func displayMoveRetry(_ readBack: CGRect, target: CGRect, after elapsed: Duration) -> DisplayMoveRetry? {
+        guard elapsed < displayMoveBound else { return nil }
+        if readBack.isDisplaced(from: target) { return .position }
+        return readBack.isSmaller(than: target) ? .size : nil
     }
 }

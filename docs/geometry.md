@@ -71,7 +71,7 @@
   as `Session.movesDisplay` judges from where WindowServer last had the window and the
   target, and reads back more than 2 pt smaller than the target on an axis, writes the
   size again every 2 ms while it reads back smaller, for up to 50 ms
-  (`FrameLedger.writesFrameAgain`). The worker does so after the app's other writes of the
+  (`FrameLedger.displayMoveRetry`). The worker does so after the app's other writes of the
   same drain, so none of them waits, and the app has longer to take the move. It logs how many more sizes it wrote, the read back and the time, and a
   notice with the same when the window still reads back smaller at 50 ms. The ceiling:
   the app's worker starts retries for up to 50 ms for each such window, one after another, as when a
@@ -89,7 +89,10 @@
   Codex stayed on its old display after a move. Sending its position again moved it.
   The display move recovery above also checks both origin coordinates with the same
   2 pt tolerance and retries a rejected position within the existing 50 ms bound.
-  Position-only writes use this recovery too. The 50 ms check stops new iterations;
+  Position-only writes use this recovery too. Position is retried alone until it reads
+  at its target, then size is retried if needed. Retrying both in one iteration left
+  Codex at its old origin and 25 pt short in the first installed candidate, with
+  animation enabled and disabled. The revised ordering still needs native verification. The 50 ms check stops new iterations;
   the sleep and an in-flight AX call can run past it, up to the existing AX timeout.
   The worker finishes this bounded recovery
   before processing the next queued target, preserving their order. A remaining origin mismatch
