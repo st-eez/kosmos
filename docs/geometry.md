@@ -107,7 +107,12 @@
   scope unless that interruption proves disruptive in use.
   `script/check-app-worker.sh` compiles the production worker against an AX fixture and
   checks restoration after writes, unsupported and already-off flags, failed restoration
-  with an empty queue, and shutdown during a drain or backoff. Native geometry remains
+  with an empty queue, shutdown during a drain or backoff, and the quit hook through
+  AppKit after a direct terminate, after SIGTERM, and after SIGTERM while a menu tracks.
+  Kosmos answers a quit later, after main-actor work, which a block on the main queue
+  holds off, so the SIGTERM handler starts the quit from the run loop, in its common
+  modes so an open menu doesn't hold it. Started inside the handler, every quit by
+  `script/install.sh` hung until killed (2026-10-22, twice). Native geometry remains
   a separate check. A remaining
   origin mismatch is classified as misplaced, never accepted or learned as a minimum.
   No new position retry or longer recovery deadline remains.

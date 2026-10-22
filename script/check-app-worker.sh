@@ -24,3 +24,5 @@ xcrun swiftc -parse-as-library -swift-version 6 -sdk "$(xcrun --show-sdk-path)" 
     -framework AppKit -framework Carbon -framework CoreDisplay -framework SkyLight \
     -o "$output/shutdown"
 "$output/shutdown"
+"$output/shutdown" --sigterm
+"$output/shutdown" --sigterm-tracking

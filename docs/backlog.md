@@ -3,6 +3,26 @@
 Open work on Kosmos, most urgent first. Each item says what is known, what settles it and
 what Steve has decided. Take an item out when it lands, and add new work here.
 
+## Decide what install.sh does with a Kosmos that won't quit
+
+`script/install.sh` waits 10 s after its SIGTERM, then exits with "Kosmos did not quit within
+10 s; nothing was changed" and leaves that Kosmos running. On 2026-10-22 a quit hang (the
+SIGTERM handler, since fixed, [geometry.md](geometry.md)) left Steve's window manager frozen
+twice until an agent killed it. Waiting on Steve:
+- Leave it: a future quit hang freezes Kosmos until someone kills it.
+- Kill it after the 10 s: the guardian, or the next Kosmos within 5 s, keeps the hidden
+  windows, but launch at login counts the kill as a crash and starts the old build again
+  at once, so the script would turn launch at login off first.
+
+## Run check-app-worker.sh with the tests
+
+`script/check-app-worker.sh` alone checks the worker's frame-write restoration and the quit
+hook through a direct terminate, SIGTERM and SIGTERM while a menu tracks. `swift test` and
+`script/test-install.sh` don't run it, so a revert of the SIGTERM fix passes the tests that
+AGENTS.md asks for before a merge. It compiles app sources against built objects outside
+SwiftPM, so it would join as a step beside `swift test`, in AGENTS.md or a script that runs
+both.
+
 ## Check live that a tiled window goes back when it stays smaller than its tile
 
 Kosmos retries a write that reads back larger than the tile, but takes one that reads back

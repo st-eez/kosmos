@@ -91,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Its reply waits for main-actor work, so a quit started inside a main-queue block or a
+    /// main-actor task never ends; start one from the run loop (docs/geometry.md).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard handover.beginQuit(at: .now) else { return .terminateLater }
         server?.stop()
@@ -348,11 +350,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// SIGTERM and SIGINT quit through AppKit, so recovery runs in process.
-    private func handleTerminationSignals() {
+    func handleTerminationSignals() {
         for signalNumber in [SIGTERM, SIGINT] {
             signal(signalNumber, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
-            source.setEventHandler { NSApp.terminate(nil) }
+            // Common modes, so an open menu's tracking loop starts it too.
+            source.setEventHandler {
+                RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated { NSApp.terminate(nil) } }
+            }
             source.resume()
             signalSources.append(source)
         }

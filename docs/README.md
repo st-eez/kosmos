@@ -31,7 +31,8 @@ prefix.
   `script/bench-relayout.sh`, `script/bench-frames.sh`, `KosmosBench/`, `kosmos-probe/Bench.swift`,
   `kosmos-probe/Frames.swift`, `kosmos-probe/AXTimeout.swift`,
   `kosmos-probe/Constraints.swift`, `kosmos-probe/DisplayClamp.swift`,
-  `kosmos-probe/SlideSync.swift`.
+  `kosmos-probe/SlideSync.swift`, `KosmosApp/AppDelegate.swift` (the quit),
+  `Tests/AppWorkerLifecycle/`, `script/check-app-worker.sh`.
 - [hiding.md](hiding.md): the holding Space, conceal and reveal batches and their
   confirmation, which concealed windows keep their ordinary Space, recovery, the handover
   across a restart, Mission Control, and peeks of concealed windows for screenshots.
