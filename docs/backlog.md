@@ -8,11 +8,11 @@ what Steve has decided. Take an item out when it lands, and add new work here.
 `script/install.sh` waits 10 s after its SIGTERM, then exits with "Kosmos did not quit within
 10 s; nothing was changed" and leaves that Kosmos running. On 2026-10-22 a quit hang (the
 SIGTERM handler, since fixed, [geometry.md](geometry.md)) left Steve's window manager frozen
-twice until an agent killed it. Waiting on Steve:
-- Leave it: a future quit hang freezes Kosmos until someone kills it.
-- Kill it after the 10 s: the guardian, or the next Kosmos within 5 s, keeps the hidden
-  windows, but launch at login counts the kill as a crash and starts the old build again
-  at once, so the script would turn launch at login off first.
+twice until an agent killed it. Steve decided on 2026-10-22 to leave the script as it is,
+since the hang is fixed; this item comes back if a quit hangs again. The option he passed
+on: kill it after the 10 s. The guardian, or the next Kosmos within 5 s, keeps the hidden
+windows, but launch at login counts the kill as a crash and starts the old build again at
+once, so the script would turn launch at login off first.
 
 ## Run check-app-worker.sh with the tests
 
