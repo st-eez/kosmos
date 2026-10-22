@@ -107,7 +107,7 @@ prefix.
   `KosmosCore/Command.swift`, `KosmosCore/Config/Config.swift`,
   `KosmosApp/AppDelegate.swift`, `KosmosApp/Controller.swift`,
   `KosmosApp/Controller+Windows.swift`, `KosmosApp/Controller+Mouse.swift`,
-  `KosmosSkyLight/Displays.swift`, `KosmosCore/Session+Agent.swift`.
+  `KosmosSkyLight/Displays.swift`, `KosmosCore/Session+Agent.swift`, `KosmosCore/AgentClaim.swift`.
 - [modifier-drags.md](modifier-drags.md): moving and resizing windows with a modifier and
   the mouse, through an active event tap.
   Code: `KosmosApp/DragTap.swift`, `KosmosCore/ModifierDrag.swift`,

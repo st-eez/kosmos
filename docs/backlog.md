@@ -165,6 +165,15 @@ display shows it, against "left out of the bar", so Zenith marks which display h
 - A claim goes by app for 10 s, so Steve's own window of that app in those 10 s goes there
   too, and so do the windows an app restores at launch. A URL a running browser opens as a
   tab lands in Steve's browser window, in the background.
+- When no window comes, `kosmos open` names the app's window focused last, so a popup of
+  Steve's still focused at the 3 s mark is named as where the tab went. Leaving out the
+  windows a claim declined would name the wrong window when his own new window takes the
+  tab instead (2026-10-22).
+- A claim declines every window the inventory had at its start, ordered out too, so a
+  window an app made hidden and shows only in answer to `open` would stay on Steve's
+  workspace. No app is known to do this. On 2026-10-22 nine level-0 windows of regular apps
+  were ordered out and unlisted (Claude, ChatGPT, Teams, Word, Outlook, Spotify). The log
+  line "was there before an agent's claim" shows the first real case.
 - Costs: Option-` is the grave accent dead key, Secure Input blocks alt-` as it does
   alt-1, and Steve's keys reach agents' apps while he looks at the workspace.
 - `kosmos peek` stays for windows on Steve's own hidden workspaces.

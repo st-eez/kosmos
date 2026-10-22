@@ -2,20 +2,9 @@ import AppKit
 import KosmosCore
 import KosmosIPC
 
-/// An app an agent opened with `kosmos open`: its new windows until `until` go to the agent
-/// workspace (docs/displays.md).
-struct AgentClaim {
-    var until: ContinuousClock.Instant
-    /// Those its claims sent to the agent workspace, and when, kept while claims follow each
-    /// other, as each `kosmos open` reports those since its own.
-    var windows: [(id: WindowID, at: ContinuousClock.Instant)] = []
-}
-
 extension Controller {
     func claim(_ app: String) {
-        let now = ContinuousClock.now
-        let windows = agentClaims[app].flatMap { now < $0.until ? $0.windows : nil } ?? []
-        agentClaims[app] = AgentClaim(until: now + .seconds(10), windows: windows)
+        agentClaims[app] = AgentClaim(over: agentClaims[app], before: Set(inventory.windows.keys), at: .now)
     }
 
     /// `kosmos open`'s request once `open` returns, `elapsed` after its claim: where what it

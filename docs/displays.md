@@ -82,7 +82,13 @@
     move-node-to-workspace --window-id <id> agent`, which shows the window first. A
     claim covers a window its app closed and kept and orders in again, which opens as a new
     one does ([tree.md](tree.md)). A claim goes by app, so a window the user opens in that app within the 10 s goes there
-    too, and so do the windows an app restores as it launches.
+    too, and so do the windows an app restores as it launches. A window the inventory had
+    when the claim began, other than one its app orders in again, stays out of it, as `open`
+    runs only after the claim. For claims that overlap, that set is the one from when the
+    first began. Before this rule, a Helium popup, probably Steve's, first seen 32 ms before
+    an agent's claim of Helium (an Info line, since aged out) and admitted 46 ms after it,
+    went to the agent workspace, and `kosmos open` reported it as the window it opened
+    (2026-10-22).
 - Commands use AeroSpace's names.
   - `workspace <name>`, for a workspace another display shows, moves the focus to that
     display with no conceal or reveal. A hidden workspace is shown on its display, which

@@ -89,8 +89,9 @@ extension Controller {
         let floats = float != nil
         // A new window of an app an agent just opened, or one its app reopens, goes to the
         // agent workspace, over its rule's workspace (docs/displays.md).
-        let claimed = arrival != .detached && !atLaunch && session.savedWorkspace(of: id) == nil
-            && app.bundleID.flatMap { agentClaims[$0] }.map { ContinuousClock.now < $0.until } == true
+        let claim = arrival != .detached && !atLaunch && session.savedWorkspace(of: id) == nil
+            ? app.bundleID.flatMap { agentClaims[$0]?.running(at: .now) } : nil
+        let claimed = claim?.takes(id, reopened: arrival == .reopened) == true
         let workspace = arrival == .detached ? nil : claimed ? Session.agent : rule?.workspace
         let minimum = inventory.windows[id]?.minimum ?? .zero
         let reason = ParkReason.atAdmission(fullscreen: inventory.fullscreen.contains(id), minimized: inventory.isMinimized(id),
@@ -115,6 +116,8 @@ extension Controller {
         if claimed, let bundleID = app.bundleID {
             agentClaims[bundleID]?.windows.append((id, .now))
             controllerLog.notice("\(id) of \(app.bundleID ?? "?", privacy: .public), opened by an agent, goes to the agent workspace")
+        } else if claim != nil {
+            controllerLog.notice("\(id) of \(app.bundleID ?? "?", privacy: .public) was there before an agent's claim, so it stays out of it")
         }
         if let saved {
             controllerLog.info("\(id) back on \(saved, privacy: .public) as the saved layout had it\(floating ? ", floating" : "", privacy: .public)")
