@@ -211,7 +211,7 @@
     before the count moves, so Steve's Opt-Shift-S and Opt-D logged `came with no key or
     click of the user's` and took two to five presses.
   - So the tap also keeps the user's chord: his Command, Option, Control or Shift went down
-    and it heard no key down of his since (`OwnInput.Press.hotkey`). A change made while
+    and it heard no key down of his since (`OwnInput.Cause.hotkey`). A change made while
     the chord was held, or within the second after it came up, is the user's, and the log
     says `a hotkey under modifiers held from 824 ms before it`. On 2026-11-16 the tap heard
     Option and Shift go down to the front app for each of Steve's Raycast hotkeys, and
