@@ -209,7 +209,10 @@
     hotkeys, or one of Kosmos's, with or without modifiers. Each of 319 key downs of
     Steve's reached the annotated tap within 13 ms of the session tap, so a key counts as
     a hotkey's 50 ms after it, and Raycast activates its app 200 to 800 ms after its key.
-    The log says `a hotkey 824 ms before it`.
+    The log says `a hotkey 824 ms before it`. In 1,059 key downs of Steve's typing, every
+    plain key reached both taps, and only hotkey chords, as Opt-Shift-Up and a held
+    Ctrl-Opt-Shift-=, reached the session tap alone. `kosmos-probe hotkey-keys` measures
+    this again.
   - Before 2026-11-16 Kosmos found a hotkey's key by HID's key down count passing the one
     at the tap's last key down. On macOS 27.2.1 HID counts key downs, and gives the last
     one's time, in batches 500 ms apart: a 2 ms poll saw the count move 109 ms after the
@@ -229,8 +232,14 @@
       of such posters, which focus follows mouse would share
       ([focus-follows-mouse.md](focus-follows-mouse.md)).
     - While Secure Input is on, the taps get no keys, so a hotkey pressed while a password
-      field has the focus counts for nothing. Not probed: Steve's typing in a password
-      field shows whether the session tap hears it.
+      field has the focus counts for nothing. With a probe's Secure Input on for 25 s on
+      2026-11-16, no tap at the hidden-system, session or annotated location got an event,
+      a posted key included.
+    - A hotkey another app's active tap takes ahead of Kosmos's at the session location,
+      as skhd's or Hammerspoon's, never reaches the session tap and counts for nothing.
+      Steve's Raycast and Kosmos hotkeys are Carbon hotkeys, which macOS takes after the
+      session location. The upgrade is a session tap at the head, which would also hear
+      keys a remapper drops and posts again.
     - A press counts only when the tap stamped it before the report's stamp. The tap's
       thread stamps it as it sees the event, and the activation reaches the main actor
       later through NSWorkspace; no probe has timed the two.

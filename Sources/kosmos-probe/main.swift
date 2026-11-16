@@ -32,6 +32,7 @@ let commands: [(name: String, usage: String?, run: @MainActor ([String]) -> Void
     ("input-source", "input-source [seconds] [hid]", {
         inputSource(seconds: $0.first.flatMap(Double.init) ?? 20, hid: $0.contains("hid"))
     }),
+    ("hotkey-keys", "hotkey-keys [seconds]", { hotkeyKeys(seconds: $0.first.flatMap(Double.init) ?? 30) }),
     ("ax-timeout", "ax-timeout", { _ in axTimeout() }),
     ("displays", "displays", { _ in displays() }),
     ("secure-input", "secure-input", { _ in secureInput() }),
