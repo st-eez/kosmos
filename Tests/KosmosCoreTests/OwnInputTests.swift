@@ -179,14 +179,46 @@ private struct Keyboard {
 }
 
 @Test func theLastKeyCountsAHotkeyUnderHeldModifiers() {
+    // Steve held Option for 4.4 s over Opt-D, Opt-Shift-S and Opt-D on 2026-11-16.
     var keyboard = Keyboard()
     #expect(keyboard.input.lastKey(at: ms(0)) == nil)
     keyboard.key(to: ghostty, at: 0)
-    #expect(keyboard.input.lastKey(at: ms(1500)) == ms(0))
-    // A hotkey's key comes after its modifiers went down, and a click under them comes later.
-    keyboard.modifiers(.maskCommand, to: ghostty, at: 2000)
-    #expect(keyboard.input.lastKey(at: ms(2600)) == ms(2000))
-    #expect(keyboard.input.lastKey(at: ms(1900)) == ms(0))
+    keyboard.modifiers(.maskAlternate, to: ghostty, at: 2000)
+    #expect(keyboard.input.lastKey(at: ms(1900)) == ms(0), "no chord before its modifiers")
+    #expect(keyboard.input.lastKey(at: ms(6400)) == ms(6400), "a held chord's key is as late as the read")
+    keyboard.modifiersUp(to: ghostty, at: 6500, lastKey: 0)
+    #expect(keyboard.input.lastKey(at: ms(7000)) == ms(6500), "a released chord's key is no later than its release")
+}
+
+@Test func aClickUnderHeldModifiersIsTheClicksAndNoHotkeys() {
+    var keyboard = Keyboard()
+    keyboard.key(to: ghostty, at: 0)
+    keyboard.modifiers(.maskCommand, to: ghostty, at: 10_000)
+    keyboard.click(on: chatGPT, at: 10_200)
+    #expect(keyboard.input.lastKey(at: ms(10_300)) == ms(0), "the Command-click stays the later press")
+    #expect(cause(keyboard.input, of: chrome, at: 10_300) == .opener(.click(target: chatGPT), ago: .milliseconds(100), beforeLaunch: false))
+}
+
+@Test func aClickAfterAHotkeysReleaseKeepsItForTheLaunch() {
+    // Raycast launches Chrome, whose first window can come 5.2 s after the hotkey.
+    var keyboard = Keyboard()
+    keyboard.key(to: ghostty, at: 0)
+    keyboard.modifiers(.maskAlternate, to: ghostty, at: 1000)
+    keyboard.modifiersUp(to: ghostty, at: 1300, lastKey: 0)
+    keyboard.click(on: chatGPT, at: 3000)
+    #expect(cause(keyboard.input, of: chrome, at: 6200, launched: 1500) == .hotkey(heldFor: .milliseconds(500), beforeLaunch: true))
+}
+
+@Test func hidsModifierStateClosesAChordWhoseReleaseTheTapMissed() {
+    var keyboard = Keyboard()
+    keyboard.key(to: ghostty, at: 0)
+    keyboard.modifiers(.maskAlternate, to: ghostty, at: 1000)
+    // Noticed at 5000 ms, released at 1200 ms by HID's last modifier change.
+    keyboard.input.noteModifiersUp(lastChange: ms(1200))
+    #expect(keyboard.input.lastKey(at: ms(5000)) == ms(1200))
+    #expect(cause(keyboard.input, of: chrome, at: 5000) == nil, "no hotkey 3.8 s after HID's release")
+    keyboard.modifiers(.maskAlternate, to: ghostty, at: 6000)
+    #expect(cause(keyboard.input, of: chrome, at: 6100) == .hotkey(heldFor: .milliseconds(100), beforeLaunch: false), "the next press opens a new chord")
 }
 
 @Test func inputAnotherProcessPostedIsNotTheUsers() {

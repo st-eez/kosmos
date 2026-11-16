@@ -211,15 +211,19 @@
     before the count moves, so Steve's Opt-Shift-S and Opt-D logged `came with no key or
     click of the user's` and took two to five presses.
   - So the tap also keeps the user's chord: his Command, Option, Control or Shift went down
-    and it heard no key down of his since (`OwnInput.Cause.hotkey`). A change made while
-    the chord was held, or within the second after it came up, is the user's, and the log
-    says `a hotkey under modifiers held from 824 ms before it`. On 2026-11-16 the tap heard
+    and it heard no key down of his since, nor a click while they were held
+    (`OwnInput.Cause.hotkey`). HID's modifier state, which moved with the tap's modifier
+    changes within 1 ms, closes a chord whose release the tap missed, at HID's last modifier
+    change. A change made while the chord was held, or within the second after it came up,
+    is the user's, and the log says `a hotkey under modifiers held from 824 ms before it`. On 2026-11-16 the tap heard
     Option and Shift go down to the front app for each of Steve's Raycast hotkeys, and
     neither the key's down nor its up.
   - Ceilings:
     - Modifiers held with no key, as Shift pressed on its own or Option held after one of
       Kosmos's own hotkeys, count as a hotkey for the change that comes while they are held
       and in the second after, an agent's too.
+    - A click under held modifiers ends the chord, so a hotkey pressed after it under the
+      same modifiers counts only once HID's batched count shows its key.
     - An agent's new window of an app Steve pressed a key or clicked in during the last
       10 s is followed, and so is an agent's launch in the second after a click of his
       anywhere. Steve clicked 3 times in the 90 s sample.

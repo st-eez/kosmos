@@ -137,11 +137,12 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     (`CGEventSource.secondsSinceLastEventType` in the combined session state). That state
     gives a key's time up to 500 ms late on macOS 27.2.1 ([focus.md](focus.md)), so the
     key's time is the later of it and the input tap's, which hears a key as it goes down
-    and dates a hotkey's key, which it never hears, at when the modifiers held over it
-    went down (`OwnInput.lastKey`), so a click under held modifiers is still the later
-    press. On 2026-11-16 the combined state put the key behind Steve's Opt-Shift-S 1.2 s
-    back, and the pointer stayed. Modifiers held over a second before the hotkey's key
-    leave the pointer where it is: Steve's ranged from 250 to 824 ms that day. With focus
+    and dates a hotkey's key, which it never hears, as late as the modifiers held over it
+    (`OwnInput.lastKey`): Steve held Option for up to 4.4 s over Opt-D, Opt-Shift-S and
+    Opt-D again on 2026-11-16. On the same day the combined state put the key behind his
+    Opt-Shift-S 1.2 s back, and the pointer stayed. A click under the modifiers, as a
+    Command-click on a link, ends that, so the click stays the later press. Ceiling: an app that activates itself on a shown workspace while the user holds
+    a modifier with no key brings the pointer, as Command-Tab would. With focus
     follows mouse the user seldom clicks, so a key press long ago would otherwise pass for
     Command-Tab when an app activates itself. The read takes no event tap, and the log
     gives the times. A Command-Tab switcher held open for over a second reads as a click.

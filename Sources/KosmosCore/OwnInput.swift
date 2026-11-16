@@ -76,7 +76,9 @@ public struct OwnInput: Sendable {
 
     public mutating func heardClick(from source: Int32, target: Int32, at stamp: ContinuousClock.Instant) {
         heard = true
-        if source == 0 { add(.click(target: target), at: stamp) }
+        guard source == 0 else { return }
+        add(.click(target: target), at: stamp)
+        if keylessChord?.released == nil { keylessChord = nil }
     }
 
     /// A modifier change the tap saw, from any process. A hotkey's modifiers come up after its
@@ -98,12 +100,19 @@ public struct OwnInput: Sendable {
         }
     }
 
+    /// HID shows no modifier held, as after a release the tap missed while WindowServer had
+    /// turned it off. `lastChange`: HID's last modifier change, the release's latest time.
+    public mutating func noteModifiersUp(lastChange: ContinuousClock.Instant) {
+        modifiers = []
+        guard let chord = keylessChord, chord.released == nil else { return }
+        keylessChord?.released = max(lastChange, chord.pressed)
+    }
+
     /// The user's last key down at or before `now`, for the Command-Tab test
-    /// (docs/focus-follows-mouse.md). A hotkey's key the tap never heard counts from when its
-    /// modifiers went down, so a click under held modifiers is still the later press.
+    /// (docs/focus-follows-mouse.md). A hotkey's key the tap never heard can come any time its
+    /// modifiers are held, as Opt-D, Opt-Shift-S and Opt-D again under one held Option.
     public func lastKey(at now: ContinuousClock.Instant) -> ContinuousClock.Instant? {
-        let hotkey = keylessChord.flatMap { $0.pressed <= now ? $0.pressed : nil }
-        return [lastKeyDown, hotkey].compactMap { $0 }.max()
+        [lastKeyDown, keylessChord?.lastHeld(atOrBefore: now)].compactMap { $0 }.max()
     }
 
     private func hotkey(before stamp: ContinuousClock.Instant, beforeLaunch: Bool) -> Cause? {
@@ -162,7 +171,7 @@ public struct OwnInput: Sendable {
 }
 
 /// The user's Command, Option, Control or Shift went down, and the tap has heard no key down
-/// of his since.
+/// of his since, nor a click while they were held.
 private struct KeylessChord {
     let pressed: ContinuousClock.Instant
     var released: ContinuousClock.Instant?

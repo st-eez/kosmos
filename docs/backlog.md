@@ -12,16 +12,14 @@ Dock tests read the combined state's click and movement times. A 2 ms poll of
 `counterForEventType(.hidSystemState, .leftMouseDown)` beside a tap during clicks settles
 whether they lag too.
 
-## Keep a hotkey's chord past the next key, and drop one whose release the tap missed
+## Keep a hotkey's chord past the next key
 
 The input tap keeps one keyless chord, the user's modifiers held with no key heard
-([focus.md](focus.md)). A key he types between an app's activation and Kosmos's decision on
-it, or in the seconds before a launched app's first window, clears the chord, and the
-activation counts as no input of his. A chord whose release the tap never hears, as when
-WindowServer turns the tap off while a modifier is down, stays open, and every change counts
-as the user's until his next key or modifier change. Both were found in review on
-2026-11-16 and neither was seen live. The upgrade keeps each closed chord in `presses` over
-its span, and checks an open one against `CGEventSource.flagsState`.
+([focus.md](focus.md)). A key he types, or a click under the held modifiers, between an
+app's activation and Kosmos's decision on it, or in the seconds before a launched app's
+first window, clears the chord, and the activation counts as no input of his until HID's
+batched count shows the key. Found in review on 2026-11-16 and not seen live. The upgrade
+keeps each closed chord in `presses` over its span.
 
 ## Decide what install.sh does with a Kosmos that won't quit
 

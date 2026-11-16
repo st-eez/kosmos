@@ -47,6 +47,7 @@ final class InputTap: Sendable {
         let count = CGEventSource.counterForEventType(.hidSystemState, eventType: .keyDown)
         let snapshot = self.input.withLock { input in
             input.noteUnseenKeys(hidKeys: count, lastKeyAt: lastKey)
+            if Self.noModifierHeld { input.noteModifiersUp(lastChange: Self.lastModifierChange(now)) }
             return input
         }
         let running = NSRunningApplication(processIdentifier: app)
@@ -63,7 +64,20 @@ final class InputTap: Sendable {
     /// (docs/focus-follows-mouse.md).
     func secondsSinceKey() -> Double? {
         let now = ContinuousClock.now
-        return input.withLock { $0.lastKey(at: now) }.map { (now - $0) / .seconds(1) }
+        return input.withLock { input in
+            if Self.noModifierHeld { input.noteModifiersUp(lastChange: Self.lastModifierChange(now)) }
+            return input.lastKey(at: now)
+        }.map { (now - $0) / .seconds(1) }
+    }
+
+    /// HID's modifier state moved with the tap's modifier changes, within 1 ms, on 2026-11-16.
+    private static var noModifierHeld: Bool {
+        KeyCombo.Modifiers(CGEventSource.flagsState(.hidSystemState)).isEmpty
+    }
+
+    /// Batched up to 500 ms late on macOS 27.2.1, which dates a missed release earlier, never later.
+    private static func lastModifierChange(_ now: ContinuousClock.Instant) -> ContinuousClock.Instant {
+        now - .seconds(CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .flagsChanged))
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) {
