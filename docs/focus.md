@@ -207,8 +207,12 @@
     day, so a key down of the user's the session tap heard and the annotated tap never did
     is a hotkey's (`OwnInput.Press.hotkey`), as a launcher's, such as Raycast's app
     hotkeys, or one of Kosmos's, with or without modifiers. Each of 319 key downs of
-    Steve's reached the annotated tap within 13 ms of the session tap, so a key counts as
-    a hotkey's 50 ms after it, and Raycast activates its app 200 to 800 ms after its key.
+    Steve's reached a probe's annotated tap from 4.1 ms before its session tap to the same
+    moment, on one run loop, so a key with no annotated copy 10 ms after it is a hotkey's.
+    That is judged when Kosmos decides, not at the activation's stamp: Raycast activated
+    Spotify within about 100 ms of its key at 10:04:51 on 2026-11-16, and a rule that waited
+    50 ms past the key before the stamp refused that Opt-Shift-S, the first of the day's
+    refusals after the session tap.
     The log says `a hotkey 824 ms before it`. In 1,059 key downs of Steve's typing, every
     plain key reached both taps, and only hotkey chords, as Opt-Shift-Up and a held
     Ctrl-Opt-Shift-=, reached the session tap alone. `kosmos-probe hotkey-keys` measures

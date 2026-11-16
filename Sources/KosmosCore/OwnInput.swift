@@ -42,10 +42,11 @@ public struct OwnInput: Sendable {
     public static let openerBound: Duration = .seconds(ActivationInput.maxAge)
     /// Long enough for a launch whose first window comes seconds after it.
     static let kept: Duration = .seconds(30)
-    /// The annotated tap heard each of 319 key downs of Steve's within 13 ms of the session
-    /// tap on 2026-11-16, and Raycast activates its app 200 ms or more after its hotkey
-    /// (docs/focus.md).
-    static let twinWait: Duration = .milliseconds(50)
+    /// A probe's annotated tap heard each of 319 key downs of Steve's from 4.1 ms before to the
+    /// same moment as its session tap, on one run loop, on 2026-11-16. Raycast activated
+    /// Spotify about 100 ms after its key, so a hotkey's key is judged at the read, not at
+    /// the activation's stamp (docs/focus.md).
+    static let twinWait: Duration = .milliseconds(10)
 
     private var presses: [(at: ContinuousClock.Instant, press: Press)] = []
     /// The user's key downs by event time, which a key's copies at both taps share
@@ -96,16 +97,17 @@ public struct OwnInput: Sendable {
         if keys[event] == nil { keys[event] = (stamp, reachedApp) } else if reachedApp { keys[event]?.reachedApp = true }
     }
 
-    private func pressesWithHotkeys(by stamp: ContinuousClock.Instant) -> [(at: ContinuousClock.Instant, press: Press)] {
-        let hotkeys = keys.values.filter { !$0.reachedApp && stamp - $0.at >= Self.twinWait }
+    private func pressesWithHotkeys(by now: ContinuousClock.Instant) -> [(at: ContinuousClock.Instant, press: Press)] {
+        let hotkeys = keys.values.filter { !$0.reachedApp && now - $0.at >= Self.twinWait }
         return (presses + hotkeys.map { ($0.at, Press.hotkey) }).sorted { $0.at < $1.at }
     }
 
     /// Why a change of an app's, stamped at `stamp`, is the user's, or nil when no press of his
     /// could have made it (docs/focus.md). `launched`: when the app launched, for a window that
-    /// comes seconds after. `listening`: the tap is made with Input Monitoring granted.
+    /// comes seconds after. `listening`: the tap is made with Input Monitoring granted. `now`:
+    /// the read, by which a key that reached an app has reached the annotated tap.
     public func cause(at stamp: ContinuousClock.Instant, launched: ContinuousClock.Instant?, listening: Bool,
-                      target: (Int32) -> Target) -> Cause? {
+                      now: ContinuousClock.Instant, target: (Int32) -> Target) -> Cause? {
         guard listening, heard else { return .unheard }
         var targets: [Int32: Target] = [:]
         func place(_ pid: Int32) -> Target {
@@ -120,7 +122,7 @@ public struct OwnInput: Sendable {
             case .key(let pid): place(pid) == .notRegular
             }
         }
-        let presses = pressesWithHotkeys(by: stamp)
+        let presses = pressesWithHotkeys(by: now)
         for (at, press) in presses.reversed() where at <= stamp && stamp - at <= Self.inAppBound {
             switch press {
             case .key(let pid), .click(let pid):

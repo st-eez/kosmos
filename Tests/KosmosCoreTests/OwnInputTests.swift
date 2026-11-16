@@ -27,8 +27,11 @@ private func place(from app: Int32) -> (Int32) -> OwnInput.Target {
     }
 }
 
-private func cause(_ input: OwnInput, of app: Int32, at milliseconds: Int, launched: Int? = nil) -> OwnInput.Cause? {
-    input.cause(at: ms(milliseconds), launched: launched.map(ms), listening: true, target: place(from: app))
+/// Read 100 ms after the change's stamp, as Kosmos decided on Spotify's activation on 2026-11-16.
+private func cause(_ input: OwnInput, of app: Int32, at milliseconds: Int, launched: Int? = nil,
+                   readAt read: Int? = nil) -> OwnInput.Cause? {
+    input.cause(at: ms(milliseconds), launched: launched.map(ms), listening: true, now: ms(read ?? milliseconds + 100),
+                target: place(from: app))
 }
 
 private struct Keyboard {
@@ -124,6 +127,9 @@ private struct Keyboard {
     keyboard.hotkey(at: 5000)
     #expect(cause(keyboard.input, of: chrome, at: 5824) == .opener(.hotkey, ago: .milliseconds(824), beforeLaunch: false))
     #expect(cause(keyboard.input, of: chrome, at: 6100) == nil)
+    // Raycast activated Spotify about 100 ms after its key at 10:04:51 on 2026-11-16.
+    keyboard.hotkey(at: 8000)
+    #expect(cause(keyboard.input, of: chrome, at: 8030, readAt: 8104) == .opener(.hotkey, ago: .milliseconds(30), beforeLaunch: false))
     keyboard.key(to: ghostty, at: 5500)
     #expect(cause(keyboard.input, of: chrome, at: 10_200, launched: 5200)
         == .opener(.hotkey, ago: .milliseconds(200), beforeLaunch: true), "a launch's window seconds later, after typing on")
@@ -136,7 +142,7 @@ private struct Keyboard {
     var arriving = Keyboard()
     arriving.key(to: ghostty, at: 0)
     arriving.input.heardSessionKey(from: 0, event: 99, at: ms(1000))
-    #expect(cause(arriving.input, of: chrome, at: 1030) == nil, "no hotkey before its app copy had time")
+    #expect(cause(arriving.input, of: chrome, at: 1003, readAt: 1005) == nil, "no hotkey before its app copy had time")
     var reordered = Keyboard()
     reordered.key(to: ghostty, at: 0)
     reordered.input.heardKey(from: 0, target: ghostty, event: 99, at: ms(1000))
@@ -181,7 +187,7 @@ private struct Keyboard {
     #expect(cause(keyboard.input, of: chrome, at: 0) == .unheard)
     keyboard.key(to: ghostty, at: 0)
     #expect(cause(keyboard.input, of: chrome, at: 100) == nil)
-    #expect(keyboard.input.cause(at: ms(100), launched: nil, listening: false, target: place(from: chrome)) == .unheard)
+    #expect(keyboard.input.cause(at: ms(100), launched: nil, listening: false, now: ms(200), target: place(from: chrome)) == .unheard)
 }
 
 @Test func pressesOlderThanAnyBoundAreDropped() {
