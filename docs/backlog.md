@@ -6,20 +6,11 @@ what Steve has decided. Take an item out when it lands, and add new work here.
 ## Measure whether HID's mouse press counts come in batches too
 
 On macOS 27.2.1 HID's key down count and last key time come in batches 500 ms apart
-([focus.md](focus.md)). The modifier drag's stuck-button check reads HID's mouse press
+([focus.md](focus.md)), which the input tap no longer reads. The modifier drag's stuck-button check reads HID's mouse press
 counts (`DragTap.hid`, [modifier-drags.md](modifier-drags.md)), and the Command-Tab and
 Dock tests read the combined state's click and movement times. A 2 ms poll of
 `counterForEventType(.hidSystemState, .leftMouseDown)` beside a tap during clicks settles
 whether they lag too.
-
-## Keep a hotkey's chord past the next key
-
-The input tap keeps one keyless chord, the user's modifiers held with no key heard
-([focus.md](focus.md)). A key he types, or a click under the held modifiers, between an
-app's activation and Kosmos's decision on it, or in the seconds before a launched app's
-first window, clears the chord, and the activation counts as no input of his until HID's
-batched count shows the key. Found in review on 2026-11-16 and not seen live. The upgrade
-keeps each closed chord in `presses` over its span.
 
 ## Decide what install.sh does with a Kosmos that won't quit
 
@@ -105,8 +96,8 @@ Passed so far:
 - Command-Tab: `following window(72287) of Ghostty: a key to Dock 9 ms before it` and five
   more like it on 2026-10-05.
 - A hotkey of another app, as Raycast's for Spotify: `following window(50323) of Spotify: a
-  key the input tap never saw (a hotkey, or Secure Input) 13 ms before it` on 2026-10-05, so
-  HID leaves out a key a hotkey takes, as focus.md expects.
+  key the input tap never saw (a hotkey, or Secure Input) 13 ms before it` on 2026-10-05,
+  by HID's count, which macOS 27.2.1 batches; the session tap replaced it on 2026-11-16.
 - Cmd-H on an app, then Command-Tab back to it: followed (Steve, 2026-10-02).
 - `sleep 5; open -a "Microsoft Outlook"` with Outlook on hidden workspace 5: `window(50335)
   of Microsoft Outlook came with no key or click of the user's: its workspace stays hidden

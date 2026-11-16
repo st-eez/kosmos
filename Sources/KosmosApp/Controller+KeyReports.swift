@@ -124,15 +124,13 @@ extension Controller {
             switch press {
             case .key(let pid): "a key to \(appName(pid))"
             case .click(let pid): "a click on \(appName(pid))"
-            case .unseenKey: "a key the input tap never saw (a hotkey, or Secure Input)"
+            case .hotkey: "a hotkey"
             }
         }
         func ms(_ ago: Duration) -> String { String(format: "%.0f ms", ago.milliseconds) }
         return switch cause {
         case .inApp(let made, let ago): "\(press(made)) \(ms(ago)) before"
         case .opener(let made, let ago, let beforeLaunch): "\(press(made)) \(ms(ago)) before \(beforeLaunch ? "its launch" : "it")"
-        case .hotkey(let heldFor, let beforeLaunch):
-            "a hotkey under modifiers held from \(ms(heldFor)) before \(beforeLaunch ? "its launch" : "it")"
         case .unheard: "the input tap hears nothing, so every change counts as the user's"
         }
     }

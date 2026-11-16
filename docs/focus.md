@@ -197,33 +197,27 @@
       before most moments.
     - Input another process posts counts for nothing, as computer use's, `osascript`'s and
       Kosmos's own focus records.
-  - A hotkey's key never reaches the tap. The tap saw no Tab from BetterTouchTool's
-    Option-Tab, which Kosmos's hotkey took. HID counts a key down before the tap sees it
-    ([modifier-drags.md](modifier-drags.md)), so a count past the one at the tap's last key
-    down means a key the tap missed. That is a launcher's hotkey, such as Raycast's app
-    hotkeys, a key typed under Secure Input, which hides keys from taps, or a hotkey of
-    Kosmos's. The tap compares at each modifier change, since a hotkey's modifiers come up
-    after its key, and notes the missed key at HID's last key down. Kosmos compares again
-    at each decision. HID counts a key down a hotkey takes, but on macOS 27.2.1 it counts
-    key downs, and gives the last one's time, in batches 500 ms apart: on 2026-11-16 a 2 ms
-    poll saw the count move 109 ms after the tap heard a key, which it dated 505 ms back. A
-    Raycast hotkey activates its app 200 to 800 ms after its modifiers go down, often
-    before the count moves, so Steve's Opt-Shift-S and Opt-D logged `came with no key or
-    click of the user's` and took two to five presses.
-  - So the tap also keeps the user's chord: his Command, Option, Control or Shift went down
-    and it heard no key down of his since, nor a click while they were held
-    (`OwnInput.Cause.hotkey`). HID's modifier state, which moved with the tap's modifier
-    changes within 1 ms, closes a chord whose release the tap missed, at HID's last modifier
-    change. A change made while the chord was held, or within the second after it came up,
-    is the user's, and the log says `a hotkey under modifiers held from 824 ms before it`. On 2026-11-16 the tap heard
-    Option and Shift go down to the front app for each of Steve's Raycast hotkeys, and
-    neither the key's down nor its up.
+  - A hotkey's key never reaches the annotated tap: macOS hands it to the hotkey first. On
+    2026-11-16 Raycast's Opt-D and Opt-Shift-S sent the tap their modifier changes, to the
+    front app, and neither the key's down nor its up. A second listen-only tap, at the
+    session location, hears each key down before that, a hotkey's too: a posted
+    Opt-Shift-S's S, and the Up of an Opt-Shift-Up from Steve's keyboard under source pid
+    0, reached it and the hidden-system tap, and not the annotated one. The
+    two copies of a key carry the same event time, measured on Steve's typing the same
+    day, so a key down of the user's the session tap heard and the annotated tap never did
+    is a hotkey's (`OwnInput.Press.hotkey`), as a launcher's, such as Raycast's app
+    hotkeys, or one of Kosmos's, with or without modifiers. Each of 319 key downs of
+    Steve's reached the annotated tap within 13 ms of the session tap, so a key counts as
+    a hotkey's 50 ms after it, and Raycast activates its app 200 to 800 ms after its key.
+    The log says `a hotkey 824 ms before it`.
+  - Before 2026-11-16 Kosmos found a hotkey's key by HID's key down count passing the one
+    at the tap's last key down. On macOS 27.2.1 HID counts key downs, and gives the last
+    one's time, in batches 500 ms apart: a 2 ms poll saw the count move 109 ms after the
+    tap heard a key, which it dated 505 ms back. So Steve's Opt-Shift-S and Opt-D often
+    came before the count and logged `came with no key or click of the user's`, taking two
+    to five presses, while keys the tap had heard came out of a later batch as missed
+    ones, and an agent's posted Opt-Shift-S had Kosmos follow Spotify at 09:32.
   - Ceilings:
-    - Modifiers held with no key, as Shift pressed on its own or Option held after one of
-      Kosmos's own hotkeys, count as a hotkey for the change that comes while they are held
-      and in the second after, an agent's too.
-    - A click under held modifiers ends the chord, so a hotkey pressed after it under the
-      same modifiers counts only once HID's batched count shows its key.
     - An agent's new window of an app Steve pressed a key or clicked in during the last
       10 s is followed, and so is an agent's launch in the second after a click of his
       anywhere. Steve clicked 3 times in the 90 s sample.
@@ -234,8 +228,9 @@
       nothing, so a gesture that posts Command-Tab is not followed. The upgrade is a list
       of such posters, which focus follows mouse would share
       ([focus-follows-mouse.md](focus-follows-mouse.md)).
-    - While Secure Input is on, the tap gets no keys, so each key of Steve's reads as one
-      the tap missed, and an agent's window in the second after it is followed.
+    - While Secure Input is on, the taps get no keys, so a hotkey pressed while a password
+      field has the focus counts for nothing. Not probed: Steve's typing in a password
+      field shows whether the session tap hears it.
     - A press counts only when the tap stamped it before the report's stamp. The tap's
       thread stamps it as it sees the event, and the activation reaches the main actor
       later through NSWorkspace; no probe has timed the two.

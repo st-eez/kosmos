@@ -23,7 +23,7 @@ enum UserInput {
     }
 
     static func secondsSinceKey(tap: InputTap?) -> Double {
-        min(secondsSince(.keyDown), tap?.secondsSinceKey() ?? .infinity)
+        tap?.secondsSinceKey() ?? secondsSince(.keyDown)
     }
 
     /// Reading the session's event state takes no event tap.

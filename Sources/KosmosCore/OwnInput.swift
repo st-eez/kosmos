@@ -1,5 +1,3 @@
-import CoreGraphics
-
 /// The user's own presses, as the input tap saw them, and what makes a key window change his
 /// (docs/focus.md). His keys and clicks carry source pid 0, and input another process posts
 /// carries that process's pid, Kosmos's own focus records included.
@@ -9,9 +7,9 @@ public struct OwnInput: Sendable {
         /// Command comes up, and that change goes to the Dock.
         case key(target: Int32)
         case click(target: Int32)
-        /// A key down HID counted that the tap never saw: another app's hotkey, as a
-        /// launcher's, or a key typed under Secure Input.
-        case unseenKey
+        /// A key down of the user's that reached the session and no app: a hotkey took it, as
+        /// a launcher's or one of Kosmos's.
+        case hotkey
     }
 
     /// Where a press went, seen from the app whose change is judged.
@@ -28,13 +26,8 @@ public struct OwnInput: Sendable {
         /// A press that went to the app or a process in its bundle.
         case inApp(Press, ago: Duration)
         /// A press that opens other apps: a click anywhere, a key to a process that is not a
-        /// regular app, or a key the tap never saw. `ago` counts from the app's launch when
-        /// `beforeLaunch`.
+        /// regular app, or a hotkey. `ago` counts from the app's launch when `beforeLaunch`.
         case opener(Press, ago: Duration, beforeLaunch: Bool)
-        /// Modifiers the user held with no key down the tap heard: a hotkey took its key.
-        /// `heldFor` counts from when they went down to the change, or to the app's launch when
-        /// `beforeLaunch`.
-        case hotkey(heldFor: Duration, beforeLaunch: Bool)
         /// The tap is missing or hears nothing, so every change counts as the user's, as
         /// before the tap.
         case unheard
@@ -49,88 +42,63 @@ public struct OwnInput: Sendable {
     public static let openerBound: Duration = .seconds(ActivationInput.maxAge)
     /// Long enough for a launch whose first window comes seconds after it.
     static let kept: Duration = .seconds(30)
+    /// The annotated tap heard each of 319 key downs of Steve's within 13 ms of the session
+    /// tap on 2026-11-16, and Raycast activates its app 200 ms or more after its hotkey
+    /// (docs/focus.md).
+    static let twinWait: Duration = .milliseconds(50)
 
     private var presses: [(at: ContinuousClock.Instant, press: Press)] = []
-    /// HID's count of key downs when the tap last saw a key down or a modifier change.
-    private var hidKeys: UInt32?
-    /// macOS 27.2.1 counts HID's key downs in 500 ms batches, so a hotkey's key can be counted
-    /// after the activation it made (docs/focus.md).
-    private var keylessChord: KeylessChord?
-    private var lastKeyDown: ContinuousClock.Instant?
-    private var modifiers: KeyCombo.Modifiers = []
+    /// The user's key downs by event time, which a key's copies at both taps share
+    /// (docs/focus.md).
+    private var keys: [UInt64: (at: ContinuousClock.Instant, reachedApp: Bool)] = [:]
     private var heard = false
 
     public init() {}
 
-    /// A key down the tap saw, from any process. HID counts a key down before the tap sees it
-    /// (docs/modifier-drags.md), so a count past this one's says the tap missed others.
-    public mutating func heardKey(from source: Int32, target: Int32, hidKeys count: UInt32, at stamp: ContinuousClock.Instant) {
+    /// A key down the annotated tap saw, which went to an app.
+    public mutating func heardKey(from source: Int32, target: Int32, event: UInt64, at stamp: ContinuousClock.Instant) {
         heard = true
-        if let seen = hidKeys, count > seen &+ 1 { add(.unseenKey, at: stamp) }
-        hidKeys = count
         guard source == 0 else { return }
         add(.key(target: target), at: stamp)
-        lastKeyDown = stamp
-        keylessChord = nil
+        note(event, at: stamp, reachedApp: true)
+    }
+
+    /// A key down the session tap saw, before macOS gives it to a hotkey or an app.
+    public mutating func heardSessionKey(from source: Int32, event: UInt64, at stamp: ContinuousClock.Instant) {
+        heard = true
+        guard source == 0 else { return }
+        note(event, at: stamp, reachedApp: false)
     }
 
     public mutating func heardClick(from source: Int32, target: Int32, at stamp: ContinuousClock.Instant) {
         heard = true
         guard source == 0 else { return }
         add(.click(target: target), at: stamp)
-        if keylessChord?.released == nil { keylessChord = nil }
     }
 
-    /// A modifier change the tap saw, from any process. A hotkey's modifiers come up after its
-    /// key, so the key the tap missed is noted with its time while it is HID's last.
-    public mutating func heardModifiers(from source: Int32, target: Int32, flags: CGEventFlags, hidKeys count: UInt32,
-                                        lastKeyAt: ContinuousClock.Instant, at stamp: ContinuousClock.Instant) {
+    public mutating func heardModifiers(from source: Int32, target: Int32, at stamp: ContinuousClock.Instant) {
         heard = true
-        noteUnseenKeys(hidKeys: count, lastKeyAt: lastKeyAt)
         guard source == 0 else { return }
         add(.key(target: target), at: stamp)
-        let held = KeyCombo.Modifiers(flags)
-        let added = !held.subtracting(modifiers).isEmpty
-        modifiers = held
-        let open = keylessChord.map { $0.released == nil } ?? false
-        if added, !open {
-            keylessChord = KeylessChord(pressed: stamp)
-        } else if held.isEmpty, open {
-            keylessChord?.released = stamp
-        }
     }
 
-    /// HID shows no modifier held, as after a release the tap missed while WindowServer had
-    /// turned it off. `lastChange`: HID's last modifier change, the release's latest time.
-    public mutating func noteModifiersUp(lastChange: ContinuousClock.Instant) {
-        modifiers = []
-        guard let chord = keylessChord, chord.released == nil else { return }
-        keylessChord?.released = max(lastChange, chord.pressed)
-    }
-
-    /// The user's last key down at or before `now`, for the Command-Tab test
-    /// (docs/focus-follows-mouse.md). A hotkey's key the tap never heard can come any time its
-    /// modifiers are held, as Opt-D, Opt-Shift-S and Opt-D again under one held Option.
-    public func lastKey(at now: ContinuousClock.Instant) -> ContinuousClock.Instant? {
-        [lastKeyDown, keylessChord?.lastHeld(atOrBefore: now)].compactMap { $0 }.max()
-    }
-
-    private func hotkey(before stamp: ContinuousClock.Instant, beforeLaunch: Bool) -> Cause? {
-        guard let keylessChord, let held = keylessChord.lastHeld(atOrBefore: stamp),
-              stamp - held <= Self.openerBound
-        else { return nil }
-        return .hotkey(heldFor: stamp - keylessChord.pressed, beforeLaunch: beforeLaunch)
-    }
-
-    /// Notes a key down HID counted that the tap never saw, at HID's last key down.
-    public mutating func noteUnseenKeys(hidKeys count: UInt32, lastKeyAt: ContinuousClock.Instant) {
-        if let seen = hidKeys, count != seen { add(.unseenKey, at: lastKeyAt) }
-        hidKeys = count
-    }
+    /// The user's last key down, a hotkey's included, for the Command-Tab test
+    /// (docs/focus-follows-mouse.md).
+    public var lastKey: ContinuousClock.Instant? { keys.values.map(\.at).max() }
 
     private mutating func add(_ press: Press, at stamp: ContinuousClock.Instant) {
         presses.removeAll { stamp - $0.at > Self.kept }
         presses.append((stamp, press))
+    }
+
+    private mutating func note(_ event: UInt64, at stamp: ContinuousClock.Instant, reachedApp: Bool) {
+        keys = keys.filter { stamp - $0.value.at <= Self.kept }
+        if keys[event] == nil { keys[event] = (stamp, reachedApp) } else if reachedApp { keys[event]?.reachedApp = true }
+    }
+
+    private func pressesWithHotkeys(by stamp: ContinuousClock.Instant) -> [(at: ContinuousClock.Instant, press: Press)] {
+        let hotkeys = keys.values.filter { !$0.reachedApp && stamp - $0.at >= Self.twinWait }
+        return (presses + hotkeys.map { ($0.at, Press.hotkey) }).sorted { $0.at < $1.at }
     }
 
     /// Why a change of an app's, stamped at `stamp`, is the user's, or nil when no press of his
@@ -148,35 +116,23 @@ public struct OwnInput: Sendable {
         }
         func opens(_ press: Press) -> Bool {
             switch press {
-            case .click, .unseenKey: true
+            case .click, .hotkey: true
             case .key(let pid): place(pid) == .notRegular
             }
         }
-        if let hotkey = hotkey(before: stamp, beforeLaunch: false) { return hotkey }
+        let presses = pressesWithHotkeys(by: stamp)
         for (at, press) in presses.reversed() where at <= stamp && stamp - at <= Self.inAppBound {
             switch press {
             case .key(let pid), .click(let pid):
                 if place(pid) == .app { return .inApp(press, ago: stamp - at) }
-            case .unseenKey:
+            case .hotkey:
                 break
             }
             if stamp - at <= Self.openerBound, opens(press) { return .opener(press, ago: stamp - at, beforeLaunch: false) }
         }
-        guard let launched, launched <= stamp else { return nil }
-        if let hotkey = hotkey(before: launched, beforeLaunch: true) { return hotkey }
-        guard let made = presses.last(where: { $0.at <= launched && launched - $0.at <= Self.openerBound && opens($0.press) })
+        guard let launched, launched <= stamp,
+              let made = presses.last(where: { $0.at <= launched && launched - $0.at <= Self.openerBound && opens($0.press) })
         else { return nil }
         return .opener(made.press, ago: launched - made.at, beforeLaunch: true)
-    }
-}
-
-/// The user's Command, Option, Control or Shift went down, and the tap has heard no key down
-/// of his since, nor a click while they were held.
-private struct KeylessChord {
-    let pressed: ContinuousClock.Instant
-    var released: ContinuousClock.Instant?
-
-    func lastHeld(atOrBefore moment: ContinuousClock.Instant) -> ContinuousClock.Instant? {
-        pressed <= moment ? min(released ?? moment, moment) : nil
     }
 }
