@@ -55,11 +55,12 @@ final class InputTap: Sendable {
     /// (OwnInput). The app's bundle and each target's policy are read on the main actor.
     @MainActor
     func cause(of app: pid_t, at stamp: ContinuousClock.Instant) -> OwnInput.Cause? {
+        let now = ContinuousClock.now
         let snapshot = input.withLock { $0 }
         let running = NSRunningApplication(processIdentifier: app)
-        let launched = running?.launchDate.map { ContinuousClock.now - .seconds(-$0.timeIntervalSinceNow) }
+        let launched = running?.launchDate.map { now - .seconds(-$0.timeIntervalSinceNow) }
         let bundle = running?.bundleURL?.path
-        return snapshot.cause(at: stamp, launched: launched, listening: CGPreflightListenEventAccess(), now: .now) { target in
+        return snapshot.cause(at: stamp, launched: launched, listening: CGPreflightListenEventAccess(), now: now) { target in
             if target == app { return .app }
             if let bundle, processPath(target)?.hasPrefix(bundle + "/") == true { return .app }
             return NSRunningApplication(processIdentifier: target)?.activationPolicy == .regular ? .otherApp : .notRegular
