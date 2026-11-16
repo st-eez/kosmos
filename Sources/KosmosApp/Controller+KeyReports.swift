@@ -31,7 +31,7 @@ extension Controller {
             app: { self.owner[$0] ?? self.inventory.windows[$0]?.pid },
             intent: session.intent, locked: sessionLocked, recovered: needsResync, mouseFollowsFocus: mouseFollowsFocus,
             pointer: pointerReadings,
-            userPressedJustBefore: { UserInput.userPressedJustBefore() },
+            userPressedJustBefore: { UserInput.userPressedJustBefore(tap: self.inputTap) },
             launchedSinceEmptyWorkspaceKeyed: {
                 NSRunningApplication(processIdentifier: $0)?.launchDate.map { $0 > self.emptyWorkspaceKeyed } == true
             },
@@ -131,6 +131,8 @@ extension Controller {
         return switch cause {
         case .inApp(let made, let ago): "\(press(made)) \(ms(ago)) before"
         case .opener(let made, let ago, let beforeLaunch): "\(press(made)) \(ms(ago)) before \(beforeLaunch ? "its launch" : "it")"
+        case .hotkey(let heldFor, let beforeLaunch):
+            "a hotkey under modifiers held from \(ms(heldFor)) before \(beforeLaunch ? "its launch" : "it")"
         case .unheard: "the input tap hears nothing, so every change counts as the user's"
         }
     }

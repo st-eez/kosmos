@@ -1,3 +1,5 @@
+import CoreGraphics
+
 /// The user's own presses, as the input tap saw them, and what makes a key window change his
 /// (docs/focus.md). His keys and clicks carry source pid 0, and input another process posts
 /// carries that process's pid, Kosmos's own focus records included.
@@ -29,6 +31,10 @@ public struct OwnInput: Sendable {
         /// regular app, or a key the tap never saw. `ago` counts from the app's launch when
         /// `beforeLaunch`.
         case opener(Press, ago: Duration, beforeLaunch: Bool)
+        /// Modifiers the user held with no key down the tap heard: a hotkey took its key.
+        /// `heldFor` counts from when they went down to the change, or to the app's launch when
+        /// `beforeLaunch`.
+        case hotkey(heldFor: Duration, beforeLaunch: Bool)
         /// The tap is missing or hears nothing, so every change counts as the user's, as
         /// before the tap.
         case unheard
@@ -47,6 +53,11 @@ public struct OwnInput: Sendable {
     private var presses: [(at: ContinuousClock.Instant, press: Press)] = []
     /// HID's count of key downs when the tap last saw a key down or a modifier change.
     private var hidKeys: UInt32?
+    /// macOS 27.2.1 counts HID's key downs in 500 ms batches, so a hotkey's key can be counted
+    /// after the activation it made (docs/focus.md).
+    private var keylessChord: KeylessChord?
+    private var lastKeyDown: ContinuousClock.Instant?
+    private var modifiers: KeyCombo.Modifiers = []
     private var heard = false
 
     public init() {}
@@ -57,7 +68,10 @@ public struct OwnInput: Sendable {
         heard = true
         if let seen = hidKeys, count > seen &+ 1 { add(.unseenKey, at: stamp) }
         hidKeys = count
-        if source == 0 { add(.key(target: target), at: stamp) }
+        guard source == 0 else { return }
+        add(.key(target: target), at: stamp)
+        lastKeyDown = stamp
+        keylessChord = nil
     }
 
     public mutating func heardClick(from source: Int32, target: Int32, at stamp: ContinuousClock.Instant) {
@@ -67,11 +81,36 @@ public struct OwnInput: Sendable {
 
     /// A modifier change the tap saw, from any process. A hotkey's modifiers come up after its
     /// key, so the key the tap missed is noted with its time while it is HID's last.
-    public mutating func heardModifiers(from source: Int32, target: Int32, hidKeys count: UInt32,
+    public mutating func heardModifiers(from source: Int32, target: Int32, flags: CGEventFlags, hidKeys count: UInt32,
                                         lastKeyAt: ContinuousClock.Instant, at stamp: ContinuousClock.Instant) {
         heard = true
         noteUnseenKeys(hidKeys: count, lastKeyAt: lastKeyAt)
-        if source == 0 { add(.key(target: target), at: stamp) }
+        guard source == 0 else { return }
+        add(.key(target: target), at: stamp)
+        let held = KeyCombo.Modifiers(flags)
+        let added = !held.subtracting(modifiers).isEmpty
+        modifiers = held
+        let open = keylessChord.map { $0.released == nil } ?? false
+        if added, !open {
+            keylessChord = KeylessChord(pressed: stamp)
+        } else if held.isEmpty, open {
+            keylessChord?.released = stamp
+        }
+    }
+
+    /// The user's last key down at or before `now`, for the Command-Tab test
+    /// (docs/focus-follows-mouse.md). A hotkey's key the tap never heard counts from when its
+    /// modifiers went down, so a click under held modifiers is still the later press.
+    public func lastKey(at now: ContinuousClock.Instant) -> ContinuousClock.Instant? {
+        let hotkey = keylessChord.flatMap { $0.pressed <= now ? $0.pressed : nil }
+        return [lastKeyDown, hotkey].compactMap { $0 }.max()
+    }
+
+    private func hotkey(before stamp: ContinuousClock.Instant, beforeLaunch: Bool) -> Cause? {
+        guard let keylessChord, let held = keylessChord.lastHeld(atOrBefore: stamp),
+              stamp - held <= Self.openerBound
+        else { return nil }
+        return .hotkey(heldFor: stamp - keylessChord.pressed, beforeLaunch: beforeLaunch)
     }
 
     /// Notes a key down HID counted that the tap never saw, at HID's last key down.
@@ -104,6 +143,7 @@ public struct OwnInput: Sendable {
             case .key(let pid): place(pid) == .notRegular
             }
         }
+        if let hotkey = hotkey(before: stamp, beforeLaunch: false) { return hotkey }
         for (at, press) in presses.reversed() where at <= stamp && stamp - at <= Self.inAppBound {
             switch press {
             case .key(let pid), .click(let pid):
@@ -113,9 +153,21 @@ public struct OwnInput: Sendable {
             }
             if stamp - at <= Self.openerBound, opens(press) { return .opener(press, ago: stamp - at, beforeLaunch: false) }
         }
-        guard let launched, launched <= stamp,
-              let made = presses.last(where: { $0.at <= launched && launched - $0.at <= Self.openerBound && opens($0.press) })
+        guard let launched, launched <= stamp else { return nil }
+        if let hotkey = hotkey(before: launched, beforeLaunch: true) { return hotkey }
+        guard let made = presses.last(where: { $0.at <= launched && launched - $0.at <= Self.openerBound && opens($0.press) })
         else { return nil }
         return .opener(made.press, ago: launched - made.at, beforeLaunch: true)
+    }
+}
+
+/// The user's Command, Option, Control or Shift went down, and the tap has heard no key down
+/// of his since.
+private struct KeylessChord {
+    let pressed: ContinuousClock.Instant
+    var released: ContinuousClock.Instant?
+
+    func lastHeld(atOrBefore moment: ContinuousClock.Instant) -> ContinuousClock.Instant? {
+        pressed <= moment ? min(released ?? moment, moment) : nil
     }
 }

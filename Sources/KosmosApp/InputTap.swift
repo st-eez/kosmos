@@ -59,6 +59,13 @@ final class InputTap: Sendable {
         }
     }
 
+    /// Live, where HID's event state comes in 500 ms batches on macOS 27.2.1
+    /// (docs/focus-follows-mouse.md).
+    func secondsSinceKey() -> Double? {
+        let now = ContinuousClock.now
+        return input.withLock { $0.lastKey(at: now) }.map { (now - $0) / .seconds(1) }
+    }
+
     private func handle(_ type: CGEventType, _ event: CGEvent) {
         let stamp = ContinuousClock.now
         func pid(_ field: CGEventField) -> Int32 { Int32(truncatingIfNeeded: event.getIntegerValueField(field)) }
@@ -75,8 +82,8 @@ final class InputTap: Sendable {
             let count = CGEventSource.counterForEventType(.hidSystemState, eventType: .keyDown)
             let lastKey = stamp - .seconds(CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown))
             input.withLock {
-                $0.heardModifiers(from: pid(.eventSourceUnixProcessID), target: pid(.eventTargetUnixProcessID), hidKeys: count,
-                                  lastKeyAt: lastKey, at: stamp)
+                $0.heardModifiers(from: pid(.eventSourceUnixProcessID), target: pid(.eventTargetUnixProcessID), flags: event.flags,
+                                  hidKeys: count, lastKeyAt: lastKey, at: stamp)
             }
         case .leftMouseDown, .rightMouseDown:
             input.withLock { $0.heardClick(from: pid(.eventSourceUnixProcessID), target: pid(.eventTargetUnixProcessID), at: stamp) }

@@ -204,11 +204,22 @@
     hotkeys, a key typed under Secure Input, which hides keys from taps, or a hotkey of
     Kosmos's. The tap compares at each modifier change, since a hotkey's modifiers come up
     after its key, and notes the missed key at HID's last key down. Kosmos compares again
-    at each decision. Unmeasured: whether HID counts a key down a hotkey takes. If it does
-    not, a launcher's hotkey that activates an app on a hidden workspace is no longer
-    followed, and the log says `came with no key or click of the user's` right after the
-    hotkey.
+    at each decision. HID counts a key down a hotkey takes, but on macOS 27.2.1 it counts
+    key downs, and gives the last one's time, in batches 500 ms apart: on 2026-11-16 a 2 ms
+    poll saw the count move 109 ms after the tap heard a key, which it dated 505 ms back. A
+    Raycast hotkey activates its app 200 to 800 ms after its modifiers go down, often
+    before the count moves, so Steve's Opt-Shift-S and Opt-D logged `came with no key or
+    click of the user's` and took two to five presses.
+  - So the tap also keeps the user's chord: his Command, Option, Control or Shift went down
+    and it heard no key down of his since (`OwnInput.Press.hotkey`). A change made while
+    the chord was held, or within the second after it came up, is the user's, and the log
+    says `a hotkey under modifiers held from 824 ms before it`. On 2026-11-16 the tap heard
+    Option and Shift go down to the front app for each of Steve's Raycast hotkeys, and
+    neither the key's down nor its up.
   - Ceilings:
+    - Modifiers held with no key, as Shift pressed on its own or Option held after one of
+      Kosmos's own hotkeys, count as a hotkey for the change that comes while they are held
+      and in the second after, an agent's too.
     - An agent's new window of an app Steve pressed a key or clicked in during the last
       10 s is followed, and so is an agent's launch in the second after a click of his
       anywhere. Steve clicked 3 times in the 90 s sample.

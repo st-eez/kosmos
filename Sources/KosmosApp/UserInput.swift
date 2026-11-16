@@ -18,8 +18,12 @@ enum UserInput {
     /// drag state does not cover.
     static var leftButtonDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
 
-    static func userPressedJustBefore() -> Bool {
-        min(secondsSince(.keyDown), secondsSince(.leftMouseDown), secondsSince(.rightMouseDown)) < 1
+    static func userPressedJustBefore(tap: InputTap?) -> Bool {
+        min(secondsSinceKey(tap: tap), secondsSince(.leftMouseDown), secondsSince(.rightMouseDown)) < 1
+    }
+
+    static func secondsSinceKey(tap: InputTap?) -> Double {
+        min(secondsSince(.keyDown), tap?.secondsSinceKey() ?? .infinity)
     }
 
     /// Reading the session's event state takes no event tap.

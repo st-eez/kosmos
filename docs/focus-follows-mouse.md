@@ -134,7 +134,14 @@ hovered window instead of the app's most recent one; Kosmos's focus path already
     the left panel, left the pointer where it was, before this. Kosmos tells Command-Tab
     from a click when it handles the activation: a key went down within the last second,
     and after the last left or right mouse down and the last pointer movement
-    (`CGEventSource.secondsSinceLastEventType` in the combined session state). With focus
+    (`CGEventSource.secondsSinceLastEventType` in the combined session state). That state
+    gives a key's time up to 500 ms late on macOS 27.2.1 ([focus.md](focus.md)), so the
+    key's time is the later of it and the input tap's, which hears a key as it goes down
+    and dates a hotkey's key, which it never hears, at when the modifiers held over it
+    went down (`OwnInput.lastKey`), so a click under held modifiers is still the later
+    press. On 2026-11-16 the combined state put the key behind Steve's Opt-Shift-S 1.2 s
+    back, and the pointer stayed. Modifiers held over a second before the hotkey's key
+    leave the pointer where it is: Steve's ranged from 250 to 824 ms that day. With focus
     follows mouse the user seldom clicks, so a key press long ago would otherwise pass for
     Command-Tab when an app activates itself. The read takes no event tap, and the log
     gives the times. A Command-Tab switcher held open for over a second reads as a click.

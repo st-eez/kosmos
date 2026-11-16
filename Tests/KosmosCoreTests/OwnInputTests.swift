@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import KosmosCore
 
@@ -46,7 +47,11 @@ private struct Keyboard {
     }
 
     mutating func modifiersUp(to target: Int32, at milliseconds: Int, lastKey: Int) {
-        input.heardModifiers(from: 0, target: target, hidKeys: hid, lastKeyAt: ms(lastKey), at: ms(milliseconds))
+        input.heardModifiers(from: 0, target: target, flags: [], hidKeys: hid, lastKeyAt: ms(lastKey), at: ms(milliseconds))
+    }
+
+    mutating func modifiers(_ flags: CGEventFlags, to target: Int32, at milliseconds: Int, from source: Int32 = 0) {
+        input.heardModifiers(from: source, target: target, flags: flags, hidKeys: hid, lastKeyAt: ms(milliseconds), at: ms(milliseconds))
     }
 
     mutating func click(on target: Int32, at milliseconds: Int, from source: Int32 = 0) {
@@ -138,6 +143,50 @@ private struct Keyboard {
     typing.modifiersUp(to: ghostty, at: 1050, lastKey: 1000)
     typing.input.noteUnseenKeys(hidKeys: typing.hid, lastKeyAt: ms(1000))
     #expect(cause(typing.input, of: chrome, at: 1100) == nil)
+}
+
+@Test func aHotkeyUnderHeldModifiersCountsBeforeHIDCountsItsKey() {
+    // Steve's Opt-Shift-S on 2026-11-16: the tap heard Option and Shift go down to the front app and
+    // no key, Spotify activated 824 ms later, and HID counted the key 121 ms after that.
+    var keyboard = Keyboard()
+    keyboard.key(to: ghostty, at: 0)
+    keyboard.modifiers(.maskAlternate, to: ghostty, at: 5000)
+    keyboard.modifiers([.maskAlternate, .maskShift], to: ghostty, at: 5001)
+    #expect(cause(keyboard.input, of: chrome, at: 5824) == .hotkey(heldFor: .milliseconds(824), beforeLaunch: false))
+    // Held for longer than the opener bound, the key could have come just before.
+    #expect(cause(keyboard.input, of: chrome, at: 7000) == .hotkey(heldFor: .milliseconds(2000), beforeLaunch: false))
+    // Once the modifiers come up, the key came before that.
+    keyboard.modifiersUp(to: ghostty, at: 7100, lastKey: 0)
+    #expect(cause(keyboard.input, of: chrome, at: 8000) == .hotkey(heldFor: .milliseconds(3000), beforeLaunch: false))
+    #expect(cause(keyboard.input, of: chrome, at: 8200) == nil)
+    // Shift held to type a capital is no hotkey: the tap heard the key.
+    keyboard.modifiers(.maskShift, to: ghostty, at: 10_000)
+    keyboard.key(to: ghostty, at: 10_050)
+    #expect(cause(keyboard.input, of: chrome, at: 10_100) == nil)
+    // Cmd-Shift-T the tap heard, let go of Shift first: Command alone is no new chord.
+    keyboard.modifiers(.maskCommand, to: ghostty, at: 15_000)
+    keyboard.modifiers([.maskCommand, .maskShift], to: ghostty, at: 15_010)
+    keyboard.key(to: ghostty, at: 15_050)
+    keyboard.modifiers(.maskCommand, to: ghostty, at: 15_100)
+    keyboard.modifiersUp(to: ghostty, at: 15_150, lastKey: 15_050)
+    #expect(cause(keyboard.input, of: chrome, at: 16_000) == nil)
+    #expect(keyboard.input.lastKey(at: ms(16_000)) == ms(15_050))
+    // Modifiers another process posted, as BetterTouchTool's, are no chord of the user's.
+    var posted = Keyboard()
+    posted.key(to: ghostty, at: 0)
+    posted.modifiers(.maskAlternate, to: ghostty, at: 2000, from: computerUse)
+    #expect(cause(posted.input, of: chrome, at: 2100) == nil)
+}
+
+@Test func theLastKeyCountsAHotkeyUnderHeldModifiers() {
+    var keyboard = Keyboard()
+    #expect(keyboard.input.lastKey(at: ms(0)) == nil)
+    keyboard.key(to: ghostty, at: 0)
+    #expect(keyboard.input.lastKey(at: ms(1500)) == ms(0))
+    // A hotkey's key comes after its modifiers went down, and a click under them comes later.
+    keyboard.modifiers(.maskCommand, to: ghostty, at: 2000)
+    #expect(keyboard.input.lastKey(at: ms(2600)) == ms(2000))
+    #expect(keyboard.input.lastKey(at: ms(1900)) == ms(0))
 }
 
 @Test func inputAnotherProcessPostedIsNotTheUsers() {

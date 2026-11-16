@@ -3,6 +3,26 @@
 Open work on Kosmos, most urgent first. Each item says what is known, what settles it and
 what Steve has decided. Take an item out when it lands, and add new work here.
 
+## Measure whether HID's mouse press counts come in batches too
+
+On macOS 27.2.1 HID's key down count and last key time come in batches 500 ms apart
+([focus.md](focus.md)). The modifier drag's stuck-button check reads HID's mouse press
+counts (`DragTap.hid`, [modifier-drags.md](modifier-drags.md)), and the Command-Tab and
+Dock tests read the combined state's click and movement times. A 2 ms poll of
+`counterForEventType(.hidSystemState, .leftMouseDown)` beside a tap during clicks settles
+whether they lag too.
+
+## Keep a hotkey's chord past the next key, and drop one whose release the tap missed
+
+The input tap keeps one keyless chord, the user's modifiers held with no key heard
+([focus.md](focus.md)). A key he types between an app's activation and Kosmos's decision on
+it, or in the seconds before a launched app's first window, clears the chord, and the
+activation counts as no input of his. A chord whose release the tap never hears, as when
+WindowServer turns the tap off while a modifier is down, stays open, and every change counts
+as the user's until his next key or modifier change. Both were found in review on
+2026-11-16 and neither was seen live. The upgrade keeps each closed chord in `presses` over
+its span, and checks an open one against `CGEventSource.flagsState`.
+
 ## Decide what install.sh does with a Kosmos that won't quit
 
 `script/install.sh` waits 10 s after its SIGTERM, then exits with "Kosmos did not quit within

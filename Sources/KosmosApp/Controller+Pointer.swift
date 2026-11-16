@@ -95,7 +95,7 @@ extension Controller {
     }
 
     private func activation() -> (input: ActivationInput, onDock: Bool) {
-        let input = ActivationInput(key: UserInput.secondsSince(.keyDown), leftClick: UserInput.secondsSince(.leftMouseDown),
+        let input = ActivationInput(key: UserInput.secondsSinceKey(tap: inputTap), leftClick: UserInput.secondsSince(.leftMouseDown),
                                     rightClick: UserInput.secondsSince(.rightMouseDown), moved: UserInput.secondsSince(.mouseMoved))
         let dock = UserInput.isDock(clickedWindow)
         pointerLog.debug("""
